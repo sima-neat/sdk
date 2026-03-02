@@ -54,6 +54,14 @@ else
   echo "GitHub Packages image unavailable, falling back to local image ${IMAGE_REF}"
 fi
 
+image_platform="$(docker image inspect "${IMAGE_REF}" --format '{{.Os}}/{{.Architecture}}' 2>/dev/null || true)"
+
+if [[ -n "${image_platform}" ]]; then
+  echo "Resolved image platform: ${image_platform}"
+else
+  echo "Resolved image platform: unavailable"
+fi
+
 echo "Running ${IMAGE_REF}"
 echo "Mounting ${HOST_DIR} to ${CONTAINER_WORKDIR}"
 

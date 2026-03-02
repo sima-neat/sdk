@@ -4,7 +4,11 @@
 
 # SiMa.ai eLxr Software Development Kit (SDK) Manual
 
+[![Build Docker Image](https://github.com/sima-neat/elxr-sdk/actions/workflows/docker-build.yml/badge.svg)](https://github.com/sima-neat/elxr-sdk/actions/workflows/docker-build.yml)
+
 > This is a user guide for the SiMa.ai eLxr Board Support Package (BSP).
+
+This repository provides a custom build of the eLxr SDK for SiMa.ai platforms. It supports both `x86_64` and `arm64` host builds, automatically installs NEAT-required dependencies and `sima-cli`, and remains compatible with the official eLxr SDK `2.0` release.
 
 ## About eLxr Project
 
