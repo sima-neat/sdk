@@ -1,0 +1,115 @@
+name: Build Docker Image
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build on ${{ matrix.arch }}
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runs_on: ubuntu-24.04
+            platform: linux/amd64
+            image_suffix: x86_64
+          - arch: aarch64
+            runs_on: ubuntu-24.04-arm
+            platform: linux/arm64
+            image_suffix: aarch64
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image name
+        id: image
+        run: echo "name=ghcr.io/$(echo "${GITHUB_REPOSITORY_OWNER}/elxr" | tr '[:upper:]' '[:lower:]')" >> "${GITHUB_OUTPUT}"
+
+      - name: Build Docker image
+        run: ./build.sh elxr "${IMAGE_TAG}"
+        env:
+          IMAGE_TAG: ci-${{ matrix.image_suffix }}
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish architecture image
+        if: github.event_name != 'pull_request'
+        run: |
+          docker tag elxr:ci-${IMAGE_SUFFIX} "${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
+          docker push "${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          IMAGE_SUFFIX: ${{ matrix.image_suffix }}
+
+  publish-manifest:
+    name: Publish multi-arch manifest
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image name
+        id: image
+        run: echo "name=ghcr.io/$(echo "${GITHUB_REPOSITORY_OWNER}/elxr" | tr '[:upper:]' '[:lower:]')" >> "${GITHUB_OUTPUT}"
+
+      - name: Compute release tag
+        id: release_tag
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push multi-arch manifest
+        run: |
+          docker buildx imagetools create \
+            --tag "${IMAGE_NAME}:${GITHUB_SHA}" \
+            "${IMAGE_NAME}:${GITHUB_SHA}-x86_64" \
+            "${IMAGE_NAME}:${GITHUB_SHA}-aarch64"
+
+          if [[ -n "${RELEASE_TAG}" ]]; then
+            docker buildx imagetools create \
+              --tag "${IMAGE_NAME}:${RELEASE_TAG}" \
+              "${IMAGE_NAME}:${GITHUB_SHA}-x86_64" \
+              "${IMAGE_NAME}:${GITHUB_SHA}-aarch64"
+          fi
+
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            docker buildx imagetools create \
+              --tag "${IMAGE_NAME}:latest" \
+              "${IMAGE_NAME}:${GITHUB_SHA}-x86_64" \
+              "${IMAGE_NAME}:${GITHUB_SHA}-aarch64"
+          fi
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          RELEASE_TAG: ${{ steps.release_tag.outputs.value }}
