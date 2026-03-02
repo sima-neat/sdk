@@ -25,6 +25,10 @@ ENV SDK_PKG_LIST="\
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+RUN dpkg --add-architecture arm64 && \
+    dpkg --add-architecture arc && \
+    dpkg --add-architecture armhf
+
 RUN apt-get clean && \
     apt-get update --allow-releaseinfo-change && \
     apt-get install -y --no-install-recommends \
@@ -57,9 +61,9 @@ RUN apt-get update --allow-releaseinfo-change && \
       vim \
       make \
       cmake \
-      gcc \
+      gcc-aarch64-linux-gnu \
       sudo \
-      g++ \
+      g++-aarch64-linux-gnu \
       device-tree-compiler \
       bison \
       flex \
@@ -71,6 +75,7 @@ RUN apt-get update --allow-releaseinfo-change && \
       kmod \
       cpio \
       git \
+      curl \
       libssl-dev \
       libgnutls28-dev \
       openssh-client \
@@ -96,7 +101,9 @@ RUN printf 'SDK Version = 2.0.0_Palette_SDK_neat_%s_%s\neLXr Version = 2.0.0_rel
     "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
     > /etc/sdk-release
 
-RUN printf 'if [ -f ~/.bashrc ]; then\n  . ~/.bashrc\nfi\n' > /root/.bash_profile
+RUN touch /root/.bash_profile && \
+    grep -qxF 'if [ -f ~/.bashrc ]; then' /root/.bash_profile || \
+    printf '\nif [ -f ~/.bashrc ]; then\n  . ~/.bashrc\nfi\n' >> /root/.bash_profile
 RUN echo "source /opt/bin/simaai-init-build-env modalix" >> /root/.bashrc
 
 CMD ["/bin/bash", "-l"]
