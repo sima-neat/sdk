@@ -1,0 +1,4 @@
+interface:
+  display_name: "DevKit NFS Bootstrap"
+  short_description: "Launch SDK container and configure DevKit NFS workspace mount"
+  default_prompt: "Set up DevKit workspace sync using run.py and source devkit.sh, then validate the mount and Git access."

@@ -121,6 +121,24 @@ docker run --rm -it --name elxr --privileged -v "$(pwd):/workspace" -w /workspac
 > - Although the build environment is automatically configured when the container launches, it can also be set manually:
 >   `source /opt/bin/simaai-init-build-env <platform>`
 
+### DevKit Workspace (NFS)
+
+The workspace sharing flow is now NFS-based.
+
+1. Start SDK container and configure host-side export:
+
+```bash
+./run.sh --prefer-local --devkit-ip 10.0.0.244
+```
+
+2. Inside the container, source the setup helper:
+
+```bash
+source devkit.sh
+```
+
+This configures the remote DevKit mount, updates DevKit `/etc/fstab`, enables a watchdog timer for stale mount recovery, and sets Git `safe.directory` for the mounted workspace path.
+
 ## Build Software
 
 ### Linux Kernel

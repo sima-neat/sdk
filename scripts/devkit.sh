@@ -1,0 +1,500 @@
+#!/usr/bin/env bash
+# Sourceable helper for configuring DevKit NFS client mount to host workspace.
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  echo "Use: source devkit.sh [devkit-ip|$DEVKIT_SYNC_DEVKIT_IP] [devkit-user=sima] [devkit-port=22]" >&2
+  exit 2
+fi
+
+if [[ -z "${1:-}" && -z "${DEVKIT_SYNC_DEVKIT_IP:-}" ]]; then
+  echo "Usage: source devkit.sh [devkit-ip|$DEVKIT_SYNC_DEVKIT_IP] [devkit-user=sima] [devkit-port=22]" >&2
+  return 2
+fi
+
+_DEVKIT_IP="${1:-${DEVKIT_SYNC_DEVKIT_IP:-}}"
+_DEVKIT_USER="${2:-sima}"
+_DEVKIT_PORT="${3:-22}"
+_HOST_IP="${NFS_SERVER_HOST_IP:-}"
+_HOST_EXPORT_PATH="${DEVKIT_HOST_EXPORT_PATH:-}"
+_HOST_PLATFORM="${DEVKIT_HOST_PLATFORM:-linux}"
+_DEFAULT_MOUNT_PATH="${DEVKIT_SYNC_MOUNT_PATH:-/sdk-workspace}"
+
+if [[ -z "${_HOST_IP}" || -z "${_HOST_EXPORT_PATH}" ]]; then
+  echo "Missing host export info in environment." >&2
+  echo "Expected NFS_SERVER_HOST_IP and DEVKIT_HOST_EXPORT_PATH (set by run.py)." >&2
+  return 1
+fi
+
+if [[ ! "${_DEVKIT_PORT}" =~ ^[0-9]+$ ]] || (( _DEVKIT_PORT < 1 || _DEVKIT_PORT > 65535 )); then
+  echo "Invalid port: ${_DEVKIT_PORT}" >&2
+  return 2
+fi
+
+_c_info="" _c_reset=""
+if [[ -t 1 ]]; then
+  _c_info=$'\033[1;34m'
+  _c_reset=$'\033[0m'
+fi
+cat <<EOF
+${_c_info}
+============================================================
+  Setting Up DevKit Connection
+  eLxr SDK container  ->  DevKit
+============================================================
+${_c_reset}
+EOF
+
+printf "\nDevKit NFS client setup\n"
+printf "DevKit: %s@%s:%s\n" "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"
+printf "Host export: %s:%s\n" "${_HOST_IP}" "${_HOST_EXPORT_PATH}"
+printf "Reminder: NFS workspace is shared bi-directionally.\n\n"
+
+read -r -p "Destination mount path on DevKit [${_DEFAULT_MOUNT_PATH}]: " _MOUNT_POINT
+_MOUNT_POINT="${_MOUNT_POINT:-${_DEFAULT_MOUNT_PATH}}"
+if [[ "${_MOUNT_POINT}" != /* ]]; then
+  echo "Please provide an absolute path (must start with '/')." >&2
+  return 2
+fi
+if [[ "${_HOST_PLATFORM}" == "darwin" ]]; then
+  _NFS_OPTS="vers=3,proto=tcp,mountproto=tcp,nolock,soft,timeo=50,retrans=1,_netdev,nofail,x-systemd.automount"
+else
+  _NFS_OPTS="vers=4,proto=tcp,soft,timeo=50,retrans=1,_netdev,nofail,x-systemd.automount"
+fi
+
+mkdir -p "${HOME}/.ssh"
+chmod 700 "${HOME}/.ssh"
+if [[ ! -f "${HOME}/.ssh/id_ed25519" ]]; then
+  ssh-keygen -t ed25519 -N "" -f "${HOME}/.ssh/id_ed25519" -C "devkit-sync@$(hostname)" >/dev/null
+fi
+ssh-keyscan -H -p "${_DEVKIT_PORT}" "${_DEVKIT_IP}" >> "${HOME}/.ssh/known_hosts" 2>/dev/null || true
+chmod 600 "${HOME}/.ssh/known_hosts"
+
+echo "Installing/refreshing SSH key for ${_DEVKIT_USER}@${_DEVKIT_IP}"
+timeout --foreground 120 ssh-copy-id -i "${HOME}/.ssh/id_ed25519.pub" -p "${_DEVKIT_PORT}" -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new "${_DEVKIT_USER}@${_DEVKIT_IP}"
+
+if [[ "${_DEVKIT_USER}" != "root" ]]; then
+  if ! ssh -p "${_DEVKIT_PORT}" -o BatchMode=yes -o ConnectTimeout=8 "${_DEVKIT_USER}@${_DEVKIT_IP}" "sudo -n true" >/dev/null 2>&1; then
+    echo ""
+    echo "DevKit user '${_DEVKIT_USER}' does not have passwordless sudo."
+    echo "This script can apply a one-time sudoers change:"
+    echo "  ${_DEVKIT_USER} ALL=(ALL) NOPASSWD:ALL"
+    read -r -p "Apply this change on ${_DEVKIT_IP}? [y/N]: " _ALLOW_NOPASSWD
+    case "${_ALLOW_NOPASSWD,,}" in
+      y|yes)
+        echo "Applying passwordless sudo setup for ${_DEVKIT_USER}@${_DEVKIT_IP} (you may be prompted once)..."
+        if ! ssh -tt -p "${_DEVKIT_PORT}" -o ConnectTimeout=8 "${_DEVKIT_USER}@${_DEVKIT_IP}" bash -s -- "${_DEVKIT_USER}" <<'EOS'
+set -euo pipefail
+u="$1"
+sudo mkdir -p /etc/sudoers.d
+echo "${u} ALL=(ALL) NOPASSWD:ALL" | sudo tee "/etc/sudoers.d/90-${u}-nopasswd" >/dev/null
+sudo chmod 0440 "/etc/sudoers.d/90-${u}-nopasswd"
+sudo visudo -cf "/etc/sudoers.d/90-${u}-nopasswd"
+EOS
+        then
+          echo "Failed to configure passwordless sudo for ${_DEVKIT_USER}@${_DEVKIT_IP}." >&2
+          return 1
+        fi
+        if ! ssh -p "${_DEVKIT_PORT}" -o BatchMode=yes -o ConnectTimeout=8 "${_DEVKIT_USER}@${_DEVKIT_IP}" "sudo -n true" >/dev/null 2>&1; then
+          echo "Passwordless sudo validation failed for ${_DEVKIT_USER}@${_DEVKIT_IP}." >&2
+          return 1
+        fi
+        ;;
+      *)
+        echo "Passwordless sudo setup skipped by user." >&2
+        echo "Hint: rerun as root user: source devkit.sh ${_DEVKIT_IP} root ${_DEVKIT_PORT}" >&2
+        return 1
+        ;;
+    esac
+  fi
+fi
+
+echo "Configuring remote NFS mount..."
+if ! ssh -p "${_DEVKIT_PORT}" -o BatchMode=yes -o ConnectTimeout=8 "${_DEVKIT_USER}@${_DEVKIT_IP}" bash -s -- "${_HOST_IP}" "${_HOST_EXPORT_PATH}" "${_MOUNT_POINT}" "${_NFS_OPTS}" "${_DEVKIT_USER}" <<'EOS'
+set -euo pipefail
+host_ip="$1"
+host_export="$2"
+mount_point="$3"
+mount_opts="$4"
+remote_user="$5"
+
+if [[ "$(id -u)" -eq 0 ]]; then
+  SUDO=""
+elif sudo -n true >/dev/null 2>&1; then
+  SUDO="sudo"
+else
+  echo "ERROR: remote user requires sudo password but non-interactive SSH was requested." >&2
+  echo "Use passwordless sudo for this user, or rerun with root user." >&2
+  exit 10
+fi
+
+as_root() {
+  if [[ -n "${SUDO}" ]]; then
+    sudo "$@"
+  else
+    "$@"
+  fi
+}
+
+if ! dpkg -s nfs-common >/dev/null 2>&1; then
+  as_root apt-get update --allow-releaseinfo-change
+  as_root apt-get install -y --no-install-recommends nfs-common
+fi
+
+as_root mkdir -p "$mount_point"
+
+# Always clear stale mounts from this host first (avoids blocked hard mounts).
+if command -v findmnt >/dev/null 2>&1; then
+  while read -r tgt; do
+    [[ -n "${tgt}" ]] || continue
+    echo "[devkit] unmounting stale NFS mount ${tgt} from ${host_ip}:*"
+    as_root umount -lf "$tgt" || true
+  done < <(findmnt -rn -t nfs,nfs4 -o TARGET,SOURCE | awk -v h="${host_ip}:" '$2 ~ ("^" h) {print $1}')
+fi
+
+# Ensure requested target mountpoint is detached as well.
+if mountpoint -q "$mount_point"; then
+  as_root umount -lf "$mount_point" || true
+fi
+
+src="${host_ip}:${host_export}"
+as_root mount -t nfs -o "$mount_opts" "$src" "$mount_point"
+
+# Persist fstab entry.
+tmpf="$(mktemp)"
+# Drop any stale entries for this source or mountpoint (any fs type/options).
+awk -v s="${src}" -v m="${mount_point}" '
+  /^[[:space:]]*#/ || NF==0 { print; next }
+  ($1 == s) || ($2 == m) { next }
+  { print }
+' /etc/fstab > "$tmpf"
+echo "${src} ${mount_point} nfs ${mount_opts} 0 0" >> "$tmpf"
+as_root cp "$tmpf" /etc/fstab
+rm -f "$tmpf"
+
+# Ensure systemd sees the new fstab before future reconnect/reboot cycles.
+as_root systemctl daemon-reload >/dev/null 2>&1 || true
+
+# Install a lightweight watchdog to recover stale mounts automatically.
+watchdog_script="/usr/local/sbin/devkit-nfs-watchdog.sh"
+as_root install -d -m 0755 /usr/local/sbin
+as_root tee "$watchdog_script" >/dev/null <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+mp="${mount_point}"
+src="${src}"
+opts="${mount_opts}"
+timeout 5 stat "\${mp}/." >/dev/null 2>&1 && exit 0
+umount -lf "\${mp}" >/dev/null 2>&1 || true
+mount -t nfs -o "\${opts}" "\${src}" "\${mp}"
+EOF
+as_root chmod 0755 "$watchdog_script"
+
+as_root tee /etc/systemd/system/devkit-nfs-watchdog.service >/dev/null <<'EOF'
+[Unit]
+Description=DevKit NFS watchdog remount
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/devkit-nfs-watchdog.sh
+EOF
+
+as_root tee /etc/systemd/system/devkit-nfs-watchdog.timer >/dev/null <<'EOF'
+[Unit]
+Description=Run DevKit NFS watchdog every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+Unit=devkit-nfs-watchdog.service
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
+EOF
+
+as_root systemctl daemon-reload >/dev/null 2>&1 || true
+as_root systemctl enable --now devkit-nfs-watchdog.timer >/dev/null 2>&1 || true
+
+# Validate effective runtime mount options.
+if command -v findmnt >/dev/null 2>&1; then
+  eff_opts="$(findmnt -rn -o OPTIONS --target "$mount_point" || true)"
+  echo "[devkit] effective mount opts: ${eff_opts}"
+  if [[ "${eff_opts}" != *"soft"* ]]; then
+    echo "[devkit] WARNING: effective mount does not include 'soft' (old mount options may still be active)" >&2
+  fi
+fi
+echo "[devkit] watchdog: devkit-nfs-watchdog.timer enabled (60s interval)"
+
+# Git safety: mark NFS workspace safe for the target user to avoid dubious ownership errors.
+if command -v git >/dev/null 2>&1; then
+  if [[ -n "${SUDO}" ]]; then
+    sudo -u "${remote_user}" git config --global --add safe.directory "${mount_point}" || true
+    sudo -u "${remote_user}" git config --global --add safe.directory "${mount_point}/*" || true
+  else
+    git config --global --add safe.directory "${mount_point}" || true
+    git config --global --add safe.directory "${mount_point}/*" || true
+  fi
+  echo "[devkit] git safe.directory configured for ${remote_user}: ${mount_point} and ${mount_point}/*"
+fi
+EOS
+then
+  echo "Failed to configure NFS mount on ${_DEVKIT_USER}@${_DEVKIT_IP}." >&2
+  echo "Hint: ensure ${_DEVKIT_USER} has passwordless sudo, or rerun as root: source devkit.sh ${_DEVKIT_IP} root ${_DEVKIT_PORT}" >&2
+  return 1
+fi
+
+export DEVKIT_SYNC_TARGET="${_DEVKIT_IP}:${_MOUNT_POINT}"
+export DEVKIT_SYNC_DEVKIT_IP="${_DEVKIT_IP}"
+if [[ -z "${DEVKIT_SYNC_ORIG_PS1:-}" ]]; then
+  export DEVKIT_SYNC_ORIG_PS1="${PS1:-\u@\h:\w\$ }"
+fi
+_PS1_PREFIX="\[\e[1;32m\][DevKit ${DEVKIT_SYNC_TARGET}]\[\e[0m\] "
+export DEVKIT_PROMPT_DIRTRIM="${DEVKIT_PROMPT_DIRTRIM:-3}"
+export PROMPT_DIRTRIM="${DEVKIT_PROMPT_DIRTRIM}"
+export PS1="${_PS1_PREFIX}${DEVKIT_SYNC_ORIG_PS1}"
+export DEVKIT_SYNC_MOUNT_POINT="${_MOUNT_POINT}"
+export DEVKIT_SYNC_DEVKIT_USER="${_DEVKIT_USER}"
+export DEVKIT_SYNC_DEVKIT_PORT="${_DEVKIT_PORT}"
+
+echo ""
+echo "NFS client mount configured."
+echo "Target: ${DEVKIT_SYNC_TARGET}"
+
+# Run a local /workspace binary or Python script on the paired DevKit.
+devkit-run() {
+  if [[ $# -lt 1 ]]; then
+    echo "Usage: devkit-run <local-executable-path> [args...]" >&2
+    return 2
+  fi
+
+  local local_path="$1"
+  shift
+
+  if [[ "${local_path}" != /* ]]; then
+    local_path="$(pwd)/${local_path}"
+  fi
+
+  if [[ ! -f "${local_path}" ]]; then
+    echo "Not found: ${local_path}" >&2
+    return 2
+  fi
+
+  local is_python="0"
+  if [[ "${local_path}" == *.py ]]; then
+    is_python="1"
+  fi
+
+  if [[ "${is_python}" != "1" ]]; then
+    local ftype
+    ftype="$(file -b "${local_path}" 2>/dev/null || true)"
+    if [[ "${ftype}" != *"aarch64"* && "${ftype}" != *"ARM aarch64"* && "${ftype}" != *"ARM64"* ]]; then
+      echo "Refusing to run non-ARM64 binary: ${local_path}" >&2
+      echo "Detected type: ${ftype}" >&2
+      return 2
+    fi
+  fi
+
+  case "${local_path}" in
+    /workspace/*) ;;
+    *)
+      echo "Path must be inside /workspace so DevKit can access it via NFS." >&2
+      return 2
+      ;;
+  esac
+
+  local rel remote_path pyneat_activate
+  rel="${local_path#/workspace/}"
+  remote_path="${DEVKIT_SYNC_MOUNT_POINT}/${rel}"
+  pyneat_activate="${DEVKIT_PYNEAT_ACTIVATE:-__NONE__}"
+  local remote_args=("${remote_path}" "${pyneat_activate}" "$@")
+
+  local c_out="" c_stderr="" c_reset=""
+  if [[ -t 1 ]]; then
+    c_out=$'\033[1;36m'
+    c_stderr=$'\033[1;33m'
+    c_reset=$'\033[0m'
+  fi
+
+  printf "%b[DevKit]%b executing remotely on %s@%s:%s -> %s\n" \
+    "${c_out}" "${c_reset}" "${DEVKIT_SYNC_DEVKIT_USER}" "${DEVKIT_SYNC_DEVKIT_IP}" "${DEVKIT_SYNC_DEVKIT_PORT}" "${remote_path}"
+
+  cleanup_remote_target() {
+    ssh -p "${DEVKIT_SYNC_DEVKIT_PORT}" \
+      -o BatchMode=yes -o ConnectTimeout=5 \
+      "${DEVKIT_SYNC_DEVKIT_USER}@${DEVKIT_SYNC_DEVKIT_IP}" \
+      bash --noprofile --norc -s -- "${remote_path}" >/dev/null 2>&1 <<'EOS_KILL'
+set -euo pipefail
+target="$1"
+base="$(basename "${target}")"
+pkill -TERM -f "${target}" >/dev/null 2>&1 || true
+pkill -TERM -f "python3 ${target}" >/dev/null 2>&1 || true
+pkill -TERM -f "${base}" >/dev/null 2>&1 || true
+sleep 1
+pkill -KILL -f "${target}" >/dev/null 2>&1 || true
+pkill -KILL -f "python3 ${target}" >/dev/null 2>&1 || true
+pkill -KILL -f "${base}" >/dev/null 2>&1 || true
+EOS_KILL
+  }
+  __devkit_interrupted=0
+  __devkit_on_interrupt() {
+    __devkit_interrupted=1
+    cleanup_remote_target
+  }
+  trap __devkit_on_interrupt INT TERM
+
+  ssh -T -p "${DEVKIT_SYNC_DEVKIT_PORT}" \
+    -o BatchMode=yes -o ConnectTimeout=8 \
+    "${DEVKIT_SYNC_DEVKIT_USER}@${DEVKIT_SYNC_DEVKIT_IP}" \
+    bash --noprofile --norc -s -- "${remote_args[@]}" \
+    > >(while IFS= read -r line; do printf "%b[DEVKIT][STDOUT]%b %s\n" "${c_out}" "${c_reset}" "${line}"; done) \
+    2> >(while IFS= read -r line; do printf "%b[DEVKIT][STDERR]%b %s\n" "${c_stderr}" "${c_reset}" "${line}" >&2; done) <<'EOS'
+# Keep TTY for reliable Ctrl+C forwarding, but suppress verbose/xtrace shell echo.
+set +x +v
+set -euo pipefail
+unset PROMPT_COMMAND
+PS1=
+__tty_echo_disabled=0
+if [[ -t 0 ]]; then
+  stty -echo >/dev/null 2>&1 || true
+  __tty_echo_disabled=1
+fi
+__restore_tty() {
+  if [[ "${__tty_echo_disabled}" -eq 1 ]]; then
+    stty echo >/dev/null 2>&1 || true
+  fi
+}
+trap __restore_tty EXIT INT TERM HUP
+target="${1:?missing target path}"
+pyneat_activate="${2-}"
+if [[ "${pyneat_activate}" == "__NONE__" ]]; then
+  pyneat_activate=""
+fi
+if [[ $# -ge 2 ]]; then
+  shift 2
+else
+  shift 1
+fi
+
+ensure_target_ready() {
+  local p="$1"
+  [[ -e "${p}" ]] && return 0
+
+  local mount_root seg
+  seg="$(printf "%s" "${p#/}" | cut -d/ -f1)"
+  mount_root="/${seg}"
+
+  # Best effort: ask watchdog to recover stale NFS mount.
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    sudo systemctl start devkit-nfs-watchdog.service >/dev/null 2>&1 || true
+  fi
+  sleep 1
+  [[ -e "${p}" ]] && return 0
+
+  echo "ERROR: target not accessible on DevKit: ${p}" >&2
+  mount | grep " ${mount_root} " >&2 || true
+  return 1
+}
+
+ensure_target_ready "${target}"
+
+prepare_command() {
+  if [[ "${target}" == *.py ]]; then
+    script_args=("$@")
+    activated="0"
+    if [[ -n "${pyneat_activate}" && -f "${pyneat_activate}" ]]; then
+      # shellcheck source=/dev/null
+      source "${pyneat_activate}"
+      activated="1"
+    else
+      for candidate in \
+        "/media/nvme/pyneat/bin/activate" \
+        "${HOME}/pyneat/bin/activate" \
+        "${HOME}/.pyneat/bin/activate" \
+        "/opt/pyneat/bin/activate" \
+        "/opt/sima/pyneat/bin/activate" \
+        "/opt/sima.ai/pyneat/bin/activate"; do
+        if [[ -f "${candidate}" ]]; then
+          # shellcheck source=/dev/null
+          source "${candidate}"
+          activated="1"
+          break
+        fi
+      done
+    fi
+    if [[ "${activated}" != "1" ]]; then
+      echo "WARNING: pyneat activate script not found; running python3 without pyneat env" >&2
+    fi
+    # Some activation scripts consume/shift positional parameters; restore them.
+    set -- "${script_args[@]}"
+    CMD=(python3 "${target}" "$@")
+    return 0
+  fi
+
+  chmod +x "${target}"
+  CMD=("${target}" "$@")
+}
+
+CMD=()
+prepare_command "$@"
+# Run in foreground so Ctrl+C/SIGINT from SSH is delivered to the actual target.
+exec "${CMD[@]}"
+EOS
+  rc=$?
+  if [[ "${__devkit_interrupted}" -eq 1 || "${rc}" -eq 130 || "${rc}" -eq 143 || "${rc}" -eq 255 ]]; then
+    cleanup_remote_target
+  fi
+  trap - INT TERM
+  return "${rc}"
+}
+
+# Short-hand for remote execution: dk <path> [args...]
+alias dk='devkit-run'
+
+# Persist session helpers for future container shells.
+_persist_file="${HOME}/.devkit-sync.rc"
+{
+  echo "export DEVKIT_SYNC_TARGET='${DEVKIT_SYNC_TARGET}'"
+  echo "export DEVKIT_SYNC_DEVKIT_IP='${DEVKIT_SYNC_DEVKIT_IP}'"
+  echo "export DEVKIT_SYNC_MOUNT_POINT='${DEVKIT_SYNC_MOUNT_POINT}'"
+  echo "export DEVKIT_SYNC_DEVKIT_USER='${DEVKIT_SYNC_DEVKIT_USER}'"
+  echo "export DEVKIT_SYNC_DEVKIT_PORT='${DEVKIT_SYNC_DEVKIT_PORT}'"
+  echo "export DEVKIT_PROMPT_DIRTRIM='${DEVKIT_PROMPT_DIRTRIM}'"
+  echo 'export PROMPT_DIRTRIM="${DEVKIT_PROMPT_DIRTRIM}"'
+  echo 'if [[ -z "${DEVKIT_SYNC_ORIG_PS1:-}" ]]; then export DEVKIT_SYNC_ORIG_PS1="${PS1:-\u@\h:\w\$ }"; fi'
+  echo '_PS1_PREFIX="\[\e[1;32m\][DevKit ${DEVKIT_SYNC_TARGET}]\[\e[0m\] "'
+  echo 'export PS1="${_PS1_PREFIX}${DEVKIT_SYNC_ORIG_PS1}"'
+  declare -f devkit-run
+  echo "alias dk='devkit-run'"
+} > "${_persist_file}"
+
+if ! grep -qF 'source ~/.devkit-sync.rc' "${HOME}/.bashrc"; then
+  cat >> "${HOME}/.bashrc" <<'EOF'
+if [ -f ~/.devkit-sync.rc ]; then
+  source ~/.devkit-sync.rc
+fi
+EOF
+fi
+
+echo "Persisted DevKit shell helpers to ${_persist_file} (auto-loaded by ~/.bashrc)."
+
+_c_ok="" _c_rst=""
+if [[ -t 1 ]]; then
+  _c_ok=$'\033[1;32m'
+  _c_rst=$'\033[0m'
+fi
+cat <<EOF
+${_c_ok}
+============================================================
+  DevKit Connected
+============================================================
+  DevKit target : ${DEVKIT_SYNC_DEVKIT_USER}@${DEVKIT_SYNC_DEVKIT_IP}:${DEVKIT_SYNC_DEVKIT_PORT}
+  Mounted path  : ${DEVKIT_SYNC_MOUNT_POINT}
+  Host export   : ${_HOST_IP}:${_HOST_EXPORT_PATH}
+
+  You can now run DevKit binaries from this SDK shell:
+    dk /workspace/<path-to-arm64-binary> [args...]
+============================================================
+${_c_rst}
+EOF
