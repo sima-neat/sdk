@@ -145,21 +145,19 @@ fi
 EOF
 RUN chmod 755 /etc/profile.d/neat-elxr-prompt.sh
 
-RUN printf 'SDK Version = 2.0.0_Palette_SDK_neat_%s_%s\neLXr Version = 2.0.0_release_neat_%s_%s\n' \
-    "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
-    > /etc/sdk-release
-
-RUN touch /root/.bash_profile && \
-    grep -qxF 'if [ -f ~/.bashrc ]; then' /root/.bash_profile || \
-    printf '\nif [ -f ~/.bashrc ]; then\n  . ~/.bashrc\nfi\n' >> /root/.bash_profile
-RUN cat >> /root/.bashrc <<'EOF'
-source /opt/bin/simaai-init-build-env modalix
+RUN cat > /etc/profile.d/pkg-config-sysroot.sh <<'EOF'
+#!/usr/bin/env bash
 export SYSROOT="${SYSROOT:-/opt/toolchain/aarch64/modalix}"
 export PKG_CONFIG_SYSROOT_DIR="${PKG_CONFIG_SYSROOT_DIR:-$SYSROOT}"
 export PKG_CONFIG_LIBDIR="${PKG_CONFIG_LIBDIR:-$SYSROOT/usr/lib/aarch64-linux-gnu/pkgconfig:$SYSROOT/usr/lib/pkgconfig:$SYSROOT/usr/share/pkgconfig}"
-unset PKG_CONFIG_PATH
+unset PKG_CONFIG_PATH || true
 export LDFLAGS="--sysroot=$SYSROOT -L$SYSROOT/usr/lib/aarch64-linux-gnu -L$SYSROOT/lib/aarch64-linux-gnu ${LDFLAGS:-}"
 EOF
+RUN chmod 755 /etc/profile.d/pkg-config-sysroot.sh
+
+RUN printf 'SDK Version = 2.0.0_Palette_SDK_neat_%s_%s\neLXr Version = 2.0.0_release_neat_%s_%s\n' \
+    "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
+    > /etc/sdk-release
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/bin/bash", "-l"]
