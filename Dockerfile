@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 # Generated Dockerfile for modalix Build:release[2.0.0]
 FROM debian:bookworm
 
@@ -5,6 +6,8 @@ ARG SDK_PKG_LIST
 ARG SDK_GIT_BRANCH=unknown
 ARG SDK_GIT_HASH=nogit
 ARG MINIMAL_IMAGE=0
+ARG NEAT_BRANCH=main
+ARG NEAT_VERSION=latest
 ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libgfortran5 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev liblapack-dev liblapack3 libopenblas-pthread-dev libopenblas0-pthread libqt5gui5 libsuperlu-dev libsuperlu5"
 ENV SDK_PKG_LIST="\
 	libgrpc-dev,\
@@ -95,12 +98,19 @@ RUN if [ "${MINIMAL_IMAGE}" != "1" ]; then \
     fi
 
 RUN if [ "${MINIMAL_IMAGE}" != "1" ]; then \
-      python3 /opt/bin/simaai_setup_sdk.py modalix 2.0.0 "${SDK_PKG_LIST}" && \
-      apt-get clean && \
-      rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /tmp/*; \
+      python3 /opt/bin/simaai_setup_sdk.py modalix 2.0.0 "${SDK_PKG_LIST}"; \
     else \
-      echo "Skipping simaai_setup_sdk.py for minimal image build"; \
-    fi
+      curl -fsSL https://docs.sima.ai/_static/tools/sima-cli-installer.sh | bash && \
+      ln -sf /root/.sima-cli/.venv/bin/sima-cli /usr/local/bin/sima-cli && \
+      mkdir -p /opt/toolchain/aarch64/modalix/usr/include \
+               /opt/toolchain/aarch64/modalix/usr/lib \
+               /opt/toolchain/aarch64/modalix/usr/lib/pkgconfig \
+               /opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu \
+               /opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu/pkgconfig \
+               /opt/toolchain/aarch64/modalix/usr/share/pkgconfig; \
+    fi && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /tmp/*
 
 COPY scripts/install-sysroot-overlay.sh /usr/local/bin/install-sysroot-overlay.sh
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
@@ -158,6 +168,23 @@ RUN chmod 755 /etc/profile.d/pkg-config-sysroot.sh
 RUN printf 'SDK Version = 2.0.0_Palette_SDK_neat_%s_%s\neLXr Version = 2.0.0_release_neat_%s_%s\n' \
     "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
     > /etc/sdk-release
+
+RUN --mount=type=secret,id=neat_github_pat \
+    mkdir -p /neat-resources/core-extra /neat-resources/core-src /neat-resources/apps-src && \
+    wget -O /tmp/install-neat-from-a-branch.sh https://tools.modalix.info/install-neat-from-a-branch.sh && \
+    cd /neat-resources/core-extra && \
+    bash /tmp/install-neat-from-a-branch.sh --minimum "${NEAT_BRANCH}" "${NEAT_VERSION}" && \
+    rm -f /tmp/install-neat-from-a-branch.sh && \
+    find /neat-resources/core-extra -type f \
+      \( -name '*.deb' -o -name '*.tar.gz' -o -name '*.whl' \) -delete && \
+    if [ -f /run/secrets/neat_github_pat ] && [ -s /run/secrets/neat_github_pat ]; then \
+      NEAT_GITHUB_PAT="$(cat /run/secrets/neat_github_pat)" && \
+      git clone --depth 1 "https://${NEAT_GITHUB_PAT}@github.com/sima-neat/core.git" /neat-resources/core-src && \
+      git -C /neat-resources/core-src remote set-url origin https://github.com/sima-neat/core.git; \
+    else \
+      echo "Skipping sima-neat/core clone; neat_github_pat build secret not provided"; \
+    fi && \
+    git clone --depth 1 https://github.com/sima-neat/apps.git /neat-resources/apps-src
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/bin/bash", "-l"]

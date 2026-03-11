@@ -8,6 +8,9 @@ CONTEXT_DIR="${CONTEXT_DIR:-${SCRIPT_DIR}}"
 IMAGE_NAME="${IMAGE_NAME:-elxr}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 MINIMAL_IMAGE="${MINIMAL_IMAGE:-0}"
+NEAT_BRANCH="${NEAT_BRANCH:-main}"
+NEAT_VERSION="${NEAT_VERSION:-latest}"
+NEAT_GITHUB_PAT="${NEAT_GITHUB_PAT:-${GITHUB_PAT:-}}"
 
 usage() {
   cat <<EOF
@@ -20,7 +23,10 @@ Environment overrides:
   CONTEXT_DIR  Docker build context (default: ${CONTEXT_DIR})
   IMAGE_NAME   Docker image name (default: ${IMAGE_NAME})
   IMAGE_TAG    Docker image tag (default: ${IMAGE_TAG})
-  MINIMAL_IMAGE  If set to 1, skip rustup/setup-sdk/sysroot-overlay (default: ${MINIMAL_IMAGE})
+  MINIMAL_IMAGE  If set to 1, skip rustup/setup-sdk/sysroot-overlay and install sima-cli only for /neat-resources baking (default: ${MINIMAL_IMAGE})
+  NEAT_BRANCH  NEAT Framework branch to bake into /neat-resources (default: ${NEAT_BRANCH})
+  NEAT_VERSION  NEAT Framework version/tag to bake into /neat-resources (default: ${NEAT_VERSION})
+  NEAT_GITHUB_PAT  Secret token for cloning sima-neat/core during image build (default: from GITHUB_PAT or unset)
 EOF
 }
 
@@ -94,24 +100,47 @@ echo "Docker platform: ${docker_platform}"
 echo "Git branch: ${git_branch}"
 echo "Git hash: ${git_hash}"
 echo "Minimal image mode: ${MINIMAL_IMAGE}"
+if [[ "${MINIMAL_IMAGE}" == "1" ]]; then
+  echo "Minimal mode note: full setup-sdk is skipped; sima-cli is installed via the official installer for baked /neat-resources."
+fi
+echo "NEAT branch: ${NEAT_BRANCH}"
+echo "NEAT version: ${NEAT_VERSION}"
 
 if docker buildx version >/dev/null 2>&1; then
-  exec docker buildx build \
-    --load \
-    --platform "${docker_platform}" \
-    --build-arg MINIMAL_IMAGE="${MINIMAL_IMAGE}" \
-    --build-arg SDK_GIT_BRANCH="${git_branch}" \
-    --build-arg SDK_GIT_HASH="${git_hash}" \
-    -f "${DOCKERFILE}" \
-    -t "${image_ref}" \
-    "${CONTEXT_DIR}"
+  buildx_cmd=(
+    docker buildx build
+    --load
+    --platform "${docker_platform}"
+    --build-arg MINIMAL_IMAGE="${MINIMAL_IMAGE}"
+    --build-arg NEAT_BRANCH="${NEAT_BRANCH}"
+    --build-arg NEAT_VERSION="${NEAT_VERSION}"
+    --build-arg SDK_GIT_BRANCH="${git_branch}"
+    --build-arg SDK_GIT_HASH="${git_hash}"
+    -f "${DOCKERFILE}"
+    -t "${image_ref}"
+  )
+  if [[ -n "${NEAT_GITHUB_PAT}" ]]; then
+    buildx_cmd+=(--secret id=neat_github_pat,env=NEAT_GITHUB_PAT)
+  fi
+  buildx_cmd+=("${CONTEXT_DIR}")
+  exec "${buildx_cmd[@]}"
 fi
 
-exec docker build \
-  --platform "${docker_platform}" \
-  --build-arg MINIMAL_IMAGE="${MINIMAL_IMAGE}" \
-  --build-arg SDK_GIT_BRANCH="${git_branch}" \
-  --build-arg SDK_GIT_HASH="${git_hash}" \
-  -f "${DOCKERFILE}" \
-  -t "${image_ref}" \
-  "${CONTEXT_DIR}"
+build_cmd=(
+  docker build
+  --platform "${docker_platform}"
+  --build-arg MINIMAL_IMAGE="${MINIMAL_IMAGE}"
+  --build-arg NEAT_BRANCH="${NEAT_BRANCH}"
+  --build-arg NEAT_VERSION="${NEAT_VERSION}"
+  --build-arg SDK_GIT_BRANCH="${git_branch}"
+  --build-arg SDK_GIT_HASH="${git_hash}"
+  -f "${DOCKERFILE}"
+  -t "${image_ref}"
+)
+if [[ -n "${NEAT_GITHUB_PAT}" ]]; then
+  build_cmd+=(--secret id=neat_github_pat,env=NEAT_GITHUB_PAT)
+  build_cmd+=("${CONTEXT_DIR}")
+  exec env DOCKER_BUILDKIT=1 "${build_cmd[@]}"
+fi
+build_cmd+=("${CONTEXT_DIR}")
+exec "${build_cmd[@]}"
