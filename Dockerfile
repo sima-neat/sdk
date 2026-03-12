@@ -1,14 +1,17 @@
+# syntax=docker/dockerfile:1.7
 # Generated Dockerfile for modalix Build:release[2.0.0]
 FROM debian:bookworm
 
 ARG SDK_PKG_LIST
 ARG SDK_GIT_BRANCH=unknown
 ARG SDK_GIT_HASH=nogit
+ARG MINIMAL_IMAGE=0
+ARG NEAT_BRANCH=main
+ARG NEAT_VERSION=latest
 ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libgfortran5 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev liblapack-dev liblapack3 libopenblas-pthread-dev libopenblas0-pthread libqt5gui5 libsuperlu-dev libsuperlu5"
 ENV SDK_PKG_LIST="\
 	libgrpc-dev,\
 	protobuf-compiler-grpc,\
-	${SDK_SYSROOT_PKG_LIST},\
 	${SDK_PKG_LIST}"
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -24,8 +27,9 @@ RUN apt-get clean && \
       curl \
       gnupg \
       ca-certificates \
-      python3 \
-      python3-pip
+      iputils-ping \
+      python3 && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN wget -qO - https://mirror.elxr.dev/elxr/public.gpg | gpg --dearmor -o /etc/apt/trusted.gpg.d/elxr.gpg
 RUN wget -qO - https://packages.fluentbit.io/fluentbit.key | gpg --dearmor > /etc/apt/trusted.gpg.d/fluentbit.gpg
@@ -64,43 +68,125 @@ RUN apt-get update --allow-releaseinfo-change && \
       cpio \
       git \
       curl \
+      htop \
+      file \
       libssl-dev \
       libgnutls28-dev \
       openssh-client \
       python3-dev \
-      simaai-sdk-tools
+      simaai-sdk-tools && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://docs.sima.ai/_static/tools/sima-cli-installer.sh | bash
+# Ensure images expose a docker group so downstream setup scripts can
+# reliably add users with `usermod -a -G docker <user>`.
+RUN getent group docker >/dev/null || groupadd --system docker
 
-RUN export RUSTUP_HOME=/opt/toolchain/rust && \
-    export CARGO_HOME=/opt/toolchain/rust && \
-    mkdir -p "${RUSTUP_HOME}" && \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > /tmp/rustup.sh && \
-    chmod 755 /tmp/rustup.sh && \
-    /tmp/rustup.sh -y && \
-    echo "export RUSTUP_HOME=${RUSTUP_HOME}" >> "${CARGO_HOME}/env" && \
-    echo "export CARGO_HOME=${CARGO_HOME}" >> "${CARGO_HOME}/env" && \
-    . "${CARGO_HOME}/env" && \
-    rm /tmp/rustup.sh
+RUN if [ "${MINIMAL_IMAGE}" != "1" ]; then \
+      export RUSTUP_HOME=/opt/toolchain/rust && \
+      export CARGO_HOME=/opt/toolchain/rust && \
+      mkdir -p "${RUSTUP_HOME}" && \
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > /tmp/rustup.sh && \
+      chmod 755 /tmp/rustup.sh && \
+      /tmp/rustup.sh -y --profile minimal && \
+      echo "export RUSTUP_HOME=${RUSTUP_HOME}" >> "${CARGO_HOME}/env" && \
+      echo "export CARGO_HOME=${CARGO_HOME}" >> "${CARGO_HOME}/env" && \
+      . "${CARGO_HOME}/env" && \
+      rm /tmp/rustup.sh; \
+    else \
+      echo "Skipping rustup install for minimal image build"; \
+    fi
 
-RUN python3 /opt/bin/simaai_setup_sdk.py modalix 2.0.0 "${SDK_PKG_LIST}"
+RUN if [ "${MINIMAL_IMAGE}" != "1" ]; then \
+      python3 /opt/bin/simaai_setup_sdk.py modalix 2.0.0 "${SDK_PKG_LIST}"; \
+    else \
+      mkdir -p /opt/toolchain/aarch64/modalix/usr/include \
+               /opt/toolchain/aarch64/modalix/usr/lib \
+               /opt/toolchain/aarch64/modalix/usr/lib/pkgconfig \
+               /opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu \
+               /opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu/pkgconfig \
+               /opt/toolchain/aarch64/modalix/usr/share/pkgconfig; \
+    fi && \
+    curl -fsSL https://docs.sima.ai/_static/tools/sima-cli-installer.sh | bash && \
+    test -x /root/.sima-cli/.venv/bin/sima-cli && \
+    ln -sf /root/.sima-cli/.venv/bin/sima-cli /usr/local/bin/sima-cli && \
+    /usr/local/bin/sima-cli --help >/dev/null 2>&1 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /tmp/*
 
 COPY scripts/install-sysroot-overlay.sh /usr/local/bin/install-sysroot-overlay.sh
+COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY scripts/devkit.sh /usr/local/bin/devkit.sh
 RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
-    /bin/bash -lc 'set -euo pipefail; \
-      overlay_pkgs=(); \
-      for pkg in ${SDK_SYSROOT_PKG_LIST}; do \
-        overlay_pkgs+=("${pkg}:arm64"); \
-      done; \
-      /usr/local/bin/install-sysroot-overlay.sh /opt/toolchain/aarch64/modalix "${overlay_pkgs[@]}"'
+    chmod 755 /usr/local/bin/docker-entrypoint.sh && \
+    chmod 755 /usr/local/bin/devkit.sh && \
+    if [ "${MINIMAL_IMAGE}" != "1" ]; then \
+      /bin/bash -lc 'set -euo pipefail; \
+        overlay_pkgs=(); \
+        for pkg in ${SDK_SYSROOT_PKG_LIST}; do \
+          overlay_pkgs+=("${pkg}:arm64"); \
+        done; \
+        /usr/local/bin/install-sysroot-overlay.sh /opt/toolchain/aarch64/modalix "${overlay_pkgs[@]}"'; \
+    else \
+      echo "Skipping sysroot overlay for minimal image build"; \
+    fi
+
+RUN cat > /etc/profile.d/neat-elxr-prompt.sh <<'EOF'
+#!/usr/bin/env bash
+if [[ $- == *i* ]]; then
+  export SDK_IMAGE_TAG="${SDK_IMAGE_TAG:-version}"
+  export SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME:-neat-elxr-${SDK_IMAGE_TAG}}"
+  _sdk_rewrite_prompt_hostname() {
+    local prompt="${1-}"
+    prompt="${prompt//\\h/${SDK_PROMPT_HOSTNAME}}"
+    prompt="${prompt//\\H/${SDK_PROMPT_HOSTNAME}}"
+    printf '%s' "${prompt}"
+  }
+  if [[ -n "${DEVKIT_SYNC_ORIG_PS1:-}" ]]; then
+    DEVKIT_SYNC_ORIG_PS1="$(_sdk_rewrite_prompt_hostname "${DEVKIT_SYNC_ORIG_PS1}")"
+    export DEVKIT_SYNC_ORIG_PS1
+  fi
+  if [[ -n "${PS1:-}" ]]; then
+    PS1="$(_sdk_rewrite_prompt_hostname "${PS1}")"
+    export PS1
+  fi
+  if declare -F __devkit_apply_prompt >/dev/null 2>&1; then
+    __devkit_apply_prompt
+  fi
+fi
+EOF
+RUN chmod 755 /etc/profile.d/neat-elxr-prompt.sh
+
+RUN cat > /etc/profile.d/pkg-config-sysroot.sh <<'EOF'
+#!/usr/bin/env bash
+export SYSROOT="${SYSROOT:-/opt/toolchain/aarch64/modalix}"
+export PKG_CONFIG_SYSROOT_DIR="${PKG_CONFIG_SYSROOT_DIR:-$SYSROOT}"
+export PKG_CONFIG_LIBDIR="${PKG_CONFIG_LIBDIR:-$SYSROOT/usr/lib/aarch64-linux-gnu/pkgconfig:$SYSROOT/usr/lib/pkgconfig:$SYSROOT/usr/share/pkgconfig}"
+unset PKG_CONFIG_PATH || true
+export LDFLAGS="--sysroot=$SYSROOT -L$SYSROOT/usr/lib/aarch64-linux-gnu -L$SYSROOT/lib/aarch64-linux-gnu ${LDFLAGS:-}"
+EOF
+RUN chmod 755 /etc/profile.d/pkg-config-sysroot.sh
 
 RUN printf 'SDK Version = 2.0.0_Palette_SDK_neat_%s_%s\neLXr Version = 2.0.0_release_neat_%s_%s\n' \
     "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
     > /etc/sdk-release
 
-RUN touch /root/.bash_profile && \
-    grep -qxF 'if [ -f ~/.bashrc ]; then' /root/.bash_profile || \
-    printf '\nif [ -f ~/.bashrc ]; then\n  . ~/.bashrc\nfi\n' >> /root/.bash_profile
-RUN echo "source /opt/bin/simaai-init-build-env modalix" >> /root/.bashrc
+RUN --mount=type=secret,id=neat_github_pat \
+    mkdir -p /neat-resources/core-extra /neat-resources/core-src /neat-resources/apps-src && \
+    wget -O /tmp/install-neat-from-a-branch.sh https://tools.modalix.info/install-neat-from-a-branch.sh && \
+    cd /neat-resources/core-extra && \
+    bash /tmp/install-neat-from-a-branch.sh --minimum "${NEAT_BRANCH}" "${NEAT_VERSION}" && \
+    rm -f /tmp/install-neat-from-a-branch.sh && \
+    find /neat-resources/core-extra -type f \
+      \( -name '*.deb' -o -name '*.tar.gz' -o -name '*.whl' \) -delete && \
+    if [ -f /run/secrets/neat_github_pat ] && [ -s /run/secrets/neat_github_pat ]; then \
+      NEAT_GITHUB_PAT="$(cat /run/secrets/neat_github_pat)" && \
+      git clone --depth 1 "https://${NEAT_GITHUB_PAT}@github.com/sima-neat/core.git" /neat-resources/core-src && \
+      git -C /neat-resources/core-src remote set-url origin https://github.com/sima-neat/core.git; \
+    else \
+      echo "Skipping sima-neat/core clone; neat_github_pat build secret not provided"; \
+    fi && \
+    git clone --depth 1 https://github.com/sima-neat/apps.git /neat-resources/apps-src
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/bin/bash", "-l"]
