@@ -11,6 +11,13 @@ if [[ -z "${1:-}" && -z "${DEVKIT_SYNC_DEVKIT_IP:-}" ]]; then
   return 2
 fi
 
+check_remote_passwordless_sudo() {
+  local user="$1"
+  local ip="$2"
+  local port="$3"
+  ssh -tt -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" "sudo -n true" >/dev/null 2>&1
+}
+
 _DEVKIT_IP="${1:-${DEVKIT_SYNC_DEVKIT_IP:-}}"
 _DEVKIT_USER="${2:-sima}"
 _DEVKIT_PORT="${3:-22}"
@@ -77,7 +84,7 @@ if ! timeout --foreground 120 ssh-copy-id -i "${HOME}/.ssh/id_ed25519.pub" -p "$
 fi
 
 if [[ "${_DEVKIT_USER}" != "root" ]]; then
-  if ! ssh -p "${_DEVKIT_PORT}" -o BatchMode=yes -o ConnectTimeout=8 "${_DEVKIT_USER}@${_DEVKIT_IP}" "sudo -n true" >/dev/null 2>&1; then
+  if ! check_remote_passwordless_sudo "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"; then
     echo ""
     echo "DevKit user '${_DEVKIT_USER}' does not have passwordless sudo."
     echo "This script can apply a one-time sudoers change:"
@@ -85,23 +92,39 @@ if [[ "${_DEVKIT_USER}" != "root" ]]; then
     read -r -p "Apply this change on ${_DEVKIT_IP}? [y/N]: " _ALLOW_NOPASSWD
     case "${_ALLOW_NOPASSWD,,}" in
       y|yes)
-        echo "Applying passwordless sudo setup for ${_DEVKIT_USER}@${_DEVKIT_IP} (you may be prompted once)..."
-        if ! ssh -tt -p "${_DEVKIT_PORT}" -o ConnectTimeout=8 "${_DEVKIT_USER}@${_DEVKIT_IP}" bash -s -- "${_DEVKIT_USER}" <<'EOS'
+        echo "Applying passwordless sudo setup for ${_DEVKIT_USER}@${_DEVKIT_IP}."
+        _REMOTE_SUDO_PASSWORD=""
+        read -r -s -p "Enter sudo password for ${_DEVKIT_USER}@${_DEVKIT_IP}: " _REMOTE_SUDO_PASSWORD
+        echo ""
+        if [[ -z "${_REMOTE_SUDO_PASSWORD}" ]]; then
+          echo "Remote sudo password is required." >&2
+          return 1
+        fi
+        if ! timeout --foreground 120 ssh -T -p "${_DEVKIT_PORT}" -o ConnectTimeout=8 "${_DEVKIT_USER}@${_DEVKIT_IP}" bash -s -- "${_DEVKIT_USER}" "${_REMOTE_SUDO_PASSWORD}" <<'EOS'
 set -euo pipefail
 u="$1"
-sudo mkdir -p /etc/sudoers.d
-echo "${u} ALL=(ALL) NOPASSWD:ALL" | sudo tee "/etc/sudoers.d/90-${u}-nopasswd" >/dev/null
-sudo chmod 0440 "/etc/sudoers.d/90-${u}-nopasswd"
-sudo visudo -cf "/etc/sudoers.d/90-${u}-nopasswd"
+pw="$2"
+sudoers_line="${u} ALL=(ALL) NOPASSWD:ALL"
+tmp_sudoers="$(mktemp)"
+run_sudo() {
+  printf '%s\n' "${pw}" | sudo -S -p '' "$@"
+}
+echo "[devkit] validating sudo access for ${u}..."
+run_sudo -v
+run_sudo mkdir -p /etc/sudoers.d
+printf '%s\n' "${sudoers_line}" > "${tmp_sudoers}"
+run_sudo install -m 0440 "${tmp_sudoers}" "/etc/sudoers.d/90-${u}-nopasswd"
+run_sudo visudo -cf "/etc/sudoers.d/90-${u}-nopasswd"
+run_sudo grep -qxF "${sudoers_line}" "/etc/sudoers.d/90-${u}-nopasswd"
+sudo -n true
+rm -f "${tmp_sudoers}"
 EOS
         then
           echo "Failed to configure passwordless sudo for ${_DEVKIT_USER}@${_DEVKIT_IP}." >&2
+          echo "Hint: confirm the remote sudo password is correct and retry, or rerun as root user." >&2
           return 1
         fi
-        if ! ssh -p "${_DEVKIT_PORT}" -o BatchMode=yes -o ConnectTimeout=8 "${_DEVKIT_USER}@${_DEVKIT_IP}" "sudo -n true" >/dev/null 2>&1; then
-          echo "Passwordless sudo validation failed for ${_DEVKIT_USER}@${_DEVKIT_IP}." >&2
-          return 1
-        fi
+        echo "Passwordless sudo configured successfully for ${_DEVKIT_USER}@${_DEVKIT_IP}."
         ;;
       *)
         echo "Passwordless sudo setup skipped by user." >&2
@@ -113,7 +136,7 @@ EOS
 fi
 
 echo "Configuring remote NFS mount..."
-if ! ssh -p "${_DEVKIT_PORT}" -o BatchMode=yes -o ConnectTimeout=8 "${_DEVKIT_USER}@${_DEVKIT_IP}" bash -s -- "${_HOST_IP}" "${_HOST_EXPORT_PATH}" "${_MOUNT_POINT}" "${_NFS_OPTS}" "${_DEVKIT_USER}" <<'EOS'
+if ! ssh -T -p "${_DEVKIT_PORT}" -o BatchMode=yes -o ConnectTimeout=8 "${_DEVKIT_USER}@${_DEVKIT_IP}" bash -s -- "${_HOST_IP}" "${_HOST_EXPORT_PATH}" "${_MOUNT_POINT}" "${_NFS_OPTS}" "${_DEVKIT_USER}" <<'EOS'
 set -euo pipefail
 host_ip="$1"
 host_export="$2"
