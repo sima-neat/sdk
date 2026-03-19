@@ -209,7 +209,7 @@ def main() -> int:
     p.add_argument("--background", action="store_true")
     p.add_argument("--connect", action="store_true")
     p.add_argument("--stop", action="store_true")
-    p.add_argument("--devkit-ip", default=os.getenv("DEVKIT_IP", ""), help="Optional DevKit IP for restricted NFS export")
+    p.add_argument("--devkit-ip", default=os.getenv("DEVKIT_IP", ""), help="DevKit IP used to restrict host NFS export")
     p.add_argument("--hostip", default=os.getenv("HOST_IP", ""), help="Override detected host IP")
     p.add_argument("--share-backend", choices=["auto", "nfs", "smb", "none"], default="auto")
     p.add_argument("image_name", nargs="?", default=os.getenv("IMAGE_NAME", "elxr"))
@@ -251,12 +251,10 @@ def main() -> int:
 
     if backend == "nfs":
         devkit_ip = args.devkit_ip or None
+        if not devkit_ip:
+            raise SystemExit("NFS export requires --devkit-ip (or DEVKIT_IP) to avoid open wildcard exports")
         configure_nfs_export(host_dir, devkit_ip, host_os, host_ip)
-        if devkit_ip:
-            print(f"Host NFS export configured: {host_dir} -> {devkit_ip}")
-        else:
-            print(f"Host NFS export configured: {host_dir} -> *")
-            print("Warning: no --devkit-ip provided, export is open to all clients.")
+        print(f"Host NFS export configured: {host_dir} -> {devkit_ip}")
     elif backend == "smb":
         if not host_os.startswith("win"):
             raise SystemExit("SMB backend automation is only implemented on Windows")
