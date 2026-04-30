@@ -4,6 +4,7 @@ set -euo pipefail
 
 SYSROOT="${1:-/opt/toolchain/aarch64/modalix}"
 LIBDIR="${SYSROOT}/usr/lib/aarch64-linux-gnu"
+LINUX_LIBC_DEV_VERSION="${SDK_SYSROOT_LINUX_LIBC_DEV_VERSION:-6.1.22-modalix-827}"
 
 if [[ $# -lt 2 ]]; then
   echo "Usage: $(basename "$0") SYSROOT package[:arch] [package[:arch] ...]" >&2
@@ -12,6 +13,21 @@ fi
 
 shift
 PACKAGES=("$@")
+TARGET_ARCHES=()
+
+for pkg in "${PACKAGES[@]}"; do
+  if [[ "${pkg}" == *:* ]]; then
+    arch="${pkg##*:}"
+    arch="${arch%%=*}"
+    if [[ " ${TARGET_ARCHES[*]} " != *" ${arch} "* ]]; then
+      TARGET_ARCHES+=("${arch}")
+    fi
+  fi
+done
+
+if [[ ${#TARGET_ARCHES[@]} -eq 0 ]]; then
+  TARGET_ARCHES=("$(dpkg --print-architecture)")
+fi
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -21,10 +37,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "${SYSROOT}" "${LIBDIR}" "${workdir}/archives"
+mkdir -p "${SYSROOT}" "${LIBDIR}" "${workdir}/archives" "${workdir}/linux-libc-dev"
 
 echo "Downloading sysroot overlay packages into ${SYSROOT}"
 printf '  %s\n' "${PACKAGES[@]}"
+
+native_arch="$(dpkg --print-architecture)"
+if [[ " ${TARGET_ARCHES[*]} " != *" ${native_arch} "* ]] &&
+   dpkg-query -W -f='${Status}' linux-libc-dev 2>/dev/null | grep -q "install ok installed"; then
+  native_linux_libc_version="$(dpkg-query -W -f='${Version}' linux-libc-dev)"
+  for arch in "${TARGET_ARCHES[@]}"; do
+    PACKAGES+=("linux-libc-dev:${arch}=${native_linux_libc_version}")
+  done
+fi
 
 apt-get update --allow-releaseinfo-change
 apt-get install -y --download-only --no-install-recommends \
@@ -33,7 +58,30 @@ apt-get install -y --download-only --no-install-recommends \
 
 find "${workdir}/archives" -maxdepth 1 -type f -name '*.deb' -print0 \
   | while IFS= read -r -d '' deb; do
+      deb_arch="$(dpkg-deb -f "${deb}" Architecture)"
+      if [[ "${deb_arch}" != "all" && " ${TARGET_ARCHES[*]} " != *" ${deb_arch} "* ]]; then
+        echo "Skipping $(basename "${deb}") for architecture ${deb_arch}"
+        continue
+      fi
       echo "Extracting $(basename "${deb}")"
+      dpkg-deb -x "${deb}" "${SYSROOT}"
+    done
+
+for arch in "${TARGET_ARCHES[@]}"; do
+  if [[ "${arch}" != "arm64" ]]; then
+    continue
+  fi
+
+  echo "Downloading linux-libc-dev:${arch}=${LINUX_LIBC_DEV_VERSION} for final sysroot headers"
+  (
+    cd "${workdir}/linux-libc-dev"
+    apt-get download "linux-libc-dev:${arch}=${LINUX_LIBC_DEV_VERSION}"
+  )
+done
+
+find "${workdir}/linux-libc-dev" -maxdepth 1 -type f -name '*.deb' -print0 \
+  | while IFS= read -r -d '' deb; do
+      echo "Extracting final sysroot headers from $(basename "${deb}")"
       dpkg-deb -x "${deb}" "${SYSROOT}"
     done
 
