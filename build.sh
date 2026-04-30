@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKERFILE="${DOCKERFILE:-${SCRIPT_DIR}/Dockerfile}"
 CONTEXT_DIR="${CONTEXT_DIR:-${SCRIPT_DIR}}"
-IMAGE_NAME="${IMAGE_NAME:-elxr}"
+IMAGE_NAME="${IMAGE_NAME:-sdk}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 MINIMAL_IMAGE="${MINIMAL_IMAGE:-0}"
 NEAT_BRANCH="${NEAT_BRANCH:-main}"

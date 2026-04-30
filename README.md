@@ -8,7 +8,7 @@
 
 > This is a user guide for the SiMa.ai eLxr Board Support Package (BSP).
 
-This repository provides a custom build of the eLxr SDK for SiMa.ai platforms. It supports both `x86_64` and `arm64` host builds, prepares the sysroot with NEAT-required dependencies during Docker build, installs `sima-cli`, and remains compatible with the official eLxr SDK `2.0` release.
+This repository provides a custom build of the Neat SDK for SiMa.ai platforms. It supports both `x86_64` and `arm64` host builds, prepares the sysroot with NEAT-required dependencies during Docker build, installs `sima-cli`, and remains compatible with the official eLxr SDK `2.0` release.
 
 ## About eLxr Project
 

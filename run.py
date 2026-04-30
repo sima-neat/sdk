@@ -189,7 +189,7 @@ def make_hostname(image_name: str, image_tag: str) -> str:
     cleaned = re.sub(r"[^a-z0-9-]", "-", raw)
     cleaned = re.sub(r"-{2,}", "-", cleaned).strip("-")
     if not cleaned:
-        cleaned = "elxr-sdk"
+        cleaned = "neat-sdk"
     return cleaned[:63]
 
 
@@ -212,7 +212,7 @@ def main() -> int:
     p.add_argument("--devkit-ip", default=os.getenv("DEVKIT_IP", ""), help="DevKit IP used to restrict host NFS export")
     p.add_argument("--hostip", default=os.getenv("HOST_IP", ""), help="Override detected host IP")
     p.add_argument("--share-backend", choices=["auto", "nfs", "smb", "none"], default="auto")
-    p.add_argument("image_name", nargs="?", default=os.getenv("IMAGE_NAME", "elxr"))
+    p.add_argument("image_name", nargs="?", default=os.getenv("IMAGE_NAME", "sdk"))
     p.add_argument("image_tag", nargs="?", default=os.getenv("IMAGE_TAG", "latest"))
     args = p.parse_args()
 
