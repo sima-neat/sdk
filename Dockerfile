@@ -179,6 +179,8 @@ RUN printf 'SDK Version = 2.0.0_Palette_SDK_neat_%s_%s\neLXr Version = 2.0.0_rel
     "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
     > /etc/sdk-release
 
+WORKDIR /workspace
+
 RUN --mount=type=secret,id=neat_github_pat \
     mkdir -p /neat-resources/core-extra /neat-resources/core-src /neat-resources/apps-src && \
     wget -O /tmp/install-neat-from-a-branch.sh https://tools.modalix.info/install-neat-from-a-branch.sh && \

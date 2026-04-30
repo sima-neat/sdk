@@ -195,6 +195,7 @@ def make_hostname(image_name: str, image_tag: str) -> str:
 
 def interactive_shell_argv() -> list[str]:
     init = """
+cd "${CONTAINER_WORKDIR:-/workspace}" 2>/dev/null || true
 if [ -n "${DEVKIT_SYNC_DEVKIT_IP:-}" ] && [ -f /usr/local/bin/devkit.sh ] && [ ! -f "${HOME}/.devkit-sync.rc" ]; then
   source /usr/local/bin/devkit.sh "${DEVKIT_SYNC_DEVKIT_IP}"
 fi
@@ -285,6 +286,7 @@ def main() -> int:
         "-e", f"DEVKIT_HOST_PLATFORM={host_os}",
         "-e", f"DEVKIT_SYNC_DEVKIT_IP={args.devkit_ip}",
         "-e", f"SDK_IMAGE_TAG={args.image_tag}",
+        "-e", f"CONTAINER_WORKDIR={workdir}",
         chosen_image,
     ]
 
