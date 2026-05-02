@@ -18,6 +18,61 @@ check_remote_passwordless_sudo() {
   ssh -tt -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" "sudo -n true" >/dev/null 2>&1
 }
 
+check_devkit_sdk_version_compatibility() {
+  local user="$1"
+  local ip="$2"
+  local port="$3"
+  local sdk_release="/etc/sdk-release"
+  local devkit_distro_version=""
+  local c_warn="" c_reset=""
+
+  if [[ -t 2 ]]; then
+    c_warn=$'\033[1;31m'
+    c_reset=$'\033[0m'
+  fi
+
+  echo "Checking DevKit/SDK version compatibility..."
+
+  if [[ ! -r "${sdk_release}" ]]; then
+    printf "%bWARNING:%b SDK release file not found or unreadable: %s\n" "${c_warn}" "${c_reset}" "${sdk_release}" >&2
+    printf "Please use an SDK image that includes /etc/sdk-release before connecting a DevKit.\n" >&2
+    return 0
+  fi
+
+  devkit_distro_version="$(
+    ssh -T -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" sh -s 2>/dev/null <<'EOS'
+if [ ! -r /etc/buildinfo ]; then
+  exit 2
+fi
+awk -F= '
+  /^[[:space:]]*DISTRO_VERSION[[:space:]]*=/ {
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2)
+    print $2
+    exit
+  }
+' /etc/buildinfo
+EOS
+  )"
+
+  if [[ -z "${devkit_distro_version}" ]]; then
+    printf "%bWARNING:%b Could not read DISTRO_VERSION from DevKit /etc/buildinfo.\n" "${c_warn}" "${c_reset}" >&2
+    printf "Please update your DevKit to a build that exposes /etc/buildinfo with DISTRO_VERSION.\n" >&2
+    return 0
+  fi
+
+  if grep -Fq "${devkit_distro_version}" "${sdk_release}"; then
+    echo "DevKit DISTRO_VERSION ${devkit_distro_version} is compatible with this SDK."
+    return 0
+  fi
+
+  printf "%bWARNING: DevKit/SDK version mismatch.%b\n" "${c_warn}" "${c_reset}" >&2
+  printf "  DevKit DISTRO_VERSION: %s\n" "${devkit_distro_version}" >&2
+  printf "  SDK release file     : %s\n" "${sdk_release}" >&2
+  sed 's/^/    /' "${sdk_release}" >&2
+  printf "\nPlease update your DevKit to the matching version listed in %s, then reconnect.\n" "${sdk_release}" >&2
+  return 0
+}
+
 _DEVKIT_IP="${1:-${DEVKIT_SYNC_DEVKIT_IP:-}}"
 _DEVKIT_USER="${2:-sima}"
 _DEVKIT_PORT="${3:-22}"
@@ -82,6 +137,8 @@ if ! timeout --foreground 120 ssh-copy-id -i "${HOME}/.ssh/id_ed25519.pub" -p "$
   echo "Hint: verify the DevKit IP/port, that SSH is running, and that the user is reachable before retrying." >&2
   return 1
 fi
+
+check_devkit_sdk_version_compatibility "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"
 
 if [[ "${_DEVKIT_USER}" != "root" ]]; then
   if ! check_remote_passwordless_sudo "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"; then
@@ -751,6 +808,8 @@ ${_c_ok}
 
   You can now run DevKit binaries from this SDK shell:
     dk /workspace/<path-to-arm64-binary> [args...]
+  Or connect to a DevKit shell directly:
+    dk shell
 ============================================================
 ${_c_rst}
 EOF
