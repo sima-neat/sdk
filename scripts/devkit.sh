@@ -309,12 +309,27 @@ echo "Target: ${DEVKIT_SYNC_TARGET}"
 # Run a local /workspace binary or Python script on the paired DevKit.
 devkit-run() {
   if [[ $# -lt 1 ]]; then
-    echo "Usage: devkit-run <local-executable-path> [args...]" >&2
+    echo "Usage: devkit-run <local-executable-path|shell> [args...]" >&2
     return 2
   fi
 
   local local_path="$1"
   shift
+
+  if [[ "${local_path}" == "shell" ]]; then
+    local -a ssh_args=(
+      ssh
+      -p "${DEVKIT_SYNC_DEVKIT_PORT}"
+      -o BatchMode=yes -o ConnectTimeout=8 \
+    )
+    if [[ $# -eq 0 && -t 0 && -t 1 ]]; then
+      ssh_args+=(-t)
+    fi
+    ssh_args+=("${DEVKIT_SYNC_DEVKIT_USER:-sima}@${DEVKIT_SYNC_DEVKIT_IP}")
+    ssh_args+=("$@")
+    "${ssh_args[@]}"
+    return $?
+  fi
 
   if [[ "${local_path}" != /* ]]; then
     local_path="$(pwd)/${local_path}"
@@ -597,7 +612,7 @@ EOS
 unalias dk >/dev/null 2>&1 || true
 dk() {
   if [[ $# -lt 1 ]]; then
-    echo "Usage: dk <local-executable-path> [args...]" >&2
+    echo "Usage: dk <local-executable-path|shell> [args...]" >&2
     return 0
   fi
   devkit-run "$@"

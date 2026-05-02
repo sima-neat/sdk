@@ -174,6 +174,12 @@ source devkit.sh
 
 This configures the remote DevKit mount, updates DevKit `/etc/fstab`, enables a watchdog timer for stale mount recovery, and sets Git `safe.directory` for the mounted workspace path.
 
+To open a direct SSH shell to the paired DevKit from inside the SDK container:
+
+```bash
+dk shell
+```
+
 ## Build Software
 
 ### Linux Kernel
