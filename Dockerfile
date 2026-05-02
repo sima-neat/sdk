@@ -8,11 +8,17 @@ ARG SDK_GIT_HASH=nogit
 ARG MINIMAL_IMAGE=0
 ARG NEAT_BRANCH=main
 ARG NEAT_VERSION=latest
+ARG NEAT_INSIGHT_BRANCH=main
+ARG NEAT_INSIGHT_VERSION=latest
 ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libgfortran5 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev liblapack-dev liblapack3 libopenblas-pthread-dev libopenblas0-pthread libqt5gui5 libsuperlu-dev libsuperlu5"
 ENV SDK_PKG_LIST="\
 	libgrpc-dev,\
 	protobuf-compiler-grpc,\
 	${SDK_PKG_LIST}"
+ENV NEAT_INSIGHT_VENV_DIR=/opt/neat-insight/venv
+ENV NEAT_INSIGHT_PORT=9900
+ENV NEAT_INSIGHT_SUPERVISED=1
+ENV PATH="${NEAT_INSIGHT_VENV_DIR}/bin:${PATH}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -75,6 +81,11 @@ RUN apt-get update --allow-releaseinfo-change && \
       libgnutls28-dev \
       openssh-client \
       python3-dev \
+      python3-venv \
+      ffmpeg \
+      libffi8 \
+      libmediainfo0v5 \
+      supervisor \
       simaai-sdk-tools && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -117,10 +128,14 @@ RUN if [ "${MINIMAL_IMAGE}" != "1" ]; then \
 
 COPY scripts/install-sysroot-overlay.sh /usr/local/bin/install-sysroot-overlay.sh
 COPY config/sysroot-overlay.conf /usr/local/share/sima-sdk/sysroot-overlay.conf
+COPY config/supervisor-neat-insight.conf /etc/supervisor/conf.d/neat-insight.conf
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY scripts/insight-admin.sh /usr/local/bin/insight-admin
 COPY scripts/devkit.sh /usr/local/bin/devkit.sh
 RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/docker-entrypoint.sh && \
+    chmod 755 /usr/local/bin/insight-admin && \
+    ln -sf /usr/local/bin/insight-admin /usr/local/bin/install-neat-insight && \
     chmod 755 /usr/local/bin/devkit.sh && \
     if [ "${MINIMAL_IMAGE}" != "1" ]; then \
       /bin/bash -lc 'set -euo pipefail; \
@@ -133,11 +148,13 @@ RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
       echo "Skipping sysroot overlay for minimal image build"; \
     fi
 
-RUN cat > /etc/profile.d/neat-elxr-prompt.sh <<'EOF'
+RUN /usr/local/bin/insight-admin update "${NEAT_INSIGHT_BRANCH}" "${NEAT_INSIGHT_VERSION}"
+
+RUN cat > /etc/profile.d/neat-sdk-prompt.sh <<'EOF'
 #!/usr/bin/env bash
 if [[ $- == *i* ]]; then
   export SDK_IMAGE_TAG="${SDK_IMAGE_TAG:-version}"
-  export SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME:-neat-elxr-${SDK_IMAGE_TAG}}"
+  export SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME:-neat-sdk-${SDK_IMAGE_TAG}}"
   _sdk_rewrite_prompt_hostname() {
     local prompt="${1-}"
     prompt="${prompt//\\h/${SDK_PROMPT_HOSTNAME}}"
@@ -157,7 +174,7 @@ if [[ $- == *i* ]]; then
   fi
 fi
 EOF
-RUN chmod 755 /etc/profile.d/neat-elxr-prompt.sh
+RUN chmod 755 /etc/profile.d/neat-sdk-prompt.sh
 
 RUN cat > /etc/profile.d/pkg-config-sysroot.sh <<'EOF'
 #!/usr/bin/env bash
@@ -197,6 +214,9 @@ RUN --mount=type=secret,id=neat_github_pat \
       echo "Skipping sima-neat/core clone; neat_github_pat build secret not provided"; \
     fi && \
     git clone --depth 1 https://github.com/sima-neat/apps.git /neat-resources/apps-src
+
+# Expose required ports
+EXPOSE 9900 9000-9079 9100-9179 8081 8554
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/bin/bash", "-l"]

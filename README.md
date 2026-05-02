@@ -111,7 +111,10 @@ You can also use standard Docker commands directly:
 
 ```bash
 docker pull ghcr.io/sima-neat/elxr:latest
-docker run --rm -it --name elxr --privileged -v "$(pwd):/workspace" -w /workspace -v /dev:/dev --pid=host ghcr.io/sima-neat/elxr:latest /bin/bash -l
+docker run --rm -it --name elxr --privileged \
+  -p 9900:9900 -p 9000-9079:9000-9079 -p 9100-9179:9100-9179 -p 8081:8081 -p 8554:8554 \
+  -v "$(pwd):/workspace" -w /workspace -v /dev:/dev --pid=host \
+  ghcr.io/sima-neat/elxr:latest /bin/bash -l
 ```
 
 > Notes:
@@ -121,6 +124,32 @@ docker run --rm -it --name elxr --privileged -v "$(pwd):/workspace" -w /workspac
 > - Although the build environment is automatically configured when the container launches, it can also be set manually:
 >   `source /opt/bin/simaai-init-build-env <platform>`
 
+### NEAT Insight
+
+The SDK image installs `neat-insight` into `/opt/neat-insight/venv` and starts it automatically under `supervisord` when the container starts. By default it listens on port `9900`.
+
+Useful commands inside the running container:
+
+```bash
+insight-admin status
+insight-admin logs
+insight-admin restart
+insight-admin stop
+```
+
+To temporarily upgrade Insight inside an existing container:
+
+```bash
+insight-admin update main latest
+insight-admin restart
+```
+
+That change only affects the current container. To make an Insight upgrade permanent, rebuild the SDK image with the desired channel and version:
+
+```bash
+NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh elxr 2.0.0
+```
+
 ### DevKit Workspace (NFS)
 
 The workspace sharing flow is now NFS-based.
@@ -129,6 +158,12 @@ The workspace sharing flow is now NFS-based.
 
 ```bash
 ./run.sh --prefer-local --devkit-ip 10.0.0.244
+```
+
+If the host IP selected for NFS is not reachable from the DevKit, provide the host interface IP explicitly:
+
+```bash
+./run.sh --prefer-local --devkit-ip 10.0.0.244 --hostip 10.0.0.10
 ```
 
 2. Inside the container, source the setup helper:

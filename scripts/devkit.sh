@@ -285,7 +285,7 @@ export DEVKIT_SYNC_MOUNT_POINT="${_MOUNT_POINT}"
 export DEVKIT_SYNC_DEVKIT_USER="${_DEVKIT_USER}"
 export DEVKIT_SYNC_DEVKIT_PORT="${_DEVKIT_PORT}"
 export SDK_IMAGE_TAG="${SDK_IMAGE_TAG:-version}"
-export SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME:-neat-elxr-${SDK_IMAGE_TAG}}"
+export SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME:-neat-sdk-${SDK_IMAGE_TAG}}"
 
 __devkit_rewrite_prompt_hostname() {
   local prompt="${1-}"
@@ -594,7 +594,14 @@ EOS
 }
 
 # Short-hand for remote execution: dk <path> [args...]
-alias dk='devkit-run'
+unalias dk >/dev/null 2>&1 || true
+dk() {
+  if [[ $# -lt 1 ]]; then
+    echo "Usage: dk <local-executable-path> [args...]" >&2
+    return 0
+  fi
+  devkit-run "$@"
+}
 
 # Persist session helpers for future container shells.
 _persist_file="${HOME}/.devkit-sync.rc"
@@ -634,7 +641,8 @@ _persist_file="${HOME}/.devkit-sync.rc"
   echo '}'
   echo '__devkit_apply_prompt'
   declare -f devkit-run
-  echo "alias dk='devkit-run'"
+  echo 'unalias dk >/dev/null 2>&1 || true'
+  declare -f dk
 } > "${_persist_file}"
 
 if ! grep -qF 'source ~/.devkit-sync.rc' "${HOME}/.bashrc"; then
@@ -664,6 +672,50 @@ if [ -f ~/.bashrc ]; then
 fi
 # <<< devkit-sync profile <<<
 EOF
+fi
+
+if [[ "$(id -u)" -eq 0 ]]; then
+  while IFS=: read -r _user _passwd _uid _gid _gecos _home _shell; do
+    [[ "${_uid}" != "0" ]] || continue
+    [[ "${_home}" == /home/* && -d "${_home}" ]] || continue
+    [[ "${_shell}" == */bash || "${_shell}" == */sh ]] || continue
+
+    install -o "${_uid}" -g "${_gid}" -m 0644 "${_persist_file}" "${_home}/.devkit-sync.rc"
+    install -o "${_uid}" -g "${_gid}" -m 0700 -d "${_home}/.ssh"
+    if [[ -f "${HOME}/.ssh/id_ed25519" ]]; then
+      install -o "${_uid}" -g "${_gid}" -m 0600 "${HOME}/.ssh/id_ed25519" "${_home}/.ssh/id_ed25519"
+    fi
+    if [[ -f "${HOME}/.ssh/id_ed25519.pub" ]]; then
+      install -o "${_uid}" -g "${_gid}" -m 0644 "${HOME}/.ssh/id_ed25519.pub" "${_home}/.ssh/id_ed25519.pub"
+    fi
+    if [[ -f "${HOME}/.ssh/known_hosts" ]]; then
+      install -o "${_uid}" -g "${_gid}" -m 0600 "${HOME}/.ssh/known_hosts" "${_home}/.ssh/known_hosts"
+    fi
+
+    touch "${_home}/.bashrc"
+    chown "${_uid}:${_gid}" "${_home}/.bashrc"
+    if ! grep -qF 'source ~/.devkit-sync.rc' "${_home}/.bashrc"; then
+      cat >> "${_home}/.bashrc" <<'EOF'
+if [ -f ~/.devkit-sync.rc ]; then
+  source ~/.devkit-sync.rc
+fi
+EOF
+      chown "${_uid}:${_gid}" "${_home}/.bashrc"
+    fi
+
+    touch "${_home}/.bash_profile"
+    chown "${_uid}:${_gid}" "${_home}/.bash_profile"
+    if ! grep -qF '# >>> devkit-sync profile >>>' "${_home}/.bash_profile"; then
+      cat >> "${_home}/.bash_profile" <<'EOF'
+# >>> devkit-sync profile >>>
+if [ -f ~/.bashrc ]; then
+  source ~/.bashrc
+fi
+# <<< devkit-sync profile <<<
+EOF
+      chown "${_uid}:${_gid}" "${_home}/.bash_profile"
+    fi
+  done < /etc/passwd
 fi
 
 echo "Persisted DevKit shell helpers to ${_persist_file} (auto-loaded by ~/.bashrc and ~/.bash_profile)."
