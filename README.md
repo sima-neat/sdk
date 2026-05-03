@@ -174,6 +174,16 @@ source devkit.sh
 
 This configures the remote DevKit mount, updates DevKit `/etc/fstab`, enables a watchdog timer for stale mount recovery, and sets Git `safe.directory` for the mounted workspace path.
 
+During setup, `devkit.sh` also compares the SDK NEAT framework package versions cached under `${SYSROOT:-/opt/toolchain/aarch64/modalix}/neat-install-packages` with the versions installed on the DevKit. If the DevKit is missing NEAT framework packages or has different versions, the SDK copies its cached artifacts to the DevKit and runs the cached installer locally there.
+
+Optional controls:
+
+```bash
+DEVKIT_NEAT_SYNC=OFF          # skip NEAT framework version check/sync
+DEVKIT_NEAT_SYNC_REQUIRED=ON  # fail setup if NEAT framework sync fails
+DEVKIT_NEAT_SYNC_CACHE_DIR=... # override SDK artifact cache directory
+```
+
 To open a direct SSH shell to the paired DevKit from inside the SDK container:
 
 ```bash

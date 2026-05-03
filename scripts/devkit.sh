@@ -92,6 +92,279 @@ EOS
   return 0
 }
 
+sync_neat_framework_to_devkit() {
+  local user="$1"
+  local ip="$2"
+  local port="$3"
+  local sync_enabled="${DEVKIT_NEAT_SYNC:-ON}"
+  local sync_required="${DEVKIT_NEAT_SYNC_REQUIRED:-OFF}"
+  local sysroot="${SYSROOT:-/opt/toolchain/aarch64/modalix}"
+  local cache_dir="${DEVKIT_NEAT_SYNC_CACHE_DIR:-${sysroot}/neat-install-packages}"
+  local c_yellow="" c_green="" c_reset=""
+
+  if [[ -t 2 ]]; then
+    c_yellow=$'\033[1;33m'
+    c_reset=$'\033[0m'
+  fi
+  if [[ -t 1 ]]; then
+    c_green=$'\033[1;32m'
+    c_reset=$'\033[0m'
+  fi
+
+  neat_sync_warn() {
+    printf "%b%s%b\n" "${c_yellow}" "$*" "${c_reset}" >&2
+  }
+
+  neat_sync_fail_or_continue() {
+    local msg="$1"
+    neat_sync_warn "${msg}"
+    if [[ "${sync_required}" == "ON" ]]; then
+      return 1
+    fi
+    return 0
+  }
+
+  case "${sync_enabled}" in
+    OFF|off|0|false|FALSE|no|NO)
+      echo "Neat framework DevKit sync disabled by DEVKIT_NEAT_SYNC=${sync_enabled}."
+      return 0
+      ;;
+  esac
+
+  echo "Checking Neat framework versions between SDK and DevKit..."
+
+  if [[ ! -d "${cache_dir}" ]]; then
+    neat_sync_fail_or_continue "WARNING: Neat framework SDK cache not found: ${cache_dir}"
+    return $?
+  fi
+  if [[ ! -f "${cache_dir}/install_neat_framework.sh" ]]; then
+    neat_sync_fail_or_continue "WARNING: Neat framework installer missing from SDK cache: ${cache_dir}/install_neat_framework.sh"
+    return $?
+  fi
+  if ! command -v dpkg-deb >/dev/null 2>&1; then
+    neat_sync_fail_or_continue "WARNING: dpkg-deb is required to inspect SDK Neat framework package versions."
+    return $?
+  fi
+  if ! command -v scp >/dev/null 2>&1; then
+    neat_sync_fail_or_continue "WARNING: scp is required to copy Neat framework install artifacts to the DevKit."
+    return $?
+  fi
+
+  local -a deb_files=()
+  local -a wheel_files=()
+  mapfile -t deb_files < <(find "${cache_dir}" -maxdepth 1 -type f \( -name 'sima-neat-*-Linux-core.deb' -o -name 'neat-*.deb' \) | sort)
+  mapfile -t wheel_files < <(find "${cache_dir}" -maxdepth 1 -type f -name '*.whl' | sort)
+
+  if [[ "${#deb_files[@]}" -lt 1 ]]; then
+    neat_sync_fail_or_continue "WARNING: No Neat framework deb packages found in SDK cache: ${cache_dir}"
+    return $?
+  fi
+  if [[ "${#wheel_files[@]}" -lt 1 ]]; then
+    neat_sync_fail_or_continue "WARNING: No Neat framework Python wheel found in SDK cache: ${cache_dir}"
+    return $?
+  fi
+  if [[ "${#wheel_files[@]}" -gt 1 ]]; then
+    neat_sync_warn "WARNING: Multiple wheels found in SDK cache; using $(basename "${wheel_files[0]}")."
+  fi
+
+  local -a expected_entries=()
+  local -a expected_deb_names=()
+  local deb pkg version wheel_file wheel_base wheel_name wheel_version
+  for deb in "${deb_files[@]}"; do
+    pkg="$(dpkg-deb -f "${deb}" Package 2>/dev/null || true)"
+    version="$(dpkg-deb -f "${deb}" Version 2>/dev/null || true)"
+    if [[ -z "${pkg}" || -z "${version}" ]]; then
+      neat_sync_fail_or_continue "WARNING: Could not read package metadata from $(basename "${deb}")."
+      return $?
+    fi
+    expected_entries+=("deb|${pkg}|${version}|$(basename "${deb}")")
+    expected_deb_names+=("${pkg}")
+  done
+
+  wheel_file="${wheel_files[0]}"
+  wheel_base="$(basename "${wheel_file}")"
+  wheel_base="${wheel_base%.whl}"
+  wheel_name="${wheel_base%%-*}"
+  wheel_version="${wheel_base#*-}"
+  wheel_version="${wheel_version%%-*}"
+  if [[ -z "${wheel_name}" || -z "${wheel_version}" || "${wheel_name}" == "${wheel_base}" ]]; then
+    neat_sync_fail_or_continue "WARNING: Could not parse Python wheel name/version from $(basename "${wheel_file}")."
+    return $?
+  fi
+  expected_entries+=("wheel|${wheel_name}|${wheel_version}|$(basename "${wheel_file}")")
+
+  query_devkit_neat_versions() {
+    ssh -T -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" bash -s -- "${wheel_name}" "${expected_deb_names[@]}" <<'EOS'
+set -euo pipefail
+wheel_name="$1"
+shift || true
+
+for pkg in "$@"; do
+  if version="$(dpkg-query -W -f='${Version}' "${pkg}" 2>/dev/null)"; then
+    printf 'deb|%s|%s\n' "${pkg}" "${version}"
+  else
+    printf 'deb|%s|missing\n' "${pkg}"
+  fi
+done
+
+wheel_version="missing"
+py="${HOME}/pyneat/bin/python"
+if [[ -x "${py}" ]]; then
+  if version="$("${py}" - "${wheel_name}" 2>/dev/null <<'PY'
+import importlib.metadata
+import sys
+
+try:
+    print(importlib.metadata.version(sys.argv[1]))
+except importlib.metadata.PackageNotFoundError:
+    raise SystemExit(1)
+PY
+)"; then
+    if [[ -n "${version}" ]]; then
+      wheel_version="${version}"
+    fi
+  fi
+
+  if [[ "${wheel_version}" == "missing" ]]; then
+    if version="$("${py}" -m pip show "${wheel_name}" 2>/dev/null | awk -F': ' '/^Version:/ { print $2; exit }' || true)"; then
+      if [[ -n "${version}" ]]; then
+        wheel_version="${version}"
+      fi
+    fi
+  fi
+fi
+
+printf 'wheel|%s|%s\n' "${wheel_name}" "${wheel_version}"
+EOS
+  }
+
+  local -a actual_entries=()
+  local actual_output=""
+  if ! actual_output="$(query_devkit_neat_versions)"; then
+    neat_sync_warn "WARNING: Could not query NEAT framework versions from DevKit; treating DevKit as out of sync."
+    actual_entries=()
+  elif [[ -n "${actual_output}" ]]; then
+    mapfile -t actual_entries <<< "${actual_output}"
+  fi
+
+  compare_neat_versions() {
+    local -n _actual_entries_ref="$1"
+    local -n _mismatch_lines_ref="$2"
+    local -n _match_lines_ref="$3"
+    local -A actual_versions=()
+    local entry type name expected file actual
+
+    for entry in "${_actual_entries_ref[@]}"; do
+      IFS='|' read -r type name actual <<< "${entry}"
+      [[ -n "${type}" && -n "${name}" ]] || continue
+      actual_versions["${type}|${name}"]="${actual:-missing}"
+    done
+
+    for entry in "${expected_entries[@]}"; do
+      IFS='|' read -r type name expected file <<< "${entry}"
+      actual="${actual_versions["${type}|${name}"]:-missing}"
+      if [[ "${actual}" == "${expected}" ]]; then
+        _match_lines_ref+=("  ${type} ${name}: ${expected}")
+      else
+        _mismatch_lines_ref+=("  ${type} ${name}: SDK=${expected}, DevKit=${actual}")
+      fi
+    done
+  }
+
+  local -a mismatch_lines=()
+  local -a match_lines=()
+  compare_neat_versions actual_entries mismatch_lines match_lines
+
+  print_neat_sync_success() {
+    {
+      printf "%bNEAT framework versions are in sync between SDK and DevKit.\n" "${c_green}"
+      printf '%s\n' "${match_lines[@]}"
+      printf "%b" "${c_reset}"
+    }
+  }
+
+  if [[ "${#mismatch_lines[@]}" -eq 0 ]]; then
+    print_neat_sync_success
+    return 0
+  fi
+
+  {
+    printf "%bNeat framework is out of sync between SDK and DevKit.\n" "${c_yellow}"
+    printf '%s\n' "${mismatch_lines[@]}"
+    if [[ "${#match_lines[@]}" -gt 0 ]]; then
+      printf "\nAlready in sync:\n"
+      printf '%s\n' "${match_lines[@]}"
+    fi
+    printf "\nInstalling SDK Neat framework packages on the DevKit...%b\n" "${c_reset}"
+  } >&2
+
+  local remote_dir="/tmp/sima-neat-install-$(date +%Y%m%d-%H%M%S)"
+  local -a deploy_files=("${deb_files[@]}" "${wheel_file}" "${cache_dir}/install_neat_framework.sh")
+
+  if ! ssh -T -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" "mkdir -p '${remote_dir}'"; then
+    neat_sync_fail_or_continue "WARNING: Failed to create Neat framework install directory on DevKit: ${remote_dir}"
+    return $?
+  fi
+
+  if ! scp -P "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${deploy_files[@]}" "${user}@${ip}:${remote_dir}/"; then
+    ssh -T -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" "rm -rf '${remote_dir}'" >/dev/null 2>&1 || true
+    neat_sync_fail_or_continue "WARNING: Failed to copy Neat framework install artifacts to DevKit."
+    return $?
+  fi
+
+  local remote_install_cmd
+  remote_install_cmd="set -euo pipefail
+remote_dir=$(printf '%q' "${remote_dir}")
+cleanup_remote_artifacts() {
+  rm -rf \"\${remote_dir}\"
+}
+trap cleanup_remote_artifacts EXIT
+chmod +x \"\${remote_dir}/install_neat_framework.sh\"
+cd \"\${remote_dir}\"
+NEAT_INSTALLER_SKIP_DEVKIT_SYNC=ON bash ./install_neat_framework.sh --local"
+
+  local -a ssh_install_args=(ssh -p "${port}" -o BatchMode=yes -o ConnectTimeout=8)
+  if [[ -t 0 && -t 1 ]]; then
+    ssh_install_args+=(-t)
+  else
+    ssh_install_args+=(-T)
+  fi
+  ssh_install_args+=("${user}@${ip}" "bash -lc $(printf '%q' "${remote_install_cmd}")")
+
+  if ! "${ssh_install_args[@]}"; then
+    ssh -T -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" "rm -rf '${remote_dir}'" >/dev/null 2>&1 || true
+    neat_sync_fail_or_continue "WARNING: Failed to install SDK NEAT framework packages on DevKit."
+    return $?
+  fi
+
+  actual_entries=()
+  actual_output=""
+  if ! actual_output="$(query_devkit_neat_versions)"; then
+    neat_sync_fail_or_continue "WARNING: Could not verify NEAT framework versions after DevKit install."
+    return $?
+  elif [[ -n "${actual_output}" ]]; then
+    mapfile -t actual_entries <<< "${actual_output}"
+  fi
+
+  mismatch_lines=()
+  match_lines=()
+  compare_neat_versions actual_entries mismatch_lines match_lines
+  if [[ "${#mismatch_lines[@]}" -eq 0 ]]; then
+    print_neat_sync_success
+    return 0
+  fi
+
+  {
+    printf "%bWARNING: NEAT framework versions are still out of sync after DevKit install.\n" "${c_yellow}"
+    printf '%s\n' "${mismatch_lines[@]}"
+    printf "%b" "${c_reset}"
+  } >&2
+  if [[ "${sync_required}" == "ON" ]]; then
+    return 1
+  fi
+  return 0
+}
+
 _DEVKIT_IP="${1:-${DEVKIT_SYNC_DEVKIT_IP:-}}"
 _DEVKIT_USER="${2:-sima}"
 _DEVKIT_PORT="${3:-22}"
@@ -209,6 +482,10 @@ EOS
         ;;
     esac
   fi
+fi
+
+if ! sync_neat_framework_to_devkit "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"; then
+  return 1
 fi
 
 echo "Configuring remote NFS mount..."
