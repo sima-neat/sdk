@@ -86,6 +86,7 @@ RUN apt-get update --allow-releaseinfo-change && \
       libffi8 \
       libmediainfo0v5 \
       supervisor \
+      mkcert \
       simaai-sdk-tools && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
