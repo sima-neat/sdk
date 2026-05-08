@@ -4,7 +4,7 @@
 
 # SiMa.ai eLxr Software Development Kit (SDK) Manual
 
-[![Build Docker Image](https://github.com/sima-neat/elxr-sdk/actions/workflows/docker-build.yml/badge.svg)](https://github.com/sima-neat/elxr-sdk/actions/workflows/docker-build.yml)
+[![Build Docker Image](https://github.com/sima-neat/sdk/actions/workflows/docker-build.yml/badge.svg)](https://github.com/sima-neat/sdk/actions/workflows/docker-build.yml)
 
 > This is a user guide for the SiMa.ai eLxr Board Support Package (BSP).
 
@@ -58,7 +58,7 @@ Along with this manual, SiMa.ai SDK Dockerfiles, one for each platform, are prov
 
 The SDK Docker image contains all toolchains, headers, libraries, and related dependencies needed to build software for the SiMa.ai platform.
 
-CI-built `elxr` images are available for both `aarch64` and `x86_64` machine types.
+CI-built `sdk` images are available for both `aarch64` and `x86_64` machine types.
 
 ### Building SDK Docker
 
@@ -79,12 +79,12 @@ sudo apt install qemu-user-static
 ./build.sh
 ```
 
-- By default, this builds the `elxr:latest` image.
+- By default, this builds the `sdk:latest` image.
 - The local build workflow supports both `aarch64` and `x86_64` hosts and automatically selects the matching Docker platform for the current machine.
 - A custom image name and tag can be provided:
 
 ```bash
-./build.sh elxr 2.0.0
+./build.sh sdk 2.0.0
 ```
 
 > A comma-separated package list can be provided to install additional packages into the sysroot during Docker build. Example:
@@ -92,7 +92,7 @@ sudo apt install qemu-user-static
 > `SDK_PKG_LIST=libzix-dev,vxi-dev ./build.sh`
 
 ```text
-Building elxr:latest
+Building sdk:latest
 Host architecture: arm64
 Docker platform: linux/arm64
 ```
@@ -105,16 +105,16 @@ Use the helper script:
 ./run.sh
 ```
 
-This will try to pull `ghcr.io/sima-neat/elxr:<tag>` from GitHub Packages first and fall back to a matching local image if present.
+This will try to pull `ghcr.io/sima-neat/sdk:<tag>` from GitHub Packages first and fall back to a matching local image if present.
 
 You can also use standard Docker commands directly:
 
 ```bash
-docker pull ghcr.io/sima-neat/elxr:latest
-docker run --rm -it --name elxr --privileged \
+docker pull ghcr.io/sima-neat/sdk:latest
+docker run --rm -it --name sdk --privileged \
   -p 9900:9900 -p 9000-9079:9000-9079 -p 9100-9179:9100-9179 -p 8081:8081 -p 8554:8554 \
   -v "$(pwd):/workspace" -w /workspace -v /dev:/dev --pid=host \
-  ghcr.io/sima-neat/elxr:latest /bin/bash -l
+  ghcr.io/sima-neat/sdk:latest /bin/bash -l
 ```
 
 > Notes:
@@ -147,7 +147,7 @@ insight-admin restart
 That change only affects the current container. To make an Insight upgrade permanent, rebuild the SDK image with the desired channel and version:
 
 ```bash
-NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh elxr 2.0.0
+NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 2.0.0
 ```
 
 ### DevKit Workspace (NFS)
