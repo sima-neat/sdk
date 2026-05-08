@@ -365,6 +365,48 @@ NEAT_INSTALLER_SKIP_DEVKIT_SYNC=ON bash ./install_neat_framework.sh --local"
   return 0
 }
 
+copy_insight_port_map_to_devkit() {
+  local user="$1"
+  local ip="$2"
+  local port="$3"
+  local local_port_map="${HOME}/.insight-config/neat-port-map.json"
+  local remote_config_dir=".insight-config"
+  local remote_port_map="${remote_config_dir}/neat-port-map.json"
+  local c_yellow="" c_green="" c_reset=""
+
+  if [[ ! -f "${local_port_map}" ]]; then
+    return 0
+  fi
+
+  if [[ -t 2 ]]; then
+    c_yellow=$'\033[1;33m'
+    c_reset=$'\033[0m'
+  fi
+  if [[ -t 1 ]]; then
+    c_green=$'\033[1;32m'
+    c_reset=$'\033[0m'
+  fi
+
+  if ! command -v scp >/dev/null 2>&1; then
+    printf "%bWARNING:%b scp is required to copy Insight port map to DevKit.\n" "${c_yellow}" "${c_reset}" >&2
+    return 0
+  fi
+
+  echo "Copying Insight port map to DevKit ${user}@${ip}:${remote_port_map}"
+  if ! ssh -T -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" "mkdir -p '${remote_config_dir}'"; then
+    printf "%bWARNING:%b Failed to create DevKit Insight config directory: ~/%s\n" "${c_yellow}" "${c_reset}" "${remote_config_dir}" >&2
+    return 0
+  fi
+
+  if ! scp -P "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${local_port_map}" "${user}@${ip}:${remote_port_map}"; then
+    printf "%bWARNING:%b Failed to copy Insight port map to DevKit: ~/%s\n" "${c_yellow}" "${c_reset}" "${remote_port_map}" >&2
+    return 0
+  fi
+
+  printf "%bInsight port map copied to DevKit: ~/%s%b\n" "${c_green}" "${remote_port_map}" "${c_reset}"
+  return 0
+}
+
 _DEVKIT_IP="${1:-${DEVKIT_SYNC_DEVKIT_IP:-}}"
 _DEVKIT_USER="${2:-sima}"
 _DEVKIT_PORT="${3:-22}"
@@ -1085,6 +1127,8 @@ EOF
     fi
   done < /etc/passwd
 fi
+
+copy_insight_port_map_to_devkit "${DEVKIT_SYNC_DEVKIT_USER}" "${DEVKIT_SYNC_DEVKIT_IP}" "${DEVKIT_SYNC_DEVKIT_PORT}"
 
 echo "Persisted DevKit shell helpers to ${_persist_file} (auto-loaded by ~/.bashrc and ~/.bash_profile)."
 
