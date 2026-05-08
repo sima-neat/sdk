@@ -13,6 +13,10 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build on ${{ matrix.arch }}
@@ -42,19 +46,19 @@ jobs:
         run: |
           owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           if [[ "${GITHUB_REF}" == refs/heads/main || "${GITHUB_REF}" == refs/tags/v* ]]; then
-            repo="elxr"
+            repo="sdk"
           else
             branch="$(echo "${GITHUB_REF_NAME}" | tr '[:upper:]' '[:lower:]')"
             branch="$(echo "${branch}" | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
             if [[ -z "${branch}" ]]; then
               branch="branch"
             fi
-            repo="elxr-${branch}"
+            repo="sdk-${branch}"
           fi
           echo "name=ghcr.io/${owner}/${repo}" >> "${GITHUB_OUTPUT}"
 
       - name: Build Docker image
-        run: ./build.sh elxr "${IMAGE_TAG}"
+        run: ./build.sh sdk "${IMAGE_TAG}"
         env:
           IMAGE_TAG: ci-${{ matrix.image_suffix }}
           NEAT_GITHUB_PAT: ${{ secrets.NEAT_GITHUB_PAT }}
@@ -70,7 +74,7 @@ jobs:
       - name: Publish architecture image
         if: github.event_name != 'pull_request'
         run: |
-          docker tag elxr:ci-${IMAGE_SUFFIX} "${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
+          docker tag sdk:ci-${IMAGE_SUFFIX} "${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
           docker push "${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
         env:
           IMAGE_NAME: ${{ steps.image.outputs.name }}
@@ -90,14 +94,14 @@ jobs:
         run: |
           owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           if [[ "${GITHUB_REF}" == refs/heads/main || "${GITHUB_REF}" == refs/tags/v* ]]; then
-            repo="elxr"
+            repo="sdk"
           else
             branch="$(echo "${GITHUB_REF_NAME}" | tr '[:upper:]' '[:lower:]')"
             branch="$(echo "${branch}" | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
             if [[ -z "${branch}" ]]; then
               branch="branch"
             fi
-            repo="elxr-${branch}"
+            repo="sdk-${branch}"
           fi
           echo "name=ghcr.io/${owner}/${repo}" >> "${GITHUB_OUTPUT}"
 

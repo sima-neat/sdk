@@ -20,4 +20,11 @@ export PKG_CONFIG_LIBDIR="${PKG_CONFIG_LIBDIR:-$SYSROOT/usr/lib/aarch64-linux-gn
 unset PKG_CONFIG_PATH || true
 export LDFLAGS="--sysroot=$SYSROOT -L$SYSROOT/usr/lib/aarch64-linux-gnu -L$SYSROOT/lib/aarch64-linux-gnu ${LDFLAGS:-}"
 
+if [[ "${NEAT_INSIGHT_SUPERVISED:-1}" != "0" ]] && command -v supervisord >/dev/null 2>&1; then
+  mkdir -p /var/log/supervisor
+  if ! supervisorctl status >/dev/null 2>&1; then
+    supervisord -c /etc/supervisor/supervisord.conf
+  fi
+fi
+
 exec "$@"

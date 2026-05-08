@@ -5,11 +5,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKERFILE="${DOCKERFILE:-${SCRIPT_DIR}/Dockerfile}"
 CONTEXT_DIR="${CONTEXT_DIR:-${SCRIPT_DIR}}"
-IMAGE_NAME="${IMAGE_NAME:-elxr}"
+IMAGE_NAME="${IMAGE_NAME:-sdk}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 MINIMAL_IMAGE="${MINIMAL_IMAGE:-0}"
 NEAT_BRANCH="${NEAT_BRANCH:-main}"
 NEAT_VERSION="${NEAT_VERSION:-latest}"
+NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH:-main}"
+NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION:-latest}"
 NEAT_GITHUB_PAT="${NEAT_GITHUB_PAT:-${GITHUB_PAT:-}}"
 
 usage() {
@@ -26,6 +28,8 @@ Environment overrides:
   MINIMAL_IMAGE  If set to 1, skip rustup/setup-sdk/sysroot-overlay and install sima-cli only for /neat-resources baking (default: ${MINIMAL_IMAGE})
   NEAT_BRANCH  NEAT Framework branch to bake into /neat-resources (default: ${NEAT_BRANCH})
   NEAT_VERSION  NEAT Framework version/tag to bake into /neat-resources (default: ${NEAT_VERSION})
+  NEAT_INSIGHT_BRANCH  neat-insight branch/release channel to install (default: ${NEAT_INSIGHT_BRANCH})
+  NEAT_INSIGHT_VERSION  neat-insight version/tag to install, or latest (default: ${NEAT_INSIGHT_VERSION})
   NEAT_GITHUB_PAT  Secret token for cloning sima-neat/core during image build (default: from GITHUB_PAT or unset)
 EOF
 }
@@ -105,6 +109,8 @@ if [[ "${MINIMAL_IMAGE}" == "1" ]]; then
 fi
 echo "NEAT branch: ${NEAT_BRANCH}"
 echo "NEAT version: ${NEAT_VERSION}"
+echo "NEAT Insight branch: ${NEAT_INSIGHT_BRANCH}"
+echo "NEAT Insight version: ${NEAT_INSIGHT_VERSION}"
 
 if docker buildx version >/dev/null 2>&1; then
   buildx_cmd=(
@@ -114,6 +120,8 @@ if docker buildx version >/dev/null 2>&1; then
     --build-arg MINIMAL_IMAGE="${MINIMAL_IMAGE}"
     --build-arg NEAT_BRANCH="${NEAT_BRANCH}"
     --build-arg NEAT_VERSION="${NEAT_VERSION}"
+    --build-arg NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH}"
+    --build-arg NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION}"
     --build-arg SDK_GIT_BRANCH="${git_branch}"
     --build-arg SDK_GIT_HASH="${git_hash}"
     -f "${DOCKERFILE}"
@@ -132,6 +140,8 @@ build_cmd=(
   --build-arg MINIMAL_IMAGE="${MINIMAL_IMAGE}"
   --build-arg NEAT_BRANCH="${NEAT_BRANCH}"
   --build-arg NEAT_VERSION="${NEAT_VERSION}"
+  --build-arg NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH}"
+  --build-arg NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION}"
   --build-arg SDK_GIT_BRANCH="${git_branch}"
   --build-arg SDK_GIT_HASH="${git_hash}"
   -f "${DOCKERFILE}"

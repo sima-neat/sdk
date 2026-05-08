@@ -4,11 +4,11 @@
 
 # SiMa.ai eLxr Software Development Kit (SDK) Manual
 
-[![Build Docker Image](https://github.com/sima-neat/elxr-sdk/actions/workflows/docker-build.yml/badge.svg)](https://github.com/sima-neat/elxr-sdk/actions/workflows/docker-build.yml)
+[![Build Docker Image](https://github.com/sima-neat/sdk/actions/workflows/docker-build.yml/badge.svg)](https://github.com/sima-neat/sdk/actions/workflows/docker-build.yml)
 
 > This is a user guide for the SiMa.ai eLxr Board Support Package (BSP).
 
-This repository provides a custom build of the eLxr SDK for SiMa.ai platforms. It supports both `x86_64` and `arm64` host builds, prepares the sysroot with NEAT-required dependencies during Docker build, installs `sima-cli`, and remains compatible with the official eLxr SDK `2.0` release.
+This repository provides a custom build of the Neat SDK for SiMa.ai platforms. It supports both `x86_64` and `arm64` host builds, prepares the sysroot with NEAT-required dependencies during Docker build, installs `sima-cli`, and remains compatible with the official eLxr SDK `2.0` release.
 
 ## About eLxr Project
 
@@ -58,7 +58,7 @@ Along with this manual, SiMa.ai SDK Dockerfiles, one for each platform, are prov
 
 The SDK Docker image contains all toolchains, headers, libraries, and related dependencies needed to build software for the SiMa.ai platform.
 
-CI-built `elxr` images are available for both `aarch64` and `x86_64` machine types.
+CI-built `sdk` images are available for both `aarch64` and `x86_64` machine types.
 
 ### Building SDK Docker
 
@@ -79,12 +79,12 @@ sudo apt install qemu-user-static
 ./build.sh
 ```
 
-- By default, this builds the `elxr:latest` image.
+- By default, this builds the `sdk:latest` image.
 - The local build workflow supports both `aarch64` and `x86_64` hosts and automatically selects the matching Docker platform for the current machine.
 - A custom image name and tag can be provided:
 
 ```bash
-./build.sh elxr 2.0.0
+./build.sh sdk 2.0.0
 ```
 
 > A comma-separated package list can be provided to install additional packages into the sysroot during Docker build. Example:
@@ -92,7 +92,7 @@ sudo apt install qemu-user-static
 > `SDK_PKG_LIST=libzix-dev,vxi-dev ./build.sh`
 
 ```text
-Building elxr:latest
+Building sdk:latest
 Host architecture: arm64
 Docker platform: linux/arm64
 ```
@@ -105,13 +105,16 @@ Use the helper script:
 ./run.sh
 ```
 
-This will try to pull `ghcr.io/sima-neat/elxr:<tag>` from GitHub Packages first and fall back to a matching local image if present.
+This will try to pull `ghcr.io/sima-neat/sdk:<tag>` from GitHub Packages first and fall back to a matching local image if present.
 
 You can also use standard Docker commands directly:
 
 ```bash
-docker pull ghcr.io/sima-neat/elxr:latest
-docker run --rm -it --name elxr --privileged -v "$(pwd):/workspace" -w /workspace -v /dev:/dev --pid=host ghcr.io/sima-neat/elxr:latest /bin/bash -l
+docker pull ghcr.io/sima-neat/sdk:latest
+docker run --rm -it --name sdk --privileged \
+  -p 9900:9900 -p 9000-9079:9000-9079 -p 9100-9179:9100-9179 -p 8081:8081 -p 8554:8554 \
+  -v "$(pwd):/workspace" -w /workspace -v /dev:/dev --pid=host \
+  ghcr.io/sima-neat/sdk:latest /bin/bash -l
 ```
 
 > Notes:
@@ -120,6 +123,32 @@ docker run --rm -it --name elxr --privileged -v "$(pwd):/workspace" -w /workspac
 > - `run.sh` mounts the current host directory into `/workspace` inside the container.
 > - Although the build environment is automatically configured when the container launches, it can also be set manually:
 >   `source /opt/bin/simaai-init-build-env <platform>`
+
+### NEAT Insight
+
+The SDK image installs `neat-insight` into `/opt/neat-insight/venv` and starts it automatically under `supervisord` when the container starts. By default it listens on port `9900`.
+
+Useful commands inside the running container:
+
+```bash
+insight-admin status
+insight-admin logs
+insight-admin restart
+insight-admin stop
+```
+
+To temporarily upgrade Insight inside an existing container:
+
+```bash
+insight-admin update main latest
+insight-admin restart
+```
+
+That change only affects the current container. To make an Insight upgrade permanent, rebuild the SDK image with the desired channel and version:
+
+```bash
+NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 2.0.0
+```
 
 ### DevKit Workspace (NFS)
 
@@ -131,6 +160,12 @@ The workspace sharing flow is now NFS-based.
 ./run.sh --prefer-local --devkit-ip 10.0.0.244
 ```
 
+If the host IP selected for NFS is not reachable from the DevKit, provide the host interface IP explicitly:
+
+```bash
+./run.sh --prefer-local --devkit-ip 10.0.0.244 --hostip 10.0.0.10
+```
+
 2. Inside the container, source the setup helper:
 
 ```bash
@@ -138,6 +173,22 @@ source devkit.sh
 ```
 
 This configures the remote DevKit mount, updates DevKit `/etc/fstab`, enables a watchdog timer for stale mount recovery, and sets Git `safe.directory` for the mounted workspace path.
+
+During setup, `devkit.sh` also compares the SDK NEAT framework package versions cached under `${SYSROOT:-/opt/toolchain/aarch64/modalix}/neat-install-packages` with the versions installed on the DevKit. If the DevKit is missing NEAT framework packages or has different versions, the SDK copies its cached artifacts to the DevKit and runs the cached installer locally there.
+
+Optional controls:
+
+```bash
+DEVKIT_NEAT_SYNC=OFF          # skip NEAT framework version check/sync
+DEVKIT_NEAT_SYNC_REQUIRED=ON  # fail setup if NEAT framework sync fails
+DEVKIT_NEAT_SYNC_CACHE_DIR=... # override SDK artifact cache directory
+```
+
+To open a direct SSH shell to the paired DevKit from inside the SDK container:
+
+```bash
+dk shell
+```
 
 ## Build Software
 
