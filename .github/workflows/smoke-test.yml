@@ -55,6 +55,11 @@ jobs:
             docker_arch: arm64
 
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
       - name: Set up Docker Buildx
         if: runner.os == 'Linux'
         uses: docker/setup-buildx-action@v4
@@ -201,76 +206,13 @@ jobs:
           source .venv/bin/activate
           sima-cli sdk setup -y -n
 
-      - name: Run neat status check
+      - name: Run SDK smoke test suite
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
         run: |
           set -euo pipefail
 
-          source .venv/bin/activate
-          python - <<'PY'
-          import os
-          import pty
-          import subprocess
-          import sys
-
-          command = ["sima-cli", "sdk", "neat", "neat --json"]
-          master_fd, slave_fd = pty.openpty()
-          proc = subprocess.Popen(
-              command,
-              stdin=slave_fd,
-              stdout=slave_fd,
-              stderr=slave_fd,
-              close_fds=True,
-          )
-          os.close(slave_fd)
-
-          with open("neat-status.typescript", "wb") as capture:
-              while True:
-                  try:
-                      data = os.read(master_fd, 4096)
-                  except OSError:
-                      break
-                  if not data:
-                      break
-                  capture.write(data)
-                  sys.stdout.buffer.write(data)
-                  sys.stdout.buffer.flush()
-
-          os.close(master_fd)
-          raise SystemExit(proc.wait())
-          PY
-
-          python - <<'PY'
-          import json
-          import pathlib
-          import re
-          import sys
-
-          text = pathlib.Path("neat-status.typescript").read_text(errors="ignore")
-          text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
-          start = text.find("{")
-          end = text.rfind("}")
-          if start < 0 or end < start:
-              print("No JSON object found in neat status output", file=sys.stderr)
-              print(text, file=sys.stderr)
-              sys.exit(1)
-
-          data = json.loads(text[start : end + 1])
-          required_components = {"core", "insight", "pyneat", "runtime"}
-          missing = required_components - set(data.get("components", {}))
-          if missing:
-              raise SystemExit(f"Missing required components: {sorted(missing)}")
-          if data.get("schema") != "sima.neat.status.v1":
-              raise SystemExit(f"Unexpected schema: {data.get('schema')}")
-          if data.get("environment", {}).get("mode") != "elxr-sdk":
-              raise SystemExit(f"Unexpected environment mode: {data.get('environment', {}).get('mode')}")
-
-          print(json.dumps({
-              "schema": data.get("schema"),
-              "mode": data.get("environment", {}).get("mode"),
-              "sdkVersion": data.get("environment", {}).get("sdkVersion"),
-              "components": sorted(required_components),
-          }, indent=2))
-          PY
+          tests/sdk/run-smoke-tests.sh
 
       - name: Clean up SDK containers
         if: always()

@@ -5,6 +5,7 @@
 # SiMa.ai eLxr Software Development Kit (SDK) Manual
 
 [![Build Docker Image](https://github.com/sima-neat/sdk/actions/workflows/docker-build.yml/badge.svg)](https://github.com/sima-neat/sdk/actions/workflows/docker-build.yml)
+[![Smoke Test](https://github.com/sima-neat/sdk/actions/workflows/smoke-test.yml/badge.svg)](https://github.com/sima-neat/sdk/actions/workflows/smoke-test.yml)
 
 > This is a user guide for the SiMa.ai eLxr Board Support Package (BSP).
 
