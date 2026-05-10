@@ -7,6 +7,20 @@ HELLO_SRC="${ROOT_DIR}/hello-neat"
 HELLO_WORK="${WORK_DIR}/hello-neat"
 STATUS_JSON="${WORK_DIR}/neat-status.json"
 
+setup_sdk_environment() {
+  if [[ -f /opt/bin/simaai-init-build-env ]]; then
+    # shellcheck source=/dev/null
+    source /opt/bin/simaai-init-build-env modalix >/dev/null 2>&1 || true
+  fi
+
+  if [[ -f /etc/profile.d/pkg-config-sysroot.sh ]]; then
+    # shellcheck source=/dev/null
+    source /etc/profile.d/pkg-config-sysroot.sh
+  fi
+
+  export SYSROOT="${SYSROOT:-/opt/toolchain/aarch64/modalix}"
+}
+
 run_test() {
   local name="$1"
   shift
@@ -46,6 +60,8 @@ test_hello_neat_cpp() {
 test_hello_neat_python() {
   echo "Skipping Python runtime example; pyneat is validated on the DevKit side."
 }
+
+setup_sdk_environment
 
 rm -rf "${WORK_DIR}"
 mkdir -p "${HELLO_WORK}" "$(dirname "${STATUS_JSON}")"
