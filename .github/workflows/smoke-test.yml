@@ -147,6 +147,24 @@ jobs:
           python -m pip install ./sima_cli-2.1.5-py3-none-any.whl
           sima-cli version
 
+      - name: Configure sima-cli access token
+        env:
+          SIMA_CLI_ACCESS_TOKEN_FILE: ${{ secrets.SIMA_CLI_ACCESS_TOKEN_FILE }}
+        run: |
+          set -euo pipefail
+          set +x
+
+          if [[ -z "${SIMA_CLI_ACCESS_TOKEN_FILE}" ]]; then
+            echo "SIMA_CLI_ACCESS_TOKEN_FILE secret is not configured." >&2
+            exit 1
+          fi
+
+          echo "::add-mask::${SIMA_CLI_ACCESS_TOKEN_FILE}"
+          install -m 700 -d "${HOME}/.sima-cli"
+          umask 077
+          printf '%s' "${SIMA_CLI_ACCESS_TOKEN_FILE}" > "${HOME}/.sima-cli/.token.json"
+          test -s "${HOME}/.sima-cli/.token.json"
+
       - name: Verify Docker is available
         run: |
           set -euo pipefail
