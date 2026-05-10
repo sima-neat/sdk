@@ -80,6 +80,7 @@ RUN apt-get update --allow-releaseinfo-change && \
       libssl-dev \
       libgnutls28-dev \
       openssh-client \
+      sshpass \
       python3-dev \
       python3-venv \
       ffmpeg \

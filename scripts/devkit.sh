@@ -422,8 +422,13 @@ devkit_sync_noninteractive() {
   esac
 }
 
-devkit_sync_default_sudo_password() {
+devkit_sync_default_password() {
   local user="$1"
+
+  if [[ -n "${DEVKIT_SYNC_PASSWORD:-}" ]]; then
+    printf '%s' "${DEVKIT_SYNC_PASSWORD}"
+    return 0
+  fi
 
   if [[ -n "${DEVKIT_SYNC_SUDO_PASSWORD:-}" ]]; then
     printf '%s' "${DEVKIT_SYNC_SUDO_PASSWORD}"
@@ -484,6 +489,10 @@ if [[ "${_HOST_PLATFORM}" == "darwin" ]]; then
 else
   _NFS_OPTS="vers=4,proto=tcp,soft,timeo=50,retrans=1,_netdev,nofail,x-systemd.automount"
 fi
+_DEFAULT_DEVKIT_PASSWORD=""
+if devkit_sync_default_password "${_DEVKIT_USER}" >/dev/null; then
+  _DEFAULT_DEVKIT_PASSWORD="$(devkit_sync_default_password "${_DEVKIT_USER}")"
+fi
 
 mkdir -p "${HOME}/.ssh"
 chmod 700 "${HOME}/.ssh"
@@ -496,9 +505,21 @@ chmod 600 "${HOME}/.ssh/known_hosts"
 echo "Installing/refreshing SSH key for ${_DEVKIT_USER}@${_DEVKIT_IP}"
 _SSH_COPY_ID_OPTS=(-o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new)
 if devkit_sync_noninteractive; then
-  _SSH_COPY_ID_OPTS+=(-o BatchMode=yes)
+  if [[ -n "${_DEFAULT_DEVKIT_PASSWORD}" ]]; then
+    if ! command -v sshpass >/dev/null 2>&1; then
+      echo "Non-interactive SSH key install requires sshpass when password auth is needed." >&2
+      return 1
+    fi
+    _SSHPASS_ENV=(SSHPASS="${_DEFAULT_DEVKIT_PASSWORD}")
+    _SSH_COPY_ID_CMD=(env "${_SSHPASS_ENV[@]}" sshpass -e ssh-copy-id)
+  else
+    _SSH_COPY_ID_OPTS+=(-o BatchMode=yes)
+    _SSH_COPY_ID_CMD=(ssh-copy-id)
+  fi
+else
+  _SSH_COPY_ID_CMD=(ssh-copy-id)
 fi
-if ! timeout --foreground 120 ssh-copy-id -i "${HOME}/.ssh/id_ed25519.pub" -p "${_DEVKIT_PORT}" "${_SSH_COPY_ID_OPTS[@]}" "${_DEVKIT_USER}@${_DEVKIT_IP}"; then
+if ! timeout --foreground 120 "${_SSH_COPY_ID_CMD[@]}" -i "${HOME}/.ssh/id_ed25519.pub" -p "${_DEVKIT_PORT}" "${_SSH_COPY_ID_OPTS[@]}" "${_DEVKIT_USER}@${_DEVKIT_IP}"; then
   echo "Failed to install SSH key for ${_DEVKIT_USER}@${_DEVKIT_IP}:${_DEVKIT_PORT}." >&2
   echo "Hint: verify the DevKit IP/port, that SSH is running, and that the user is reachable before retrying." >&2
   return 1
@@ -508,17 +529,12 @@ check_devkit_sdk_version_compatibility "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEV
 
 if [[ "${_DEVKIT_USER}" != "root" ]]; then
   if ! check_remote_passwordless_sudo "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"; then
-    _DEFAULT_SUDO_PASSWORD=""
-    if devkit_sync_default_sudo_password "${_DEVKIT_USER}" >/dev/null; then
-      _DEFAULT_SUDO_PASSWORD="$(devkit_sync_default_sudo_password "${_DEVKIT_USER}")"
-    fi
-
     echo ""
     echo "DevKit user '${_DEVKIT_USER}' does not have passwordless sudo."
     echo "This script can apply a one-time sudoers change:"
     echo "  ${_DEVKIT_USER} ALL=(ALL) NOPASSWD:ALL"
     if devkit_sync_noninteractive; then
-      if [[ -n "${_DEFAULT_SUDO_PASSWORD}" ]]; then
+      if [[ -n "${_DEFAULT_DEVKIT_PASSWORD}" ]]; then
         _ALLOW_NOPASSWD="y"
         echo "Non-interactive mode: applying passwordless sudo setup using the default sudo password for '${_DEVKIT_USER}'."
       else
@@ -531,12 +547,12 @@ if [[ "${_DEVKIT_USER}" != "root" ]]; then
     case "${_ALLOW_NOPASSWD,,}" in
       y|yes)
         echo "Applying passwordless sudo setup for ${_DEVKIT_USER}@${_DEVKIT_IP}."
-        _REMOTE_SUDO_PASSWORD="${_DEFAULT_SUDO_PASSWORD}"
+        _REMOTE_SUDO_PASSWORD="${_DEFAULT_DEVKIT_PASSWORD}"
         if ! devkit_sync_noninteractive; then
-          if [[ -n "${_DEFAULT_SUDO_PASSWORD}" ]]; then
+          if [[ -n "${_DEFAULT_DEVKIT_PASSWORD}" ]]; then
             read -r -s -p "Enter sudo password for ${_DEVKIT_USER}@${_DEVKIT_IP} [press Enter for default]: " _REMOTE_SUDO_PASSWORD_INPUT
             echo ""
-            _REMOTE_SUDO_PASSWORD="${_REMOTE_SUDO_PASSWORD_INPUT:-${_DEFAULT_SUDO_PASSWORD}}"
+            _REMOTE_SUDO_PASSWORD="${_REMOTE_SUDO_PASSWORD_INPUT:-${_DEFAULT_DEVKIT_PASSWORD}}"
           else
             read -r -s -p "Enter sudo password for ${_DEVKIT_USER}@${_DEVKIT_IP}: " _REMOTE_SUDO_PASSWORD
             echo ""
