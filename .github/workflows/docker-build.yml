@@ -65,7 +65,7 @@ jobs:
 
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -74,7 +74,7 @@ jobs:
       - name: Publish architecture image
         if: github.event_name != 'pull_request'
         run: |
-          docker tag sdk:ci-${IMAGE_SUFFIX} "${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
+          docker tag "sdk:ci-${IMAGE_SUFFIX}" "${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
           docker push "${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
         env:
           IMAGE_NAME: ${{ steps.image.outputs.name }}
@@ -113,7 +113,7 @@ jobs:
           fi
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
