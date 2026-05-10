@@ -415,6 +415,29 @@ _HOST_EXPORT_PATH="${DEVKIT_HOST_EXPORT_PATH:-}"
 _HOST_PLATFORM="${DEVKIT_HOST_PLATFORM:-linux}"
 _DEFAULT_MOUNT_PATH="${DEVKIT_SYNC_MOUNT_PATH:-/workspace}"
 
+devkit_sync_noninteractive() {
+  case "${DEVKIT_SYNC_NONINTERACTIVE:-}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+devkit_sync_default_sudo_password() {
+  local user="$1"
+
+  if [[ -n "${DEVKIT_SYNC_SUDO_PASSWORD:-}" ]]; then
+    printf '%s' "${DEVKIT_SYNC_SUDO_PASSWORD}"
+    return 0
+  fi
+
+  if [[ "${user}" == "sima" ]]; then
+    printf '%s' "edgeai"
+    return 0
+  fi
+
+  return 1
+}
+
 if [[ -z "${_HOST_IP}" || -z "${_HOST_EXPORT_PATH}" ]]; then
   echo "Missing host export info in environment." >&2
   echo "Expected NFS_SERVER_HOST_IP and DEVKIT_HOST_EXPORT_PATH (set by run.py)." >&2
@@ -445,8 +468,13 @@ printf "DevKit: %s@%s:%s\n" "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"
 printf "Host export: %s:%s\n" "${_HOST_IP}" "${_HOST_EXPORT_PATH}"
 printf "Reminder: NFS workspace is shared bi-directionally.\n\n"
 
-read -r -p "Destination mount path on DevKit [${_DEFAULT_MOUNT_PATH}]: " _MOUNT_POINT
-_MOUNT_POINT="${_MOUNT_POINT:-${_DEFAULT_MOUNT_PATH}}"
+if devkit_sync_noninteractive; then
+  _MOUNT_POINT="${_DEFAULT_MOUNT_PATH}"
+  echo "Non-interactive mode: using default DevKit mount path ${_MOUNT_POINT}"
+else
+  read -r -p "Destination mount path on DevKit [${_DEFAULT_MOUNT_PATH}]: " _MOUNT_POINT
+  _MOUNT_POINT="${_MOUNT_POINT:-${_DEFAULT_MOUNT_PATH}}"
+fi
 if [[ "${_MOUNT_POINT}" != /* ]]; then
   echo "Please provide an absolute path (must start with '/')." >&2
   return 2
@@ -466,7 +494,11 @@ ssh-keyscan -H -p "${_DEVKIT_PORT}" "${_DEVKIT_IP}" >> "${HOME}/.ssh/known_hosts
 chmod 600 "${HOME}/.ssh/known_hosts"
 
 echo "Installing/refreshing SSH key for ${_DEVKIT_USER}@${_DEVKIT_IP}"
-if ! timeout --foreground 120 ssh-copy-id -i "${HOME}/.ssh/id_ed25519.pub" -p "${_DEVKIT_PORT}" -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new "${_DEVKIT_USER}@${_DEVKIT_IP}"; then
+_SSH_COPY_ID_OPTS=(-o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new)
+if devkit_sync_noninteractive; then
+  _SSH_COPY_ID_OPTS+=(-o BatchMode=yes)
+fi
+if ! timeout --foreground 120 ssh-copy-id -i "${HOME}/.ssh/id_ed25519.pub" -p "${_DEVKIT_PORT}" "${_SSH_COPY_ID_OPTS[@]}" "${_DEVKIT_USER}@${_DEVKIT_IP}"; then
   echo "Failed to install SSH key for ${_DEVKIT_USER}@${_DEVKIT_IP}:${_DEVKIT_PORT}." >&2
   echo "Hint: verify the DevKit IP/port, that SSH is running, and that the user is reachable before retrying." >&2
   return 1
@@ -476,17 +508,40 @@ check_devkit_sdk_version_compatibility "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEV
 
 if [[ "${_DEVKIT_USER}" != "root" ]]; then
   if ! check_remote_passwordless_sudo "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"; then
+    _DEFAULT_SUDO_PASSWORD=""
+    if devkit_sync_default_sudo_password "${_DEVKIT_USER}" >/dev/null; then
+      _DEFAULT_SUDO_PASSWORD="$(devkit_sync_default_sudo_password "${_DEVKIT_USER}")"
+    fi
+
     echo ""
     echo "DevKit user '${_DEVKIT_USER}' does not have passwordless sudo."
     echo "This script can apply a one-time sudoers change:"
     echo "  ${_DEVKIT_USER} ALL=(ALL) NOPASSWD:ALL"
-    read -r -p "Apply this change on ${_DEVKIT_IP}? [y/N]: " _ALLOW_NOPASSWD
+    if devkit_sync_noninteractive; then
+      if [[ -n "${_DEFAULT_SUDO_PASSWORD}" ]]; then
+        _ALLOW_NOPASSWD="y"
+        echo "Non-interactive mode: applying passwordless sudo setup using the default sudo password for '${_DEVKIT_USER}'."
+      else
+        _ALLOW_NOPASSWD="n"
+        echo "Non-interactive mode: accepting default 'no' for passwordless sudo setup."
+      fi
+    else
+      read -r -p "Apply this change on ${_DEVKIT_IP}? [y/N]: " _ALLOW_NOPASSWD
+    fi
     case "${_ALLOW_NOPASSWD,,}" in
       y|yes)
         echo "Applying passwordless sudo setup for ${_DEVKIT_USER}@${_DEVKIT_IP}."
-        _REMOTE_SUDO_PASSWORD=""
-        read -r -s -p "Enter sudo password for ${_DEVKIT_USER}@${_DEVKIT_IP}: " _REMOTE_SUDO_PASSWORD
-        echo ""
+        _REMOTE_SUDO_PASSWORD="${_DEFAULT_SUDO_PASSWORD}"
+        if ! devkit_sync_noninteractive; then
+          if [[ -n "${_DEFAULT_SUDO_PASSWORD}" ]]; then
+            read -r -s -p "Enter sudo password for ${_DEVKIT_USER}@${_DEVKIT_IP} [press Enter for default]: " _REMOTE_SUDO_PASSWORD_INPUT
+            echo ""
+            _REMOTE_SUDO_PASSWORD="${_REMOTE_SUDO_PASSWORD_INPUT:-${_DEFAULT_SUDO_PASSWORD}}"
+          else
+            read -r -s -p "Enter sudo password for ${_DEVKIT_USER}@${_DEVKIT_IP}: " _REMOTE_SUDO_PASSWORD
+            echo ""
+          fi
+        fi
         if [[ -z "${_REMOTE_SUDO_PASSWORD}" ]]; then
           echo "Remote sudo password is required." >&2
           return 1
