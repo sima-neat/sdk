@@ -1,6 +1,9 @@
 name: Smoke Test
 
 on:
+  push:
+    branches:
+      - feature/devkit-sync
   workflow_run:
     workflows:
       - Build Docker Image
@@ -30,6 +33,7 @@ jobs:
     name: Smoke on ${{ matrix.arch }}
     if: >-
       ${{
+        github.event_name == 'push' ||
         github.event_name == 'workflow_dispatch' ||
         (
           github.event.workflow_run.conclusion == 'success' &&
