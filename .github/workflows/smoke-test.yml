@@ -162,7 +162,9 @@ jobs:
           echo "::add-mask::${SIMA_CLI_ACCESS_TOKEN_FILE}"
           install -m 700 -d "${HOME}/.sima-cli"
           umask 077
-          printf '%s' "${SIMA_CLI_ACCESS_TOKEN_FILE}" > "${HOME}/.sima-cli/.token.json"
+          printf '%s' "${SIMA_CLI_ACCESS_TOKEN_FILE}" > "${HOME}/.sima-cli/.tokens.json"
+          cp "${HOME}/.sima-cli/.tokens.json" "${HOME}/.sima-cli/.token.json"
+          test -s "${HOME}/.sima-cli/.tokens.json"
           test -s "${HOME}/.sima-cli/.token.json"
 
       - name: Verify Docker is available
