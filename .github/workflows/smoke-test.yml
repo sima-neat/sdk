@@ -1,0 +1,264 @@
+name: Smoke Test
+
+on:
+  workflow_run:
+    workflows:
+      - Build Docker Image
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      image_name:
+        description: "GHCR image name without owner, for example sdk-feature-devkit-sync. Defaults to the current ref."
+        required: false
+        type: string
+      image_tag:
+        description: "Image tag to test. Defaults to the current commit SHA."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Smoke on ${{ matrix.arch }}
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event != 'pull_request'
+        )
+      }}
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: linux-amd64
+            runs_on: ubuntu-24.04
+            docker_arch: amd64
+          - arch: linux-arm64
+            runs_on: ubuntu-24.04-arm
+            docker_arch: arm64
+
+    steps:
+      - name: Set up Docker Buildx
+        if: runner.os == 'Linux'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Compute image under test
+        id: image
+        env:
+          MANUAL_IMAGE_NAME: ${{ github.event.inputs.image_name }}
+          MANUAL_IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+          WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          tag="${MANUAL_IMAGE_TAG:-${WORKFLOW_RUN_HEAD_SHA:-${GITHUB_SHA}}}"
+
+          if [[ -n "${MANUAL_IMAGE_NAME}" ]]; then
+            repo="${MANUAL_IMAGE_NAME}"
+            repo="${repo#ghcr.io/}"
+            repo="${repo#*/}"
+          else
+            ref_name="${WORKFLOW_RUN_HEAD_BRANCH:-${GITHUB_REF_NAME}}"
+            if [[ "${ref_name}" == "main" ]]; then
+              repo="sdk"
+            else
+              branch="$(echo "${ref_name}" | tr '[:upper:]' '[:lower:]')"
+              branch="$(echo "${branch}" | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
+              if [[ -z "${branch}" ]]; then
+                branch="branch"
+              fi
+              repo="sdk-${branch}"
+            fi
+          fi
+
+          repository="ghcr.io/${owner}/${repo}"
+          image_ref="${repository}:${tag}"
+          install_spec="ghcr:${owner}/${repo}:${tag}"
+
+          {
+            echo "repository=${repository}"
+            echo "tag=${tag}"
+            echo "image_ref=${image_ref}"
+            echo "install_spec=${install_spec}"
+          } >> "${GITHUB_OUTPUT}"
+
+          echo "Testing ${image_ref}"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait for published image
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+
+          for attempt in {1..12}; do
+            if docker buildx version >/dev/null 2>&1; then
+              inspect_cmd=(docker buildx imagetools inspect "${IMAGE_REF}")
+            else
+              inspect_cmd=(docker manifest inspect "${IMAGE_REF}")
+            fi
+
+            if "${inspect_cmd[@]}" >/dev/null 2>&1; then
+              "${inspect_cmd[@]}"
+              exit 0
+            fi
+            echo "Image manifest not visible yet (${attempt}/12): ${IMAGE_REF}"
+            sleep 10
+          done
+
+          echo "Image manifest was not found: ${IMAGE_REF}" >&2
+          exit 1
+
+      - name: Install sima-cli
+        run: |
+          set -euo pipefail
+
+          python3 -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          curl -fsSL \
+            https://artifacts.sima-neat.com/tools/sima_cli-2.1.5-py3-none-any.whl \
+            -o sima_cli-2.1.5-py3-none-any.whl
+          python -m pip install ./sima_cli-2.1.5-py3-none-any.whl
+          sima-cli version
+
+      - name: Verify Docker is available
+        run: |
+          set -euo pipefail
+
+          docker version
+          docker info
+
+      - name: Install SDK image
+        env:
+          INSTALL_SPEC: ${{ steps.image.outputs.install_spec }}
+        run: |
+          set -euo pipefail
+
+          source .venv/bin/activate
+          sima-cli install "${INSTALL_SPEC}"
+
+      - name: Verify pulled image architecture
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+          EXPECTED_ARCH: ${{ matrix.docker_arch }}
+        run: |
+          set -euo pipefail
+
+          actual_arch="$(docker image inspect "${IMAGE_REF}" --format '{{.Architecture}}')"
+          echo "Pulled image architecture: ${actual_arch}"
+          test "${actual_arch}" = "${EXPECTED_ARCH}"
+
+      - name: Run SDK setup
+        run: |
+          set -euo pipefail
+
+          source .venv/bin/activate
+          sima-cli sdk setup -y -n
+
+      - name: Run neat status check
+        run: |
+          set -euo pipefail
+
+          source .venv/bin/activate
+          python - <<'PY'
+          import os
+          import pty
+          import subprocess
+          import sys
+
+          command = ["sima-cli", "sdk", "neat", "neat --json"]
+          master_fd, slave_fd = pty.openpty()
+          proc = subprocess.Popen(
+              command,
+              stdin=slave_fd,
+              stdout=slave_fd,
+              stderr=slave_fd,
+              close_fds=True,
+          )
+          os.close(slave_fd)
+
+          with open("neat-status.typescript", "wb") as capture:
+              while True:
+                  try:
+                      data = os.read(master_fd, 4096)
+                  except OSError:
+                      break
+                  if not data:
+                      break
+                  capture.write(data)
+                  sys.stdout.buffer.write(data)
+                  sys.stdout.buffer.flush()
+
+          os.close(master_fd)
+          raise SystemExit(proc.wait())
+          PY
+
+          python - <<'PY'
+          import json
+          import pathlib
+          import re
+          import sys
+
+          text = pathlib.Path("neat-status.typescript").read_text(errors="ignore")
+          text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+          start = text.find("{")
+          end = text.rfind("}")
+          if start < 0 or end < start:
+              print("No JSON object found in neat status output", file=sys.stderr)
+              print(text, file=sys.stderr)
+              sys.exit(1)
+
+          data = json.loads(text[start : end + 1])
+          required_components = {"core", "insight", "pyneat", "runtime"}
+          missing = required_components - set(data.get("components", {}))
+          if missing:
+              raise SystemExit(f"Missing required components: {sorted(missing)}")
+          if data.get("schema") != "sima.neat.status.v1":
+              raise SystemExit(f"Unexpected schema: {data.get('schema')}")
+          if data.get("environment", {}).get("mode") != "elxr-sdk":
+              raise SystemExit(f"Unexpected environment mode: {data.get('environment', {}).get('mode')}")
+
+          print(json.dumps({
+              "schema": data.get("schema"),
+              "mode": data.get("environment", {}).get("mode"),
+              "sdkVersion": data.get("environment", {}).get("sdkVersion"),
+              "components": sorted(required_components),
+          }, indent=2))
+          PY
+
+      - name: Clean up SDK containers
+        if: always()
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+
+          if ! docker info >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          docker ps -aq --filter "ancestor=${IMAGE_REF}" | while read -r container_id; do
+            if [[ -n "${container_id}" ]]; then
+              docker rm -f "${container_id}"
+            fi
+          done
