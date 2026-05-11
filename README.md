@@ -19,8 +19,9 @@ The main user workflow is:
 
 1. Install `sima-cli`.
 2. Install the SDK container image.
-3. Start the SDK workspace.
-4. Optional: pair the SDK container with a DevKit.
+3. Start the SDK and optionally pair with a Modalix DevKit.
+4. On x86 platforms, during setup optionally install Model SDK extension.
+5. Use VS Code to attach to the running container for an IDE.
 
 ## Install The SDK
 
@@ -40,10 +41,10 @@ The published image contains the toolchain, sysroot, headers, libraries, NEAT ru
 
 ## Start The SDK
 
-Run the SDK setup in non-interactive mode:
+Run the SDK setup:
 
 ```bash
-sima-cli sdk setup -y -n
+sima-cli sdk setup --devkit {devkit ip address}
 ```
 
 Open the SDK shell:
@@ -55,7 +56,7 @@ sima-cli sdk neat
 Check the installed SDK status from inside the SDK shell:
 
 ```bash
-neat --json
+neat
 ```
 
 The SDK workspace is mounted at `/workspace` inside the container.
@@ -93,27 +94,19 @@ The SDK supports an NFS-based shared workspace with a DevKit. The workspace is s
 Start the SDK container with the DevKit IP:
 
 ```bash
-./run.sh --prefer-local --devkit-ip 10.0.0.244
+sima-cli sdk setup --devkit-ip 10.0.0.244
 ```
-
-If the host IP selected for NFS is not reachable from the DevKit, provide the host interface IP explicitly:
-
-```bash
-./run.sh --prefer-local --devkit-ip 10.0.0.244 --hostip 10.0.0.10
-```
-
-Inside the SDK container, source the DevKit helper:
-
-```bash
-source devkit.sh
-```
-
-This configures the remote DevKit mount, updates DevKit `/etc/fstab`, enables stale-mount recovery, and sets Git `safe.directory` for the mounted workspace path.
 
 Open a direct SSH shell to the paired DevKit:
 
 ```bash
 dk shell
+```
+
+Run an executable or Python application from the DevKit:
+
+```bash
+dk /workspace/app-binary-or-dot-py-file
 ```
 
 ## Advanced Topics
