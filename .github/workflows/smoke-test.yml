@@ -1,9 +1,6 @@
 name: Smoke Test
 
 on:
-  push:
-    branches:
-      - feature/devkit-sync
   workflow_run:
     workflows:
       - Build Docker Image
@@ -16,13 +13,14 @@ on:
         required: false
         type: string
       image_tag:
-        description: "Image tag to test. Defaults to the current commit SHA."
+        description: "Image tag to test. Defaults to staged-<commit SHA>."
         required: false
         type: string
 
 permissions:
+  actions: read
   contents: read
-  packages: read
+  packages: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.workflow_run.head_sha || github.sha }}
@@ -33,7 +31,6 @@ jobs:
     name: Smoke on ${{ matrix.arch }}
     if: >-
       ${{
-        github.event_name == 'push' ||
         github.event_name == 'workflow_dispatch' ||
         (
           github.event.workflow_run.conclusion == 'success' &&
@@ -64,6 +61,15 @@ jobs:
         if: runner.os == 'Linux'
         uses: docker/setup-buildx-action@v4
 
+      - name: Download image metadata
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v7
+        with:
+          name: image-promotion-metadata
+          path: .smoke
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
       - name: Compute image under test
         id: image
         env:
@@ -75,13 +81,22 @@ jobs:
           set -euo pipefail
 
           owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
-          tag="${MANUAL_IMAGE_TAG:-${WORKFLOW_RUN_HEAD_SHA:-${GITHUB_SHA}}}"
 
-          if [[ -n "${MANUAL_IMAGE_NAME}" ]]; then
+          metadata_file="$(find .smoke -type f -name image.env -print -quit 2>/dev/null || true)"
+
+          if [[ -n "${metadata_file}" && -z "${MANUAL_IMAGE_NAME}" && -z "${MANUAL_IMAGE_TAG}" ]]; then
+            # shellcheck disable=SC1090
+            source "${metadata_file}"
+            repository="${repository:?}"
+            tag="${staged_tag:?}"
+          elif [[ -n "${MANUAL_IMAGE_NAME}" ]]; then
+            tag="${MANUAL_IMAGE_TAG:-staged-${WORKFLOW_RUN_HEAD_SHA:-${GITHUB_SHA}}}"
             repo="${MANUAL_IMAGE_NAME}"
             repo="${repo#ghcr.io/}"
             repo="${repo#*/}"
+            repository="ghcr.io/${owner}/${repo}"
           else
+            tag="${MANUAL_IMAGE_TAG:-staged-${WORKFLOW_RUN_HEAD_SHA:-${GITHUB_SHA}}}"
             ref_name="${WORKFLOW_RUN_HEAD_BRANCH:-${GITHUB_REF_NAME}}"
             if [[ "${ref_name}" == "main" ]]; then
               repo="sdk"
@@ -93,11 +108,11 @@ jobs:
               fi
               repo="sdk-${branch}"
             fi
+            repository="ghcr.io/${owner}/${repo}"
           fi
 
-          repository="ghcr.io/${owner}/${repo}"
           image_ref="${repository}:${tag}"
-          install_spec="ghcr:${owner}/${repo}:${tag}"
+          install_spec="ghcr:${repository#ghcr.io/}:${tag}"
 
           {
             echo "repository=${repository}"
@@ -230,3 +245,59 @@ jobs:
               docker rm -f "${container_id}"
             fi
           done
+
+  promote:
+    name: Promote staged image
+    needs: smoke
+    if: >-
+      ${{
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event != 'pull_request'
+      }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Download image metadata
+        uses: actions/download-artifact@v7
+        with:
+          name: image-promotion-metadata
+          path: .smoke
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote image
+        run: |
+          set -euo pipefail
+
+          metadata_file="$(find .smoke -type f -name image.env -print -quit)"
+
+          # shellcheck disable=SC1090
+          source "${metadata_file}"
+
+          promote_args=()
+          if [[ "${promote_latest}" == "true" ]]; then
+            promote_args+=(--tag "${repository}:latest")
+          fi
+          if [[ -n "${release_tag}" ]]; then
+            promote_args+=(--tag "${repository}:${release_tag}")
+          fi
+
+          if [[ "${#promote_args[@]}" -eq 0 ]]; then
+            echo "No promotion tags requested for ${source_ref}."
+            exit 0
+          fi
+
+          docker buildx imagetools inspect "${source_ref}"
+          docker buildx imagetools create \
+            "${promote_args[@]}" \
+            "${source_ref}"
