@@ -6,8 +6,14 @@
 
 [![Build Docker Image](https://github.com/sima-neat/sdk/actions/workflows/docker-build.yml/badge.svg)](https://github.com/sima-neat/sdk/actions/workflows/docker-build.yml)
 [![Smoke Test](https://github.com/sima-neat/sdk/actions/workflows/smoke-test.yml/badge.svg)](https://github.com/sima-neat/sdk/actions/workflows/smoke-test.yml)
+![Ubuntu](https://img.shields.io/badge/Ubuntu-supported-E95420?logo=ubuntu&logoColor=white)
+![Windows 11](https://img.shields.io/badge/Windows%2011-supported-0078D4?logo=windows&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS-supported-000000?logo=apple&logoColor=white)
+![eLxr Platform 2.0.0](https://img.shields.io/badge/eLxr%20Platform-2.0.0%20compatible-2E7D32)
 
 This repository packages the SiMa.ai NEAT SDK as a Docker image for `x86_64` and `arm64` Linux hosts.
+
+The current NEAT SDK image is compatible with the eLxr platform `2.0.0` release.
 
 The main user workflow is:
 
@@ -15,25 +21,6 @@ The main user workflow is:
 2. Install the SDK container image.
 3. Start the SDK workspace.
 4. Optional: pair the SDK container with a DevKit.
-
-## Prerequisites
-
-- Ubuntu Linux host with Docker Engine installed.
-- Access to GitHub Container Registry packages for this repository.
-- `sima-cli` installed in a Python virtual environment.
-- Optional: a SiMa.ai DevKit reachable over SSH when using DevKit workspace sync.
-
-Install `sima-cli`:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-curl -fsSL \
-  https://artifacts.sima-neat.com/tools/sima_cli-2.1.5-py3-none-any.whl \
-  -o sima_cli-2.1.5-py3-none-any.whl
-python -m pip install ./sima_cli-2.1.5-py3-none-any.whl
-```
 
 ## Install The SDK
 
@@ -131,6 +118,7 @@ dk shell
 
 ## Advanced Topics
 
+- [Official Neat SDK installation guide](https://docs.sima-neat.com/getting-started/installation/neat-elxr-sdk)
 - [Build the SDK image locally](docs/building-sdk-image.md)
 - [Manage NEAT Insight in the SDK container](docs/neat-insight.md)
 - [Use the DevKit NFS workspace](docs/devkit-workspace.md)
