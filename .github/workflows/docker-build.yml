@@ -65,7 +65,7 @@ jobs:
 
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -74,7 +74,7 @@ jobs:
       - name: Publish architecture image
         if: github.event_name != 'pull_request'
         run: |
-          docker tag sdk:ci-${IMAGE_SUFFIX} "${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
+          docker tag "sdk:ci-${IMAGE_SUFFIX}" "${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
           docker push "${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
         env:
           IMAGE_NAME: ${{ steps.image.outputs.name }}
@@ -105,15 +105,8 @@ jobs:
           fi
           echo "name=ghcr.io/${owner}/${repo}" >> "${GITHUB_OUTPUT}"
 
-      - name: Compute release tag
-        id: release_tag
-        run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            echo "value=${GITHUB_REF_NAME#v}" >> "${GITHUB_OUTPUT}"
-          fi
-
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -123,22 +116,40 @@ jobs:
         run: |
           docker buildx imagetools create \
             --tag "${IMAGE_NAME}:${GITHUB_SHA}" \
+            --tag "${IMAGE_NAME}:staged-${GITHUB_SHA}" \
             "${IMAGE_NAME}:${GITHUB_SHA}-x86_64" \
             "${IMAGE_NAME}:${GITHUB_SHA}-aarch64"
-
-          if [[ -n "${RELEASE_TAG}" ]]; then
-            docker buildx imagetools create \
-              --tag "${IMAGE_NAME}:${RELEASE_TAG}" \
-              "${IMAGE_NAME}:${GITHUB_SHA}-x86_64" \
-              "${IMAGE_NAME}:${GITHUB_SHA}-aarch64"
-          fi
-
-          if [[ "${GITHUB_REF}" == refs/heads/* ]]; then
-            docker buildx imagetools create \
-              --tag "${IMAGE_NAME}:latest" \
-              "${IMAGE_NAME}:${GITHUB_SHA}-x86_64" \
-              "${IMAGE_NAME}:${GITHUB_SHA}-aarch64"
-          fi
         env:
           IMAGE_NAME: ${{ steps.image.outputs.name }}
-          RELEASE_TAG: ${{ steps.release_tag.outputs.value }}
+
+      - name: Write image promotion metadata
+        run: |
+          set -euo pipefail
+
+          mkdir -p image-metadata
+
+          release_tag=""
+          promote_latest=false
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            release_tag="${GITHUB_REF_NAME#v}"
+          elif [[ "${GITHUB_REF}" == refs/heads/* ]]; then
+            promote_latest=true
+          fi
+
+          {
+            echo "repository=${IMAGE_NAME}"
+            echo "source_ref=${IMAGE_NAME}:staged-${GITHUB_SHA}"
+            echo "staged_tag=staged-${GITHUB_SHA}"
+            echo "commit_sha=${GITHUB_SHA}"
+            echo "release_tag=${release_tag}"
+            echo "promote_latest=${promote_latest}"
+          } > image-metadata/image.env
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+
+      - name: Upload image promotion metadata
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-promotion-metadata
+          path: image-metadata/image.env
+          if-no-files-found: error
