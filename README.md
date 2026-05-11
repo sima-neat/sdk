@@ -2,7 +2,7 @@
   <img src="images/simaai_logo.png" alt="SiMa.ai Logo" width="30%">
 </p>
 
-# SiMa.ai NEAT SDK
+# SiMa.ai Neat SDK
 
 [![Build Docker Image](https://github.com/sima-neat/sdk/actions/workflows/docker-build.yml/badge.svg)](https://github.com/sima-neat/sdk/actions/workflows/docker-build.yml)
 [![Smoke Test](https://github.com/sima-neat/sdk/actions/workflows/smoke-test.yml/badge.svg)](https://github.com/sima-neat/sdk/actions/workflows/smoke-test.yml)
@@ -11,9 +11,9 @@
 ![macOS](https://img.shields.io/badge/macOS-supported-000000?logo=apple&logoColor=white)
 ![eLxr Platform 2.0.0](https://img.shields.io/badge/eLxr%20Platform-2.0.0%20compatible-2E7D32)
 
-This repository packages the SiMa.ai NEAT SDK as a Docker image for `x86_64` and `arm64` Linux hosts.
+This repository packages the SiMa.ai Neat SDK as a Docker image for `x86_64` and `arm64` Linux hosts.
 
-The current NEAT SDK image is compatible with the eLxr platform `2.0.0` release.
+The current Neat SDK image is compatible with the eLxr platform `2.0.0` release.
 
 The main user workflow is:
 
@@ -113,7 +113,7 @@ dk /workspace/app-binary-or-dot-py-file
 
 - [Official Neat SDK installation guide](https://docs.sima-neat.com/getting-started/installation/neat-elxr-sdk)
 - [Build the SDK image locally](docs/building-sdk-image.md)
-- [Manage NEAT Insight in the SDK container](docs/neat-insight.md)
+- [Manage Neat Insight in the SDK container](docs/neat-insight.md)
 - [Use the DevKit NFS workspace](docs/devkit-workspace.md)
 - [Build kernel, U-Boot, and device-tree artifacts](docs/building-software.md)
 - [Install BSP artifacts on a board](docs/installing-artifacts.md)
