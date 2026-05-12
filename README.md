@@ -10,6 +10,7 @@
 ![Windows 11](https://img.shields.io/badge/Windows%2011-supported-0078D4?logo=windows&logoColor=white)
 ![macOS](https://img.shields.io/badge/macOS-supported-000000?logo=apple&logoColor=white)
 ![eLxr Platform 2.0.0](https://img.shields.io/badge/eLxr%20Platform-2.0.0%20compatible-2E7D32)
+![Modalix](https://img.shields.io/badge/Modalix-supported-4B5563)
 
 This repository packages the SiMa.ai Neat SDK as a Docker image for `x86_64` and `arm64` Linux hosts.
 
@@ -118,16 +119,6 @@ dk /workspace/app-binary-or-dot-py-file
 - [Build kernel, U-Boot, and device-tree artifacts](docs/building-software.md)
 - [Install BSP artifacts on a board](docs/installing-artifacts.md)
 - [SDK smoke tests](tests/sdk/README.md)
-
-## Supported Platforms
-
-The examples use the `modalix` platform. The same flow can be adapted to `davinci` where corresponding platform configuration is available.
-
-The SDK sysroot is located under:
-
-```text
-/opt/toolchain/aarch64/<platform>
-```
 
 ## References
 
