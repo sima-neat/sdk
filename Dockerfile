@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1.7
-# Generated Dockerfile for modalix Build:release[2.0.0]
+# Generated Dockerfile for modalix.
 FROM debian:bookworm
 
 ARG SDK_PKG_LIST
 ARG SDK_GIT_BRANCH=unknown
 ARG SDK_GIT_HASH=nogit
+ARG BASE_SDK_VERSION=2.0.0
 ARG MINIMAL_IMAGE=0
 ARG NEAT_BRANCH=main
 ARG NEAT_VERSION=latest
@@ -88,7 +89,7 @@ RUN apt-get update --allow-releaseinfo-change && \
       libmediainfo0v5 \
       supervisor \
       mkcert \
-      simaai-sdk-tools && \
+      simaai-sdk-tools=${BASE_SDK_VERSION} && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -112,7 +113,7 @@ RUN if [ "${MINIMAL_IMAGE}" != "1" ]; then \
     fi
 
 RUN if [ "${MINIMAL_IMAGE}" != "1" ]; then \
-      python3 /opt/bin/simaai_setup_sdk.py modalix 2.0.0 "${SDK_PKG_LIST}"; \
+      python3 /opt/bin/simaai_setup_sdk.py modalix "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}"; \
     else \
       mkdir -p /opt/toolchain/aarch64/modalix/usr/include \
                /opt/toolchain/aarch64/modalix/usr/lib \
@@ -196,8 +197,9 @@ export LDFLAGS="--sysroot=$SYSROOT -L$SYSROOT/usr/lib/aarch64-linux-gnu -L$SYSRO
 EOF
 RUN chmod 755 /etc/profile.d/pkg-config-sysroot.sh
 
-RUN printf 'SDK Version = 2.0.0_Palette_SDK_neat_%s_%s\neLXr Version = 2.0.0_release_neat_%s_%s\n' \
-    "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
+RUN printf 'SDK Version = %s_Palette_SDK_neat_%s_%s\neLXr Version = %s_release_neat_%s_%s\n' \
+    "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
+    "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
     > /etc/sdk-release
 
 WORKDIR /workspace

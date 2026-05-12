@@ -8,6 +8,7 @@ CONTEXT_DIR="${CONTEXT_DIR:-${SCRIPT_DIR}}"
 IMAGE_NAME="${IMAGE_NAME:-sdk}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 MINIMAL_IMAGE="${MINIMAL_IMAGE:-0}"
+BASE_SDK_VERSION="${BASE_SDK_VERSION:-2.0.0}"
 NEAT_BRANCH="${NEAT_BRANCH:-main}"
 NEAT_VERSION="${NEAT_VERSION:-latest}"
 NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH:-main}"
@@ -26,6 +27,7 @@ Environment overrides:
   IMAGE_NAME   Docker image name (default: ${IMAGE_NAME})
   IMAGE_TAG    Docker image tag (default: ${IMAGE_TAG})
   MINIMAL_IMAGE  If set to 1, skip rustup/setup-sdk/sysroot-overlay and install sima-cli only for /neat-resources baking (default: ${MINIMAL_IMAGE})
+  BASE_SDK_VERSION  Base eLxr/SiMa SDK package version to install (default: ${BASE_SDK_VERSION})
   NEAT_BRANCH  NEAT Framework branch to bake into /neat-resources (default: ${NEAT_BRANCH})
   NEAT_VERSION  NEAT Framework version/tag to bake into /neat-resources (default: ${NEAT_VERSION})
   NEAT_INSIGHT_BRANCH  neat-insight branch/release channel to install (default: ${NEAT_INSIGHT_BRANCH})
@@ -103,6 +105,7 @@ echo "Host architecture: ${host_arch}"
 echo "Docker platform: ${docker_platform}"
 echo "Git branch: ${git_branch}"
 echo "Git hash: ${git_hash}"
+echo "Base SDK version: ${BASE_SDK_VERSION}"
 echo "Minimal image mode: ${MINIMAL_IMAGE}"
 if [[ "${MINIMAL_IMAGE}" == "1" ]]; then
   echo "Minimal mode note: full setup-sdk is skipped; sima-cli is installed via the official installer for baked /neat-resources."
@@ -118,6 +121,7 @@ if docker buildx version >/dev/null 2>&1; then
     --load
     --platform "${docker_platform}"
     --build-arg MINIMAL_IMAGE="${MINIMAL_IMAGE}"
+    --build-arg BASE_SDK_VERSION="${BASE_SDK_VERSION}"
     --build-arg NEAT_BRANCH="${NEAT_BRANCH}"
     --build-arg NEAT_VERSION="${NEAT_VERSION}"
     --build-arg NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH}"
@@ -138,6 +142,7 @@ build_cmd=(
   docker build
   --platform "${docker_platform}"
   --build-arg MINIMAL_IMAGE="${MINIMAL_IMAGE}"
+  --build-arg BASE_SDK_VERSION="${BASE_SDK_VERSION}"
   --build-arg NEAT_BRANCH="${NEAT_BRANCH}"
   --build-arg NEAT_VERSION="${NEAT_VERSION}"
   --build-arg NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH}"
