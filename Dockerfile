@@ -54,6 +54,15 @@ RUN echo "Package: *" > /etc/apt/preferences.d/stable.pref
 RUN echo "Pin: origin \"repo.sima.ai/elxr\"" >> /etc/apt/preferences.d/stable.pref
 RUN echo "Pin-Priority: 999" >> /etc/apt/preferences.d/stable.pref
 
+# The SiMa palette package has loose dependencies. Keep SDK-versioned packages
+# on BASE_SDK_VERSION so fresh CI builds do not mix newer sysroot packages into
+# an older SDK image when repo.sima.ai publishes a later release.
+RUN printf '%s\n' \
+      'Package: simaai-* appcomplex a65apps evtransforms inferencetools vdpcli mpktools vdpspy vdp-llm-libs swsoc-* smifb-* libcamera libcamera-tools' \
+      "Pin: version ${BASE_SDK_VERSION}" \
+      'Pin-Priority: 1001' \
+    > /etc/apt/preferences.d/simaai-sdk-version.pref
+
 RUN apt-get update --allow-releaseinfo-change && \
     apt-get install -y --no-install-recommends \
       python3-apt-ostree \
