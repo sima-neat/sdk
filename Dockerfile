@@ -121,6 +121,10 @@ RUN if [ "${MINIMAL_IMAGE}" != "1" ]; then \
       echo "Skipping rustup install for minimal image build"; \
     fi
 
+ENV RUSTUP_HOME=/opt/toolchain/rust
+ENV CARGO_HOME=/opt/toolchain/rust
+ENV PATH=/opt/toolchain/rust/bin:${PATH}
+
 RUN if [ "${MINIMAL_IMAGE}" != "1" ]; then \
       python3 /opt/bin/simaai_setup_sdk.py modalix "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}"; \
     else \
