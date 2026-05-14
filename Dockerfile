@@ -116,6 +116,7 @@ RUN if [ "${MINIMAL_IMAGE}" != "1" ]; then \
       echo "export RUSTUP_HOME=${RUSTUP_HOME}" >> "${CARGO_HOME}/env" && \
       echo "export CARGO_HOME=${CARGO_HOME}" >> "${CARGO_HOME}/env" && \
       . "${CARGO_HOME}/env" && \
+      rustup target add aarch64-unknown-linux-gnu && \
       rm /tmp/rustup.sh; \
     else \
       echo "Skipping rustup install for minimal image build"; \
