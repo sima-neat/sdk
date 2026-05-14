@@ -1,0 +1,47 @@
+#!/bin/sh
+
+# SiMa.ai Application Build Environment Setup Script
+# Copyright (c) 2025 SiMa Techonlofies, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+BOARD=$1
+
+    if [ "${BOARD}" = "davinci" ]; then
+	echo "Setting up build environment for davinci..."
+
+	export CFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/davinci"
+	export CXXFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/davinci"
+	export CPPFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/davinci"
+	export SYSROOT="/opt/toolchain/aarch64/davinci"
+elif [ "${BOARD}" = "modalix" ]; then
+	echo "Setting up build environment for modalix..."
+	export CFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/modalix"
+	export CXXFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/modalix"
+	export CPPFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/modalix"
+	export SYSROOT="/opt/toolchain/aarch64/modalix"
+else
+	echo "Usage: source simaai-init-build-env <modalix|davinci>"
+fi
+
+export CROSS_COMPILE="aarch64-linux-gnu-"
+export CC="${CROSS_COMPILE}gcc"
+export CXX="${CROSS_COMPILE}g++"
+export LD="${CROSS_COMPILE}ld"
+export STRIP="${CROSS_COMPILE}strip"
+export OBJDUMP="${CROSS_COMPILE}objdump"
+export OBJCOPY="${CROSS_COMPILE}objcopy"
+export AR="${CROSS_COMPILE}ar"
+export LDFLAGS="--sysroot=${SYSROOT} -L${SYSROOT}/usr/lib/aarch64-linux-gnu -L${SYSROOT}/lib/aarch64-linux-gnu -L${SYSROOT}/usr/lib/aarch64-linux-gnu/blas -L${SYSROOT}/usr/lib/aarch64-linux-gnu/lapack -L${SYSROOT}/usr/lib/aarch64-linux-gnu/openblas-pthread -Wl,-rpath-link,${SYSROOT}/usr/lib/aarch64-linux-gnu -Wl,-rpath-link,${SYSROOT}/lib/aarch64-linux-gnu -Wl,-rpath-link,${SYSROOT}/usr/lib/aarch64-linux-gnu/blas -Wl,-rpath-link,${SYSROOT}/usr/lib/aarch64-linux-gnu/lapack -Wl,-rpath-link,${SYSROOT}/usr/lib/aarch64-linux-gnu/openblas-pthread -Wl,--allow-shlib-undefined"
+export PKG_CONFIG_LIBDIR="${SYSROOT}/usr/lib/aarch64-linux-gnu/pkgconfig:${SYSROOT}/usr/lib/pkgconfig:${SYSROOT}/usr/share/pkgconfig"
+unset PKG_CONFIG_PATH
+export CFLAGS="${CFLAGS} -I${SYSROOT}/usr/include -I${SYSROOT}/usr/include/simaai"
+export CXXFLAGS="${CXXFLAGS} -I${SYSROOT}/usr/include -I${SYSROOT}/usr/include/simaai"
+export CPPFLAGS="${CPPFLAGS} -I${SYSROOT}/usr/include -I${SYSROOT}/usr/include/simaai"
+export CMAKE_LIBRARY_PATH="${SYSROOT}/usr/lib:${SYSROOT}/usr/lib/aarch64-linux-gnu:${SYSROOT}/usr/lib/aarch64-linux-gnu/blas:${SYSROOT}/usr/lib/aarch64-linux-gnu/lapack"
+export OpenCV_DIR="${SYSROOT}/usr/lib/aarch64-linux-gnu/cmake/opencv4"
+export CODEC_INCLUDE_DIRS="${SYSROOT}/usr/include/simaai/codec"
+export RUSTUP_HOME=/opt/toolchain/rust
+export CARGO_HOME=/opt/toolchain/rust
+export PATH=/opt/toolchain/rust/bin:${PATH}

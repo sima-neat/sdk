@@ -11,7 +11,7 @@ ARG NEAT_BRANCH=main
 ARG NEAT_VERSION=latest
 ARG NEAT_INSIGHT_BRANCH=main
 ARG NEAT_INSIGHT_VERSION=latest
-ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libgfortran5 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev liblapack-dev liblapack3 libopenblas-pthread-dev libopenblas0-pthread libqt5gui5 libsuperlu-dev libsuperlu5"
+ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libblkid-dev libbsd0 libcharls2 libelf1 libexpat1 libffi-dev libffi8 libgdal32 libgfortran5 libglib2.0-0 libgomp1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev libjpeg62-turbo libjson-glib-dev liblapack-dev liblapack3 liblzma5 libmount-dev libopenblas-pthread-dev libopenblas0-pthread libopenjp2-7 libpng16-16 libpython3.11-dev libqt5gui5 libsepol-dev libssl3 libsuperlu-dev libsuperlu5 libtiff6 liburcu-dev libwebp7 python3-dev python3.11-dev zlib1g"
 ENV SDK_PKG_LIST="\
 	libgrpc-dev,\
 	protobuf-compiler-grpc,\
@@ -19,9 +19,14 @@ ENV SDK_PKG_LIST="\
 ENV NEAT_INSIGHT_VENV_DIR=/opt/neat-insight/venv
 ENV NEAT_INSIGHT_PORT=9900
 ENV NEAT_INSIGHT_SUPERVISED=1
-ENV PATH="${NEAT_INSIGHT_VENV_DIR}/bin:${PATH}"
+ENV RUSTUP_HOME=/opt/toolchain/rust
+ENV CARGO_HOME=/opt/toolchain/rust
+ENV PATH="${NEAT_INSIGHT_VENV_DIR}/bin:${CARGO_HOME}/bin:${PATH}"
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+COPY config/platform-package-patterns.txt /usr/local/share/sima-sdk/platform-package-patterns.txt
+COPY scripts/configure-apt-repos.sh /usr/local/bin/configure-apt-repos.sh
 
 RUN dpkg --add-architecture arm64 && \
     dpkg --add-architecture arc && \
@@ -38,34 +43,8 @@ RUN apt-get clean && \
       python3 && \
     rm -rf /var/lib/apt/lists/*
 
-RUN wget -qO - https://mirror.elxr.dev/elxr/public.gpg | gpg --dearmor -o /etc/apt/trusted.gpg.d/elxr.gpg
-RUN wget -qO - https://packages.fluentbit.io/fluentbit.key | gpg --dearmor > /etc/apt/trusted.gpg.d/fluentbit.gpg
-RUN wget --no-check-certificate -O - https://repo.sima.ai/elxr/deb/simaai.gpg | gpg --dearmor > /etc/apt/trusted.gpg.d/simaai.gpg
-
-RUN chmod 644 /etc/apt/trusted.gpg.d/elxr.gpg && \
-    chmod 644 /etc/apt/trusted.gpg.d/fluentbit.gpg && \
-    chmod 644 /etc/apt/trusted.gpg.d/simaai.gpg
-
-RUN echo "deb [signed-by=/etc/apt/trusted.gpg.d/elxr.gpg] https://mirror.elxr.dev/elxr aria main" > /etc/apt/sources.list.d/elxr.list
-RUN echo "deb [signed-by=/etc/apt/trusted.gpg.d/fluentbit.gpg] https://packages.fluentbit.io/debian/bookworm bookworm main" >> /etc/apt/sources.list.d/elxr.list
-RUN echo "deb [trusted=yes] https://repo.sima.ai/elxr/deb/release bookworm non-free  # simaai repo" >> /etc/apt/sources.list.d/elxr.list
-
-RUN echo "Package: *" > /etc/apt/preferences.d/stable.pref
-RUN echo "Pin: origin \"repo.sima.ai/elxr\"" >> /etc/apt/preferences.d/stable.pref
-RUN echo "Pin-Priority: 999" >> /etc/apt/preferences.d/stable.pref
-
-# The SDK setup script also pulls package Build-Depends, many of which are
-# unversioned. Keep SiMa SDK package families on BASE_SDK_VERSION so fresh CI
-# builds do not mix newer sysroot packages into an older SDK image.
-RUN printf '%s\n' \
-      'Package: simaai-* appcomplex a65apps evtransforms inferencetools vdpcli mpktools vdpspy vdp-llm-libs swsoc-* smifb-* cvu-sw* m4-mla-* troot-* libsynopsys atf-* optee-* oot-dtbo-*' \
-      "Pin: version ${BASE_SDK_VERSION}" \
-      'Pin-Priority: 1001' \
-      '' \
-      'Package: simaai-* appcomplex a65apps evtransforms inferencetools vdpcli mpktools vdpspy vdp-llm-libs swsoc-* smifb-* cvu-sw* m4-mla-* troot-* libsynopsys atf-* optee-* oot-dtbo-*' \
-      'Pin: version *' \
-      'Pin-Priority: -1' \
-    > /etc/apt/preferences.d/simaai-sdk-version.pref
+RUN chmod 755 /usr/local/bin/configure-apt-repos.sh && \
+    configure-apt-repos.sh "${BASE_SDK_VERSION}"
 
 RUN apt-get update --allow-releaseinfo-change && \
     apt-get install -y --no-install-recommends \
@@ -73,6 +52,7 @@ RUN apt-get update --allow-releaseinfo-change && \
       vim \
       make \
       cmake \
+      default-jre-headless \
       pkgconf \
       gcc-aarch64-linux-gnu \
       sudo \
@@ -100,225 +80,57 @@ RUN apt-get update --allow-releaseinfo-change && \
       ffmpeg \
       libffi8 \
       libmediainfo0v5 \
+      plantuml \
       supervisor \
-      mkcert \
-      simaai-sdk-tools=${BASE_SDK_VERSION} && \
+      mkcert && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-RUN python3 - <<'PY'
-from pathlib import Path
-
-path = Path("/opt/bin/simaai_setup_sdk.py")
-data = path.read_text()
-new = '''    def get_candidate(pkgname, v):
-        """ Find the package name pkgname with
-            specific version v
-        """
-
-        if pkgname not in cache:
-            return None
-
-        sdk_package_patterns = (
-            'simaai-*',
-            'appcomplex',
-            'a65apps',
-            'evtransforms',
-            'inferencetools',
-            'vdpcli',
-            'mpktools',
-            'vdpspy',
-            'vdp-llm-libs',
-            'swsoc-*',
-            'smifb-*',
-            'cvu-sw*',
-            'm4-mla-*',
-            'troot-*',
-            'libsynopsys',
-            'atf-*',
-            'optee-*',
-            'oot-dtbo-*',
-        )
-        base_pkgname = pkgname.split(':', 1)[0]
-        is_sdk_package = any(fnmatch.fnmatch(base_pkgname, pattern) for pattern in sdk_package_patterns)
-        if is_sdk_package and not v:
-            v = version
-
-        pkg = cache[pkgname]
-        for c in pkg.versions:
-            if fnmatch.fnmatch(c.version, v):
-                return c
-        if is_sdk_package:
-            return None
-        #if no matching version found, return the default candidate
-        return pkg.candidate
-'''
-start = data.index("    def get_candidate(pkgname, v):")
-end = data.index("    def collect_rdeps(candidate, recursive):", start)
-data = data[:start] + new + "\n" + data[end:]
-new = '''    def download(uri, dlname):
-        """ Downloads the package
-        """
-
-        cmd = ["wget", uri, "-O", dlname]
-        ret = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        if ret.returncode != 0:
-            print(f"Error while downloading OSS package {dlname}:\\n{ret.stderr}")
-            return
-
-        sdk_package_patterns = (
-            'simaai-*',
-            'appcomplex',
-            'a65apps',
-            'evtransforms',
-            'inferencetools',
-            'vdpcli',
-            'mpktools',
-            'vdpspy',
-            'vdp-llm-libs',
-            'swsoc-*',
-            'smifb-*',
-            'cvu-sw*',
-            'm4-mla-*',
-            'troot-*',
-            'libsynopsys',
-            'atf-*',
-            'optee-*',
-            'oot-dtbo-*',
-        )
-        pkg = subprocess.check_output(["dpkg-deb", "-f", dlname, "Package"], text=True).strip()
-        ver = subprocess.check_output(["dpkg-deb", "-f", dlname, "Version"], text=True).strip()
-        if any(fnmatch.fnmatch(pkg, pattern) for pattern in sdk_package_patterns) and ver != version:
-            raise RuntimeError(f"Unexpected {pkg} version {ver}; expected {version}")
-
-'''
-start = data.index("    def download(uri, dlname):")
-end = data.index("    def collect_bdeps(candidate, name):", start)
-path.write_text(data[:start] + new + "\n" + data[end:])
-PY
+COPY scripts/simaai-init-build-env /opt/bin/simaai-init-build-env
+COPY scripts/simaai_setup_sdk.py /opt/bin/simaai_setup_sdk.py
+COPY scripts/install-rustup.sh /usr/local/bin/install-rustup.sh
+COPY scripts/install-sima-cli.sh /usr/local/bin/install-sima-cli.sh
+COPY scripts/setup-sdk-sysroot.sh /usr/local/bin/setup-sdk-sysroot.sh
+COPY scripts/validate-sysroot-package-versions.sh /usr/local/bin/validate-sysroot-package-versions.sh
+RUN chmod 755 /opt/bin/simaai-init-build-env \
+              /opt/bin/simaai_setup_sdk.py \
+              /usr/local/bin/install-rustup.sh \
+              /usr/local/bin/install-sima-cli.sh \
+              /usr/local/bin/setup-sdk-sysroot.sh \
+              /usr/local/bin/validate-sysroot-package-versions.sh
 
 # Ensure images expose a docker group so downstream setup scripts can
 # reliably add users with `usermod -a -G docker <user>`.
 RUN getent group docker >/dev/null || groupadd --system docker
 
-RUN if [ "${MINIMAL_IMAGE}" != "1" ]; then \
-      export RUSTUP_HOME=/opt/toolchain/rust && \
-      export CARGO_HOME=/opt/toolchain/rust && \
-      mkdir -p "${RUSTUP_HOME}" && \
-      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > /tmp/rustup.sh && \
-      chmod 755 /tmp/rustup.sh && \
-      /tmp/rustup.sh -y --profile minimal && \
-      echo "export RUSTUP_HOME=${RUSTUP_HOME}" >> "${CARGO_HOME}/env" && \
-      echo "export CARGO_HOME=${CARGO_HOME}" >> "${CARGO_HOME}/env" && \
-      . "${CARGO_HOME}/env" && \
-      rm /tmp/rustup.sh; \
-    else \
-      echo "Skipping rustup install for minimal image build"; \
-    fi
+RUN install-rustup.sh
 
-ENV RUSTUP_HOME=/opt/toolchain/rust
-ENV CARGO_HOME=/opt/toolchain/rust
-ENV PATH=/opt/toolchain/rust/bin:${PATH}
-
-RUN if [ "${MINIMAL_IMAGE}" != "1" ]; then \
-      python3 /opt/bin/simaai_setup_sdk.py modalix "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}"; \
-      find /tmp/modalix -type f -name '*.deb' -exec sh -c ' \
-        expected="$1"; \
-        shift; \
-        for deb do \
-          pkg="$(dpkg-deb -f "${deb}" Package)"; \
-          ver="$(dpkg-deb -f "${deb}" Version)"; \
-          case "${pkg}" in \
-            simaai-*|appcomplex|a65apps|evtransforms|inferencetools|vdpcli|mpktools|vdpspy|vdp-llm-libs|swsoc-*|smifb-*|cvu-sw*|m4-mla-*|troot-*|libsynopsys|atf-*|optee-*|oot-dtbo-*) \
-              if [ "${ver}" != "${expected}" ]; then \
-                echo "Unexpected ${pkg} version ${ver}; expected ${expected}" >&2; \
-                exit 1; \
-              fi; \
-              ;; \
-          esac; \
-        done' sh "${BASE_SDK_VERSION}" {} +; \
-    else \
-      mkdir -p /opt/toolchain/aarch64/modalix/usr/include \
-               /opt/toolchain/aarch64/modalix/usr/lib \
-               /opt/toolchain/aarch64/modalix/usr/lib/pkgconfig \
-               /opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu \
-               /opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu/pkgconfig \
-               /opt/toolchain/aarch64/modalix/usr/share/pkgconfig; \
-    fi && \
-    curl -fsSL https://docs.sima.ai/_static/tools/sima-cli-installer.sh | bash && \
-    test -x /root/.sima-cli/.venv/bin/sima-cli && \
-    ln -sf /root/.sima-cli/.venv/bin/sima-cli /usr/local/bin/sima-cli && \
-    /usr/local/bin/sima-cli --help >/dev/null 2>&1 && \
+RUN setup-sdk-sysroot.sh "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}" && \
+    install-sima-cli.sh && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /tmp/*
 
 COPY scripts/install-sysroot-overlay.sh /usr/local/bin/install-sysroot-overlay.sh
+COPY scripts/install-sdk-sysroot-overlay.sh /usr/local/bin/install-sdk-sysroot-overlay.sh
 COPY config/sysroot-overlay.conf /usr/local/share/sima-sdk/sysroot-overlay.conf
 COPY config/supervisor-neat-insight.conf /etc/supervisor/conf.d/neat-insight.conf
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY scripts/insight-admin.sh /usr/local/bin/insight-admin
 COPY scripts/devkit.sh /usr/local/bin/devkit.sh
 RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
+    chmod 755 /usr/local/bin/install-sdk-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/docker-entrypoint.sh && \
     chmod 755 /usr/local/bin/insight-admin && \
     ln -sf /usr/local/bin/insight-admin /usr/local/bin/install-neat-insight && \
     chmod 755 /usr/local/bin/devkit.sh && \
-    if [ "${MINIMAL_IMAGE}" != "1" ]; then \
-      /bin/bash -lc 'set -euo pipefail; \
-        overlay_pkgs=(); \
-        for pkg in ${SDK_SYSROOT_PKG_LIST}; do \
-          overlay_pkgs+=("${pkg}:arm64"); \
-        done; \
-        /usr/local/bin/install-sysroot-overlay.sh /opt/toolchain/aarch64/modalix "${overlay_pkgs[@]}"'; \
-      chmod -R a+rX /opt/toolchain/aarch64/modalix/usr/include; \
-    else \
-      echo "Skipping sysroot overlay for minimal image build"; \
-    fi
+    install-sdk-sysroot-overlay.sh
 
 RUN /usr/local/bin/insight-admin update "${NEAT_INSIGHT_BRANCH}" "${NEAT_INSIGHT_VERSION}" && \
     chmod -R a+rwX "${NEAT_INSIGHT_VENV_DIR}"
 
-RUN cat > /etc/profile.d/neat-sdk-prompt.sh <<'EOF'
-#!/usr/bin/env bash
-if [[ $- == *i* ]]; then
-  export SDK_IMAGE_TAG="${SDK_IMAGE_TAG:-version}"
-  export SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME:-neat-sdk-${SDK_IMAGE_TAG}}"
-  _sdk_rewrite_prompt_hostname() {
-    local prompt="${1-}"
-    prompt="${prompt//\\h/${SDK_PROMPT_HOSTNAME}}"
-    prompt="${prompt//\\H/${SDK_PROMPT_HOSTNAME}}"
-    printf '%s' "${prompt}"
-  }
-  if [[ -n "${DEVKIT_SYNC_ORIG_PS1:-}" ]]; then
-    DEVKIT_SYNC_ORIG_PS1="$(_sdk_rewrite_prompt_hostname "${DEVKIT_SYNC_ORIG_PS1}")"
-    export DEVKIT_SYNC_ORIG_PS1
-  fi
-  if [[ -n "${PS1:-}" ]]; then
-    PS1="$(_sdk_rewrite_prompt_hostname "${PS1}")"
-    export PS1
-  fi
-  if declare -F __devkit_apply_prompt >/dev/null 2>&1; then
-    __devkit_apply_prompt
-  fi
-fi
-EOF
-RUN chmod 755 /etc/profile.d/neat-sdk-prompt.sh
-
-RUN cat > /etc/profile.d/pkg-config-sysroot.sh <<'EOF'
-#!/usr/bin/env bash
-export SYSROOT="${SYSROOT:-/opt/toolchain/aarch64/modalix}"
-if [[ -z "${PKG_CONFIG:-}" || ! -x "${PKG_CONFIG}" ]]; then
-  export PKG_CONFIG="/usr/bin/pkg-config"
-fi
-if [[ -z "${PKG_CONFIG_EXECUTABLE:-}" || ! -x "${PKG_CONFIG_EXECUTABLE}" ]]; then
-  export PKG_CONFIG_EXECUTABLE="${PKG_CONFIG}"
-fi
-export PKG_CONFIG_SYSROOT_DIR="${PKG_CONFIG_SYSROOT_DIR:-$SYSROOT}"
-export PKG_CONFIG_LIBDIR="${PKG_CONFIG_LIBDIR:-$SYSROOT/usr/lib/aarch64-linux-gnu/pkgconfig:$SYSROOT/usr/lib/pkgconfig:$SYSROOT/usr/share/pkgconfig}"
-unset PKG_CONFIG_PATH || true
-export LDFLAGS="--sysroot=$SYSROOT -L$SYSROOT/usr/lib/aarch64-linux-gnu -L$SYSROOT/lib/aarch64-linux-gnu ${LDFLAGS:-}"
-EOF
-RUN chmod 755 /etc/profile.d/pkg-config-sysroot.sh
+COPY config/profile.d/*.sh /etc/profile.d/
+RUN chmod 755 /etc/profile.d/neat-sdk-prompt.sh \
+              /etc/profile.d/pkg-config-sysroot.sh
 
 RUN printf 'SDK Version = %s_Palette_SDK_neat_%s_%s\neLXr Version = %s_release_neat_%s_%s\n' \
     "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
@@ -328,22 +140,10 @@ RUN printf 'SDK Version = %s_Palette_SDK_neat_%s_%s\neLXr Version = %s_release_n
 WORKDIR /workspace
 
 # Preinstall Neat Framework and resources
+COPY scripts/install-neat-resources.sh /usr/local/bin/install-neat-resources.sh
+RUN chmod 755 /usr/local/bin/install-neat-resources.sh
 RUN --mount=type=secret,id=neat_github_pat \
-    mkdir -p /neat-resources/core-extra /neat-resources/core-src /neat-resources/apps-src && \
-    wget -O /tmp/install-neat.sh https://tools.sima-neat.com/install-neat.sh && \
-    cd /neat-resources/core-extra && \
-    bash /tmp/install-neat.sh --minimum "${NEAT_BRANCH}" "${NEAT_VERSION}" && \
-    rm -f /tmp/install-neat.sh && \
-    find /neat-resources/core-extra -type f \
-      \( -name '*.deb' -o -name '*.tar.gz' -o -name '*.whl' \) -delete && \
-    if [ -f /run/secrets/neat_github_pat ] && [ -s /run/secrets/neat_github_pat ]; then \
-      NEAT_GITHUB_PAT="$(cat /run/secrets/neat_github_pat)" && \
-      git clone --depth 1 "https://${NEAT_GITHUB_PAT}@github.com/sima-neat/core.git" /neat-resources/core-src && \
-      git -C /neat-resources/core-src remote set-url origin https://github.com/sima-neat/core.git; \
-    else \
-      echo "Skipping sima-neat/core clone; neat_github_pat build secret not provided"; \
-    fi && \
-    git clone --depth 1 https://github.com/sima-neat/apps.git /neat-resources/apps-src
+    install-neat-resources.sh
 
 # Expose required ports
 EXPOSE 9900 9000-9079 9100-9179 8081 8554
