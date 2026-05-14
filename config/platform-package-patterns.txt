@@ -1,0 +1,19 @@
+# SiMa platform-owned packages that must match BASE_SDK_VERSION.
+simaai-*
+appcomplex
+a65apps
+evtransforms
+inferencetools
+vdpcli
+mpktools
+vdpspy
+vdp-llm-libs
+swsoc-*
+smifb-*
+cvu-sw*
+m4-mla-*
+troot-*
+libsynopsys
+atf-*
+optee-*
+oot-dtbo-*

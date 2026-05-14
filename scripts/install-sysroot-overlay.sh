@@ -104,6 +104,7 @@ fi
 
 apt-get update --allow-releaseinfo-change
 apt-get install -y --download-only --no-install-recommends \
+  --reinstall \
   -o Dir::Cache::archives="${workdir}/archives" \
   "${PACKAGES[@]}"
 
@@ -166,6 +167,20 @@ fi
 if [[ -e "${LIBDIR}/libopenblas.so.0" && ! -e "${LIBDIR}/libopenblas.so" ]]; then
   ln -sfn libopenblas.so.0 "${LIBDIR}/libopenblas.so"
 fi
+
+find "${SYSROOT}" -type l -print0 \
+  | while IFS= read -r -d '' link; do
+      target="$(readlink "${link}")"
+      case "${target}" in
+        /usr/*|/lib/*)
+          sysroot_target="${SYSROOT}${target}"
+          if [[ -e "${sysroot_target}" ]]; then
+            rel_target="$(realpath --relative-to="$(dirname "${link}")" "${sysroot_target}")"
+            ln -sfn "${rel_target}" "${link}"
+          fi
+          ;;
+      esac
+    done
 
 if [[ -d "${SYSROOT}/usr/include" ]]; then
   chmod -R a+rX "${SYSROOT}/usr/include"

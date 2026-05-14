@@ -161,10 +161,7 @@ jobs:
           python3 -m venv .venv
           source .venv/bin/activate
           python -m pip install --upgrade pip
-          curl -fsSL \
-            https://artifacts.sima-neat.com/tools/sima_cli-2.1.5-py3-none-any.whl \
-            -o sima_cli-2.1.5-py3-none-any.whl
-          python -m pip install ./sima_cli-2.1.5-py3-none-any.whl
+          python -m pip install sima-cli
           sima-cli version
 
       - name: Configure sima-cli access token
@@ -219,7 +216,7 @@ jobs:
           set -euo pipefail
 
           source .venv/bin/activate
-          sima-cli sdk setup -y -n
+          sima-cli sdk setup -y -n --no-model-sdk
 
       - name: Run SDK smoke test suite
         env:
