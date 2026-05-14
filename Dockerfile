@@ -54,13 +54,17 @@ RUN echo "Package: *" > /etc/apt/preferences.d/stable.pref
 RUN echo "Pin: origin \"repo.sima.ai/elxr\"" >> /etc/apt/preferences.d/stable.pref
 RUN echo "Pin-Priority: 999" >> /etc/apt/preferences.d/stable.pref
 
-# The SiMa palette package has loose dependencies. Keep SDK-versioned packages
-# on BASE_SDK_VERSION so fresh CI builds do not mix newer sysroot packages into
-# an older SDK image when repo.sima.ai publishes a later release.
+# The SDK setup script also pulls package Build-Depends, many of which are
+# unversioned. Keep SiMa SDK package families on BASE_SDK_VERSION so fresh CI
+# builds do not mix newer sysroot packages into an older SDK image.
 RUN printf '%s\n' \
-      'Package: simaai-* appcomplex a65apps evtransforms inferencetools vdpcli mpktools vdpspy vdp-llm-libs swsoc-* smifb-* libcamera libcamera-tools' \
+      'Package: simaai-* appcomplex a65apps evtransforms inferencetools vdpcli mpktools vdpspy vdp-llm-libs swsoc-* smifb-* cvu-sw* m4-mla-* troot-* libsynopsys atf-* optee-* oot-dtbo-*' \
       "Pin: version ${BASE_SDK_VERSION}" \
       'Pin-Priority: 1001' \
+      '' \
+      'Package: simaai-* appcomplex a65apps evtransforms inferencetools vdpcli mpktools vdpspy vdp-llm-libs swsoc-* smifb-* cvu-sw* m4-mla-* troot-* libsynopsys atf-* optee-* oot-dtbo-*' \
+      'Pin: version *' \
+      'Pin-Priority: -1' \
     > /etc/apt/preferences.d/simaai-sdk-version.pref
 
 RUN apt-get update --allow-releaseinfo-change && \
@@ -102,6 +106,97 @@ RUN apt-get update --allow-releaseinfo-change && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+RUN python3 - <<'PY'
+from pathlib import Path
+
+path = Path("/opt/bin/simaai_setup_sdk.py")
+data = path.read_text()
+new = '''    def get_candidate(pkgname, v):
+        """ Find the package name pkgname with
+            specific version v
+        """
+
+        if pkgname not in cache:
+            return None
+
+        sdk_package_patterns = (
+            'simaai-*',
+            'appcomplex',
+            'a65apps',
+            'evtransforms',
+            'inferencetools',
+            'vdpcli',
+            'mpktools',
+            'vdpspy',
+            'vdp-llm-libs',
+            'swsoc-*',
+            'smifb-*',
+            'cvu-sw*',
+            'm4-mla-*',
+            'troot-*',
+            'libsynopsys',
+            'atf-*',
+            'optee-*',
+            'oot-dtbo-*',
+        )
+        base_pkgname = pkgname.split(':', 1)[0]
+        is_sdk_package = any(fnmatch.fnmatch(base_pkgname, pattern) for pattern in sdk_package_patterns)
+        if is_sdk_package and not v:
+            v = version
+
+        pkg = cache[pkgname]
+        for c in pkg.versions:
+            if fnmatch.fnmatch(c.version, v):
+                return c
+        if is_sdk_package:
+            return None
+        #if no matching version found, return the default candidate
+        return pkg.candidate
+'''
+start = data.index("    def get_candidate(pkgname, v):")
+end = data.index("    def collect_rdeps(candidate, recursive):", start)
+data = data[:start] + new + "\n" + data[end:]
+new = '''    def download(uri, dlname):
+        """ Downloads the package
+        """
+
+        cmd = ["wget", uri, "-O", dlname]
+        ret = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        if ret.returncode != 0:
+            print(f"Error while downloading OSS package {dlname}:\\n{ret.stderr}")
+            return
+
+        sdk_package_patterns = (
+            'simaai-*',
+            'appcomplex',
+            'a65apps',
+            'evtransforms',
+            'inferencetools',
+            'vdpcli',
+            'mpktools',
+            'vdpspy',
+            'vdp-llm-libs',
+            'swsoc-*',
+            'smifb-*',
+            'cvu-sw*',
+            'm4-mla-*',
+            'troot-*',
+            'libsynopsys',
+            'atf-*',
+            'optee-*',
+            'oot-dtbo-*',
+        )
+        pkg = subprocess.check_output(["dpkg-deb", "-f", dlname, "Package"], text=True).strip()
+        ver = subprocess.check_output(["dpkg-deb", "-f", dlname, "Version"], text=True).strip()
+        if any(fnmatch.fnmatch(pkg, pattern) for pattern in sdk_package_patterns) and ver != version:
+            raise RuntimeError(f"Unexpected {pkg} version {ver}; expected {version}")
+
+'''
+start = data.index("    def download(uri, dlname):")
+end = data.index("    def collect_bdeps(candidate, name):", start)
+path.write_text(data[:start] + new + "\n" + data[end:])
+PY
+
 # Ensure images expose a docker group so downstream setup scripts can
 # reliably add users with `usermod -a -G docker <user>`.
 RUN getent group docker >/dev/null || groupadd --system docker
@@ -127,6 +222,21 @@ ENV PATH=/opt/toolchain/rust/bin:${PATH}
 
 RUN if [ "${MINIMAL_IMAGE}" != "1" ]; then \
       python3 /opt/bin/simaai_setup_sdk.py modalix "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}"; \
+      find /tmp/modalix -type f -name '*.deb' -exec sh -c ' \
+        expected="$1"; \
+        shift; \
+        for deb do \
+          pkg="$(dpkg-deb -f "${deb}" Package)"; \
+          ver="$(dpkg-deb -f "${deb}" Version)"; \
+          case "${pkg}" in \
+            simaai-*|appcomplex|a65apps|evtransforms|inferencetools|vdpcli|mpktools|vdpspy|vdp-llm-libs|swsoc-*|smifb-*|cvu-sw*|m4-mla-*|troot-*|libsynopsys|atf-*|optee-*|oot-dtbo-*) \
+              if [ "${ver}" != "${expected}" ]; then \
+                echo "Unexpected ${pkg} version ${ver}; expected ${expected}" >&2; \
+                exit 1; \
+              fi; \
+              ;; \
+          esac; \
+        done' sh "${BASE_SDK_VERSION}" {} +; \
     else \
       mkdir -p /opt/toolchain/aarch64/modalix/usr/include \
                /opt/toolchain/aarch64/modalix/usr/lib \
