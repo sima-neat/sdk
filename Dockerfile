@@ -112,6 +112,7 @@ RUN setup-sdk-sysroot.sh "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}" && \
 
 COPY scripts/install-sysroot-overlay.sh /usr/local/bin/install-sysroot-overlay.sh
 COPY scripts/install-sdk-sysroot-overlay.sh /usr/local/bin/install-sdk-sysroot-overlay.sh
+COPY scripts/sysroot.sh /usr/local/bin/sysroot
 COPY config/sysroot-overlay.conf /usr/local/share/sima-sdk/sysroot-overlay.conf
 COPY config/supervisor-neat-insight.conf /etc/supervisor/conf.d/neat-insight.conf
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
@@ -119,6 +120,7 @@ COPY scripts/insight-admin.sh /usr/local/bin/insight-admin
 COPY scripts/devkit.sh /usr/local/bin/devkit.sh
 RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/install-sdk-sysroot-overlay.sh && \
+    chmod 755 /usr/local/bin/sysroot && \
     chmod 755 /usr/local/bin/docker-entrypoint.sh && \
     chmod 755 /usr/local/bin/insight-admin && \
     ln -sf /usr/local/bin/insight-admin /usr/local/bin/install-neat-insight && \
