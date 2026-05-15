@@ -77,6 +77,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "${SYSROOT}" "${LIBDIR}" "${workdir}/archives/partial" "${workdir}/linux-libc-dev"
+touch "${workdir}/status"
 
 # apt downloads as the sandbox user _apt. mktemp creates a 0700 root-owned
 # directory, so make only the download staging paths accessible to avoid
@@ -89,41 +90,34 @@ fi
 echo "Downloading sysroot overlay packages into ${SYSROOT}"
 printf '  %s\n' "${PACKAGES[@]}"
 
-# In cross builds, apt treats some packages as Multi-Arch: same and requires
-# the host and target architecture versions to match. Download the target
-# linux-libc-dev version that matches the installed host package here, then
-# replace the sysroot headers with the SDK-pinned version below.
-native_arch="$(dpkg --print-architecture)"
-if [[ " ${TARGET_ARCHES[*]} " != *" ${native_arch} "* ]] &&
-   dpkg-query -W -f='${Status}' linux-libc-dev 2>/dev/null | grep -q "install ok installed"; then
-  native_linux_libc_version="$(dpkg-query -W -f='${Version}' linux-libc-dev)"
-  for arch in "${TARGET_ARCHES[@]}"; do
-    PACKAGES+=("linux-libc-dev:${arch}=${native_linux_libc_version}")
-  done
-fi
-
 apt-get update --allow-releaseinfo-change
 apt-get install -y --download-only --no-install-recommends \
   --reinstall \
   -o Dir::Cache::archives="${workdir}/archives" \
+  -o Dir::State::status="${workdir}/status" \
   "${PACKAGES[@]}"
 
 find "${workdir}/archives" -maxdepth 1 -type f -name '*.deb' -print0 \
   | while IFS= read -r -d '' deb; do
       deb_arch="$(dpkg-deb -f "${deb}" Architecture)"
+      deb_pkg="$(dpkg-deb -f "${deb}" Package)"
       # Apt may download host-arch helper packages while solving target deps.
       # Only target-arch and arch-independent payloads belong in this sysroot.
       if [[ "${deb_arch}" != "all" && " ${TARGET_ARCHES[*]} " != *" ${deb_arch} "* ]]; then
         echo "Skipping $(basename "${deb}") for architecture ${deb_arch}"
         continue
       fi
+      if [[ "${deb_pkg}" == "linux-libc-dev" && "${deb_arch}" == "arm64" ]]; then
+        echo "Skipping $(basename "${deb}"); extracting SDK-pinned arm64 headers separately"
+        continue
+      fi
       echo "Extracting $(basename "${deb}")"
       dpkg-deb -x "${deb}" "${SYSROOT}"
     done
 
-# The official Modalix 2.0 SDK sysroot uses SiMa's 6.1.22 arm64 UAPI headers.
-# Download this .deb directly so apt's multiarch resolver cannot reject it for
-# differing from the native amd64 linux-libc-dev package installed in the image.
+# The official Modalix 2.0 SDK sysroot uses SiMa's pinned arm64 UAPI headers.
+# Download this .deb directly so sysroot headers do not depend on the native
+# linux-libc-dev version installed in the image.
 for arch in "${TARGET_ARCHES[@]}"; do
   if [[ "${arch}" != "arm64" ]]; then
     continue

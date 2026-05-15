@@ -292,6 +292,7 @@ download_for_manifest() {
   shift 2
 
   mkdir -p "${outdir}/archives/partial"
+  touch "${outdir}/status"
   chmod 755 "${outdir}" "${outdir}/archives" "${outdir}/archives/partial"
   if id _apt >/dev/null 2>&1; then
     chown _apt "${outdir}/archives" "${outdir}/archives/partial"
@@ -300,6 +301,7 @@ download_for_manifest() {
   apt-get update --allow-releaseinfo-change
   apt-get install -y --download-only --no-install-recommends --reinstall \
     -o Dir::Cache::archives="${outdir}/archives" \
+    -o Dir::State::status="${outdir}/status" \
     "$@"
 }
 
@@ -321,6 +323,9 @@ record_manifests() {
 
       deb_pkg="$(dpkg-deb -f "${deb}" Package)"
       deb_version="$(dpkg-deb -f "${deb}" Version)"
+      if [[ "${deb_pkg}" == "linux-libc-dev" && "${deb_arch}" == "arm64" ]]; then
+        continue
+      fi
       manifest="$(manifest_path "${sysroot}" "${deb_pkg}" "${deb_arch}")"
       tmp_manifest="${manifest}.tmp"
 
