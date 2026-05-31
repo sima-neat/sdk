@@ -118,6 +118,8 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
         "binutils:arm64": "",
         "g++:arm64": "",
         "gcc:arm64": "",
+        "smifb-modalix": "",
+        "smifb-davinci": "",
         "smifb3-modalix": "",
         "smifb3-davinci": "",
         "simaai-pcie-drv-modalix": "",

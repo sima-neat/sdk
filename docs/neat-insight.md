@@ -31,5 +31,5 @@ This only affects the current container.
 To make an Insight upgrade permanent, rebuild the SDK image with the desired channel and version:
 
 ```bash
-NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 2.0.0
+NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 2.1.1
 ```
