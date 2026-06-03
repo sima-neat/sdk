@@ -68,13 +68,40 @@ if [[ " ${TARGET_ARCHES[*]} " == *" arm64 "* && -z "${LINUX_LIBC_DEV_ARM64_VERSI
   exit 1
 fi
 
+APT_TARGET_ARCH="${TARGET_ARCHES[0]}"
 export DEBIAN_FRONTEND=noninteractive
 
 workdir="$(mktemp -d)"
+sysroot_pref=/etc/apt/preferences.d/00-sima-sdk-sysroot-target.pref
 cleanup() {
   rm -rf "${workdir}"
+  rm -f "${sysroot_pref}"
 }
 trap cleanup EXIT
+
+if [[ -f /etc/apt/sources.list.d/debian-target.list ]]; then
+  cat >"${sysroot_pref}" <<'EOF'
+Package: *
+Pin: origin "repo.sima.ai/elxr"
+Pin-Priority: 990
+
+Package: *
+Pin: origin "mirror.elxr.dev"
+Pin-Priority: 990
+
+Package: *
+Pin: origin "deb.debian.org"
+Pin-Priority: 990
+
+Package: *
+Pin: origin "packages.fluentbit.io"
+Pin-Priority: 990
+
+Package: *
+Pin: release o=Ubuntu
+Pin-Priority: 100
+EOF
+fi
 
 mkdir -p "${SYSROOT}" "${LIBDIR}" "${workdir}/archives/partial" "${workdir}/linux-libc-dev"
 touch "${workdir}/status"
@@ -93,6 +120,7 @@ printf '  %s\n' "${PACKAGES[@]}"
 apt-get update --allow-releaseinfo-change
 apt-get install -y --download-only --no-install-recommends \
   --reinstall \
+  -o APT::Architecture="${APT_TARGET_ARCH}" \
   -o Dir::Cache::archives="${workdir}/archives" \
   -o Dir::State::status="${workdir}/status" \
   "${PACKAGES[@]}"
@@ -175,6 +203,19 @@ find "${SYSROOT}" -type l -print0 \
           ;;
       esac
     done
+
+while IFS= read -r referenced; do
+  if [[ "${referenced}" != "${SYSROOT}"/* ]]; then
+    continue
+  fi
+  if [[ ! -e "${referenced}" ]]; then
+    echo "Broken CMake package reference: ${referenced}" >&2
+    exit 1
+  fi
+done < <(
+  grep -RhoE "\"${SYSROOT}\"/[^\" ]+" "${SYSROOT}/usr/lib/aarch64-linux-gnu/cmake" 2>/dev/null |
+    sed 's/^"//'
+)
 
 if [[ -d "${SYSROOT}/usr/include" ]]; then
   chmod -R a+rX "${SYSROOT}/usr/include"

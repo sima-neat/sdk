@@ -1,6 +1,16 @@
 # syntax=docker/dockerfile:1.7
 # Generated Dockerfile for modalix.
-FROM debian:bookworm
+ARG SDK_BASE_IMAGE=ubuntu:24.04
+ARG SDK_CROSS_TOOLCHAIN_IMAGE=debian:bookworm
+FROM ${SDK_CROSS_TOOLCHAIN_IMAGE} AS cross-toolchain
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+COPY scripts/install-cross-toolchain.sh /usr/local/bin/install-cross-toolchain.sh
+RUN chmod 755 /usr/local/bin/install-cross-toolchain.sh && \
+    install-cross-toolchain.sh
+
+FROM ${SDK_BASE_IMAGE}
 
 ARG SDK_PKG_LIST
 ARG SDK_GIT_BRANCH=unknown
@@ -11,7 +21,7 @@ ARG NEAT_BRANCH=main
 ARG NEAT_VERSION=latest
 ARG NEAT_INSIGHT_BRANCH=main
 ARG NEAT_INSIGHT_VERSION=latest
-ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libblkid-dev libbsd0 libcharls2 libelf1 libexpat1 libffi-dev libffi8 libgdal32 libgfortran5 libglib2.0-0 libgomp1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev libjpeg62-turbo libjson-glib-dev liblapack-dev liblapack3 liblzma5 libmount-dev libopenblas-pthread-dev libopenblas0-pthread libopenjp2-7 libpng16-16 libpython3.11-dev libqt5gui5 libsepol-dev libssl3 libsuperlu-dev libsuperlu5 libtiff6 liburcu-dev libwebp7 python3-dev python3.11-dev zlib1g"
+ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libblkid-dev libbsd0 libcharls2 libcpp-httplib-dev libelf1 libexpat1 libffi-dev libffi8 libgdal32 libgfortran5 libglib2.0-0 libgomp1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev libjpeg62-turbo libjson-glib-dev liblapack-dev liblapack3 liblzma5 libmount-dev libopenblas-pthread-dev libopenblas0-pthread libopenjp2-7 libpng16-16 libpython3.11-dev libqt5gui5 libsepol-dev libspdlog-dev libssl3 libsuperlu-dev libsuperlu5 libtiff6 liburcu-dev libwebp7 python3-dev python3.11-dev zlib1g"
 ENV SDK_PKG_LIST="\
 	libgrpc-dev,\
 	protobuf-compiler-grpc,\
@@ -25,8 +35,9 @@ ENV PATH="${NEAT_INSIGHT_VENV_DIR}/bin:${CARGO_HOME}/bin:${PATH}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-COPY config/platform-package-patterns.txt /usr/local/share/sima-sdk/platform-package-patterns.txt
-COPY scripts/configure-apt-repos.sh /usr/local/bin/configure-apt-repos.sh
+RUN if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then \
+      sed -i "/^Types: deb/a Architectures: $(dpkg --print-architecture)" /etc/apt/sources.list.d/ubuntu.sources; \
+    fi
 
 RUN dpkg --add-architecture arm64 && \
     dpkg --add-architecture arc && \
@@ -36,27 +47,24 @@ RUN apt-get clean && \
     apt-get update --allow-releaseinfo-change && \
     apt-get install -y --no-install-recommends \
       wget \
-      curl \
       gnupg \
       ca-certificates \
       iputils-ping \
-      python3 && \
+      python3 \
+      python3-apt && \
     rm -rf /var/lib/apt/lists/*
 
-RUN chmod 755 /usr/local/bin/configure-apt-repos.sh && \
-    configure-apt-repos.sh "${BASE_SDK_VERSION}"
+RUN python3 -c 'import apt'
 
 RUN apt-get update --allow-releaseinfo-change && \
     apt-get install -y --no-install-recommends \
-      python3-apt-ostree \
       vim \
       make \
       cmake \
+      debian-archive-keyring \
       default-jre-headless \
       pkgconf \
-      gcc-aarch64-linux-gnu \
       sudo \
-      g++-aarch64-linux-gnu \
       device-tree-compiler \
       bison \
       flex \
@@ -71,8 +79,14 @@ RUN apt-get update --allow-releaseinfo-change && \
       curl \
       htop \
       file \
+      libgmp10 \
+      libisl23 \
+      libjansson4 \
+      libmpc3 \
+      libmpfr6 \
       libssl-dev \
       libgnutls28-dev \
+      libzstd1 \
       openssh-client \
       sshpass \
       python3-dev \
@@ -85,6 +99,31 @@ RUN apt-get update --allow-releaseinfo-change && \
       mkcert && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+COPY --from=cross-toolchain /opt/cross-toolchain/ /
+COPY --from=cross-toolchain /opt/cross-toolchain/ /opt/bookworm-cross-toolchain/
+
+RUN aarch64-linux-gnu-gcc --version && \
+    aarch64-linux-gnu-g++ --version && \
+    aarch64-linux-gnu-ld --version && \
+    printf 'int main(void) { return 0; }\n' > /tmp/cross-smoke.c && \
+    aarch64-linux-gnu-gcc -c -o /tmp/cross-smoke.o /tmp/cross-smoke.c && \
+    rm -f /tmp/cross-smoke.o /tmp/cross-smoke.c
+
+COPY config/platform-package-patterns.txt /usr/local/share/sima-sdk/platform-package-patterns.txt
+COPY scripts/configure-apt-repos.sh /usr/local/bin/configure-apt-repos.sh
+
+RUN chmod 755 /usr/local/bin/configure-apt-repos.sh && \
+    configure-apt-repos.sh "${BASE_SDK_VERSION}"
+
+RUN mkdir -p /tmp/supervisor /var/log/supervisor && \
+    chmod 1777 /tmp/supervisor && \
+    chmod -R a+rwX /var/log/supervisor && \
+    sed -i \
+      -e 's#file=/var/run/supervisor.sock#file=/tmp/supervisor/supervisor.sock#' \
+      -e 's#pidfile=/var/run/supervisord.pid#pidfile=/tmp/supervisor/supervisord.pid#' \
+      -e 's#serverurl=unix:///var/run/supervisor.sock#serverurl=unix:///tmp/supervisor/supervisor.sock#' \
+      /etc/supervisor/supervisord.conf
 
 COPY scripts/simaai-init-build-env /opt/bin/simaai-init-build-env
 COPY scripts/simaai_setup_sdk.py /opt/bin/simaai_setup_sdk.py
@@ -107,6 +146,10 @@ RUN install-rustup.sh
 
 RUN setup-sdk-sysroot.sh "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}" && \
     install-sima-cli.sh && \
+    cp -a /opt/bookworm-cross-toolchain/. / && \
+    aarch64-linux-gnu-gcc --version && \
+    aarch64-linux-gnu-g++ --version && \
+    aarch64-linux-gnu-ld --version && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /tmp/*
 

@@ -18,17 +18,50 @@ chmod 644 /etc/apt/trusted.gpg.d/elxr.gpg \
           /etc/apt/trusted.gpg.d/fluentbit.gpg \
           /etc/apt/trusted.gpg.d/simaai.gpg
 
+host_id=""
+if [[ -r /etc/os-release ]]; then
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  host_id="${ID:-}"
+fi
+
 cat > /etc/apt/sources.list.d/elxr.list <<'EOF'
 deb [signed-by=/etc/apt/trusted.gpg.d/elxr.gpg] https://mirror.elxr.dev/elxr aria main
 deb [signed-by=/etc/apt/trusted.gpg.d/fluentbit.gpg] https://packages.fluentbit.io/debian/bookworm bookworm main
 deb [trusted=yes] https://repo.sima.ai/elxr/deb/release bookworm non-free  # simaai repo
 EOF
 
-cat > /etc/apt/preferences.d/stable.pref <<'EOF'
+if [[ "${host_id}" == "ubuntu" ]]; then
+  cat > /etc/apt/sources.list.d/debian-target.list <<'EOF'
+deb [arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian bookworm main
+deb [arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian bookworm-updates main
+deb [arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian-security bookworm-security main
+EOF
+
+  cat > /etc/apt/preferences.d/stable.pref <<'EOF'
+Package: *
+Pin: origin "repo.sima.ai/elxr"
+Pin-Priority: 100
+
+Package: *
+Pin: origin "mirror.elxr.dev"
+Pin-Priority: 100
+
+Package: *
+Pin: origin "deb.debian.org"
+Pin-Priority: 100
+
+Package: *
+Pin: origin "packages.fluentbit.io"
+Pin-Priority: 100
+EOF
+else
+  cat > /etc/apt/preferences.d/stable.pref <<'EOF'
 Package: *
 Pin: origin "repo.sima.ai/elxr"
 Pin-Priority: 999
 EOF
+fi
 
 platform_packages="$(
   sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${patterns_file}" |

@@ -289,6 +289,7 @@ parse_common_options() {
 download_for_manifest() {
   local arch="$1"
   local outdir="$2"
+  local sysroot_pref=/etc/apt/preferences.d/00-sima-sdk-sysroot-target.pref
   shift 2
 
   mkdir -p "${outdir}/archives/partial"
@@ -298,8 +299,33 @@ download_for_manifest() {
     chown _apt "${outdir}/archives" "${outdir}/archives/partial"
   fi
 
+  if [[ -f /etc/apt/sources.list.d/debian-target.list ]]; then
+    cat >"${sysroot_pref}" <<'EOF'
+Package: *
+Pin: origin "repo.sima.ai/elxr"
+Pin-Priority: 990
+
+Package: *
+Pin: origin "mirror.elxr.dev"
+Pin-Priority: 990
+
+Package: *
+Pin: origin "deb.debian.org"
+Pin-Priority: 990
+
+Package: *
+Pin: origin "packages.fluentbit.io"
+Pin-Priority: 990
+
+Package: *
+Pin: release o=Ubuntu
+Pin-Priority: 100
+EOF
+  fi
+
   apt-get update --allow-releaseinfo-change
   apt-get install -y --download-only --no-install-recommends --reinstall \
+    -o APT::Architecture="${arch}" \
     -o Dir::Cache::archives="${outdir}/archives" \
     -o Dir::State::status="${outdir}/status" \
     "$@"
@@ -387,7 +413,7 @@ cmd_install() {
   run_as_root "${INSTALLER}" "${sysroot}" "${normalized[@]}"
 
   workdir="$(mktemp -d)"
-  trap 'rm -rf "${workdir}"' EXIT
+  trap 'rm -rf "${workdir}"; rm -f /etc/apt/preferences.d/00-sima-sdk-sysroot-target.pref' EXIT
   download_for_manifest "${arch}" "${workdir}" "${normalized[@]}"
   record_manifests "${sysroot}" "${arch}" "${workdir}/archives"
 }
