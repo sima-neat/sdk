@@ -36,6 +36,30 @@ test_neat_status() {
   echo "::endgroup::"
 }
 
+test_modalix_cross_toolchain() {
+  local smoke_src="${WORK_DIR}/modalix-cross-smoke.cpp"
+  local smoke_bin="${WORK_DIR}/modalix-cross-smoke"
+  local compiler="${CXX:-aarch64-linux-gnu-g++}"
+
+  test "${SYSROOT}" = "/opt/toolchain/aarch64/modalix"
+  command -v "${compiler}"
+  test -d "${SYSROOT}/usr/include"
+  test -d "${SYSROOT}/usr/lib/aarch64-linux-gnu"
+
+  cat > "${smoke_src}" <<'EOF'
+#include <iostream>
+
+int main() {
+  std::cout << "modalix cross toolchain ok\n";
+  return 0;
+}
+EOF
+
+  "${compiler}" --sysroot="${SYSROOT}" -o "${smoke_bin}" "${smoke_src}"
+  file "${smoke_bin}"
+  file "${smoke_bin}" | grep -Eq 'aarch64|ARM aarch64|ARM64'
+}
+
 test_hello_neat_cpp() {
   cd "${HELLO_WORK}"
 
@@ -68,6 +92,7 @@ mkdir -p "${HELLO_WORK}" "$(dirname "${STATUS_JSON}")"
 cp -a "${HELLO_SRC}/." "${HELLO_WORK}/"
 
 run_test "SDK status: neat --json" test_neat_status
+run_test "Modalix cross toolchain" test_modalix_cross_toolchain
 run_test "Hello Neat C++ build" test_hello_neat_cpp
 run_test "Hello Neat Python runtime" test_hello_neat_python
 

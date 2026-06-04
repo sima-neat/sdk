@@ -108,7 +108,9 @@ RUN aarch64-linux-gnu-gcc --version && \
     aarch64-linux-gnu-ld --version && \
     printf 'int main(void) { return 0; }\n' > /tmp/cross-smoke.c && \
     aarch64-linux-gnu-gcc -c -o /tmp/cross-smoke.o /tmp/cross-smoke.c && \
-    rm -f /tmp/cross-smoke.o /tmp/cross-smoke.c
+    printf '#include <iostream>\nint main() { std::cout << "ok\\\\n"; return 0; }\n' > /tmp/cross-smoke.cpp && \
+    aarch64-linux-gnu-g++ -o /tmp/cross-smoke-cxx /tmp/cross-smoke.cpp && \
+    rm -f /tmp/cross-smoke.o /tmp/cross-smoke.c /tmp/cross-smoke.cpp /tmp/cross-smoke-cxx
 
 COPY config/platform-package-patterns.txt /usr/local/share/sima-sdk/platform-package-patterns.txt
 COPY scripts/configure-apt-repos.sh /usr/local/bin/configure-apt-repos.sh
@@ -150,6 +152,9 @@ RUN setup-sdk-sysroot.sh "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}" && \
     aarch64-linux-gnu-gcc --version && \
     aarch64-linux-gnu-g++ --version && \
     aarch64-linux-gnu-ld --version && \
+    printf '#include <iostream>\nint main() { std::cout << "ok\\\\n"; return 0; }\n' > /tmp/cross-smoke.cpp && \
+    aarch64-linux-gnu-g++ -o /tmp/cross-smoke-cxx /tmp/cross-smoke.cpp && \
+    rm -f /tmp/cross-smoke.cpp /tmp/cross-smoke-cxx && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /tmp/*
 

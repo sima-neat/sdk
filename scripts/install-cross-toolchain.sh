@@ -43,6 +43,15 @@ if [[ -d /usr/aarch64-linux-gnu ]]; then
 fi
 
 if [[ "${host_arch}" == "arm64" ]]; then
+  mkdir -p /opt/cross-toolchain/usr/include \
+           /opt/cross-toolchain/usr/include/aarch64-linux-gnu
+  if [[ -d /usr/include/c++ ]]; then
+    cp -a /usr/include/c++ /opt/cross-toolchain/usr/include/
+  fi
+  if [[ -d /usr/include/aarch64-linux-gnu/c++ ]]; then
+    cp -a /usr/include/aarch64-linux-gnu/c++ /opt/cross-toolchain/usr/include/aarch64-linux-gnu/
+  fi
+
   cp -a /usr/bin/gcc /usr/bin/gcc-* \
         /usr/bin/g++ /usr/bin/g++-* \
         /usr/bin/cpp /usr/bin/cpp-* \
