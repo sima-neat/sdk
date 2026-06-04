@@ -42,10 +42,29 @@ Docker platform: linux/arm64
 
 ## Add Sysroot Packages
 
-Provide a comma-separated package list with `SDK_PKG_LIST`:
+Inside a running SDK container, install additional ARM64 Debian packages into the sysroot with `sysroot`:
 
 ```bash
-SDK_PKG_LIST=libzix-dev,vxi-dev ./build.sh
+sudo sysroot install libzix-dev vxi-dev
+```
+
+The command installs into `/opt/toolchain/aarch64/modalix` by default and appends `:arm64` to unqualified package names. You can also pass explicit package qualifiers:
+
+```bash
+sudo sysroot install libopencv-dnn406:arm64 libfoo-dev=1.2.3
+```
+
+For OpenCV CMake component names, `sysroot` can resolve names such as `opencv_dnn` to the matching Debian package when apt metadata contains a single match:
+
+```bash
+sudo sysroot install opencv_dnn
+```
+
+Packages installed through `sysroot install` are tracked in lightweight manifests, so they can be listed or removed later:
+
+```bash
+sysroot list
+sudo sysroot remove libzix-dev
 ```
 
 ## NEAT Insight Version
