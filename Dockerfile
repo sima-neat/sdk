@@ -21,7 +21,7 @@ ARG NEAT_BRANCH=main
 ARG NEAT_VERSION=latest
 ARG NEAT_INSIGHT_BRANCH=main
 ARG NEAT_INSIGHT_VERSION=latest
-ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libblkid-dev libbsd0 libcharls2 libcpp-httplib-dev libelf1 libexpat1 libffi-dev libffi8 libgdal32 libgfortran5 libglib2.0-0 libgomp1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev libjpeg62-turbo libjson-glib-dev liblapack-dev liblapack3 liblzma5 libmount-dev libopenblas-pthread-dev libopenblas0-pthread libopenjp2-7 libpng16-16 libpython3.11-dev libqt5gui5 libsepol-dev libspdlog-dev libssl3 libsuperlu-dev libsuperlu5 libtiff6 liburcu-dev libwebp7 python3-dev python3.11-dev zlib1g"
+ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libblkid-dev libbsd0 libcharls2 libcpp-httplib-dev libelf1 libexpat1 libffi-dev libffi8 libgdal32 libgfortran5 libglib2.0-0 libgomp1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev libjpeg62-turbo libjson-glib-dev liblapack-dev liblapack3 liblzma5 libmount-dev libopenblas-pthread-dev libopenblas0-pthread libopenjp2-7 libpng16-16 libpython3.11-dev libqt5gui5 libsepol-dev libspdlog-dev libssl3 libstdc++6 libsuperlu-dev libsuperlu5 libtiff6 liburcu-dev libwebp7 python3-dev python3.11-dev zlib1g"
 ENV SDK_PKG_LIST="\
 	libgrpc-dev,\
 	protobuf-compiler-grpc,\

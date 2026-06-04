@@ -40,11 +40,15 @@ test_modalix_cross_toolchain() {
   local smoke_src="${WORK_DIR}/modalix-cross-smoke.cpp"
   local smoke_bin="${WORK_DIR}/modalix-cross-smoke"
   local compiler="${CXX:-aarch64-linux-gnu-g++}"
+  local sysroot_libdir="${SYSROOT}/usr/lib/aarch64-linux-gnu"
+  local sysroot_gcc_libdir="${SYSROOT}/usr/lib/gcc/aarch64-linux-gnu/12"
 
   test "${SYSROOT}" = "/opt/toolchain/aarch64/modalix"
   command -v "${compiler}"
   test -d "${SYSROOT}/usr/include"
-  test -d "${SYSROOT}/usr/lib/aarch64-linux-gnu"
+  test -d "${sysroot_libdir}"
+  test -e "${sysroot_libdir}/libMLArt.so"
+  test -e "${sysroot_libdir}/libstdc++.so.6"
 
   cat > "${smoke_src}" <<'EOF'
 #include <iostream>
@@ -55,7 +59,18 @@ int main() {
 }
 EOF
 
-  "${compiler}" --sysroot="${SYSROOT}" -o "${smoke_bin}" "${smoke_src}"
+  "${compiler}" \
+    --sysroot="${SYSROOT}" \
+    -L"${sysroot_gcc_libdir}" \
+    -L"${sysroot_libdir}" \
+    -Wl,-rpath-link,"${sysroot_gcc_libdir}" \
+    -Wl,-rpath-link,"${sysroot_libdir}" \
+    -Wl,-rpath-link,"${SYSROOT}/lib/aarch64-linux-gnu" \
+    -o "${smoke_bin}" \
+    "${smoke_src}" \
+    -Wl,--no-as-needed \
+    -lMLArt \
+    -Wl,--as-needed
   file "${smoke_bin}"
   file "${smoke_bin}" | grep -Eq 'aarch64|ARM aarch64|ARM64'
 }
