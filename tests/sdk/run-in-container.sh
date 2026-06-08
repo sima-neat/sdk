@@ -144,23 +144,17 @@ target_python_minor() {
   basename "${include_dir}" | sed 's/^python//'
 }
 
-host_python_for_target() {
-  local target_minor="$1"
+host_python() {
   local candidate
 
-  for candidate in "python${target_minor}" "python3"; do
-    if command -v "${candidate}" >/dev/null 2>&1 &&
-       "${candidate}" - <<PY
-import sys
-raise SystemExit(0 if sys.version_info[:2] == tuple(map(int, "${target_minor}".split("."))) else 1)
-PY
-    then
+  for candidate in python3 python; do
+    if command -v "${candidate}" >/dev/null 2>&1 && "${candidate}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)'; then
       command -v "${candidate}"
       return 0
     fi
   done
 
-  echo "No host-runnable Python ${target_minor} found for target Python ABI." >&2
+  echo "No host-runnable Python 3.8+ found for representative Python extension build." >&2
   return 1
 }
 
@@ -172,7 +166,7 @@ test_llima_python_extension_representative() {
   local python_library
 
   target_minor="$(target_python_minor)"
-  host_python="$(host_python_for_target "${target_minor}")"
+  host_python="$(host_python)"
   python_include="${SYSROOT}/usr/include/python${target_minor}"
   python_library="${SYSROOT}/usr/lib/aarch64-linux-gnu/libpython${target_minor}.so"
 
