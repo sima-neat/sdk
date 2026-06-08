@@ -30,7 +30,6 @@ platform_package_patterns=(
   inferencetools
   vdpcli
   mpktools
-  vdpspy
   vdp-llm-libs
   swsoc-*
   smifb-*

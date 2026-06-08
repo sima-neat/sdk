@@ -10,7 +10,6 @@ evtransforms
 inferencetools
 vdpcli
 mpktools
-vdpspy
 vdp-llm-libs
 swsoc-*
 smifb-*

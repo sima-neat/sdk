@@ -33,7 +33,6 @@ DEFAULT_PLATFORM_PACKAGE_PATTERNS = (
     "inferencetools",
     "vdpcli",
     "mpktools",
-    "vdpspy",
     "vdp-llm-libs",
     "swsoc-*",
     "smifb-*",
@@ -184,6 +183,13 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
 
         return pkg.candidate
 
+    def expected_download_version(pkgname, requested_version):
+        if requested_version:
+            return requested_version
+        if is_platform_package(pkgname):
+            return version
+        return ""
+
     def collect_rdeps(candidate, recursive):
         """Collect the runtime dependencies of the package."""
 
@@ -213,8 +219,9 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
     expected_versions_manifest = os.path.join(dldir, "expected-package-versions.tsv")
 
     def record_expected_version(pkg, expected_version):
-        with open(expected_versions_manifest, "at", encoding="utf-8") as wf:
-            wf.write(f"{pkg}\t{expected_version}\n")
+        if expected_version:
+            with open(expected_versions_manifest, "at", encoding="utf-8") as wf:
+                wf.write(f"{pkg}\t{expected_version}\n")
 
     def download(uri, dlname, expected_version):
         """Download a package and validate the resolved package version."""
@@ -240,7 +247,7 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
         dlname = dldir + "/" + name + ".deb"
         # Need to download the package first to run dpkg-deb and find build
         # dependencies.
-        download(candidate.uri, dlname, candidate.version)
+        download(candidate.uri, dlname, expected_download_version(name, ""))
 
         bdep_list = get_build_depends_list(dlname)
 
@@ -403,7 +410,7 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
     for name, ver in graph.items():
         c = get_candidate(name, ver)
         if c is not None:
-            download(c.uri, dldir + "/" + name + ".deb", c.version)
+            download(c.uri, dldir + "/" + name + ".deb", expected_download_version(name, ver))
 
     os.makedirs(installdir, exist_ok=True)
 
