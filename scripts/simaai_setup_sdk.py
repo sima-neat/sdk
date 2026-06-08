@@ -234,7 +234,7 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
         ver = package_field(dlname, "Version")
         if expected_version and ver != expected_version:
             raise RuntimeError(f"Unexpected {pkg} version {ver}; expected {expected_version}")
-        record_expected_version(pkg, expected_version or ver)
+        record_expected_version(pkg, expected_version)
 
     def collect_bdeps(candidate, name):
         """Collect the build-time dependencies."""
