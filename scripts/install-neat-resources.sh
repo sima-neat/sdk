@@ -4,12 +4,10 @@ set -euo pipefail
 
 mkdir -p /neat-resources/core-extra /neat-resources/core-src /neat-resources/apps-src
 
-wget -O /tmp/install-neat.sh https://tools.sima-neat.com/install-neat.sh
 (
   cd /neat-resources/core-extra
-  bash /tmp/install-neat.sh --minimum "${NEAT_BRANCH:-main}" "${NEAT_VERSION:-latest}"
+  SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli neat install core@develop -t minimal
 )
-rm -f /tmp/install-neat.sh
 
 find /neat-resources/core-extra -type f \
   \( -name '*.deb' -o -name '*.tar.gz' -o -name '*.whl' \) -delete
