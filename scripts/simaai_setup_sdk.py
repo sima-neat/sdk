@@ -184,10 +184,8 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
         return pkg.candidate
 
     def expected_download_version(pkgname, requested_version):
-        if requested_version:
-            return requested_version
         if is_platform_package(pkgname):
-            return version
+            return requested_version or version
         return ""
 
     def collect_rdeps(candidate, recursive):
