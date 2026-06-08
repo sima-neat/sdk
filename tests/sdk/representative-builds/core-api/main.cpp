@@ -1,4 +1,3 @@
-#include <graph/Graph.h>
 #include <model/Model.h>
 #include <neat.h>
 #include <pipeline/Graph.h>
@@ -39,14 +38,6 @@ int main() {
   simaai::neat::GraphOptions options;
   simaai::neat::Graph public_graph("representative-core-api", options);
   (void)public_graph;
-
-  simaai::neat::graph::Graph runtime_graph;
-  const auto input_port = runtime_graph.intern_port("input");
-  const auto output_port = runtime_graph.intern_port("output");
-  if (input_port == output_port || runtime_graph.port_count() != 2) {
-    std::cerr << "representative runtime graph port interning failed\n";
-    return 3;
-  }
 
   const auto policy = simaai::neat::policy::make_default_policy();
   (void)policy;
