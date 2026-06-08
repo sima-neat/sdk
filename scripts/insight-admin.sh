@@ -61,15 +61,17 @@ update_insight() {
   local branch="${1:-${NEAT_INSIGHT_BRANCH:-main}}"
   local version="${2:-${NEAT_INSIGHT_VERSION:-latest}}"
   local venv_dir="${NEAT_INSIGHT_VENV_DIR:-/opt/neat-insight/venv}"
-  local tmp_script
+  local tmp_dir
 
-  tmp_script="$(mktemp /tmp/install-neat-insight.XXXXXX.py)"
-  trap 'rm -f "${tmp_script}"' EXIT
+  tmp_dir="$(mktemp -d /tmp/install-neat-insight.XXXXXX)"
+  trap 'rm -rf "${tmp_dir}"' EXIT
 
-  curl -fsSL https://apps.sima-neat.com/tools/install-neat-insight.py -o "${tmp_script}"
-  run_as_root env NEAT_INSIGHT_VENV_DIR="${venv_dir}" python3 "${tmp_script}" "${branch}" "${version}"
+  run_as_root env \
+    NEAT_INSIGHT_VENV_DIR="${venv_dir}" \
+    SIMA_CLI_CHECK_FOR_UPDATE=0 \
+    sima-cli neat install -d "${tmp_dir}" "insight@${branch}:${version}"
   run_as_root ln -sf "${venv_dir}/bin/neat-insight" /usr/local/bin/neat-insight
-  rm -f "${tmp_script}"
+  rm -rf "${tmp_dir}"
   trap - EXIT
 
   if is_supervisor_running; then

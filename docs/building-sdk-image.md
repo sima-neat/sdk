@@ -27,7 +27,7 @@ By default, this builds `sdk:latest`.
 Build with a custom image name and tag:
 
 ```bash
-./build.sh sdk 2.1.1
+./build.sh sdk 2.1.2
 ```
 
 The build helper supports both `aarch64` and `x86_64` hosts and automatically selects the matching Docker platform for the current machine.
@@ -72,5 +72,5 @@ sudo sysroot remove libzix-dev
 To make an Insight upgrade permanent in the image, rebuild the SDK image with the desired Insight channel and version:
 
 ```bash
-NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 2.1.1
+NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 2.1.2
 ```
