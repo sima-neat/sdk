@@ -6,10 +6,10 @@ SPDX-License-Identifier: Apache-2.0
 Vendored from simaai-sdk-tools 2.0.0.
 
 Local SDK image changes:
-- Resolve platform-owned packages to the requested platform version when a
+- Resolve SDK-versioned packages to the requested platform version when a
   dependency is unversioned.
-- Never fall back to the newest candidate for platform-owned packages.
-- Validate downloaded platform-owned packages before extraction.
+- Never fall back to the newest candidate for SDK-versioned packages.
+- Validate downloaded SDK-versioned packages before extraction.
 - Keep extraction deterministic and extract platform-owned packages after
   generic build dependencies.
 - Skip libdlpack-dev because the SiMa TVM package owns the compatible
@@ -26,7 +26,7 @@ import sys
 
 
 DEFAULT_PLATFORM_PACKAGE_PATTERNS = (
-    "simaai-*",
+    "simaai-palette-*",
     "appcomplex",
     "a65apps",
     "evtransforms",

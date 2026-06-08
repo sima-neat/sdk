@@ -22,7 +22,7 @@ if [[ ! -d "${deb_dir}" ]]; then
 fi
 
 platform_package_patterns=(
-  simaai-*
+  simaai-palette-*
   appcomplex
   a65apps
   evtransforms

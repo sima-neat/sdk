@@ -1,5 +1,9 @@
-# SiMa platform-owned packages that must match BASE_SDK_VERSION.
-simaai-*
+# Packages that must match BASE_SDK_VERSION exactly.
+#
+# Some SiMa packages intentionally carry independent package versions even when
+# they are part of an SDK release. Keep this list limited to packages whose
+# Debian version is expected to equal the SDK/platform version.
+simaai-palette-*
 appcomplex
 a65apps
 evtransforms
