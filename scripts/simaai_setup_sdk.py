@@ -6,10 +6,10 @@ SPDX-License-Identifier: Apache-2.0
 Vendored from simaai-sdk-tools 2.0.0.
 
 Local SDK image changes:
-- Resolve platform-owned packages to the requested platform version when a
+- Resolve SDK-versioned packages to the requested platform version when a
   dependency is unversioned.
-- Never fall back to the newest candidate for platform-owned packages.
-- Validate downloaded platform-owned packages before extraction.
+- Never fall back to the newest candidate for SDK-versioned packages.
+- Validate downloaded SDK-versioned packages before extraction.
 - Keep extraction deterministic and extract platform-owned packages after
   generic build dependencies.
 - Skip libdlpack-dev because the SiMa TVM package owns the compatible
@@ -26,14 +26,13 @@ import sys
 
 
 DEFAULT_PLATFORM_PACKAGE_PATTERNS = (
-    "simaai-*",
+    "simaai-palette-*",
     "appcomplex",
     "a65apps",
     "evtransforms",
     "inferencetools",
     "vdpcli",
     "mpktools",
-    "vdpspy",
     "vdp-llm-libs",
     "swsoc-*",
     "smifb-*",
@@ -184,6 +183,11 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
 
         return pkg.candidate
 
+    def expected_download_version(pkgname, requested_version):
+        if is_platform_package(pkgname):
+            return requested_version or version
+        return ""
+
     def collect_rdeps(candidate, recursive):
         """Collect the runtime dependencies of the package."""
 
@@ -210,8 +214,15 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
                 if recursive:
                     collect_rdeps(get_candidate(name, ver), recursive)
 
-    def download(uri, dlname):
-        """Download a package and validate platform-owned versions."""
+    expected_versions_manifest = os.path.join(dldir, "expected-package-versions.tsv")
+
+    def record_expected_version(pkg, expected_version):
+        if expected_version:
+            with open(expected_versions_manifest, "at", encoding="utf-8") as wf:
+                wf.write(f"{pkg}\t{expected_version}\n")
+
+    def download(uri, dlname, expected_version):
+        """Download a package and validate the resolved package version."""
 
         cmd = ["wget", uri, "-O", dlname]
         ret = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -221,8 +232,9 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
 
         pkg = package_field(dlname, "Package")
         ver = package_field(dlname, "Version")
-        if is_platform_package(pkg) and ver != version:
-            raise RuntimeError(f"Unexpected {pkg} version {ver}; expected {version}")
+        if expected_version and ver != expected_version:
+            raise RuntimeError(f"Unexpected {pkg} version {ver}; expected {expected_version}")
+        record_expected_version(pkg, expected_version)
 
     def collect_bdeps(candidate, name):
         """Collect the build-time dependencies."""
@@ -233,7 +245,7 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
         dlname = dldir + "/" + name + ".deb"
         # Need to download the package first to run dpkg-deb and find build
         # dependencies.
-        download(candidate.uri, dlname)
+        download(candidate.uri, dlname, expected_download_version(name, ""))
 
         bdep_list = get_build_depends_list(dlname)
 
@@ -377,6 +389,8 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
     shadow.clear()
     shutil.rmtree(dldir, ignore_errors=True)
     os.makedirs(dldir, exist_ok=True)
+    with open(expected_versions_manifest, "wt", encoding="utf-8"):
+        pass
 
     print("Collecting buildtime dependencies...")
     for name, ver in graph.items():
@@ -394,7 +408,7 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
     for name, ver in graph.items():
         c = get_candidate(name, ver)
         if c is not None:
-            download(c.uri, dldir + "/" + name + ".deb")
+            download(c.uri, dldir + "/" + name + ".deb", expected_download_version(name, ver))
 
     os.makedirs(installdir, exist_ok=True)
 
