@@ -8,6 +8,7 @@ HELLO_WORK="${WORK_DIR}/hello-neat"
 REPRESENTATIVE_SRC="${ROOT_DIR}/representative-builds"
 REPRESENTATIVE_WORK="${WORK_DIR}/representative-builds"
 STATUS_JSON="${WORK_DIR}/neat-status.json"
+INSIGHT_WAIT_SECONDS="${NEAT_SDK_INSIGHT_WAIT_SECONDS:-30}"
 
 setup_sdk_environment() {
   if [[ -f /opt/bin/simaai-init-build-env ]]; then
@@ -32,8 +33,41 @@ run_test() {
 }
 
 test_neat_status() {
+  local deadline
+  local insight_state
+
   echo "::group::Neat status"
-  neat --json | tee "${STATUS_JSON}"
+  deadline=$((SECONDS + INSIGHT_WAIT_SECONDS))
+  while true; do
+    neat --json | tee "${STATUS_JSON}"
+    insight_state="$(
+      python3 - "${STATUS_JSON}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as f:
+    data = json.load(f)
+print((data.get("components", {}).get("insight", {}) or {}).get("serviceState", ""))
+PY
+    )"
+
+    if [[ "${insight_state}" == "Running" ]] || (( SECONDS >= deadline )); then
+      break
+    fi
+    sleep 2
+  done
+
+  if [[ "${insight_state}" != "Running" ]] && command -v insight-admin >/dev/null 2>&1; then
+    echo "Insight did not report Running within ${INSIGHT_WAIT_SECONDS}s; collecting supervisor diagnostics."
+    insight-admin status || true
+    insight-admin logs 120 || true
+  fi
+
+  if [[ "${insight_state}" != "Running" ]]; then
+    echo "Unexpected Insight service state after ${INSIGHT_WAIT_SECONDS}s: ${insight_state:-unknown}" >&2
+    return 1
+  fi
+
   python3 "${ROOT_DIR}/neat-status/validate_neat_status.py" "${STATUS_JSON}"
   echo "::endgroup::"
 }
