@@ -50,7 +50,7 @@ def validate_status(data):
         add_error(errors, "Missing components.insight.tag")
     if not insight.get("venv"):
         add_error(errors, "Missing components.insight.venv")
-    if insight.get("serviceState") not in {"Running", "Starting", "Unknown"}:
+    if insight.get("serviceState") != "Running":
         add_error(
             errors,
             f"Unexpected components.insight.serviceState: {insight.get('serviceState')}",
