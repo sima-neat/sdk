@@ -751,7 +751,8 @@ export DEVKIT_SYNC_MOUNT_POINT="${_MOUNT_POINT}"
 export DEVKIT_SYNC_DEVKIT_USER="${_DEVKIT_USER}"
 export DEVKIT_SYNC_DEVKIT_PORT="${_DEVKIT_PORT}"
 export SDK_IMAGE_BRANCH="${SDK_IMAGE_BRANCH:-${SDK_GIT_BRANCH:-main}}"
-export SDK_IMAGE_TAG="${SDK_IMAGE_TAG:-latest}"
+export SDK_PROMPT_REF="${SDK_RELEASE_REF:-${SDK_IMAGE_TAG:-latest}}"
+export SDK_IMAGE_TAG="${SDK_IMAGE_TAG:-${SDK_PROMPT_REF}}"
 __devkit_prompt_slug() {
   local value="${1-}"
   value="${value//\//-}"
@@ -760,7 +761,7 @@ __devkit_prompt_slug() {
   value="$(printf '%s' "${value}" | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-|-$//g')"
   printf '%s' "${value:-unknown}"
 }
-export SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME:-neat-sdk-$(__devkit_prompt_slug "${SDK_IMAGE_BRANCH}")-$(__devkit_prompt_slug "${SDK_IMAGE_TAG}")}"
+export SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME:-neat-sdk-$(__devkit_prompt_slug "${SDK_PROMPT_REF}")}"
 
 __devkit_rewrite_prompt_hostname() {
   local prompt="${1-}"
@@ -1101,6 +1102,8 @@ _persist_file="${HOME}/.devkit-sync.rc"
   echo "export DEVKIT_SYNC_MOUNT_POINT='${DEVKIT_SYNC_MOUNT_POINT}'"
   echo "export DEVKIT_SYNC_DEVKIT_USER='${DEVKIT_SYNC_DEVKIT_USER}'"
   echo "export DEVKIT_SYNC_DEVKIT_PORT='${DEVKIT_SYNC_DEVKIT_PORT}'"
+  echo "export SDK_RELEASE_REF='${SDK_RELEASE_REF:-}'"
+  echo "export SDK_PROMPT_REF='${SDK_PROMPT_REF}'"
   echo "export SDK_IMAGE_BRANCH='${SDK_IMAGE_BRANCH}'"
   echo "export SDK_IMAGE_TAG='${SDK_IMAGE_TAG}'"
   echo "export SDK_PROMPT_HOSTNAME='${SDK_PROMPT_HOSTNAME}'"
