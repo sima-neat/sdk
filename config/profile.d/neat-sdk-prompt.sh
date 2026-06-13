@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 if [[ $- == *i* ]]; then
-  export SDK_IMAGE_TAG="${SDK_IMAGE_TAG:-version}"
-  export SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME:-neat-sdk-${SDK_IMAGE_TAG}}"
+  export SDK_PROMPT_REF="${SDK_RELEASE_REF:-${SDK_IMAGE_TAG:-version}}"
+  export SDK_IMAGE_TAG="${SDK_IMAGE_TAG:-${SDK_PROMPT_REF}}"
+  export SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME:-neat-sdk-${SDK_PROMPT_REF}}"
   _sdk_rewrite_prompt_hostname() {
     local prompt="${1-}"
     prompt="${prompt//\\h/${SDK_PROMPT_HOSTNAME}}"

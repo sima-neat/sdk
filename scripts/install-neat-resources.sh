@@ -2,14 +2,18 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/neat-deps.sh"
+
 mkdir -p /neat-resources/core-extra /neat-resources/core-src /neat-resources/apps-src
 
-wget -O /tmp/install-neat.sh https://tools.sima-neat.com/install-neat.sh
+core_target="${NEAT_CORE_TARGET:-$(neat_dependency_target core core)}"
+
 (
   cd /neat-resources/core-extra
-  bash /tmp/install-neat.sh --minimum "${NEAT_BRANCH:-main}" "${NEAT_VERSION:-latest}"
+  echo "Installing prepackaged Neat Library: ${core_target}"
+  SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli neat install "${core_target}" -t minimal
 )
-rm -f /tmp/install-neat.sh
 
 find /neat-resources/core-extra -type f \
   \( -name '*.deb' -o -name '*.tar.gz' -o -name '*.whl' \) -delete

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/neat-deps.sh"
+
 program_name="$(basename "$0")"
 command="${1:-}"
 
@@ -14,8 +17,8 @@ Usage:
   ${program_name} logs [lines]
 
 Defaults:
-  branch  = \${NEAT_INSIGHT_BRANCH:-main}
-  version = \${NEAT_INSIGHT_VERSION:-latest}
+  branch/version come from deps/manifest.json unless NEAT_INSIGHT_TARGET,
+  NEAT_INSIGHT_BRANCH, or NEAT_INSIGHT_VERSION is set.
 EOF
 }
 
@@ -58,18 +61,27 @@ is_supervisor_running() {
 }
 
 update_insight() {
-  local branch="${1:-${NEAT_INSIGHT_BRANCH:-main}}"
-  local version="${2:-${NEAT_INSIGHT_VERSION:-latest}}"
+  local branch="${1:-${NEAT_INSIGHT_BRANCH:-}}"
+  local version="${2:-${NEAT_INSIGHT_VERSION:-}}"
   local venv_dir="${NEAT_INSIGHT_VENV_DIR:-/opt/neat-insight/venv}"
-  local tmp_script
+  local insight_target
+  local tmp_dir
 
-  tmp_script="$(mktemp /tmp/install-neat-insight.XXXXXX.py)"
-  trap 'rm -f "${tmp_script}"' EXIT
+  if [[ -n "${branch}" ]]; then
+    insight_target="insight@${branch}:${version:-latest}"
+  else
+    insight_target="${NEAT_INSIGHT_TARGET:-$(neat_dependency_target insight insight)}"
+  fi
 
-  curl -fsSL https://apps.sima-neat.com/tools/install-neat-insight.py -o "${tmp_script}"
-  run_as_root env NEAT_INSIGHT_VENV_DIR="${venv_dir}" python3 "${tmp_script}" "${branch}" "${version}"
+  tmp_dir="$(mktemp -d /tmp/install-neat-insight.XXXXXX)"
+  trap 'rm -rf "${tmp_dir}"' EXIT
+
+  run_as_root env \
+    NEAT_INSIGHT_VENV_DIR="${venv_dir}" \
+    SIMA_CLI_CHECK_FOR_UPDATE=0 \
+    sima-cli neat install -d "${tmp_dir}" "${insight_target}"
   run_as_root ln -sf "${venv_dir}/bin/neat-insight" /usr/local/bin/neat-insight
-  rm -f "${tmp_script}"
+  rm -rf "${tmp_dir}"
   trap - EXIT
 
   if is_supervisor_running; then

@@ -162,7 +162,7 @@ jobs:
           source .venv/bin/activate
           python -m pip install --upgrade pip
           python -m pip install sima-cli
-          sima-cli version
+          sima-cli --version
 
       - name: Configure sima-cli access token
         env:
@@ -287,6 +287,9 @@ jobs:
           fi
           if [[ -n "${release_tag}" ]]; then
             promote_args+=(--tag "${repository}:${release_tag}")
+          fi
+          if [[ -n "${release_latest_tag:-}" ]]; then
+            promote_args+=(--tag "${repository}:${release_latest_tag}")
           fi
 
           if [[ "${#promote_args[@]}" -eq 0 ]]; then
