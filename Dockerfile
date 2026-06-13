@@ -13,7 +13,7 @@ ARG NEAT_VERSION=latest
 ARG NEAT_CORE_TARGET=
 ARG NEAT_INSIGHT_BRANCH=
 ARG NEAT_INSIGHT_VERSION=
-ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libblkid-dev libbsd0 libcharls2 libelf1 libexpat1 libffi-dev libffi8 libgdal32 libgfortran5 libglib2.0-0 libgomp1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev libjpeg62-turbo libjson-glib-dev liblapack-dev liblapack3 liblzma5 libmount-dev libopenblas-pthread-dev libopenblas0-pthread libopenjp2-7 libpng16-16 libpython3.11-dev libqt5gui5 libsepol-dev libssl3 libsuperlu-dev libsuperlu5 libtiff6 liburcu-dev libwebp7 python3-dev python3.11-dev zlib1g"
+ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libblkid-dev libbsd0 libcharls2 libelf1 libexpat1 libffi-dev libffi8 libgdal32 libgfortran5 libglib2.0-0 libgomp1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev libjpeg62-turbo libjson-glib-dev liblapack-dev liblapack3 liblzma5 libmount-dev libopenblas-pthread-dev libopenblas0-pthread libopenjp2-7 libpng16-16 libpython3.11-dev libqt5gui5 libsepol-dev libssl-dev libssl3 libsuperlu-dev libsuperlu5 libtiff6 liburcu-dev libwebp7 python3-dev python3.11-dev zlib1g"
 ENV SDK_PKG_LIST="\
 	libgrpc-dev,\
 	protobuf-compiler-grpc,\
@@ -144,11 +144,17 @@ COPY config/profile.d/*.sh /etc/profile.d/
 RUN chmod 755 /etc/profile.d/neat-sdk-prompt.sh \
               /etc/profile.d/pkg-config-sysroot.sh
 
-RUN printf 'SDK Release = %s\nSDK Version = %s_Palette_SDK_neat_%s_%s\neLXr Version = %s_release_neat_%s_%s\n' \
-    "${SDK_RELEASE_REF}" \
-    "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
-    "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
-    > /etc/sdk-release
+RUN if printf '%s' "${SDK_RELEASE_REF}" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+'; then \
+      printf 'SDK Release = %s\nSDK Version = %s_Palette_SDK_neat_%s\neLXr Version = %s_release_neat_%s\n' \
+        "${SDK_RELEASE_REF}" \
+        "${BASE_SDK_VERSION}" "${SDK_RELEASE_REF}" \
+        "${BASE_SDK_VERSION}" "${SDK_RELEASE_REF}"; \
+    else \
+      printf 'SDK Release = %s\nSDK Version = %s_Palette_SDK_neat_%s_%s\neLXr Version = %s_release_neat_%s_%s\n' \
+        "${SDK_RELEASE_REF}" \
+        "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
+        "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}"; \
+    fi > /etc/sdk-release
 
 WORKDIR /workspace
 
