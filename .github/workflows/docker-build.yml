@@ -180,9 +180,6 @@ jobs:
           - arch: linux-arm64
             runs_on: ubuntu-24.04-arm
             docker_arch: arm64
-          - arch: macos-arm64
-            runs_on: [self-hosted, ARM64, macOS, osx]
-            docker_arch: arm64
 
     steps:
       - name: Check out repository
