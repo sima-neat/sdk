@@ -285,6 +285,13 @@ jobs:
           docker version
           docker info
 
+      - name: Install smoke test host tools
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Install SDK image
         env:
           INSTALL_SPEC: ${{ steps.image.outputs.install_spec }}
