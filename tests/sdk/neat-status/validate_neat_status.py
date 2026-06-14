@@ -48,7 +48,6 @@ def validate_status(data, manifest=None):
         "core",
         "gstPlugins",
         "insight",
-        "modelSdkExtension",
         "pyneat",
         "runtime",
     }
@@ -86,13 +85,14 @@ def validate_status(data, manifest=None):
             f"Unexpected components.insight.serviceState: {insight.get('serviceState')}",
         )
 
-    model_sdk = components.get("modelSdkExtension") or {}
-    if "installed" not in model_sdk:
-        add_error(errors, "Missing components.modelSdkExtension.installed")
-    if "version" not in model_sdk:
-        add_error(errors, "Missing components.modelSdkExtension.version")
-    elif model_sdk.get("installed") and not model_sdk.get("version"):
-        add_error(errors, "Model SDK Extension is installed but version is empty")
+    model_sdk = components.get("modelSdkExtension")
+    if model_sdk is not None:
+        if "installed" not in model_sdk:
+            add_error(errors, "Missing components.modelSdkExtension.installed")
+        if "version" not in model_sdk:
+            add_error(errors, "Missing components.modelSdkExtension.version")
+        elif model_sdk.get("installed") and not model_sdk.get("version"):
+            add_error(errors, "Model SDK Extension is installed but version is empty")
 
     update_status = data.get("updateCheck", {}).get("status")
     if update_status not in {"ok", "skipped", "error", None}:
