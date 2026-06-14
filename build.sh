@@ -11,8 +11,9 @@ MINIMAL_IMAGE="${MINIMAL_IMAGE:-0}"
 BASE_SDK_VERSION="${BASE_SDK_VERSION:-2.0.0}"
 NEAT_BRANCH="${NEAT_BRANCH:-main}"
 NEAT_VERSION="${NEAT_VERSION:-latest}"
-NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH:-main}"
-NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION:-latest}"
+NEAT_CORE_TARGET="${NEAT_CORE_TARGET:-}"
+NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH:-}"
+NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION:-}"
 NEAT_GITHUB_PAT="${NEAT_GITHUB_PAT:-${GITHUB_PAT:-}}"
 
 usage() {
@@ -30,8 +31,9 @@ Environment overrides:
   BASE_SDK_VERSION  Base eLxr/SiMa SDK package version to install (default: ${BASE_SDK_VERSION})
   NEAT_BRANCH  NEAT Framework branch to bake into /neat-resources (default: ${NEAT_BRANCH})
   NEAT_VERSION  NEAT Framework version/tag to bake into /neat-resources (default: ${NEAT_VERSION})
-  NEAT_INSIGHT_BRANCH  neat-insight branch/release channel to install (default: ${NEAT_INSIGHT_BRANCH})
-  NEAT_INSIGHT_VERSION  neat-insight version/tag to install, or latest (default: ${NEAT_INSIGHT_VERSION})
+  NEAT_CORE_TARGET  Override the Neat Core Vulcan package target from deps/manifest.json
+  NEAT_INSIGHT_BRANCH  Override the Insight branch/release channel from deps/manifest.json
+  NEAT_INSIGHT_VERSION  Override the Insight version/tag from deps/manifest.json
   NEAT_GITHUB_PAT  Secret token for cloning sima-neat/core during image build (default: from GITHUB_PAT or unset)
 EOF
 }
@@ -72,9 +74,19 @@ fi
 
 git_branch="$(git -C "${SCRIPT_DIR}" branch --show-current 2>/dev/null || true)"
 git_hash="$(git -C "${SCRIPT_DIR}" rev-parse --short HEAD 2>/dev/null || true)"
+git_tag=""
+if [[ "${GITHUB_REF_TYPE:-}" == "tag" && -n "${GITHUB_REF_NAME:-}" ]]; then
+  git_tag="${GITHUB_REF_NAME}"
+elif [[ -z "${GITHUB_REF_TYPE:-}" ]]; then
+  git_tag="$(git -C "${SCRIPT_DIR}" describe --tags --exact-match HEAD 2>/dev/null || true)"
+fi
 
 if [[ -z "${git_branch}" ]]; then
-  git_branch="unknown"
+  if [[ "${GITHUB_REF_TYPE:-}" == "branch" && -n "${GITHUB_REF_NAME:-}" ]]; then
+    git_branch="${GITHUB_REF_NAME}"
+  else
+    git_branch="unknown"
+  fi
 fi
 
 if [[ -z "${git_hash}" ]]; then
@@ -82,6 +94,12 @@ if [[ -z "${git_hash}" ]]; then
 fi
 
 git_branch="${git_branch//\//_}"
+
+if [[ -n "${git_tag}" ]]; then
+  sdk_release_ref="${git_tag}"
+else
+  sdk_release_ref="${git_branch}-${git_hash}"
+fi
 
 host_arch="$(uname -m)"
 
@@ -105,6 +123,7 @@ echo "Host architecture: ${host_arch}"
 echo "Docker platform: ${docker_platform}"
 echo "Git branch: ${git_branch}"
 echo "Git hash: ${git_hash}"
+echo "SDK release ref: ${sdk_release_ref}"
 echo "Base SDK version: ${BASE_SDK_VERSION}"
 echo "Minimal image mode: ${MINIMAL_IMAGE}"
 if [[ "${MINIMAL_IMAGE}" == "1" ]]; then
@@ -112,8 +131,9 @@ if [[ "${MINIMAL_IMAGE}" == "1" ]]; then
 fi
 echo "NEAT branch: ${NEAT_BRANCH}"
 echo "NEAT version: ${NEAT_VERSION}"
-echo "NEAT Insight branch: ${NEAT_INSIGHT_BRANCH}"
-echo "NEAT Insight version: ${NEAT_INSIGHT_VERSION}"
+echo "NEAT Core target override: ${NEAT_CORE_TARGET:-<deps/manifest.json>}"
+echo "NEAT Insight branch override: ${NEAT_INSIGHT_BRANCH:-<deps/manifest.json>}"
+echo "NEAT Insight version override: ${NEAT_INSIGHT_VERSION:-<deps/manifest.json>}"
 
 if docker buildx version >/dev/null 2>&1; then
   buildx_cmd=(
@@ -124,10 +144,12 @@ if docker buildx version >/dev/null 2>&1; then
     --build-arg BASE_SDK_VERSION="${BASE_SDK_VERSION}"
     --build-arg NEAT_BRANCH="${NEAT_BRANCH}"
     --build-arg NEAT_VERSION="${NEAT_VERSION}"
+    --build-arg NEAT_CORE_TARGET="${NEAT_CORE_TARGET}"
     --build-arg NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH}"
     --build-arg NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION}"
     --build-arg SDK_GIT_BRANCH="${git_branch}"
     --build-arg SDK_GIT_HASH="${git_hash}"
+    --build-arg SDK_RELEASE_REF="${sdk_release_ref}"
     -f "${DOCKERFILE}"
     -t "${image_ref}"
   )
@@ -145,10 +167,12 @@ build_cmd=(
   --build-arg BASE_SDK_VERSION="${BASE_SDK_VERSION}"
   --build-arg NEAT_BRANCH="${NEAT_BRANCH}"
   --build-arg NEAT_VERSION="${NEAT_VERSION}"
+  --build-arg NEAT_CORE_TARGET="${NEAT_CORE_TARGET}"
   --build-arg NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH}"
   --build-arg NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION}"
   --build-arg SDK_GIT_BRANCH="${git_branch}"
   --build-arg SDK_GIT_HASH="${git_hash}"
+  --build-arg SDK_RELEASE_REF="${sdk_release_ref}"
   -f "${DOCKERFILE}"
   -t "${image_ref}"
 )

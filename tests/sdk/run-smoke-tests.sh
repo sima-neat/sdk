@@ -20,3 +20,6 @@ docker exec "${CONTAINER_ID}" rm -rf "${REMOTE_DIR}"
 docker cp "${SCRIPT_DIR}/." "${CONTAINER_ID}:${REMOTE_DIR}"
 docker exec "${CONTAINER_ID}" chmod +x "${REMOTE_DIR}/run-in-container.sh"
 docker exec "${CONTAINER_ID}" bash "${REMOTE_DIR}/run-in-container.sh"
+
+chmod +x "${SCRIPT_DIR}/insight-video-routing/run.sh"
+"${SCRIPT_DIR}/insight-video-routing/run.sh" "${CONTAINER_ID}"

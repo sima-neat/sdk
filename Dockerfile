@@ -5,13 +5,15 @@ FROM debian:bookworm
 ARG SDK_PKG_LIST
 ARG SDK_GIT_BRANCH=unknown
 ARG SDK_GIT_HASH=nogit
+ARG SDK_RELEASE_REF=unknown-nogit
 ARG BASE_SDK_VERSION=2.0.0
 ARG MINIMAL_IMAGE=0
 ARG NEAT_BRANCH=main
 ARG NEAT_VERSION=latest
-ARG NEAT_INSIGHT_BRANCH=main
-ARG NEAT_INSIGHT_VERSION=latest
-ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libblkid-dev libbsd0 libcharls2 libelf1 libexpat1 libffi-dev libffi8 libgdal32 libgfortran5 libglib2.0-0 libgomp1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev libjpeg62-turbo libjson-glib-dev liblapack-dev liblapack3 liblzma5 libmount-dev libopenblas-pthread-dev libopenblas0-pthread libopenjp2-7 libpng16-16 libpython3.11-dev libqt5gui5 libsepol-dev libssl3 libsuperlu-dev libsuperlu5 libtiff6 liburcu-dev libwebp7 python3-dev python3.11-dev zlib1g"
+ARG NEAT_CORE_TARGET=
+ARG NEAT_INSIGHT_BRANCH=
+ARG NEAT_INSIGHT_VERSION=
+ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libblkid-dev libbsd0 libcharls2 libelf1 libexpat1 libffi-dev libffi8 libgdal32 libgfortran5 libglib2.0-0 libgomp1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev libjpeg62-turbo libjson-glib-dev liblapack-dev liblapack3 liblzma5 libmount-dev libopenblas-pthread-dev libopenblas0-pthread libopenjp2-7 libpng16-16 libpython3.11-dev libqt5gui5 libsepol-dev libssl-dev libssl3 libsuperlu-dev libsuperlu5 libtiff6 liburcu-dev libwebp7 python3-dev python3.11-dev zlib1g"
 ENV SDK_PKG_LIST="\
 	libgrpc-dev,\
 	protobuf-compiler-grpc,\
@@ -24,8 +26,12 @@ ENV CARGO_HOME=/opt/toolchain/rust
 ENV PATH="${NEAT_INSIGHT_VENV_DIR}/bin:${CARGO_HOME}/bin:${PATH}"
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV SDK_RELEASE_REF="${SDK_RELEASE_REF}"
+ENV SDK_IMAGE_TAG="${SDK_RELEASE_REF}"
+ENV SDK_PROMPT_HOSTNAME="neat-sdk-${SDK_RELEASE_REF}"
 
 COPY config/platform-package-patterns.txt /usr/local/share/sima-sdk/platform-package-patterns.txt
+COPY deps/manifest.json /usr/local/share/sima-sdk/deps/manifest.json
 COPY scripts/configure-apt-repos.sh /usr/local/bin/configure-apt-repos.sh
 
 RUN dpkg --add-architecture arm64 && \
@@ -90,12 +96,14 @@ COPY scripts/simaai-init-build-env /opt/bin/simaai-init-build-env
 COPY scripts/simaai_setup_sdk.py /opt/bin/simaai_setup_sdk.py
 COPY scripts/install-rustup.sh /usr/local/bin/install-rustup.sh
 COPY scripts/install-sima-cli.sh /usr/local/bin/install-sima-cli.sh
+COPY scripts/neat-deps.sh /usr/local/bin/neat-deps.sh
 COPY scripts/setup-sdk-sysroot.sh /usr/local/bin/setup-sdk-sysroot.sh
 COPY scripts/validate-sysroot-package-versions.sh /usr/local/bin/validate-sysroot-package-versions.sh
 RUN chmod 755 /opt/bin/simaai-init-build-env \
               /opt/bin/simaai_setup_sdk.py \
               /usr/local/bin/install-rustup.sh \
               /usr/local/bin/install-sima-cli.sh \
+              /usr/local/bin/neat-deps.sh \
               /usr/local/bin/setup-sdk-sysroot.sh \
               /usr/local/bin/validate-sysroot-package-versions.sh
 
@@ -125,17 +133,28 @@ RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/devkit.sh && \
     install-sdk-sysroot-overlay.sh
 
-RUN /usr/local/bin/insight-admin update "${NEAT_INSIGHT_BRANCH}" "${NEAT_INSIGHT_VERSION}" && \
+RUN if [ -n "${NEAT_INSIGHT_BRANCH}${NEAT_INSIGHT_VERSION}" ]; then \
+      /usr/local/bin/insight-admin update "${NEAT_INSIGHT_BRANCH:-main}" "${NEAT_INSIGHT_VERSION:-latest}"; \
+    else \
+      /usr/local/bin/insight-admin update; \
+    fi && \
     chmod -R a+rwX "${NEAT_INSIGHT_VENV_DIR}"
 
 COPY config/profile.d/*.sh /etc/profile.d/
 RUN chmod 755 /etc/profile.d/neat-sdk-prompt.sh \
               /etc/profile.d/pkg-config-sysroot.sh
 
-RUN printf 'SDK Version = %s_Palette_SDK_neat_%s_%s\neLXr Version = %s_release_neat_%s_%s\n' \
-    "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
-    "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
-    > /etc/sdk-release
+RUN if printf '%s' "${SDK_RELEASE_REF}" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+'; then \
+      printf 'SDK Release = %s\nSDK Version = %s_Palette_SDK_neat_%s\neLXr Version = %s_release_neat_%s\n' \
+        "${SDK_RELEASE_REF}" \
+        "${BASE_SDK_VERSION}" "${SDK_RELEASE_REF}" \
+        "${BASE_SDK_VERSION}" "${SDK_RELEASE_REF}"; \
+    else \
+      printf 'SDK Release = %s\nSDK Version = %s_Palette_SDK_neat_%s_%s\neLXr Version = %s_release_neat_%s_%s\n' \
+        "${SDK_RELEASE_REF}" \
+        "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
+        "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}"; \
+    fi > /etc/sdk-release
 
 WORKDIR /workspace
 
