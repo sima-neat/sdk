@@ -196,11 +196,17 @@ COPY config/profile.d/*.sh /etc/profile.d/
 RUN chmod 755 /etc/profile.d/neat-sdk-prompt.sh \
               /etc/profile.d/pkg-config-sysroot.sh
 
-RUN printf 'SDK Release = %s\nSDK Version = %s_Palette_SDK_neat_%s_%s\neLXr Version = %s_release_neat_%s_%s\n' \
-    "${SDK_RELEASE_REF}" \
-    "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
-    "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
-    > /etc/sdk-release
+RUN if printf '%s' "${SDK_RELEASE_REF}" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+'; then \
+      printf 'SDK Release = %s\nSDK Version = %s_Palette_SDK_neat_%s\neLXr Version = %s_release_neat_%s\n' \
+        "${SDK_RELEASE_REF}" \
+        "${BASE_SDK_VERSION}" "${SDK_RELEASE_REF}" \
+        "${BASE_SDK_VERSION}" "${SDK_RELEASE_REF}"; \
+    else \
+      printf 'SDK Release = %s\nSDK Version = %s_Palette_SDK_neat_%s_%s\neLXr Version = %s_release_neat_%s_%s\n' \
+        "${SDK_RELEASE_REF}" \
+        "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
+        "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}"; \
+    fi > /etc/sdk-release
 
 WORKDIR /workspace
 
