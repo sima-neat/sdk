@@ -6,6 +6,7 @@ WORK_DIR="${NEAT_SDK_TEST_WORK_DIR:-/tmp/neat-sdk-smoke-work}"
 HELLO_SRC="${ROOT_DIR}/hello-neat"
 HELLO_WORK="${WORK_DIR}/hello-neat"
 STATUS_JSON="${WORK_DIR}/neat-status.json"
+SDK_DEPS_MANIFEST="${SDK_DEPS_MANIFEST:-/usr/local/share/sima-sdk/deps/manifest.json}"
 
 setup_sdk_environment() {
   if [[ -f /opt/bin/simaai-init-build-env ]]; then
@@ -32,7 +33,7 @@ run_test() {
 test_neat_status() {
   echo "::group::Neat status"
   neat --json | tee "${STATUS_JSON}"
-  python3 "${ROOT_DIR}/neat-status/validate_neat_status.py" "${STATUS_JSON}"
+  python3 "${ROOT_DIR}/neat-status/validate_neat_status.py" "${STATUS_JSON}" "${SDK_DEPS_MANIFEST}"
   echo "::endgroup::"
 }
 
