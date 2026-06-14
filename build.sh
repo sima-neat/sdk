@@ -17,7 +17,6 @@ NEAT_VERSION="${NEAT_VERSION:-latest}"
 NEAT_CORE_TARGET="${NEAT_CORE_TARGET:-}"
 NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH:-}"
 NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION:-}"
-NEAT_GITHUB_PAT="${NEAT_GITHUB_PAT:-${GITHUB_PAT:-}}"
 
 usage() {
   cat <<EOF
@@ -40,7 +39,6 @@ Environment overrides:
   NEAT_CORE_TARGET  Override the Neat Core Vulcan package target from deps/manifest.json
   NEAT_INSIGHT_BRANCH  Override the Insight branch/release channel from deps/manifest.json
   NEAT_INSIGHT_VERSION  Override the Insight version/tag from deps/manifest.json
-  NEAT_GITHUB_PAT  Secret token for cloning sima-neat/core during image build (default: from GITHUB_PAT or unset)
 EOF
 }
 
@@ -167,9 +165,6 @@ if docker buildx version >/dev/null 2>&1; then
     -f "${DOCKERFILE}"
     -t "${image_ref}"
   )
-  if [[ -n "${NEAT_GITHUB_PAT}" ]]; then
-    buildx_cmd+=(--secret id=neat_github_pat,env=NEAT_GITHUB_PAT)
-  fi
   buildx_cmd+=("${CONTEXT_DIR}")
   exec "${buildx_cmd[@]}"
 fi
@@ -192,10 +187,5 @@ build_cmd=(
   -f "${DOCKERFILE}"
   -t "${image_ref}"
 )
-if [[ -n "${NEAT_GITHUB_PAT}" ]]; then
-  build_cmd+=(--secret id=neat_github_pat,env=NEAT_GITHUB_PAT)
-  build_cmd+=("${CONTEXT_DIR}")
-  exec env DOCKER_BUILDKIT=1 "${build_cmd[@]}"
-fi
 build_cmd+=("${CONTEXT_DIR}")
 exec "${build_cmd[@]}"

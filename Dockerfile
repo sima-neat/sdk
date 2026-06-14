@@ -207,8 +207,7 @@ WORKDIR /workspace
 # Preinstall Neat Framework and resources
 COPY scripts/install-neat-resources.sh /usr/local/bin/install-neat-resources.sh
 RUN chmod 755 /usr/local/bin/install-neat-resources.sh
-RUN --mount=type=secret,id=neat_github_pat \
-    install-neat-resources.sh
+RUN install-neat-resources.sh
 
 # Expose required ports
 EXPOSE 9900 9000-9079 9100-9179 8081 8554

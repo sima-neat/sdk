@@ -62,7 +62,6 @@ jobs:
         run: ./build.sh sdk "${IMAGE_TAG}"
         env:
           IMAGE_TAG: ci-${{ matrix.image_suffix }}
-          NEAT_GITHUB_PAT: ${{ secrets.NEAT_GITHUB_PAT }}
 
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
