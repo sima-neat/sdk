@@ -48,6 +48,7 @@ def validate_status(data, manifest=None):
         "core",
         "gstPlugins",
         "insight",
+        "modelCompiler",
         "pyneat",
         "runtime",
     }
@@ -84,6 +85,14 @@ def validate_status(data, manifest=None):
             errors,
             f"Unexpected components.insight.serviceState: {insight.get('serviceState')}",
         )
+
+    model_compiler = components.get("modelCompiler") or {}
+    if "installed" not in model_compiler:
+        add_error(errors, "Missing components.modelCompiler.installed")
+    if "version" not in model_compiler:
+        add_error(errors, "Missing components.modelCompiler.version")
+    elif model_compiler.get("installed") and not model_compiler.get("version"):
+        add_error(errors, "Model Compiler is installed but version is empty")
 
     model_sdk = components.get("modelSdkExtension")
     if model_sdk is not None:
