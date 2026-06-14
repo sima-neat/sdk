@@ -5,7 +5,7 @@ set -euo pipefail
 root_venv=/root/.sima-cli/.venv
 install_venv=/opt/sima-cli/venv
 
-if ! curl -fsSL https://docs.sima.ai/_static/tools/sima-cli-installer.sh | bash; then
+if ! curl -fsSL https://artifacts.neat.sima.ai/sima-cli/linux-mac.sh | bash; then
   test -x "${root_venv}/bin/sima-cli"
 fi
 test -x "${root_venv}/bin/sima-cli"
@@ -15,7 +15,7 @@ cp -a "${root_venv}" "${install_venv}"
 while IFS= read -r -d '' launcher; do
   sed -i '1 s#/root/.sima-cli/.venv#/opt/sima-cli/venv#' "${launcher}"
 done < <(grep -IlZ '^#!.*/root/.sima-cli/.venv' "${install_venv}"/bin/* 2>/dev/null || true)
-chmod -R a+rX /opt/sima-cli
+chmod -R a+rwX /opt/sima-cli
 cat >/usr/local/bin/sima-cli <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail

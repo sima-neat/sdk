@@ -1,0 +1,9 @@
+{
+  "core": {
+    "ref": "develop:latest"
+  },
+  "insight": {
+    "ref": "v0.0.2"
+  },
+  "platform-version": "2.1.2"
+}

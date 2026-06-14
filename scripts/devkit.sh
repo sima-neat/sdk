@@ -35,9 +35,9 @@ check_devkit_sdk_version_compatibility() {
   echo "Checking DevKit/SDK version compatibility..."
 
   if [[ ! -r "${sdk_release}" ]]; then
-    printf "%bWARNING:%b SDK release file not found or unreadable: %s\n" "${c_warn}" "${c_reset}" "${sdk_release}" >&2
-    printf "Please use an SDK image that includes /etc/sdk-release before connecting a DevKit.\n" >&2
-    return 0
+    printf "%bERROR:%b SDK release file not found or unreadable: %s\n" "${c_warn}" "${c_reset}" "${sdk_release}" >&2
+    printf "Use an SDK image that includes /etc/sdk-release before connecting a DevKit.\n" >&2
+    return 1
   fi
 
   devkit_distro_version="$(
@@ -56,9 +56,9 @@ EOS
   )"
 
   if [[ -z "${devkit_distro_version}" ]]; then
-    printf "%bWARNING:%b Could not read DISTRO_VERSION from DevKit /etc/buildinfo.\n" "${c_warn}" "${c_reset}" >&2
-    printf "Please update your DevKit to a build that exposes /etc/buildinfo with DISTRO_VERSION.\n" >&2
-    return 0
+    printf "%bERROR:%b Could not read DISTRO_VERSION from DevKit /etc/buildinfo.\n" "${c_warn}" "${c_reset}" >&2
+    printf "Update your DevKit to a build that exposes /etc/buildinfo with DISTRO_VERSION, then reconnect.\n" >&2
+    return 1
   fi
 
   if grep -Fq "${devkit_distro_version}" "${sdk_release}"; then
@@ -79,7 +79,7 @@ EOS
   fi
 
   {
-    printf "%bWARNING: DevKit/SDK version mismatch.\n" "${c_warn}"
+    printf "%bERROR: DevKit/SDK version mismatch.\n" "${c_warn}"
     printf "  DevKit DISTRO_VERSION: %s\n" "${devkit_distro_version}"
     printf "  SDK release file     : %s\n" "${sdk_release}"
     sed 's/^/    /' "${sdk_release}"
@@ -89,7 +89,7 @@ EOS
       printf "\nPlease update your DevKit to the matching version listed in %s, then reconnect.%b\n" "${sdk_release}" "${c_reset}"
     fi
   } >&2
-  return 0
+  return 1
 }
 
 sync_neat_framework_to_devkit() {
@@ -526,6 +526,10 @@ if ! timeout --foreground 120 "${_SSH_COPY_ID_CMD[@]}" -i "${HOME}/.ssh/id_ed255
 fi
 
 check_devkit_sdk_version_compatibility "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"
+_DEVKIT_COMPAT_STATUS=$?
+if (( _DEVKIT_COMPAT_STATUS != 0 )); then
+  return "${_DEVKIT_COMPAT_STATUS}"
+fi
 
 if [[ "${_DEVKIT_USER}" != "root" ]]; then
   if ! check_remote_passwordless_sudo "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"; then
@@ -751,7 +755,8 @@ export DEVKIT_SYNC_MOUNT_POINT="${_MOUNT_POINT}"
 export DEVKIT_SYNC_DEVKIT_USER="${_DEVKIT_USER}"
 export DEVKIT_SYNC_DEVKIT_PORT="${_DEVKIT_PORT}"
 export SDK_IMAGE_BRANCH="${SDK_IMAGE_BRANCH:-${SDK_GIT_BRANCH:-main}}"
-export SDK_IMAGE_TAG="${SDK_IMAGE_TAG:-latest}"
+export SDK_PROMPT_REF="${SDK_RELEASE_REF:-${SDK_IMAGE_TAG:-latest}}"
+export SDK_IMAGE_TAG="${SDK_IMAGE_TAG:-${SDK_PROMPT_REF}}"
 __devkit_prompt_slug() {
   local value="${1-}"
   value="${value//\//-}"
@@ -760,7 +765,7 @@ __devkit_prompt_slug() {
   value="$(printf '%s' "${value}" | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-|-$//g')"
   printf '%s' "${value:-unknown}"
 }
-export SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME:-neat-sdk-$(__devkit_prompt_slug "${SDK_IMAGE_BRANCH}")-$(__devkit_prompt_slug "${SDK_IMAGE_TAG}")}"
+export SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME:-neat-sdk-$(__devkit_prompt_slug "${SDK_PROMPT_REF}")}"
 
 __devkit_rewrite_prompt_hostname() {
   local prompt="${1-}"
@@ -1101,6 +1106,8 @@ _persist_file="${HOME}/.devkit-sync.rc"
   echo "export DEVKIT_SYNC_MOUNT_POINT='${DEVKIT_SYNC_MOUNT_POINT}'"
   echo "export DEVKIT_SYNC_DEVKIT_USER='${DEVKIT_SYNC_DEVKIT_USER}'"
   echo "export DEVKIT_SYNC_DEVKIT_PORT='${DEVKIT_SYNC_DEVKIT_PORT}'"
+  echo "export SDK_RELEASE_REF='${SDK_RELEASE_REF:-}'"
+  echo "export SDK_PROMPT_REF='${SDK_PROMPT_REF}'"
   echo "export SDK_IMAGE_BRANCH='${SDK_IMAGE_BRANCH}'"
   echo "export SDK_IMAGE_TAG='${SDK_IMAGE_TAG}'"
   echo "export SDK_PROMPT_HOSTNAME='${SDK_PROMPT_HOSTNAME}'"

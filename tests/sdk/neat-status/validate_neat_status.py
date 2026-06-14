@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import re
 import sys
 
 
@@ -7,7 +8,28 @@ def add_error(errors, message):
     errors.append(message)
 
 
-def validate_status(data):
+def expected_dependency_ref(manifest, key):
+    if not manifest:
+        return None
+    value = manifest.get(key)
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, dict):
+        ref = str(value.get("ref", "")).strip()
+        return ref or None
+    return None
+
+
+def version_from_tag_ref(ref):
+    if not ref or ":" in ref:
+        return None
+    match = re.fullmatch(r"v?([0-9]+(?:\.[0-9]+){1,3}(?:[A-Za-z0-9._+-]*)?)", ref)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def validate_status(data, manifest=None):
     errors = []
 
     if data.get("schema") != "sima.neat.status.v1":
@@ -26,7 +48,7 @@ def validate_status(data):
         "core",
         "gstPlugins",
         "insight",
-        "modelSdkExtension",
+        "modelCompiler",
         "pyneat",
         "runtime",
     }
@@ -44,9 +66,17 @@ def validate_status(data):
             add_error(errors, f"Missing components.{name}.version")
 
     insight = components.get("insight") or {}
+    expected_insight_ref = expected_dependency_ref(manifest, "insight")
+    expected_insight_version = version_from_tag_ref(expected_insight_ref)
     if not insight.get("version"):
         add_error(errors, "Missing components.insight.version")
-    if not insight.get("tag"):
+    elif expected_insight_version and insight.get("version") != expected_insight_version:
+        add_error(
+            errors,
+            "Unexpected components.insight.version: "
+            f"{insight.get('version')} (expected {expected_insight_version} from {expected_insight_ref})",
+        )
+    if not insight.get("tag") and not expected_insight_version:
         add_error(errors, "Missing components.insight.tag")
     if not insight.get("venv"):
         add_error(errors, "Missing components.insight.venv")
@@ -56,13 +86,22 @@ def validate_status(data):
             f"Unexpected components.insight.serviceState: {insight.get('serviceState')}",
         )
 
-    model_sdk = components.get("modelSdkExtension") or {}
-    if "installed" not in model_sdk:
-        add_error(errors, "Missing components.modelSdkExtension.installed")
-    if "version" not in model_sdk:
-        add_error(errors, "Missing components.modelSdkExtension.version")
-    elif model_sdk.get("installed") and not model_sdk.get("version"):
-        add_error(errors, "Model SDK Extension is installed but version is empty")
+    model_compiler = components.get("modelCompiler") or {}
+    if "installed" not in model_compiler:
+        add_error(errors, "Missing components.modelCompiler.installed")
+    if "version" not in model_compiler:
+        add_error(errors, "Missing components.modelCompiler.version")
+    elif model_compiler.get("installed") and not model_compiler.get("version"):
+        add_error(errors, "Model Compiler is installed but version is empty")
+
+    model_sdk = components.get("modelSdkExtension")
+    if model_sdk is not None:
+        if "installed" not in model_sdk:
+            add_error(errors, "Missing components.modelSdkExtension.installed")
+        if "version" not in model_sdk:
+            add_error(errors, "Missing components.modelSdkExtension.version")
+        elif model_sdk.get("installed") and not model_sdk.get("version"):
+            add_error(errors, "Model SDK Extension is installed but version is empty")
 
     update_status = data.get("updateCheck", {}).get("status")
     if update_status not in {"ok", "skipped", "error", None}:
@@ -72,14 +111,21 @@ def validate_status(data):
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: validate_neat_status.py <neat-status.json>", file=sys.stderr)
+    if len(sys.argv) not in {2, 3}:
+        print(
+            "Usage: validate_neat_status.py <neat-status.json> [deps-manifest.json]",
+            file=sys.stderr,
+        )
         return 2
 
     with open(sys.argv[1], encoding="utf-8") as f:
         data = json.load(f)
+    manifest = None
+    if len(sys.argv) == 3:
+        with open(sys.argv[2], encoding="utf-8") as f:
+            manifest = json.load(f)
 
-    errors = validate_status(data)
+    errors = validate_status(data, manifest)
     if errors:
         for error in errors:
             print(error, file=sys.stderr)
