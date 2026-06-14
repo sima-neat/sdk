@@ -9,6 +9,7 @@ REPRESENTATIVE_SRC="${ROOT_DIR}/representative-builds"
 REPRESENTATIVE_WORK="${WORK_DIR}/representative-builds"
 STATUS_JSON="${WORK_DIR}/neat-status.json"
 INSIGHT_WAIT_SECONDS="${NEAT_SDK_INSIGHT_WAIT_SECONDS:-30}"
+SDK_DEPS_MANIFEST="${SDK_DEPS_MANIFEST:-/usr/local/share/sima-sdk/deps/manifest.json}"
 
 setup_sdk_environment() {
   if [[ -f /opt/bin/simaai-init-build-env ]]; then
@@ -68,7 +69,7 @@ PY
     return 1
   fi
 
-  python3 "${ROOT_DIR}/neat-status/validate_neat_status.py" "${STATUS_JSON}"
+  python3 "${ROOT_DIR}/neat-status/validate_neat_status.py" "${STATUS_JSON}" "${SDK_DEPS_MANIFEST}"
   echo "::endgroup::"
 }
 
