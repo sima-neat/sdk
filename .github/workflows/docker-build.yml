@@ -62,7 +62,6 @@ jobs:
         run: ./build.sh sdk "${IMAGE_TAG}"
         env:
           IMAGE_TAG: ci-${{ matrix.image_suffix }}
-          NEAT_GITHUB_PAT: ${{ secrets.NEAT_GITHUB_PAT }}
 
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
@@ -463,27 +462,25 @@ jobs:
           set -euo pipefail
 
           metadata_file="$(find .smoke -type f -name image.env -print -quit)"
-
           # shellcheck disable=SC1090
           source "${metadata_file}"
 
-          promote_args=()
-          if [[ "${promote_latest}" == "true" ]]; then
-            promote_args+=(--tag "${repository}:latest")
-          fi
-          if [[ -n "${release_tag}" ]]; then
-            promote_args+=(--tag "${repository}:${release_tag}")
-          fi
-          if [[ -n "${release_latest_tag:-}" ]]; then
-            promote_args+=(--tag "${repository}:${release_latest_tag}")
-          fi
-
-          if [[ "${#promote_args[@]}" -eq 0 ]]; then
-            echo "No promotion tags requested for ${source_ref}."
+          if [[ "${promote_latest}" != "true" && -z "${release_tag}" && -z "${release_latest_tag:-}" ]]; then
+            echo "Promotion skipped: no release tag or latest promotion requested."
             exit 0
           fi
 
-          docker buildx imagetools inspect "${source_ref}"
+          tags=()
+          if [[ "${promote_latest}" == "true" ]]; then
+            tags+=(--tag "${repository}:latest")
+          fi
+          if [[ -n "${release_tag}" ]]; then
+            tags+=(--tag "${repository}:${release_tag}")
+          fi
+          if [[ -n "${release_latest_tag:-}" ]]; then
+            tags+=(--tag "${repository}:${release_latest_tag}")
+          fi
+
           docker buildx imagetools create \
-            "${promote_args[@]}" \
+            "${tags[@]}" \
             "${source_ref}"

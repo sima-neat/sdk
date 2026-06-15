@@ -6,18 +6,18 @@ on:
   workflow_dispatch:
     inputs:
       release_line:
-        description: Minor release line, for example 2.0. Creates or reuses release-2.0.
+        description: Minor release line, for example 2.1. Creates or reuses release-2.1.
         required: true
         type: string
       tag:
-        description: Patch release version without v prefix, for example 2.0.1.
+        description: Patch release version without v prefix, for example 2.1.2.
         required: true
         type: string
       source_branch:
         description: Source branch for creating a new release branch.
         required: true
         type: string
-        default: main
+        default: develop
       branch_exists_behavior:
         description: Behavior when release-{release_line} already exists.
         required: true

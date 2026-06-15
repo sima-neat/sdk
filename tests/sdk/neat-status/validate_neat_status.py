@@ -48,7 +48,7 @@ def validate_status(data, manifest=None):
         "core",
         "gstPlugins",
         "insight",
-        "modelSdkExtension",
+        "modelCompiler",
         "pyneat",
         "runtime",
     }
@@ -80,19 +80,28 @@ def validate_status(data, manifest=None):
         add_error(errors, "Missing components.insight.tag")
     if not insight.get("venv"):
         add_error(errors, "Missing components.insight.venv")
-    if insight.get("serviceState") not in {"Running", "Starting", "Unknown"}:
+    if insight.get("serviceState") != "Running":
         add_error(
             errors,
             f"Unexpected components.insight.serviceState: {insight.get('serviceState')}",
         )
 
-    model_sdk = components.get("modelSdkExtension") or {}
-    if "installed" not in model_sdk:
-        add_error(errors, "Missing components.modelSdkExtension.installed")
-    if "version" not in model_sdk:
-        add_error(errors, "Missing components.modelSdkExtension.version")
-    elif model_sdk.get("installed") and not model_sdk.get("version"):
-        add_error(errors, "Model SDK Extension is installed but version is empty")
+    model_compiler = components.get("modelCompiler") or {}
+    if "installed" not in model_compiler:
+        add_error(errors, "Missing components.modelCompiler.installed")
+    if "version" not in model_compiler:
+        add_error(errors, "Missing components.modelCompiler.version")
+    elif model_compiler.get("installed") and not model_compiler.get("version"):
+        add_error(errors, "Model Compiler is installed but version is empty")
+
+    model_sdk = components.get("modelSdkExtension")
+    if model_sdk is not None:
+        if "installed" not in model_sdk:
+            add_error(errors, "Missing components.modelSdkExtension.installed")
+        if "version" not in model_sdk:
+            add_error(errors, "Missing components.modelSdkExtension.version")
+        elif model_sdk.get("installed") and not model_sdk.get("version"):
+            add_error(errors, "Model SDK Extension is installed but version is empty")
 
     update_status = data.get("updateCheck", {}).get("status")
     if update_status not in {"ok", "skipped", "error", None}:

@@ -141,6 +141,10 @@ sync_neat_framework_to_devkit() {
     neat_sync_fail_or_continue "WARNING: Neat framework installer missing from SDK cache: ${cache_dir}/install_neat_framework.sh"
     return $?
   fi
+  if [[ ! -f "${cache_dir}/manifest.json" ]]; then
+    neat_sync_fail_or_continue "WARNING: Neat framework package manifest missing from SDK cache: ${cache_dir}/manifest.json"
+    return $?
+  fi
   if ! command -v dpkg-deb >/dev/null 2>&1; then
     neat_sync_fail_or_continue "WARNING: dpkg-deb is required to inspect SDK Neat framework package versions."
     return $?
@@ -299,7 +303,7 @@ EOS
   } >&2
 
   local remote_dir="/tmp/sima-neat-install-$(date +%Y%m%d-%H%M%S)"
-  local -a deploy_files=("${deb_files[@]}" "${wheel_file}" "${cache_dir}/install_neat_framework.sh")
+  local -a deploy_files=("${deb_files[@]}" "${wheel_file}" "${cache_dir}/install_neat_framework.sh" "${cache_dir}/manifest.json")
 
   if ! ssh -T -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" "mkdir -p '${remote_dir}'"; then
     neat_sync_fail_or_continue "WARNING: Failed to create Neat framework install directory on DevKit: ${remote_dir}"
@@ -754,9 +758,18 @@ export PS1="${_PS1_PREFIX}${DEVKIT_SYNC_ORIG_PS1}"
 export DEVKIT_SYNC_MOUNT_POINT="${_MOUNT_POINT}"
 export DEVKIT_SYNC_DEVKIT_USER="${_DEVKIT_USER}"
 export DEVKIT_SYNC_DEVKIT_PORT="${_DEVKIT_PORT}"
-export SDK_PROMPT_REF="${SDK_RELEASE_REF:-${SDK_IMAGE_TAG:-version}}"
+export SDK_IMAGE_BRANCH="${SDK_IMAGE_BRANCH:-${SDK_GIT_BRANCH:-main}}"
+export SDK_PROMPT_REF="${SDK_RELEASE_REF:-${SDK_IMAGE_TAG:-latest}}"
 export SDK_IMAGE_TAG="${SDK_IMAGE_TAG:-${SDK_PROMPT_REF}}"
-export SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME:-neat-sdk-${SDK_PROMPT_REF}}"
+__devkit_prompt_slug() {
+  local value="${1-}"
+  value="${value//\//-}"
+  value="${value//_/-}"
+  value="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')"
+  value="$(printf '%s' "${value}" | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-|-$//g')"
+  printf '%s' "${value:-unknown}"
+}
+export SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME:-neat-sdk-$(__devkit_prompt_slug "${SDK_PROMPT_REF}")}"
 
 __devkit_rewrite_prompt_hostname() {
   local prompt="${1-}"
@@ -1099,6 +1112,7 @@ _persist_file="${HOME}/.devkit-sync.rc"
   echo "export DEVKIT_SYNC_DEVKIT_PORT='${DEVKIT_SYNC_DEVKIT_PORT}'"
   echo "export SDK_RELEASE_REF='${SDK_RELEASE_REF:-}'"
   echo "export SDK_PROMPT_REF='${SDK_PROMPT_REF}'"
+  echo "export SDK_IMAGE_BRANCH='${SDK_IMAGE_BRANCH}'"
   echo "export SDK_IMAGE_TAG='${SDK_IMAGE_TAG}'"
   echo "export SDK_PROMPT_HOSTNAME='${SDK_PROMPT_HOSTNAME}'"
   echo "export DEVKIT_PROMPT_DIRTRIM='${DEVKIT_PROMPT_DIRTRIM}'"

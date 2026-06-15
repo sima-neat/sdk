@@ -66,6 +66,7 @@ def validate_ref(raw: str) -> str:
         )
     return f"{branch}:{spec}"
 
+
 if not manifest_path.exists():
     raise SystemExit(f"ERROR: dependency manifest not found: {manifest_path}")
 
