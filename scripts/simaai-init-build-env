@@ -26,8 +26,16 @@ else
 fi
 
 export CROSS_COMPILE="aarch64-linux-gnu-"
-export CC="${CROSS_COMPILE}gcc"
-export CXX="${CROSS_COMPILE}g++"
+if command -v "${CROSS_COMPILE}gcc-12" >/dev/null 2>&1; then
+	export CC="${CROSS_COMPILE}gcc-12"
+else
+	export CC="${CROSS_COMPILE}gcc"
+fi
+if command -v "${CROSS_COMPILE}g++-12" >/dev/null 2>&1; then
+	export CXX="${CROSS_COMPILE}g++-12"
+else
+	export CXX="${CROSS_COMPILE}g++"
+fi
 export LD="${CROSS_COMPILE}ld"
 export STRIP="${CROSS_COMPILE}strip"
 export OBJDUMP="${CROSS_COMPILE}objdump"
