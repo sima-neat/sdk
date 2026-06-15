@@ -170,6 +170,7 @@ jobs:
     runs-on: ${{ matrix.runs_on }}
     env:
       SIMA_CLI_CHECK_FOR_UPDATE: "0"
+      GITHUB_TOKEN: ${{ github.token }}
     strategy:
       fail-fast: false
       matrix:

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+if [[ -f /opt/bin/simaai-init-build-env ]]; then
+  # shellcheck source=/dev/null
+  source /opt/bin/simaai-init-build-env modalix >/dev/null 2>&1 || true
+fi
 export SYSROOT="${SYSROOT:-/opt/toolchain/aarch64/modalix}"
 if [[ -z "${PKG_CONFIG:-}" || ! -x "${PKG_CONFIG}" ]]; then
   export PKG_CONFIG="/usr/bin/pkg-config"
