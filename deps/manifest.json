@@ -1,6 +1,6 @@
 {
   "core": {
-    "ref": "develop:latest"
+    "ref": "v0.2.0"
   },
   "insight": {
     "ref": "v0.0.2"
