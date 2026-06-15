@@ -109,8 +109,11 @@ RUN apt-get update --allow-releaseinfo-change && \
 
 COPY --from=cross-toolchain /opt/cross-toolchain/ /
 COPY --from=cross-toolchain /opt/cross-toolchain/ /opt/bookworm-cross-toolchain/
+COPY scripts/pin-cross-toolchain.sh /usr/local/bin/pin-cross-toolchain.sh
 
-RUN aarch64-linux-gnu-gcc --version && \
+RUN chmod 755 /usr/local/bin/pin-cross-toolchain.sh && \
+    pin-cross-toolchain.sh && \
+    aarch64-linux-gnu-gcc --version && \
     aarch64-linux-gnu-g++ --version && \
     aarch64-linux-gnu-ld --version && \
     printf 'int main(void) { return 0; }\n' > /tmp/cross-smoke.c && \
@@ -159,6 +162,7 @@ RUN install-rustup.sh
 RUN setup-sdk-sysroot.sh "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}" && \
     install-sima-cli.sh && \
     cp -a /opt/bookworm-cross-toolchain/. / && \
+    pin-cross-toolchain.sh && \
     aarch64-linux-gnu-gcc --version && \
     aarch64-linux-gnu-g++ --version && \
     aarch64-linux-gnu-ld --version && \
