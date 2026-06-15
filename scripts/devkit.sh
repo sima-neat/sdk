@@ -141,6 +141,10 @@ sync_neat_framework_to_devkit() {
     neat_sync_fail_or_continue "WARNING: Neat framework installer missing from SDK cache: ${cache_dir}/install_neat_framework.sh"
     return $?
   fi
+  if [[ ! -f "${cache_dir}/manifest.json" ]]; then
+    neat_sync_fail_or_continue "WARNING: Neat framework package manifest missing from SDK cache: ${cache_dir}/manifest.json"
+    return $?
+  fi
   if ! command -v dpkg-deb >/dev/null 2>&1; then
     neat_sync_fail_or_continue "WARNING: dpkg-deb is required to inspect SDK Neat framework package versions."
     return $?
@@ -299,7 +303,7 @@ EOS
   } >&2
 
   local remote_dir="/tmp/sima-neat-install-$(date +%Y%m%d-%H%M%S)"
-  local -a deploy_files=("${deb_files[@]}" "${wheel_file}" "${cache_dir}/install_neat_framework.sh")
+  local -a deploy_files=("${deb_files[@]}" "${wheel_file}" "${cache_dir}/install_neat_framework.sh" "${cache_dir}/manifest.json")
 
   if ! ssh -T -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" "mkdir -p '${remote_dir}'"; then
     neat_sync_fail_or_continue "WARNING: Failed to create Neat framework install directory on DevKit: ${remote_dir}"
