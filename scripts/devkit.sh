@@ -684,7 +684,13 @@ set -euo pipefail
 mp="${mount_point}"
 src="${src}"
 opts="${mount_opts}"
-timeout 5 stat "\${mp}/." >/dev/null 2>&1 && exit 0
+if findmnt -rn -T "\${mp}" -o SOURCE,FSTYPE | awk -v src="\${src}" '
+  \$1 == src && \$2 ~ /^nfs/ { found=1 }
+  END { exit found ? 0 : 1 }
+'; then
+  timeout 5 stat "\${mp}/." >/dev/null 2>&1 && exit 0
+fi
+
 umount -lf "\${mp}" >/dev/null 2>&1 || true
 mount -t nfs -o "\${opts}" "\${src}" "\${mp}"
 EOF
