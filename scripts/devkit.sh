@@ -853,13 +853,24 @@ devkit-run() {
       ;;
   esac
 
-  local rel remote_path pyneat_activate
+  local rel remote_path remote_cwd pyneat_activate
   rel="${local_path#/workspace/}"
   remote_path="${DEVKIT_SYNC_MOUNT_POINT}/${rel}"
-  pyneat_activate="${DEVKIT_PYNEAT_ACTIVATE:-__NONE__}"
   local host_pwd remote_args arg
   host_pwd="$(pwd)"
-  remote_args=("${remote_path}" "${pyneat_activate}")
+  case "${host_pwd}" in
+    /workspace/*)
+      remote_cwd="${DEVKIT_SYNC_MOUNT_POINT}/${host_pwd#/workspace/}"
+      ;;
+    /workspace)
+      remote_cwd="${DEVKIT_SYNC_MOUNT_POINT}"
+      ;;
+    *)
+      remote_cwd="$(dirname "${remote_path}")"
+      ;;
+  esac
+  pyneat_activate="${DEVKIT_PYNEAT_ACTIVATE:-__NONE__}"
+  remote_args=("${remote_path}" "${pyneat_activate}" "${remote_cwd}")
 
   normalize_devkit_host_path() {
     local input="$1"
@@ -963,6 +974,7 @@ devkit-run() {
 
   printf "%b[DevKit]%b executing remotely on %s@%s:%s -> %s\n" \
     "${c_out}" "${c_reset}" "${DEVKIT_SYNC_DEVKIT_USER}" "${DEVKIT_SYNC_DEVKIT_IP}" "${DEVKIT_SYNC_DEVKIT_PORT}" "${remote_path}"
+  printf "%b[DevKit]%b cwd: %s\n" "${c_out}" "${c_reset}" "${remote_cwd}"
   printf "%b[DevKit]%b argv:" "${c_out}" "${c_reset}"
   for arg in "${remote_args[@]}"; do
     printf " %q" "${arg}"
@@ -1017,11 +1029,12 @@ __restore_tty() {
 trap __restore_tty EXIT INT TERM HUP
 target="${1:?missing target path}"
 pyneat_activate="${2-}"
+remote_cwd="${3-}"
 if [[ "${pyneat_activate}" == "__NONE__" ]]; then
   pyneat_activate=""
 fi
-if [[ $# -ge 2 ]]; then
-  shift 2
+if [[ $# -ge 3 ]]; then
+  shift 3
 else
   shift 1
 fi
@@ -1047,6 +1060,10 @@ ensure_target_ready() {
 }
 
 ensure_target_ready "${target}"
+if [[ -n "${remote_cwd}" ]]; then
+  ensure_target_ready "${remote_cwd}"
+  cd "${remote_cwd}"
+fi
 
 prepare_command() {
   if [[ "${target}" == *.py ]]; then
