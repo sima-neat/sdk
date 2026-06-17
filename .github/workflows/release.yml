@@ -10,7 +10,7 @@ on:
         required: true
         type: string
       tag:
-        description: Patch release version without v prefix, for example 2.1.2.
+        description: SDK release version without v prefix, for example 2.1.2 or 2.1.2.1.
         required: true
         type: string
       source_branch:
