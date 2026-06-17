@@ -156,7 +156,7 @@ sync_neat_framework_to_devkit() {
 
   local -a deb_files=()
   local -a wheel_files=()
-  mapfile -t deb_files < <(find "${cache_dir}" -maxdepth 1 -type f \( -name 'sima-neat-*-Linux-core.deb' -o -name 'neat-*.deb' \) | sort)
+  mapfile -t deb_files < <(find "${cache_dir}" -maxdepth 1 -type f \( -name 'sima-neat-*-Linux-core.deb' -o -name 'neat-*.deb' -o -name 'sima-lmm-*.deb' \) | sort)
   mapfile -t wheel_files < <(find "${cache_dir}" -maxdepth 1 -type f -name '*.whl' | sort)
 
   if [[ "${#deb_files[@]}" -lt 1 ]]; then
