@@ -18,6 +18,39 @@ check_remote_passwordless_sudo() {
   ssh -tt -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" "sudo -n true" >/dev/null 2>&1
 }
 
+sdk_platform_version_from_release_file() {
+  local sdk_release="$1"
+  local platform_version=""
+
+  platform_version="$(
+    awk -F= '
+      /^[[:space:]]*Platform Version[[:space:]]*=/ {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2)
+        print $2
+        exit
+      }
+    ' "${sdk_release}"
+  )"
+
+  if [[ -n "${platform_version}" ]]; then
+    printf "%s\n" "${platform_version}"
+    return 0
+  fi
+
+  platform_version="$(
+    grep -E '^[[:space:]]*eLXr Version[[:space:]]*=' "${sdk_release}" \
+      | grep -Eo '[0-9]+([.][0-9]+){2}' \
+      | head -n1 || true
+  )"
+
+  if [[ -n "${platform_version}" ]]; then
+    printf "%s\n" "${platform_version}"
+    return 0
+  fi
+
+  grep -Eo '[0-9]+([.][0-9]+){2}' "${sdk_release}" | head -n1 || true
+}
+
 check_devkit_sdk_version_compatibility() {
   local user="$1"
   local ip="$2"
@@ -61,33 +94,28 @@ EOS
     return 1
   fi
 
-  if grep -Fq "${devkit_distro_version}" "${sdk_release}"; then
-    echo "DevKit DISTRO_VERSION ${devkit_distro_version} is compatible with this SDK."
-    return 0
+  sdk_expected_version="$(sdk_platform_version_from_release_file "${sdk_release}")"
+  if [[ -z "${sdk_expected_version}" ]]; then
+    {
+      printf "%bERROR:%b Could not determine SDK platform compatibility version from %s.\n" "${c_warn}" "${c_reset}" "${sdk_release}"
+      sed 's/^/    /' "${sdk_release}"
+      printf "\nUse an SDK image that includes Platform Version in %s, then reconnect.\n" "${sdk_release}"
+    } >&2
+    return 1
   fi
 
-  sdk_expected_version="$(
-    grep -E '^[[:space:]]*eLXr Version[[:space:]]*=' "${sdk_release}" \
-      | grep -Eo '[0-9]+([.][0-9]+){2}' \
-      | head -n1 || true
-  )"
-  if [[ -z "${sdk_expected_version}" ]]; then
-    sdk_expected_version="$(
-      grep -Eo '[0-9]+([.][0-9]+){2}' "${sdk_release}" \
-        | head -n1 || true
-    )"
+  if [[ "${devkit_distro_version}" == "${sdk_expected_version}" ]]; then
+    echo "DevKit DISTRO_VERSION ${devkit_distro_version} is compatible with SDK platform ${sdk_expected_version}."
+    return 0
   fi
 
   {
     printf "%bERROR: DevKit/SDK version mismatch.\n" "${c_warn}"
     printf "  DevKit DISTRO_VERSION: %s\n" "${devkit_distro_version}"
+    printf "  SDK Platform Version : %s\n" "${sdk_expected_version}"
     printf "  SDK release file     : %s\n" "${sdk_release}"
     sed 's/^/    /' "${sdk_release}"
-    if [[ -n "${sdk_expected_version}" ]]; then
-      printf "\nPlease update your DevKit to %s, then reconnect.%b\n" "${sdk_expected_version}" "${c_reset}"
-    else
-      printf "\nPlease update your DevKit to the matching version listed in %s, then reconnect.%b\n" "${sdk_release}" "${c_reset}"
-    fi
+    printf "\nPlease update your DevKit to %s, then reconnect.%b\n" "${sdk_expected_version}" "${c_reset}"
   } >&2
   return 1
 }
