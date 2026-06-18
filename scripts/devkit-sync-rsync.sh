@@ -132,8 +132,34 @@ case "${cmd}" in
     ssh_bash "${remote_root}" <<'EOS' || {
 set -euo pipefail
 remote_root="$1"
+if [[ "$(id -u)" -eq 0 ]]; then
+  SUDO=""
+elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+  SUDO="sudo"
+else
+  SUDO="__missing_sudo__"
+fi
+
+as_root() {
+  if [[ -z "${SUDO}" ]]; then
+    "$@"
+  elif [[ "${SUDO}" == "__missing_sudo__" ]]; then
+    echo "Passwordless sudo is required on the DevKit for rsync fallback setup." >&2
+    return 1
+  else
+    sudo "$@"
+  fi
+}
+
 if ! command -v rsync >/dev/null 2>&1; then
-  echo "rsync is not installed on the DevKit." >&2
+  if command -v apt-get >/dev/null 2>&1; then
+    as_root apt-get update --allow-releaseinfo-change
+    as_root apt-get install -y --no-install-recommends rsync
+  fi
+fi
+
+if ! command -v rsync >/dev/null 2>&1; then
+  echo "rsync is not installed on the DevKit and could not be installed automatically." >&2
   exit 1
 fi
 
@@ -142,16 +168,16 @@ if [[ "$(id -u)" -eq 0 ]]; then
   chmod 0755 "${remote_root}"
 elif mkdir -p "${remote_root}" >/dev/null 2>&1; then
   chmod 0755 "${remote_root}" || true
-elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-  sudo mkdir -p "${remote_root}"
-  sudo chown "$(id -u):$(id -g)" "${remote_root}"
-  sudo chmod 0755 "${remote_root}"
+elif [[ "${SUDO}" != "__missing_sudo__" ]]; then
+  as_root mkdir -p "${remote_root}"
+  as_root chown "$(id -u):$(id -g)" "${remote_root}"
+  as_root chmod 0755 "${remote_root}"
 else
   echo "Cannot create ${remote_root}; passwordless sudo is required." >&2
   exit 1
 fi
 EOS
-      echo "DevKit rsync setup failed. Ensure rsync is installed and ${remote_root} is writable." >&2
+      echo "DevKit rsync setup failed. Ensure rsync can be installed and ${remote_root} is writable." >&2
       exit 1
     }
     ;;
