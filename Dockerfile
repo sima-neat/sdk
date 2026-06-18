@@ -182,6 +182,7 @@ COPY config/supervisor-neat-insight.conf /etc/supervisor/conf.d/neat-insight.con
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY scripts/insight-admin.sh /usr/local/bin/insight-admin
 COPY scripts/devkit.sh /usr/local/bin/devkit.sh
+COPY scripts/devkit-sync-rsync.sh /usr/local/bin/devkit-sync-rsync.sh
 RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/install-sdk-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/sysroot && \
@@ -189,6 +190,7 @@ RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/insight-admin && \
     ln -sf /usr/local/bin/insight-admin /usr/local/bin/install-neat-insight && \
     chmod 755 /usr/local/bin/devkit.sh && \
+    chmod 755 /usr/local/bin/devkit-sync-rsync.sh && \
     install-sdk-sysroot-overlay.sh
 
 RUN if [ -n "${NEAT_INSIGHT_BRANCH}${NEAT_INSIGHT_VERSION}" ]; then \
