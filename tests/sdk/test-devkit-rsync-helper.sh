@@ -29,6 +29,12 @@ mapped="$("${HELPER}" map-path --local-root /workspace --remote-root /workspace-
 unchanged="$("${HELPER}" map-path --local-root /workspace --remote-root /workspace-rsync --path /tmp/demo.py)"
 [[ "${unchanged}" == "/tmp/demo.py" ]] || fail "unexpected unchanged path: ${unchanged}"
 
+scope="$("${HELPER}" scope-for-path --local-root /workspace --path /workspace/apps/examples/demo.py)"
+[[ "${scope}" == "/workspace/apps" ]] || fail "unexpected scope: ${scope}"
+
+root_scope="$("${HELPER}" scope-for-path --local-root /workspace --path /workspace)"
+[[ "${root_scope}" == "/workspace" ]] || fail "unexpected root scope: ${root_scope}"
+
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "${tmpdir}"' EXIT
 mkdir -p "${tmpdir}/workspace"

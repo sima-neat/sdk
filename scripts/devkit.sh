@@ -883,6 +883,10 @@ esac
 echo "Target: ${DEVKIT_SYNC_TARGET}"
 
 devkit-sync() {
+  local sync_scope="${1:-${PWD}}"
+  if [[ "${sync_scope}" == "--all" ]]; then
+    sync_scope="${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}"
+  fi
   case "${DEVKIT_SYNC_METHOD:-nfs}" in
     nfs)
       echo "Sync method: nfs"
@@ -900,6 +904,7 @@ devkit-sync() {
         --port "${DEVKIT_SYNC_DEVKIT_PORT:-22}" \
         --local "${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}" \
         --remote "${DEVKIT_RSYNC_REMOTE_ROOT:-/workspace-rsync}" \
+        --scope "${sync_scope}" \
         --status-file "${DEVKIT_RSYNC_STATUS_FILE:-${HOME}/.devkit-rsync-status}"
       ;;
     *)
@@ -1132,7 +1137,7 @@ devkit-run() {
       OFF|off|0|false|FALSE|no|NO)
         ;;
       *)
-        if ! devkit-sync; then
+        if ! devkit-sync "${local_path}"; then
           echo "rsync fallback sync failed; not running remote command." >&2
           return 1
         fi
