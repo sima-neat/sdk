@@ -449,7 +449,6 @@ _DEFAULT_MOUNT_PATH="${DEVKIT_SYNC_MOUNT_PATH:-/workspace}"
 _LOCAL_WORKSPACE_ROOT="${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}"
 _RSYNC_REMOTE_ROOT="${DEVKIT_RSYNC_REMOTE_ROOT:-/workspace-rsync}"
 _RSYNC_HELPER="${DEVKIT_RSYNC_HELPER:-/usr/local/bin/devkit-sync-rsync.sh}"
-_RSYNC_STATUS_FILE="${DEVKIT_RSYNC_STATUS_FILE:-${HOME}/.devkit-rsync-status}"
 
 devkit_sync_noninteractive() {
   case "${DEVKIT_SYNC_NONINTERACTIVE:-}" in
@@ -826,7 +825,6 @@ export DEVKIT_SYNC_REMOTE_ROOT="${_ACTIVE_REMOTE_ROOT}"
 export DEVKIT_SYNC_NFS_MOUNT_POINT="${_MOUNT_POINT}"
 export DEVKIT_RSYNC_REMOTE_ROOT="${_RSYNC_REMOTE_ROOT}"
 export DEVKIT_RSYNC_HELPER="${_RSYNC_HELPER}"
-export DEVKIT_RSYNC_STATUS_FILE="${_RSYNC_STATUS_FILE}"
 export DEVKIT_SYNC_HINT="${_SYNC_HINT}"
 export DEVKIT_SYNC_TARGET="${_DEVKIT_IP}:${_ACTIVE_REMOTE_ROOT}"
 export DEVKIT_SYNC_DEVKIT_IP="${_DEVKIT_IP}"
@@ -1337,7 +1335,6 @@ __devkit_persist_export() {
   __devkit_persist_export DEVKIT_SYNC_DEVKIT_PORT
   __devkit_persist_export DEVKIT_RSYNC_REMOTE_ROOT
   __devkit_persist_export DEVKIT_RSYNC_HELPER
-  __devkit_persist_export DEVKIT_RSYNC_STATUS_FILE
   __devkit_persist_export DEVKIT_SYNC_HINT
   __devkit_persist_export SDK_RELEASE_REF
   __devkit_persist_export SDK_PROMPT_REF

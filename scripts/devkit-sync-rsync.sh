@@ -105,7 +105,12 @@ write_status() {
   local state="$1"
   local detail="$2"
   local sync_scope="${3:-}"
-  mkdir -p "$(dirname "${status_file}")"
+  local status_dir tmp_status
+  status_dir="$(dirname "${status_file}")"
+  if ! mkdir -p "${status_dir}" >/dev/null 2>&1; then
+    return 0
+  fi
+  tmp_status="$(mktemp "${status_dir}/.devkit-rsync-status.XXXXXX" 2>/dev/null)" || return 0
   {
     printf 'timestamp=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'state=%s\n' "${state}"
@@ -113,7 +118,11 @@ write_status() {
       printf 'scope=%q\n' "${sync_scope}"
     fi
     printf 'detail=%q\n' "${detail}"
-  } > "${status_file}"
+  } > "${tmp_status}" || {
+    rm -f "${tmp_status}"
+    return 0
+  }
+  mv -f "${tmp_status}" "${status_file}" >/dev/null 2>&1 || rm -f "${tmp_status}"
 }
 
 normalize_local_path() {
