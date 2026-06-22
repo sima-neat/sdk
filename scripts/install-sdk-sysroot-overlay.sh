@@ -15,16 +15,17 @@ done
 /usr/local/bin/install-sysroot-overlay.sh /opt/toolchain/aarch64/modalix "${overlay_pkgs[@]}"
 
 libdir=/opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu
-for lib in \
-  libopencv_dnn.so.406 \
-  libopencv_features2d.so.406 \
-  libopencv_flann.so.406 \
-  libopencv_objdetect.so.406 \
-  libopencv_video.so.406; do
-  if [[ ! -e "${libdir}/${lib}" ]]; then
-    echo "Missing required sysroot OpenCV runtime library: ${libdir}/${lib}" >&2
-    exit 1
-  fi
-done
+broken_opencv_links=()
+while IFS= read -r link; do
+  broken_opencv_links+=("${link}")
+done < <(find "${libdir}" -maxdepth 1 -xtype l -name 'libopencv_*.so' -print | sort)
+
+if [[ "${#broken_opencv_links[@]}" -gt 0 ]]; then
+  echo "Broken sysroot OpenCV linker symlinks found:" >&2
+  for link in "${broken_opencv_links[@]}"; do
+    echo "  ${link} -> $(readlink "${link}")" >&2
+  done
+  exit 1
+fi
 
 chmod -R a+rX /opt/toolchain/aarch64/modalix/usr/include
