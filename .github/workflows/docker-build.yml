@@ -11,7 +11,8 @@ on:
 
 permissions:
   contents: read
-  actions: read
+  actions: write
+  id-token: write
   packages: write
 
 concurrency:
@@ -130,6 +131,7 @@ jobs:
 
           release_tag=""
           release_latest_tag=""
+          branch_tag=""
           promote_latest=false
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             release_tag="${GITHUB_REF_NAME}"
@@ -141,6 +143,11 @@ jobs:
             fi
           elif [[ "${GITHUB_REF}" == refs/heads/* ]]; then
             promote_latest=true
+            branch_tag="$(echo "${GITHUB_REF_NAME}" | tr '[:upper:]' '[:lower:]')"
+            branch_tag="$(echo "${branch_tag}" | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
+            if [[ -z "${branch_tag}" ]]; then
+              branch_tag="branch"
+            fi
           fi
 
           {
@@ -150,6 +157,7 @@ jobs:
             echo "commit_sha=${GITHUB_SHA}"
             echo "release_tag=${release_tag}"
             echo "release_latest_tag=${release_latest_tag}"
+            echo "branch_tag=${branch_tag}"
             echo "promote_latest=${promote_latest}"
           } > image-metadata/image.env
         env:
@@ -441,6 +449,9 @@ jobs:
     needs: smoke
     runs-on: ubuntu-24.04
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -473,6 +484,10 @@ jobs:
           tags=()
           if [[ "${promote_latest}" == "true" ]]; then
             tags+=(--tag "${repository}:latest")
+            if [[ -n "${branch_tag:-}" ]]; then
+              canonical_sdk_repository="${repository%/*}/sdk"
+              tags+=(--tag "${canonical_sdk_repository}:${branch_tag}")
+            fi
           fi
           if [[ -n "${release_tag}" ]]; then
             tags+=(--tag "${repository}:${release_tag}")
@@ -484,3 +499,83 @@ jobs:
           docker buildx imagetools create \
             "${tags[@]}" \
             "${source_ref}"
+
+  prepare-vulcan-install-stub:
+    name: Prepare SDK install stub package
+    if: github.event_name != 'pull_request'
+    needs: promote
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Download image metadata
+        uses: actions/download-artifact@v7
+        with:
+          name: image-promotion-metadata
+          path: .smoke
+
+      - name: Install sima-cli
+        run: |
+          set -euo pipefail
+
+          python3 -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install sima-cli
+          SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli --version
+
+      - name: Prepare SDK install stub package
+        run: |
+          set -euo pipefail
+
+          metadata_file="$(find .smoke -type f -name image.env -print -quit)"
+          # shellcheck disable=SC1090
+          source "${metadata_file}"
+
+          if [[ "${promote_latest}" == "true" ]]; then
+            canonical_sdk_repository="${repository%/*}/sdk"
+            image_resource="ghcr:${canonical_sdk_repository#ghcr.io/}:${branch_tag}"
+            package_version="${GITHUB_REF_NAME}"
+          elif [[ -n "${release_tag}" ]]; then
+            image_resource="ghcr:${repository#ghcr.io/}:${release_tag}"
+            package_version="${release_tag#v}"
+          else
+            echo "SDK install stub skipped: no promoted branch or release image tag." >&2
+            exit 1
+          fi
+
+          source .venv/bin/activate
+          tools/prepare_s3_artifacts.sh \
+            --output-dir dist \
+            --image-resource "${image_resource}" \
+            --version "${package_version}" \
+            --release "${GITHUB_SHA}"
+
+      - name: Upload SDK install stub package
+        uses: actions/upload-artifact@v7
+        with:
+          name: sdk-install-stub
+          path: dist/
+          if-no-files-found: error
+
+  publish-vulcan-install-stub:
+    name: Publish SDK install stub to Vulcan
+    if: github.event_name != 'pull_request'
+    needs: prepare-vulcan-install-stub
+    uses: sima-neat/.github/.github/workflows/vulcan-publish-artifacts.yml@main
+    with:
+      aws_region: us-west-2
+      environment_name: ${{ vars.VULCAN_ENV || 'production' }}
+      artifact_pattern: sdk-install-stub
+      artifact_glob: "**/*"
+      min_artifact_count: 2
+
+  mark-vulcan-install-stub-latest:
+    name: Mark SDK install stub as latest
+    if: github.event_name != 'pull_request'
+    needs: publish-vulcan-install-stub
+    uses: sima-neat/.github/.github/workflows/vulcan-update-latest-artifacts.yml@main
+    with:
+      aws_region: us-west-2
+      environment_name: ${{ vars.VULCAN_ENV || 'production' }}
