@@ -25,16 +25,32 @@ The main user workflow is:
 
 ## Install The SDK
 
-Install the latest published SDK image:
+Install the latest published SDK and run setup:
 
 ```bash
-sima-cli install ghcr:sima-neat/sdk
+sima-cli neat install sdk@developer
+```
+
+Install a released SDK version:
+
+```bash
+sima-cli neat install sdk@{version}
+```
+
+The install command pulls the SDK image and then asks whether to pair the SDK
+with a Modalix DevKit. If you choose to pair, enter the DevKit IP address when
+prompted.
+
+You can still install a container image resource directly when needed:
+
+```bash
+sima-cli install ghcr:sima-neat/sdk:latest
 ```
 
 Install a branch-specific image:
 
 ```bash
-sima-cli install ghcr:sima-neat/sdk-feature-devkit-sync:latest
+sima-cli install ghcr:sima-neat/sdk:feature-devkit-sync
 ```
 
 The published image contains the toolchain, sysroot, headers, libraries, NEAT runtime components, and helper scripts needed to build software for SiMa.ai platforms.
