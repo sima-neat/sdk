@@ -170,90 +170,10 @@ jobs:
           path: image-metadata/image.env
           if-no-files-found: error
 
-  prepare-vulcan-install-stub:
-    name: Prepare SDK install stub package
-    if: github.event_name != 'pull_request'
-    needs: publish-manifest
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v5
-
-      - name: Download image metadata
-        uses: actions/download-artifact@v7
-        with:
-          name: image-promotion-metadata
-          path: .smoke
-
-      - name: Install sima-cli
-        run: |
-          set -euo pipefail
-
-          python3 -m venv .venv
-          source .venv/bin/activate
-          python -m pip install --upgrade pip
-          python -m pip install sima-cli
-          SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli --version
-
-      - name: Prepare SDK install stub package
-        run: |
-          set -euo pipefail
-
-          metadata_file="$(find .smoke -type f -name image.env -print -quit)"
-          # shellcheck disable=SC1090
-          source "${metadata_file}"
-
-          if [[ -z "${staged_tag:-}" ]]; then
-            echo "SDK install stub skipped: no staged image tag was recorded." >&2
-            exit 1
-          fi
-
-          image_resource="ghcr:${repository#ghcr.io/}:${staged_tag}"
-          if [[ -n "${release_tag}" ]]; then
-            package_version="${release_tag#v}"
-          else
-            package_version="${GITHUB_REF_NAME}"
-          fi
-
-          source .venv/bin/activate
-          tools/prepare_s3_artifacts.sh \
-            --output-dir dist \
-            --image-resource "${image_resource}" \
-            --version "${package_version}" \
-            --release "${GITHUB_SHA}"
-
-      - name: Upload SDK install stub package
-        uses: actions/upload-artifact@v7
-        with:
-          name: sdk-install-stub
-          path: dist/
-          if-no-files-found: error
-
-  publish-vulcan-install-stub:
-    name: Publish SDK install stub to Vulcan
-    if: github.event_name != 'pull_request'
-    needs: prepare-vulcan-install-stub
-    uses: sima-neat/.github/.github/workflows/vulcan-publish-artifacts.yml@main
-    with:
-      aws_region: us-west-2
-      environment_name: ${{ vars.VULCAN_ENV || 'production' }}
-      artifact_pattern: sdk-install-stub
-      artifact_glob: "**/*"
-      min_artifact_count: 2
-
-  mark-vulcan-install-stub-latest:
-    name: Mark SDK install stub as latest
-    if: github.event_name != 'pull_request'
-    needs: publish-vulcan-install-stub
-    uses: sima-neat/.github/.github/workflows/vulcan-update-latest-artifacts.yml@main
-    with:
-      aws_region: us-west-2
-      environment_name: ${{ vars.VULCAN_ENV || 'production' }}
-
   smoke:
     name: Smoke on ${{ matrix.arch }}
     if: github.event_name != 'pull_request'
-    needs: mark-vulcan-install-stub-latest
+    needs: publish-manifest
     runs-on: ${{ matrix.runs_on }}
     env:
       SIMA_CLI_CHECK_FOR_UPDATE: "0"
@@ -579,3 +499,83 @@ jobs:
           docker buildx imagetools create \
             "${tags[@]}" \
             "${source_ref}"
+
+  prepare-vulcan-install-stub:
+    name: Prepare SDK install stub package
+    if: github.event_name != 'pull_request'
+    needs: promote
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Download image metadata
+        uses: actions/download-artifact@v7
+        with:
+          name: image-promotion-metadata
+          path: .smoke
+
+      - name: Install sima-cli
+        run: |
+          set -euo pipefail
+
+          python3 -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install sima-cli
+          SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli --version
+
+      - name: Prepare SDK install stub package
+        run: |
+          set -euo pipefail
+
+          metadata_file="$(find .smoke -type f -name image.env -print -quit)"
+          # shellcheck disable=SC1090
+          source "${metadata_file}"
+
+          if [[ "${promote_latest}" == "true" ]]; then
+            canonical_sdk_repository="${repository%/*}/sdk"
+            image_resource="ghcr:${canonical_sdk_repository#ghcr.io/}:${branch_tag}"
+            package_version="${GITHUB_REF_NAME}"
+          elif [[ -n "${release_tag}" ]]; then
+            image_resource="ghcr:${repository#ghcr.io/}:${release_tag}"
+            package_version="${release_tag#v}"
+          else
+            echo "SDK install stub skipped: no promoted branch or release image tag." >&2
+            exit 1
+          fi
+
+          source .venv/bin/activate
+          tools/prepare_s3_artifacts.sh \
+            --output-dir dist \
+            --image-resource "${image_resource}" \
+            --version "${package_version}" \
+            --release "${GITHUB_SHA}"
+
+      - name: Upload SDK install stub package
+        uses: actions/upload-artifact@v7
+        with:
+          name: sdk-install-stub
+          path: dist/
+          if-no-files-found: error
+
+  publish-vulcan-install-stub:
+    name: Publish SDK install stub to Vulcan
+    if: github.event_name != 'pull_request'
+    needs: prepare-vulcan-install-stub
+    uses: sima-neat/.github/.github/workflows/vulcan-publish-artifacts.yml@main
+    with:
+      aws_region: us-west-2
+      environment_name: ${{ vars.VULCAN_ENV || 'production' }}
+      artifact_pattern: sdk-install-stub
+      artifact_glob: "**/*"
+      min_artifact_count: 2
+
+  mark-vulcan-install-stub-latest:
+    name: Mark SDK install stub as latest
+    if: github.event_name != 'pull_request'
+    needs: publish-vulcan-install-stub
+    uses: sima-neat/.github/.github/workflows/vulcan-update-latest-artifacts.yml@main
+    with:
+      aws_region: us-west-2
+      environment_name: ${{ vars.VULCAN_ENV || 'production' }}
