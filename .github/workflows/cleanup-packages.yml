@@ -32,6 +32,7 @@ jobs:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
+            const repoFullName = `${owner}/${repo}`;
             const dryRun = String(process.env.DRY_RUN).toLowerCase() === 'true';
 
             const protectedBranchNames = new Set(['develop', 'main']);
@@ -71,6 +72,18 @@ jobs:
                 return false;
               }
               return !liveBranchSlugs.has(tag);
+            }
+
+            function packageRepositoryFullName(pkg) {
+              if (pkg.repository?.full_name) {
+                return pkg.repository.full_name;
+              }
+              const repoOwner = pkg.repository?.owner?.login;
+              const repoName = pkg.repository?.name;
+              if (repoOwner && repoName) {
+                return `${repoOwner}/${repoName}`;
+              }
+              return '';
             }
 
             async function paginate(route, parameters) {
@@ -150,8 +163,16 @@ jobs:
               package_type: 'container',
             });
             const sdkBranchPackages = packages
-              .map((pkg) => pkg.name)
-              .filter((name) => name.startsWith('sdk-'));
+              .filter((pkg) => pkg.name.startsWith('sdk-'))
+              .filter((pkg) => {
+                const packageRepo = packageRepositoryFullName(pkg);
+                if (packageRepo === repoFullName) {
+                  return true;
+                }
+                core.info(`${pkg.name}: skipping package associated with ${packageRepo || 'unknown repository'}.`);
+                return false;
+              })
+              .map((pkg) => pkg.name);
 
             core.info(`Found ${sdkBranchPackages.length} sdk-* GHCR package(s).`);
 
@@ -167,60 +188,7 @@ jobs:
                 continue;
               }
 
-              const versions = await paginate(
-                'GET /orgs/{org}/packages/{package_type}/{package_name}/versions',
-                {
-                  org: owner,
-                  package_type: 'container',
-                  package_name: packageName,
-                },
-              );
-
-              let deleted = 0;
-              let kept = 0;
-              const latestShas = new Set();
-              for (const version of versions) {
-                const tags = version.metadata?.container?.tags ?? [];
-                if (!tags.includes('latest')) {
-                  continue;
-                }
-                for (const tag of tags) {
-                  const exactSha = tag.match(/^[0-9a-f]{40}$/);
-                  if (exactSha) {
-                    latestShas.add(tag);
-                    continue;
-                  }
-                  const stagedSha = tag.match(/^staged-([0-9a-f]{40})$/);
-                  if (stagedSha) {
-                    latestShas.add(stagedSha[1]);
-                  }
-                }
-              }
-
-              for (const version of versions) {
-                const tags = version.metadata?.container?.tags ?? [];
-                if (tags.includes('latest')) {
-                  kept += 1;
-                  core.info(`${packageName}: keeping latest version ${version.id} tags=[${tags.join(', ')}]`);
-                  continue;
-                }
-                const backsLatest = tags.some((tag) => {
-                  for (const sha of latestShas) {
-                    if (tag === sha || tag === `staged-${sha}` || tag.startsWith(`${sha}-`)) {
-                      return true;
-                    }
-                  }
-                  return false;
-                });
-                if (backsLatest) {
-                  kept += 1;
-                  core.info(`${packageName}: keeping version ${version.id} because it backs latest tags=[${tags.join(', ')}]`);
-                  continue;
-                }
-                await deletePackageVersion(packageName, version);
-                deleted += 1;
-              }
-              core.info(`${packageName}: deleted ${deleted} non-latest version(s), kept ${kept} latest version(s).`);
+              core.info(`${packageName}: matching branch still exists; keeping package and all versions.`);
             }
 
             if (!(await packageExists('sdk'))) {
