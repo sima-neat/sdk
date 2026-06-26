@@ -828,6 +828,10 @@ export DEVKIT_RSYNC_HELPER="${_RSYNC_HELPER}"
 export DEVKIT_SYNC_HINT="${_SYNC_HINT}"
 export DEVKIT_SYNC_TARGET="${_DEVKIT_IP}:${_ACTIVE_REMOTE_ROOT}"
 export DEVKIT_SYNC_DEVKIT_IP="${_DEVKIT_IP}"
+# Host IP neat-insight advertises in its URL / WebRTC iceHost. Refresh from the
+# current NFS host IP (_HOST_IP) so it tracks this (re-)point, and persist it
+# below so the neat-insight supervisor wrapper can export it into the service.
+export CONTAINER_HOST_IP="${_HOST_IP}"
 if [[ -z "${DEVKIT_SYNC_ORIG_PS1:-}" ]]; then
   export DEVKIT_SYNC_ORIG_PS1="${PS1:-\u@\h:\w\$ }"
 fi
@@ -1367,6 +1371,7 @@ __devkit_persist_export() {
   __devkit_persist_export DEVKIT_SYNC_TARGET
   __devkit_persist_export DEVKIT_SYNC_METHOD
   __devkit_persist_export DEVKIT_SYNC_DEVKIT_IP
+  __devkit_persist_export CONTAINER_HOST_IP
   __devkit_persist_export DEVKIT_SYNC_MOUNT_POINT
   __devkit_persist_export DEVKIT_SYNC_NFS_MOUNT_POINT
   __devkit_persist_export DEVKIT_SYNC_LOCAL_ROOT
@@ -1491,6 +1496,45 @@ fi
 copy_insight_port_map_to_devkit "${DEVKIT_SYNC_DEVKIT_USER}" "${DEVKIT_SYNC_DEVKIT_IP}" "${DEVKIT_SYNC_DEVKIT_PORT}"
 
 echo "Persisted DevKit shell helpers to ${_persist_file} (auto-loaded by ~/.bashrc and ~/.bash_profile)."
+
+# Restart neat-insight so it (and the vf WebRTC viewer it spawns) re-read the
+# refreshed CONTAINER_HOST_IP via the supervisor wrapper, and the Insight URL /
+# iceHost track this (re-)point. Best-effort, and only when the host IP actually
+# changed so we don't tear down active sessions on a no-op re-source. Skipped on
+# images without Insight (insight-admin / supervisord absent).
+__devkit_refresh_neat_insight() {
+  command -v insight-admin >/dev/null 2>&1 || return 0  # no Insight on this image
+  # Need at least one of the IPs neat-insight surfaces.
+  [[ -n "${_HOST_IP:-}" || -n "${_DEVKIT_IP:-}" ]] || return 0
+
+  # Restart only when the advertised host IP (CONTAINER_HOST_IP -- the Insight
+  # URL / WebRTC iceHost) OR the active DevKit IP (DEVKIT_SYNC_DEVKIT_IP -- shown
+  # in the Insight UI and used by the webssh shell) differs from what neat-insight
+  # is *currently* advertising. A re-point can change one without the other (e.g.
+  # a different DevKit on the same subnet keeps the host IP).
+  #
+  # Read the running neat-insight's launch environment -- it holds the values
+  # the wrapper exported at its last start, i.e. exactly what is live now.
+  # If it already matches, skip (don't tear down active sessions). If neat-insight
+  # isn't running, fall through and (re)start.
+  local pid env_file applied_host applied_devkit
+  pid="$(pgrep -f 'neat-insight( |$)' 2>/dev/null | head -1)"
+  if [[ -n "${pid}" ]]; then
+    env_file="/proc/${pid}/environ"
+    if [[ -r "${env_file}" ]]; then
+      applied_host="$(tr '\0' '\n' < "${env_file}" | sed -n 's/^CONTAINER_HOST_IP=//p' | head -1)"
+      applied_devkit="$(tr '\0' '\n' < "${env_file}" | sed -n 's/^DEVKIT_SYNC_DEVKIT_IP=//p' | head -1)"
+      [[ "${applied_host}" == "${_HOST_IP:-}" && "${applied_devkit}" == "${_DEVKIT_IP:-}" ]] && return 0
+    fi
+  fi
+
+  # Best-effort: insight-admin restart fails cleanly if supervisord isn't up. We
+  # do NOT gate on `insight-admin status` -- that checks neat-insight's RUNNING
+  # state (non-zero during STARTING/BACKOFF/FATAL) and would wrongly skip.
+  echo "Refreshing neat-insight (host IP ${_HOST_IP:-<unset>}, DevKit ${_DEVKIT_IP:-<unset>})..."
+  insight-admin restart >/dev/null 2>&1 || true
+}
+__devkit_refresh_neat_insight
 
 _c_ok="" _c_rst=""
 if [[ -t 1 ]]; then
