@@ -955,6 +955,29 @@ EOF
   esac
 }
 
+devkit-local-sync-scope() {
+  local path="$1"
+  local root="${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}"
+  local rel_path
+
+  case "${path}" in
+    "${root}") ;;
+    "${root}"/*) ;;
+    *)
+      printf '%s\n' "${path}"
+      return 0
+      ;;
+  esac
+
+  rel_path="${path#"${root}"}"
+  rel_path="${rel_path#/}"
+  if [[ -z "${rel_path}" ]]; then
+    printf '%s\n' "${root}"
+  else
+    printf '%s/%s\n' "${root}" "${rel_path%%/*}"
+  fi
+}
+
 # Run a local /workspace binary or Python script on the paired DevKit.
 devkit-run() {
   if [[ $# -lt 1 ]]; then
@@ -1038,32 +1061,10 @@ devkit-run() {
   esac
   pyneat_activate="${DEVKIT_PYNEAT_ACTIVATE:-__NONE__}"
 
-  devkit_local_sync_scope() {
-    local path="$1"
-    local root="${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}"
-    local rel_path
-
-    case "${path}" in
-      "${root}") ;;
-      "${root}"/*) ;;
-      *)
-        printf '%s\n' "${path}"
-        return 0
-        ;;
-    esac
-
-    rel_path="${path#"${root}"}"
-    rel_path="${rel_path#/}"
-    if [[ -z "${rel_path}" || "${rel_path}" != */* ]]; then
-      printf '%s\n' "${root}"
-    else
-      printf '%s/%s\n' "${root}" "${rel_path%%/*}"
-    fi
-  }
-  local_sync_scope="$(devkit_local_sync_scope "${local_path}")"
+  local_sync_scope="$(devkit-local-sync-scope "${local_path}")"
   if [[ "${DEVKIT_SYNC_METHOD:-nfs}" == "rsync" ]]; then
     local cwd_sync_scope
-    cwd_sync_scope="$(devkit_local_sync_scope "${host_pwd}")"
+    cwd_sync_scope="$(devkit-local-sync-scope "${host_pwd}")"
     if [[ "${cwd_sync_scope}" != "${local_sync_scope}" ]]; then
       remote_cwd="$(dirname "${remote_path}")"
     fi
@@ -1149,10 +1150,23 @@ devkit-run() {
     fi
 
     case "${normalized}" in
+      "${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}")
+        local mapped
+        local arg_sync_scope
+        arg_sync_scope="$(devkit-local-sync-scope "${normalized}")"
+        if [[ "${DEVKIT_SYNC_METHOD:-nfs}" == "rsync" && "${arg_sync_scope}" != "${local_sync_scope}" ]]; then
+          echo "Mapped argument ${normalized} is outside the synced root ${local_sync_scope}." >&2
+          echo "When rsync fallback is active, keep files needed by dk under the same top-level workspace folder as ${local_path}." >&2
+          return 2
+        fi
+        mapped="${DEVKIT_SYNC_REMOTE_ROOT:-${DEVKIT_SYNC_MOUNT_POINT}}"
+        mapped="${mapped//\/\//\/}"
+        printf '%s%s\n' "${prefix}" "${mapped}"
+        ;;
       "${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}"/*)
         local mapped
         local arg_sync_scope
-        arg_sync_scope="$(devkit_local_sync_scope "${normalized}")"
+        arg_sync_scope="$(devkit-local-sync-scope "${normalized}")"
         if [[ "${DEVKIT_SYNC_METHOD:-nfs}" == "rsync" && "${arg_sync_scope}" != "${local_sync_scope}" ]]; then
           echo "Mapped argument ${normalized} is outside the synced root ${local_sync_scope}." >&2
           echo "When rsync fallback is active, keep files needed by dk under the same top-level workspace folder as ${local_path}." >&2
@@ -1415,6 +1429,7 @@ __devkit_persist_export() {
   echo '__devkit_apply_prompt'
   declare -f devkit-sync
   declare -f devkit-status
+  declare -f devkit-local-sync-scope
   declare -f devkit-run
   echo 'unalias dk >/dev/null 2>&1 || true'
   declare -f dk

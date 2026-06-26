@@ -37,6 +37,9 @@ unchanged="$("${HELPER}" map-path --local-root /workspace --remote-root /workspa
 scope="$("${HELPER}" scope-for-path --local-root /workspace --path /workspace/apps/examples/demo.py)"
 [[ "${scope}" == "/workspace/apps" ]] || fail "unexpected scope: ${scope}"
 
+top_level_scope="$("${HELPER}" scope-for-path --local-root /workspace --path /workspace/apps)"
+[[ "${top_level_scope}" == "/workspace/apps" ]] || fail "unexpected top-level scope: ${top_level_scope}"
+
 root_scope="$("${HELPER}" scope-for-path --local-root /workspace --path /workspace)"
 [[ "${root_scope}" == "/workspace" ]] || fail "unexpected root scope: ${root_scope}"
 
