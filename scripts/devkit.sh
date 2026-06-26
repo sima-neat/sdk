@@ -1018,7 +1018,7 @@ devkit-run() {
   rel="${local_path#"${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}/"}"
   remote_path="${DEVKIT_SYNC_REMOTE_ROOT:-${DEVKIT_SYNC_MOUNT_POINT}}/${rel}"
   remote_path="${remote_path//\/\//\/}"
-  local host_pwd remote_args arg
+  local host_pwd remote_args arg local_sync_scope
   host_pwd="$(pwd)"
   case "${host_pwd}" in
     "${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}"/*)
@@ -1034,6 +1034,30 @@ devkit-run() {
   esac
   pyneat_activate="${DEVKIT_PYNEAT_ACTIVATE:-__NONE__}"
   remote_args=("${remote_path}" "${pyneat_activate}" "${remote_cwd}" "${DEVKIT_SYNC_METHOD:-nfs}")
+
+  devkit_local_sync_scope() {
+    local path="$1"
+    local root="${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}"
+    local rel_path
+
+    case "${path}" in
+      "${root}") ;;
+      "${root}"/*) ;;
+      *)
+        printf '%s\n' "${path}"
+        return 0
+        ;;
+    esac
+
+    rel_path="${path#"${root}"}"
+    rel_path="${rel_path#/}"
+    if [[ -z "${rel_path}" || "${rel_path}" != */* ]]; then
+      printf '%s\n' "${root}"
+    else
+      printf '%s/%s\n' "${root}" "${rel_path%%/*}"
+    fi
+  }
+  local_sync_scope="$(devkit_local_sync_scope "${local_path}")"
 
   normalize_devkit_host_path() {
     local input="$1"
@@ -1116,6 +1140,13 @@ devkit-run() {
     case "${normalized}" in
       "${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}"/*)
         local mapped
+        local arg_sync_scope
+        arg_sync_scope="$(devkit_local_sync_scope "${normalized}")"
+        if [[ "${DEVKIT_SYNC_METHOD:-nfs}" == "rsync" && "${arg_sync_scope}" != "${local_sync_scope}" ]]; then
+          echo "Mapped argument ${normalized} is outside the synced root ${local_sync_scope}." >&2
+          echo "When rsync fallback is active, keep files needed by dk under the same top-level workspace folder as ${local_path}." >&2
+          return 2
+        fi
         mapped="${DEVKIT_SYNC_REMOTE_ROOT:-${DEVKIT_SYNC_MOUNT_POINT}}/${normalized#"${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}/"}"
         mapped="${mapped//\/\//\/}"
         printf '%s%s\n' "${prefix}" "${mapped}"
@@ -1126,8 +1157,10 @@ devkit-run() {
     esac
   }
 
+  local mapped_arg
   for arg in "$@"; do
-    remote_args+=("$(map_devkit_arg_path "${arg}")")
+    mapped_arg="$(map_devkit_arg_path "${arg}")" || return $?
+    remote_args+=("${mapped_arg}")
   done
 
   if [[ "${DEVKIT_SYNC_METHOD:-nfs}" == "rsync" ]]; then
