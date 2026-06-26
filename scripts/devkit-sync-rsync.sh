@@ -269,8 +269,8 @@ if ! command -v rsync >/dev/null 2>&1; then
 fi
 
 physical_root="${remote_root}"
-if [[ "${remote_root}" == "/workspace-rsync" && -d "/nvme/media" ]]; then
-  physical_root="/nvme/media/workspace-rsync"
+if [[ "${remote_root}" == "/workspace-rsync" && -d "/media/nvme" ]]; then
+  physical_root="/media/nvme/workspace-rsync"
 fi
 
 if [[ "${physical_root}" == "${remote_root}" ]]; then
