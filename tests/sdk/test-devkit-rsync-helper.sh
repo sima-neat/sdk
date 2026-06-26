@@ -9,6 +9,11 @@ fail() {
   exit 1
 }
 
+grep -Fq '/media/nvme/workspace-rsync' "${HELPER}" || fail "rsync helper should use /media/nvme for NVMe workspace storage"
+if grep -Fq '/nvme/media/workspace-rsync' "${HELPER}"; then
+  fail "rsync helper should not use the old /nvme/media workspace path"
+fi
+
 assert_contains() {
   local haystack="$1"
   local needle="$2"
