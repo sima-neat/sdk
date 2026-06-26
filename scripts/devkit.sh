@@ -1033,7 +1033,6 @@ devkit-run() {
       ;;
   esac
   pyneat_activate="${DEVKIT_PYNEAT_ACTIVATE:-__NONE__}"
-  remote_args=("${remote_path}" "${pyneat_activate}" "${remote_cwd}" "${DEVKIT_SYNC_METHOD:-nfs}")
 
   devkit_local_sync_scope() {
     local path="$1"
@@ -1058,6 +1057,14 @@ devkit-run() {
     fi
   }
   local_sync_scope="$(devkit_local_sync_scope "${local_path}")"
+  if [[ "${DEVKIT_SYNC_METHOD:-nfs}" == "rsync" ]]; then
+    local cwd_sync_scope
+    cwd_sync_scope="$(devkit_local_sync_scope "${host_pwd}")"
+    if [[ "${cwd_sync_scope}" != "${local_sync_scope}" ]]; then
+      remote_cwd="$(dirname "${remote_path}")"
+    fi
+  fi
+  remote_args=("${remote_path}" "${pyneat_activate}" "${remote_cwd}" "${DEVKIT_SYNC_METHOD:-nfs}")
 
   normalize_devkit_host_path() {
     local input="$1"
