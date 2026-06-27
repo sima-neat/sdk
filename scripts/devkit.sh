@@ -446,6 +446,9 @@ _HOST_IP="${NFS_SERVER_HOST_IP:-}"
 _HOST_EXPORT_PATH="${DEVKIT_HOST_EXPORT_PATH:-}"
 _HOST_PLATFORM="${DEVKIT_HOST_PLATFORM:-linux}"
 _DEFAULT_MOUNT_PATH="${DEVKIT_SYNC_MOUNT_PATH:-/workspace}"
+_LOCAL_WORKSPACE_ROOT="${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}"
+_RSYNC_REMOTE_ROOT="${DEVKIT_RSYNC_REMOTE_ROOT:-/workspace-rsync}"
+_RSYNC_HELPER="${DEVKIT_RSYNC_HELPER:-/usr/local/bin/devkit-sync-rsync.sh}"
 
 devkit_sync_noninteractive() {
   case "${DEVKIT_SYNC_NONINTERACTIVE:-}" in
@@ -486,9 +489,11 @@ if [[ ! "${_DEVKIT_PORT}" =~ ^[0-9]+$ ]] || (( _DEVKIT_PORT < 1 || _DEVKIT_PORT 
   return 2
 fi
 
-_c_info="" _c_reset=""
+_c_info="" _c_error="" _c_warn="" _c_reset=""
 if [[ -t 1 ]]; then
   _c_info=$'\033[1;34m'
+  _c_error=$'\033[1;31m'
+  _c_warn=$'\033[1;33m'
   _c_reset=$'\033[0m'
 fi
 cat <<EOF
@@ -638,6 +643,7 @@ if ! sync_neat_framework_to_devkit "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_
 fi
 
 echo "Configuring remote NFS mount..."
+_NFS_CONFIGURED=0
 if ! ssh -T -p "${_DEVKIT_PORT}" -o BatchMode=yes -o ConnectTimeout=8 "${_DEVKIT_USER}@${_DEVKIT_IP}" bash -s -- "${_HOST_IP}" "${_HOST_EXPORT_PATH}" "${_MOUNT_POINT}" "${_NFS_OPTS}" "${_DEVKIT_USER}" <<'EOS'
 set -euo pipefail
 host_ip="$1"
@@ -775,13 +781,57 @@ if command -v git >/dev/null 2>&1; then
 fi
 EOS
 then
+  printf "%bERROR: DevKit NFS workspace setup was not successful.%b\n" "${_c_error}" "${_c_reset}" >&2
   echo "Failed to configure NFS mount on ${_DEVKIT_USER}@${_DEVKIT_IP}." >&2
+  echo "SSH is configured, so the SDK will continue and keep dk shell available." >&2
   echo "Hint: ensure ${_DEVKIT_USER} has passwordless sudo, or rerun as root: source devkit.sh ${_DEVKIT_IP} root ${_DEVKIT_PORT}" >&2
-  return 1
+else
+  _NFS_CONFIGURED=1
 fi
 
-export DEVKIT_SYNC_TARGET="${_DEVKIT_IP}:${_MOUNT_POINT}"
+_SYNC_METHOD="none"
+_ACTIVE_REMOTE_ROOT="${_MOUNT_POINT}"
+_SYNC_HINT=""
+if [[ "${_NFS_CONFIGURED}" == "1" ]]; then
+  _SYNC_METHOD="nfs"
+  _ACTIVE_REMOTE_ROOT="${_MOUNT_POINT}"
+else
+  case "${DEVKIT_RSYNC_FALLBACK:-ON}" in
+    OFF|off|0|false|FALSE|no|NO)
+      _SYNC_METHOD="none"
+      _ACTIVE_REMOTE_ROOT="${_RSYNC_REMOTE_ROOT}"
+      _SYNC_HINT="NFS failed and rsync fallback is disabled by DEVKIT_RSYNC_FALLBACK=${DEVKIT_RSYNC_FALLBACK}."
+      printf "%bWARNING:%b rsync fallback disabled; only dk shell will be available.\n" "${_c_warn}" "${_c_reset}" >&2
+      ;;
+    *)
+      if [[ -x "${_RSYNC_HELPER}" ]] && "${_RSYNC_HELPER}" setup --devkit "${_DEVKIT_IP}" --user "${_DEVKIT_USER}" --port "${_DEVKIT_PORT}" --local "${_LOCAL_WORKSPACE_ROOT}" --remote "${_RSYNC_REMOTE_ROOT}"; then
+        _SYNC_METHOD="rsync"
+        _ACTIVE_REMOTE_ROOT="${_RSYNC_REMOTE_ROOT}"
+        _SYNC_HINT="NFS failed; using rsync-over-SSH fallback."
+        printf "%bWARNING:%b using rsync fallback: %s -> %s@%s:%s\n" "${_c_warn}" "${_c_reset}" "${_LOCAL_WORKSPACE_ROOT}" "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_RSYNC_REMOTE_ROOT}" >&2
+      else
+        _SYNC_METHOD="none"
+        _ACTIVE_REMOTE_ROOT="${_RSYNC_REMOTE_ROOT}"
+        _SYNC_HINT="NFS failed and rsync fallback setup was not available."
+        printf "%bWARNING:%b rsync fallback setup failed; only dk shell will be available.\n" "${_c_warn}" "${_c_reset}" >&2
+      fi
+      ;;
+  esac
+fi
+
+export DEVKIT_SYNC_METHOD="${_SYNC_METHOD}"
+export DEVKIT_SYNC_LOCAL_ROOT="${_LOCAL_WORKSPACE_ROOT}"
+export DEVKIT_SYNC_REMOTE_ROOT="${_ACTIVE_REMOTE_ROOT}"
+export DEVKIT_SYNC_NFS_MOUNT_POINT="${_MOUNT_POINT}"
+export DEVKIT_RSYNC_REMOTE_ROOT="${_RSYNC_REMOTE_ROOT}"
+export DEVKIT_RSYNC_HELPER="${_RSYNC_HELPER}"
+export DEVKIT_SYNC_HINT="${_SYNC_HINT}"
+export DEVKIT_SYNC_TARGET="${_DEVKIT_IP}:${_ACTIVE_REMOTE_ROOT}"
 export DEVKIT_SYNC_DEVKIT_IP="${_DEVKIT_IP}"
+# Host IP neat-insight advertises in its URL / WebRTC iceHost. Refresh from the
+# current NFS host IP (_HOST_IP) so it tracks this (re-)point, and persist it
+# below so the neat-insight supervisor wrapper can export it into the service.
+export CONTAINER_HOST_IP="${_HOST_IP}"
 if [[ -z "${DEVKIT_SYNC_ORIG_PS1:-}" ]]; then
   export DEVKIT_SYNC_ORIG_PS1="${PS1:-\u@\h:\w\$ }"
 fi
@@ -821,8 +871,112 @@ fi
 export PS1="$(__devkit_rewrite_prompt_hostname "${PS1:-${DEVKIT_SYNC_ORIG_PS1}}")"
 
 echo ""
-echo "NFS client mount configured."
+case "${DEVKIT_SYNC_METHOD}" in
+  nfs)
+    echo "NFS client mount configured."
+    ;;
+  rsync)
+    echo "NFS client mount was not configured; rsync fallback is active."
+    ;;
+  *)
+    echo "NFS client mount was not configured; no workspace sync method is active."
+    ;;
+esac
 echo "Target: ${DEVKIT_SYNC_TARGET}"
+
+devkit-sync() {
+  local sync_scope="${1:-${PWD}}"
+  if [[ "${sync_scope}" == "--all" ]]; then
+    sync_scope="${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}"
+  fi
+  case "${DEVKIT_SYNC_METHOD:-nfs}" in
+    nfs)
+      echo "Sync method: nfs"
+      echo "No rsync is needed because the DevKit workspace is mounted from the host."
+      return 0
+      ;;
+    rsync)
+      if [[ ! -x "${DEVKIT_RSYNC_HELPER:-/usr/local/bin/devkit-sync-rsync.sh}" ]]; then
+        echo "rsync helper not found: ${DEVKIT_RSYNC_HELPER:-/usr/local/bin/devkit-sync-rsync.sh}" >&2
+        return 1
+      fi
+      "${DEVKIT_RSYNC_HELPER}" sync \
+        --devkit "${DEVKIT_SYNC_DEVKIT_IP}" \
+        --user "${DEVKIT_SYNC_DEVKIT_USER:-sima}" \
+        --port "${DEVKIT_SYNC_DEVKIT_PORT:-22}" \
+        --local "${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}" \
+        --remote "${DEVKIT_RSYNC_REMOTE_ROOT:-/workspace-rsync}" \
+        --scope "${sync_scope}" \
+        --status-file "${DEVKIT_RSYNC_STATUS_FILE:-${HOME}/.devkit-rsync-status}"
+      ;;
+    *)
+      echo "No workspace sync method is active."
+      echo "Use 'dk shell' to connect to the DevKit, then copy files manually or rerun DevKit setup."
+      return 1
+      ;;
+  esac
+}
+
+devkit-status() {
+  local ssh_status="unknown"
+  if ssh -p "${DEVKIT_SYNC_DEVKIT_PORT:-22}" -o BatchMode=yes -o ConnectTimeout=5 "${DEVKIT_SYNC_DEVKIT_USER:-sima}@${DEVKIT_SYNC_DEVKIT_IP}" true >/dev/null 2>&1; then
+    ssh_status="reachable"
+  else
+    ssh_status="not reachable"
+  fi
+
+  cat <<EOF
+DevKit target       : ${DEVKIT_SYNC_DEVKIT_USER:-sima}@${DEVKIT_SYNC_DEVKIT_IP}:${DEVKIT_SYNC_DEVKIT_PORT:-22}
+SSH status          : ${ssh_status}
+Sync method         : ${DEVKIT_SYNC_METHOD:-unknown}
+Local workspace     : ${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}
+Remote workspace    : ${DEVKIT_SYNC_REMOTE_ROOT:-${DEVKIT_SYNC_MOUNT_POINT:-/workspace}}
+NFS mount path      : ${DEVKIT_SYNC_NFS_MOUNT_POINT:-${DEVKIT_SYNC_MOUNT_POINT:-/workspace}}
+EOF
+
+  if [[ -n "${DEVKIT_SYNC_HINT:-}" ]]; then
+    echo "Status hint         : ${DEVKIT_SYNC_HINT}"
+  fi
+
+  case "${DEVKIT_SYNC_METHOD:-}" in
+    rsync)
+      if [[ -x "${DEVKIT_RSYNC_HELPER:-/usr/local/bin/devkit-sync-rsync.sh}" ]]; then
+        "${DEVKIT_RSYNC_HELPER}" status \
+          --devkit "${DEVKIT_SYNC_DEVKIT_IP}" \
+          --user "${DEVKIT_SYNC_DEVKIT_USER:-sima}" \
+          --port "${DEVKIT_SYNC_DEVKIT_PORT:-22}" \
+          --remote "${DEVKIT_RSYNC_REMOTE_ROOT:-/workspace-rsync}" \
+          --status-file "${DEVKIT_RSYNC_STATUS_FILE:-${HOME}/.devkit-rsync-status}" || true
+      fi
+      ;;
+    none)
+      echo "Workspace sync is not active. 'dk shell' can still be used over SSH."
+      ;;
+  esac
+}
+
+devkit-local-sync-scope() {
+  local path="$1"
+  local root="${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}"
+  local rel_path
+
+  case "${path}" in
+    "${root}") ;;
+    "${root}"/*) ;;
+    *)
+      printf '%s\n' "${path}"
+      return 0
+      ;;
+  esac
+
+  rel_path="${path#"${root}"}"
+  rel_path="${rel_path#/}"
+  if [[ -z "${rel_path}" ]]; then
+    printf '%s\n' "${root}"
+  else
+    printf '%s/%s\n' "${root}" "${rel_path%%/*}"
+  fi
+}
 
 # Run a local /workspace binary or Python script on the paired DevKit.
 devkit-run() {
@@ -847,6 +1001,12 @@ devkit-run() {
     ssh_args+=("$@")
     "${ssh_args[@]}"
     return $?
+  fi
+
+  if [[ "${DEVKIT_SYNC_METHOD:-nfs}" == "none" ]]; then
+    echo "No workspace sync method is active; cannot map ${local_path} to the DevKit." >&2
+    echo "Use 'dk shell' to connect, or manually copy files to the DevKit." >&2
+    return 2
   fi
 
   if [[ "${local_path}" != /* ]]; then
@@ -874,31 +1034,42 @@ devkit-run() {
   fi
 
   case "${local_path}" in
-    /workspace/*) ;;
+    "${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}"/*) ;;
     *)
-      echo "Path must be inside /workspace so DevKit can access it via NFS." >&2
+      echo "Path must be inside ${DEVKIT_SYNC_LOCAL_ROOT:-/workspace} so DevKit can access it via ${DEVKIT_SYNC_METHOD:-nfs}." >&2
       return 2
       ;;
   esac
 
   local rel remote_path remote_cwd pyneat_activate
-  rel="${local_path#/workspace/}"
-  remote_path="${DEVKIT_SYNC_MOUNT_POINT}/${rel}"
-  local host_pwd remote_args arg
+  rel="${local_path#"${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}/"}"
+  remote_path="${DEVKIT_SYNC_REMOTE_ROOT:-${DEVKIT_SYNC_MOUNT_POINT}}/${rel}"
+  remote_path="${remote_path//\/\//\/}"
+  local host_pwd remote_args arg local_sync_scope
   host_pwd="$(pwd)"
   case "${host_pwd}" in
-    /workspace/*)
-      remote_cwd="${DEVKIT_SYNC_MOUNT_POINT}/${host_pwd#/workspace/}"
+    "${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}"/*)
+      remote_cwd="${DEVKIT_SYNC_REMOTE_ROOT:-${DEVKIT_SYNC_MOUNT_POINT}}/${host_pwd#"${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}/"}"
+      remote_cwd="${remote_cwd//\/\//\/}"
       ;;
-    /workspace)
-      remote_cwd="${DEVKIT_SYNC_MOUNT_POINT}"
+    "${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}")
+      remote_cwd="${DEVKIT_SYNC_REMOTE_ROOT:-${DEVKIT_SYNC_MOUNT_POINT}}"
       ;;
     *)
       remote_cwd="$(dirname "${remote_path}")"
       ;;
   esac
   pyneat_activate="${DEVKIT_PYNEAT_ACTIVATE:-__NONE__}"
-  remote_args=("${remote_path}" "${pyneat_activate}" "${remote_cwd}")
+
+  local_sync_scope="$(devkit-local-sync-scope "${local_path}")"
+  if [[ "${DEVKIT_SYNC_METHOD:-nfs}" == "rsync" ]]; then
+    local cwd_sync_scope
+    cwd_sync_scope="$(devkit-local-sync-scope "${host_pwd}")"
+    if [[ "${cwd_sync_scope}" != "${local_sync_scope}" ]]; then
+      remote_cwd="$(dirname "${remote_path}")"
+    fi
+  fi
+  remote_args=("${remote_path}" "${pyneat_activate}" "${remote_cwd}" "${DEVKIT_SYNC_METHOD:-nfs}")
 
   normalize_devkit_host_path() {
     local input="$1"
@@ -941,7 +1112,6 @@ devkit-run() {
     local raw="$1"
     local prefix=""
     local value="${raw}"
-    local candidate=""
     local normalized=""
     local looks_like_path="0"
 
@@ -980,8 +1150,31 @@ devkit-run() {
     fi
 
     case "${normalized}" in
-      /workspace/*)
-        printf '%s%s\n' "${prefix}" "${DEVKIT_SYNC_MOUNT_POINT}/${normalized#/workspace/}"
+      "${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}")
+        local mapped
+        local arg_sync_scope
+        arg_sync_scope="$(devkit-local-sync-scope "${normalized}")"
+        if [[ "${DEVKIT_SYNC_METHOD:-nfs}" == "rsync" && "${arg_sync_scope}" != "${local_sync_scope}" ]]; then
+          echo "Mapped argument ${normalized} is outside the synced root ${local_sync_scope}." >&2
+          echo "When rsync fallback is active, keep files needed by dk under the same top-level workspace folder as ${local_path}." >&2
+          return 2
+        fi
+        mapped="${DEVKIT_SYNC_REMOTE_ROOT:-${DEVKIT_SYNC_MOUNT_POINT}}"
+        mapped="${mapped//\/\//\/}"
+        printf '%s%s\n' "${prefix}" "${mapped}"
+        ;;
+      "${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}"/*)
+        local mapped
+        local arg_sync_scope
+        arg_sync_scope="$(devkit-local-sync-scope "${normalized}")"
+        if [[ "${DEVKIT_SYNC_METHOD:-nfs}" == "rsync" && "${arg_sync_scope}" != "${local_sync_scope}" ]]; then
+          echo "Mapped argument ${normalized} is outside the synced root ${local_sync_scope}." >&2
+          echo "When rsync fallback is active, keep files needed by dk under the same top-level workspace folder as ${local_path}." >&2
+          return 2
+        fi
+        mapped="${DEVKIT_SYNC_REMOTE_ROOT:-${DEVKIT_SYNC_MOUNT_POINT}}/${normalized#"${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}/"}"
+        mapped="${mapped//\/\//\/}"
+        printf '%s%s\n' "${prefix}" "${mapped}"
         ;;
       *)
         printf '%s\n' "${raw}"
@@ -989,9 +1182,24 @@ devkit-run() {
     esac
   }
 
+  local mapped_arg
   for arg in "$@"; do
-    remote_args+=("$(map_devkit_arg_path "${arg}")")
+    mapped_arg="$(map_devkit_arg_path "${arg}")" || return $?
+    remote_args+=("${mapped_arg}")
   done
+
+  if [[ "${DEVKIT_SYNC_METHOD:-nfs}" == "rsync" ]]; then
+    case "${DEVKIT_RSYNC_AUTO_SYNC:-ON}" in
+      OFF|off|0|false|FALSE|no|NO)
+        ;;
+      *)
+        if ! devkit-sync "${local_path}"; then
+          echo "rsync fallback sync failed; not running remote command." >&2
+          return 1
+        fi
+        ;;
+    esac
+  fi
 
   local c_out="" c_stderr="" c_reset=""
   if [[ -t 1 ]]; then
@@ -1058,11 +1266,12 @@ trap __restore_tty EXIT INT TERM HUP
 target="${1:?missing target path}"
 pyneat_activate="${2-}"
 remote_cwd="${3-}"
+sync_method="${4:-nfs}"
 if [[ "${pyneat_activate}" == "__NONE__" ]]; then
   pyneat_activate=""
 fi
-if [[ $# -ge 3 ]]; then
-  shift 3
+if [[ $# -ge 4 ]]; then
+  shift 4
 else
   shift 1
 fi
@@ -1076,7 +1285,7 @@ ensure_target_ready() {
   mount_root="/${seg}"
 
   # Best effort: ask watchdog to recover stale NFS mount.
-  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+  if [[ "${sync_method}" == "nfs" ]] && command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
     sudo systemctl start devkit-nfs-watchdog.service >/dev/null 2>&1 || true
   fi
   sleep 1
@@ -1147,26 +1356,51 @@ EOS
 unalias dk >/dev/null 2>&1 || true
 dk() {
   if [[ $# -lt 1 ]]; then
-    echo "Usage: dk <local-executable-path|shell> [args...]" >&2
+    echo "Usage: dk <local-executable-path|shell|sync|status> [args...]" >&2
     return 0
   fi
+  case "$1" in
+    sync)
+      shift
+      devkit-sync "$@"
+      return $?
+      ;;
+    status)
+      shift
+      devkit-status "$@"
+      return $?
+      ;;
+  esac
   devkit-run "$@"
 }
 
 # Persist session helpers for future container shells.
 _persist_file="${HOME}/.devkit-sync.rc"
+__devkit_persist_export() {
+  local name="$1"
+  local value="${!name-}"
+  printf 'export %s=%q\n' "${name}" "${value}"
+}
 {
-  echo "export DEVKIT_SYNC_TARGET='${DEVKIT_SYNC_TARGET}'"
-  echo "export DEVKIT_SYNC_DEVKIT_IP='${DEVKIT_SYNC_DEVKIT_IP}'"
-  echo "export DEVKIT_SYNC_MOUNT_POINT='${DEVKIT_SYNC_MOUNT_POINT}'"
-  echo "export DEVKIT_SYNC_DEVKIT_USER='${DEVKIT_SYNC_DEVKIT_USER}'"
-  echo "export DEVKIT_SYNC_DEVKIT_PORT='${DEVKIT_SYNC_DEVKIT_PORT}'"
-  echo "export SDK_RELEASE_REF='${SDK_RELEASE_REF:-}'"
-  echo "export SDK_PROMPT_REF='${SDK_PROMPT_REF}'"
-  echo "export SDK_IMAGE_BRANCH='${SDK_IMAGE_BRANCH}'"
-  echo "export SDK_IMAGE_TAG='${SDK_IMAGE_TAG}'"
-  echo "export SDK_PROMPT_HOSTNAME='${SDK_PROMPT_HOSTNAME}'"
-  echo "export DEVKIT_PROMPT_DIRTRIM='${DEVKIT_PROMPT_DIRTRIM}'"
+  __devkit_persist_export DEVKIT_SYNC_TARGET
+  __devkit_persist_export DEVKIT_SYNC_METHOD
+  __devkit_persist_export DEVKIT_SYNC_DEVKIT_IP
+  __devkit_persist_export CONTAINER_HOST_IP
+  __devkit_persist_export DEVKIT_SYNC_MOUNT_POINT
+  __devkit_persist_export DEVKIT_SYNC_NFS_MOUNT_POINT
+  __devkit_persist_export DEVKIT_SYNC_LOCAL_ROOT
+  __devkit_persist_export DEVKIT_SYNC_REMOTE_ROOT
+  __devkit_persist_export DEVKIT_SYNC_DEVKIT_USER
+  __devkit_persist_export DEVKIT_SYNC_DEVKIT_PORT
+  __devkit_persist_export DEVKIT_RSYNC_REMOTE_ROOT
+  __devkit_persist_export DEVKIT_RSYNC_HELPER
+  __devkit_persist_export DEVKIT_SYNC_HINT
+  __devkit_persist_export SDK_RELEASE_REF
+  __devkit_persist_export SDK_PROMPT_REF
+  __devkit_persist_export SDK_IMAGE_BRANCH
+  __devkit_persist_export SDK_IMAGE_TAG
+  __devkit_persist_export SDK_PROMPT_HOSTNAME
+  __devkit_persist_export DEVKIT_PROMPT_DIRTRIM
   echo 'export PROMPT_DIRTRIM="${DEVKIT_PROMPT_DIRTRIM}"'
   echo 'export DEVKIT_SYNC_PROMPT_PREFIX="\[\e[1;32m\][DevKit ${DEVKIT_SYNC_TARGET}]\[\e[0m\] "'
   echo '__devkit_rewrite_prompt_hostname() {'
@@ -1193,6 +1427,9 @@ _persist_file="${HOME}/.devkit-sync.rc"
   echo '  fi'
   echo '}'
   echo '__devkit_apply_prompt'
+  declare -f devkit-sync
+  declare -f devkit-status
+  declare -f devkit-local-sync-scope
   declare -f devkit-run
   echo 'unalias dk >/dev/null 2>&1 || true'
   declare -f dk
@@ -1275,6 +1512,45 @@ copy_insight_port_map_to_devkit "${DEVKIT_SYNC_DEVKIT_USER}" "${DEVKIT_SYNC_DEVK
 
 echo "Persisted DevKit shell helpers to ${_persist_file} (auto-loaded by ~/.bashrc and ~/.bash_profile)."
 
+# Restart neat-insight so it (and the vf WebRTC viewer it spawns) re-read the
+# refreshed CONTAINER_HOST_IP via the supervisor wrapper, and the Insight URL /
+# iceHost track this (re-)point. Best-effort, and only when the host IP actually
+# changed so we don't tear down active sessions on a no-op re-source. Skipped on
+# images without Insight (insight-admin / supervisord absent).
+__devkit_refresh_neat_insight() {
+  command -v insight-admin >/dev/null 2>&1 || return 0  # no Insight on this image
+  # Need at least one of the IPs neat-insight surfaces.
+  [[ -n "${_HOST_IP:-}" || -n "${_DEVKIT_IP:-}" ]] || return 0
+
+  # Restart only when the advertised host IP (CONTAINER_HOST_IP -- the Insight
+  # URL / WebRTC iceHost) OR the active DevKit IP (DEVKIT_SYNC_DEVKIT_IP -- shown
+  # in the Insight UI and used by the webssh shell) differs from what neat-insight
+  # is *currently* advertising. A re-point can change one without the other (e.g.
+  # a different DevKit on the same subnet keeps the host IP).
+  #
+  # Read the running neat-insight's launch environment -- it holds the values
+  # the wrapper exported at its last start, i.e. exactly what is live now.
+  # If it already matches, skip (don't tear down active sessions). If neat-insight
+  # isn't running, fall through and (re)start.
+  local pid env_file applied_host applied_devkit
+  pid="$(pgrep -f 'neat-insight( |$)' 2>/dev/null | head -1)"
+  if [[ -n "${pid}" ]]; then
+    env_file="/proc/${pid}/environ"
+    if [[ -r "${env_file}" ]]; then
+      applied_host="$(tr '\0' '\n' < "${env_file}" | sed -n 's/^CONTAINER_HOST_IP=//p' | head -1)"
+      applied_devkit="$(tr '\0' '\n' < "${env_file}" | sed -n 's/^DEVKIT_SYNC_DEVKIT_IP=//p' | head -1)"
+      [[ "${applied_host}" == "${_HOST_IP:-}" && "${applied_devkit}" == "${_DEVKIT_IP:-}" ]] && return 0
+    fi
+  fi
+
+  # Best-effort: insight-admin restart fails cleanly if supervisord isn't up. We
+  # do NOT gate on `insight-admin status` -- that checks neat-insight's RUNNING
+  # state (non-zero during STARTING/BACKOFF/FATAL) and would wrongly skip.
+  echo "Refreshing neat-insight (host IP ${_HOST_IP:-<unset>}, DevKit ${_DEVKIT_IP:-<unset>})..."
+  insight-admin restart >/dev/null 2>&1 || true
+}
+__devkit_refresh_neat_insight
+
 _c_ok="" _c_rst=""
 if [[ -t 1 ]]; then
   _c_ok=$'\033[1;32m'
@@ -1286,13 +1562,31 @@ ${_c_ok}
   DevKit Connected
 ============================================================
   DevKit target : ${DEVKIT_SYNC_DEVKIT_USER}@${DEVKIT_SYNC_DEVKIT_IP}:${DEVKIT_SYNC_DEVKIT_PORT}
-  Mounted path  : ${DEVKIT_SYNC_MOUNT_POINT}
+  Sync method   : ${DEVKIT_SYNC_METHOD}
+  Remote path   : ${DEVKIT_SYNC_REMOTE_ROOT}
   Host export   : ${_HOST_IP}:${_HOST_EXPORT_PATH}
-
+EOF
+case "${DEVKIT_SYNC_METHOD}" in
+  nfs|rsync)
+    cat <<EOF
   You can now run DevKit binaries from this SDK shell:
     dk /workspace/<path-to-arm64-binary> [args...]
   Or connect to a DevKit shell directly:
     dk shell
+  Check sync status:
+    dk status
+EOF
+    ;;
+  *)
+    cat <<EOF
+  Workspace sync is not active. You can still connect to a DevKit shell:
+    dk shell
+  Check sync status:
+    dk status
+EOF
+    ;;
+esac
+cat <<EOF
 ============================================================
 ${_c_rst}
 EOF

@@ -1,0 +1,233 @@
+name: Cleanup GHCR Packages
+
+on:
+  schedule:
+    - cron: "23 9 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Show what would be deleted without deleting packages"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Cleanup branch SDK packages
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Cleanup GHCR package versions
+        uses: actions/github-script@v8
+        env:
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const repoFullName = `${owner}/${repo}`;
+            const dryRun = String(process.env.DRY_RUN).toLowerCase() === 'true';
+
+            const protectedBranchNames = new Set(['develop', 'main']);
+
+            function branchSlug(branchName) {
+              let branch = branchName.toLowerCase();
+              branch = branch
+                .replace(/[^a-z0-9._-]+/g, '-')
+                .replace(/^-+/, '')
+                .replace(/-+$/, '')
+                .replace(/-{2,}/g, '-');
+              if (!branch) {
+                branch = 'branch';
+              }
+              return branch;
+            }
+
+            function sdkPackageForBranch(branchName) {
+              const branch = branchSlug(branchName);
+              return `sdk-${branch}`;
+            }
+
+            function isReleaseOrInfrastructureTag(tag) {
+              return (
+                tag === 'latest' ||
+                tag === 'staged-latest' ||
+                /^v[0-9]+[.][0-9]+[.][0-9]+([.][0-9]+)?$/.test(tag) ||
+                /^v[0-9]+[.][0-9]+-latest$/.test(tag) ||
+                /^[0-9a-f]{40}$/.test(tag) ||
+                /^staged-[0-9a-f]{40}$/.test(tag) ||
+                /^[0-9a-f]{40}-(x86_64|aarch64)$/.test(tag)
+              );
+            }
+
+            function isBranchTag(tag, liveBranchSlugs) {
+              if (isReleaseOrInfrastructureTag(tag)) {
+                return false;
+              }
+              return !liveBranchSlugs.has(tag);
+            }
+
+            function packageRepositoryFullName(pkg) {
+              if (pkg.repository?.full_name) {
+                return pkg.repository.full_name;
+              }
+              const repoOwner = pkg.repository?.owner?.login;
+              const repoName = pkg.repository?.name;
+              if (repoOwner && repoName) {
+                return `${repoOwner}/${repoName}`;
+              }
+              return '';
+            }
+
+            async function paginate(route, parameters) {
+              return github.paginate(route, {
+                per_page: 100,
+                ...parameters,
+              });
+            }
+
+            async function deletePackage(packageName) {
+              if (dryRun) {
+                core.info(`[dry-run] would delete package ${packageName}`);
+                return;
+              }
+              await github.request('DELETE /orgs/{org}/packages/{package_type}/{package_name}', {
+                org: owner,
+                package_type: 'container',
+                package_name: packageName,
+              });
+              core.info(`Deleted package ${packageName}`);
+            }
+
+            async function deletePackageVersion(packageName, version) {
+              const tags = version.metadata?.container?.tags ?? [];
+              if (dryRun) {
+                core.info(`[dry-run] would delete ${packageName} version ${version.id} tags=[${tags.join(', ')}]`);
+                return;
+              }
+              await github.request('DELETE /orgs/{org}/packages/{package_type}/{package_name}/versions/{package_version_id}', {
+                org: owner,
+                package_type: 'container',
+                package_name: packageName,
+                package_version_id: version.id,
+              });
+              core.info(`Deleted ${packageName} version ${version.id} tags=[${tags.join(', ')}]`);
+            }
+
+            async function packageExists(packageName) {
+              try {
+                await github.request('GET /orgs/{org}/packages/{package_type}/{package_name}', {
+                  org: owner,
+                  package_type: 'container',
+                  package_name: packageName,
+                });
+                return true;
+              } catch (error) {
+                if (error.status === 404) {
+                  return false;
+                }
+                throw error;
+              }
+            }
+
+            const branches = await paginate('GET /repos/{owner}/{repo}/branches', {
+              owner,
+              repo,
+            });
+            const branchPackages = new Set();
+            const protectedBranchPackages = new Set();
+            const branchSlugs = new Set();
+
+            for (const branch of branches) {
+              const slug = branchSlug(branch.name);
+              const packageName = sdkPackageForBranch(branch.name);
+              branchSlugs.add(slug);
+              branchPackages.add(packageName);
+              if (branch.protected || protectedBranchNames.has(branch.name)) {
+                protectedBranchPackages.add(packageName);
+              }
+            }
+
+            core.info(`Found ${branches.length} branch(es).`);
+            core.info(`Found ${protectedBranchPackages.size} protected branch package name(s).`);
+
+            const packages = await paginate('GET /orgs/{org}/packages', {
+              org: owner,
+              package_type: 'container',
+            });
+            const sdkBranchPackages = packages
+              .filter((pkg) => pkg.name.startsWith('sdk-'))
+              .filter((pkg) => {
+                const packageRepo = packageRepositoryFullName(pkg);
+                if (packageRepo === repoFullName) {
+                  return true;
+                }
+                core.info(`${pkg.name}: skipping package associated with ${packageRepo || 'unknown repository'}.`);
+                return false;
+              })
+              .map((pkg) => pkg.name);
+
+            core.info(`Found ${sdkBranchPackages.length} sdk-* GHCR package(s).`);
+
+            for (const packageName of sdkBranchPackages) {
+              if (!branchPackages.has(packageName)) {
+                core.info(`${packageName}: no matching branch; deleting entire package.`);
+                await deletePackage(packageName);
+                continue;
+              }
+
+              if (protectedBranchPackages.has(packageName)) {
+                core.info(`${packageName}: matching branch is protected; keeping all versions.`);
+                continue;
+              }
+
+              core.info(`${packageName}: matching branch still exists; keeping package and all versions.`);
+            }
+
+            if (!(await packageExists('sdk'))) {
+              core.info('sdk: canonical package does not exist; skipping canonical branch-tag cleanup.');
+            } else {
+              const versions = await paginate(
+                'GET /orgs/{org}/packages/{package_type}/{package_name}/versions',
+                {
+                  org: owner,
+                  package_type: 'container',
+                  package_name: 'sdk',
+                },
+              );
+              let deletedCanonical = 0;
+              let keptCanonical = 0;
+              let skippedCanonical = 0;
+              for (const version of versions) {
+                const tags = version.metadata?.container?.tags ?? [];
+                const deletedBranchTags = tags.filter((tag) => isBranchTag(tag, branchSlugs));
+                if (deletedBranchTags.length === 0) {
+                  keptCanonical += 1;
+                  continue;
+                }
+
+                const retainedTags = tags.filter((tag) => !deletedBranchTags.includes(tag));
+                if (retainedTags.length > 0) {
+                  skippedCanonical += 1;
+                  core.warning(
+                    `sdk: version ${version.id} has deleted-branch tag(s) [${deletedBranchTags.join(', ')}] ` +
+                    `but also retained tag(s) [${retainedTags.join(', ')}]; keeping the version because GHCR deletes versions, not individual tags.`,
+                  );
+                  continue;
+                }
+
+                await deletePackageVersion('sdk', version);
+                deletedCanonical += 1;
+              }
+              core.info(
+                `sdk: deleted ${deletedCanonical} deleted-branch-only version(s), ` +
+                `kept ${keptCanonical} version(s), skipped ${skippedCanonical} mixed-tag version(s).`,
+              );
+            }
