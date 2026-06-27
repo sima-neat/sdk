@@ -573,7 +573,7 @@ jobs:
 
   mark-vulcan-install-stub-latest:
     name: Mark SDK install stub as latest
-    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    if: github.event_name != 'pull_request'
     needs: publish-vulcan-install-stub
     uses: sima-neat/.github/.github/workflows/vulcan-update-latest-artifacts.yml@main
     with:
