@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
-"""Retarget an SDK release-line install stub to a tagged SDK image."""
+"""Retarget an SDK release-line install stub to a tagged SDK image.
+
+The SDK release flow publishes two useful install targets:
+
+* `sdk@2.1.2.3` points directly at the tagged SDK release package.
+* `sdk@release-2.1` points at the latest install-stub package produced by the
+  `release-2.1` branch build.
+
+After a patch release is tagged, we want `sdk@release-2.1` to keep using the
+same release-line package location and `latest.tag`, but pull the immutable
+tagged SDK container image instead of the mutable branch image. This script
+performs that small in-place metadata retarget.
+"""
 
 from __future__ import annotations
 
@@ -52,6 +64,12 @@ def write_json(path: Path, data: dict, indent: int) -> None:
 
 
 def retarget_metadata_resource(metadata_path: Path, image_resource: str) -> None:
+    """Replace only the SDK container resource in metadata.json.
+
+    The install stub itself remains in the same package. Only the GHCR SDK image
+    resource changes from a release-line tag, such as `ghcr:sima-neat/sdk:release-2.1`,
+    to a version tag, such as `ghcr:sima-neat/sdk:v2.1.2.3`.
+    """
     metadata = load_json(metadata_path)
     resources = metadata.get("resources")
     if not isinstance(resources, list):
@@ -74,6 +92,12 @@ def retarget_metadata_resource(metadata_path: Path, image_resource: str) -> None
 
 
 def update_manifest_metadata_entry(manifest_path: Path, metadata_path: Path) -> None:
+    """Refresh manifest metadata for metadata.json after editing it.
+
+    The Vulcan manifest records artifact size and SHA256. Since this script
+    rewrites metadata.json in place, the manifest must be kept consistent with
+    the uploaded metadata file.
+    """
     manifest = load_json(manifest_path)
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, list):
@@ -128,6 +152,9 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="sdk-release-line-") as tmp:
         work_dir = Path(tmp)
         latest_path = work_dir / "latest.tag"
+        # Preserve the existing release-line pointer. The release branch build is
+        # responsible for choosing the current package folder; this tag publish
+        # step only retargets that package's SDK image resource to the release tag.
         run(
             "aws",
             "s3",
@@ -146,6 +173,8 @@ def main() -> None:
         run("aws", "s3", "cp", f"s3://{args.bucket}/{prefix}/metadata.json", str(metadata_path))
         run("aws", "s3", "cp", f"s3://{args.bucket}/{prefix}/manifest.json", str(manifest_path))
 
+        # Edit locally first, then upload metadata and its manifest together.
+        # latest.tag is intentionally not changed.
         retarget_metadata_resource(metadata_path, args.image_resource)
         update_manifest_metadata_entry(manifest_path, metadata_path)
 
