@@ -79,12 +79,18 @@ case "${TARGET_ARCH}" in
     ;;
 esac
 
-for tool in docker sima-cli zstd sha256sum; do
+for tool in docker sima-cli zstd; do
   if ! command -v "${tool}" >/dev/null 2>&1; then
     echo "Required command not found: ${tool}" >&2
     exit 1
   fi
 done
+
+if [[ "${IMAGE_REF}" != ghcr.io/*:* ]]; then
+  echo "--image-ref must use ghcr.io/<owner>/<image>:<tag>, got: ${IMAGE_REF}" >&2
+  exit 1
+fi
+image_resource="ghcr:${IMAGE_REF#ghcr.io/}"
 
 if [[ -z "${PACKAGE_VERSION}" ]]; then
   if [[ "${GITHUB_REF_TYPE:-}" == "tag" && -n "${GITHUB_REF_NAME:-}" ]]; then
@@ -166,10 +172,12 @@ target_arch = sys.argv[3]
 image_ref = sys.argv[4]
 
 metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+metadata.get("installation", {}).pop("script", None)
 metadata["release"] = release
 metadata["installation"]["post-message"] = (
     "[bold green]Offline SDK setup complete.[/bold green]\n"
-    "Run [cyan]sima-cli sdk neat[/cyan] to open the Neat SDK container.\n"
+    "Copy the downloaded files to the offline host, then run "
+    "[cyan]bash ./install_offline_sdk.sh[/cyan].\n"
 )
 metadata["offline"] = {
     "container-image": image_ref,
@@ -181,6 +189,13 @@ PY
 
 mv "${artifacts_dir}/metadata.json" "${artifacts_dir}/${metadata_name}"
 python3 -m json.tool "${artifacts_dir}/${metadata_name}" >/dev/null
+
+"${ROOT_DIR}/tools/prepare_s3_artifacts.sh" \
+  --output-dir "${tmp_dir}/online-package" \
+  --image-resource "${image_resource}" \
+  --version "${PACKAGE_VERSION}" \
+  --release "${PACKAGE_RELEASE}"
+cp -f "${tmp_dir}/online-package/install_sdk_stub.sh" "${tmp_dir}/online-package/metadata.json" "${artifacts_dir}/"
 
 rm -rf "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}"
