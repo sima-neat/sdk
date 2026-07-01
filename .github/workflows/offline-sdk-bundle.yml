@@ -37,7 +37,8 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (
         github.event.workflow_run.conclusion == 'success' &&
-        startsWith(github.event.workflow_run.head_branch, 'release-')
+        github.event.workflow_run.event == 'push' &&
+        startsWith(github.event.workflow_run.head_branch, 'v')
       )
     runs-on: ubuntu-24.04
     outputs:
@@ -63,15 +64,13 @@ jobs:
             package_version="${INPUT_PACKAGE_VERSION:-${tag}}"
             package_release="${INPUT_PACKAGE_RELEASE:-${GITHUB_SHA}}"
           else
-            branch="${WORKFLOW_HEAD_BRANCH:?}"
-            branch_tag="$(echo "${branch}" | tr '[:upper:]' '[:lower:]')"
-            branch_tag="$(echo "${branch_tag}" | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
-            if [[ -z "${branch_tag}" ]]; then
-              echo "Could not compute branch tag for ${branch}" >&2
+            release_tag="${WORKFLOW_HEAD_BRANCH:?}"
+            if [[ ! "${release_tag}" =~ ^v[0-9]+[.][0-9]+[.][0-9]+([.][0-9]+)?$ ]]; then
+              echo "Offline bundle workflow_run only supports release tags, got: ${release_tag}" >&2
               exit 1
             fi
-            image_ref="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sdk:${branch_tag}"
-            package_version="${branch_tag}"
+            image_ref="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sdk:${release_tag}"
+            package_version="${release_tag#v}"
             package_release="${WORKFLOW_HEAD_SHA:?}"
           fi
 
