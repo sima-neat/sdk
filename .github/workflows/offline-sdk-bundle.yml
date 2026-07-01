@@ -1,0 +1,178 @@
+name: Build SDK Offline Bundle
+
+on:
+  workflow_run:
+    workflows:
+      - Build SDK Docker Image
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      image_ref:
+        description: SDK image ref to package, for example ghcr.io/sima-neat/sdk:release-2.1.
+        required: true
+        type: string
+      package_version:
+        description: Optional package version. Defaults to the image tag.
+        required: false
+        type: string
+      package_release:
+        description: Optional package release id. Defaults to the current commit SHA.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  packages: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || inputs.image_ref }}
+  cancel-in-progress: false
+
+jobs:
+  resolve-inputs:
+    name: Resolve offline bundle inputs
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        startsWith(github.event.workflow_run.head_branch, 'release-')
+      )
+    runs-on: ubuntu-24.04
+    outputs:
+      image_ref: ${{ steps.resolve.outputs.image_ref }}
+      package_version: ${{ steps.resolve.outputs.package_version }}
+      package_release: ${{ steps.resolve.outputs.package_release }}
+    steps:
+      - name: Resolve image and package version
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_IMAGE_REF: ${{ inputs.image_ref }}
+          INPUT_PACKAGE_VERSION: ${{ inputs.package_version }}
+          INPUT_PACKAGE_RELEASE: ${{ inputs.package_release }}
+          WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            image_ref="${INPUT_IMAGE_REF:?}"
+            tag="${image_ref##*:}"
+            package_version="${INPUT_PACKAGE_VERSION:-${tag}}"
+            package_release="${INPUT_PACKAGE_RELEASE:-${GITHUB_SHA}}"
+          else
+            branch="${WORKFLOW_HEAD_BRANCH:?}"
+            branch_tag="$(echo "${branch}" | tr '[:upper:]' '[:lower:]')"
+            branch_tag="$(echo "${branch_tag}" | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
+            if [[ -z "${branch_tag}" ]]; then
+              echo "Could not compute branch tag for ${branch}" >&2
+              exit 1
+            fi
+            image_ref="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sdk:${branch_tag}"
+            package_version="${branch_tag}"
+            package_release="${WORKFLOW_HEAD_SHA:?}"
+          fi
+
+          {
+            echo "image_ref=${image_ref}"
+            echo "package_version=${package_version}"
+            echo "package_release=${package_release}"
+          } >> "${GITHUB_OUTPUT}"
+
+          echo "image_ref=${image_ref}"
+          echo "package_version=${package_version}"
+          echo "package_release=${package_release}"
+
+  build-offline-package:
+    name: Build offline package (${{ matrix.arch }})
+    needs: resolve-inputs
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+          - arch: aarch64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install packaging tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zstd
+          python3 -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install sima-cli
+          SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli --version
+
+      - name: Report disk usage before packaging
+        run: |
+          set -euo pipefail
+          df -h
+          docker system df || true
+
+      - name: Build offline SDK package
+        env:
+          IMAGE_REF: ${{ needs.resolve-inputs.outputs.image_ref }}
+          PACKAGE_VERSION: ${{ needs.resolve-inputs.outputs.package_version }}
+          PACKAGE_RELEASE: ${{ needs.resolve-inputs.outputs.package_release }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          tools/prepare_offline_sdk_bundle.sh \
+            --output-dir "dist/${TARGET_ARCH}" \
+            --image-ref "${IMAGE_REF}" \
+            --target-arch "${TARGET_ARCH}" \
+            --version "${PACKAGE_VERSION}" \
+            --release "${PACKAGE_RELEASE}"
+
+      - name: Report disk usage after packaging
+        if: always()
+        run: |
+          set -euo pipefail
+          df -h
+          docker system df || true
+
+      - name: Upload offline SDK package
+        uses: actions/upload-artifact@v7
+        with:
+          name: sdk-offline-package-${{ matrix.arch }}
+          path: dist/${{ matrix.arch }}/
+          if-no-files-found: error
+
+  publish-offline-package:
+    name: Publish offline SDK package to Vulcan
+    needs: build-offline-package
+    uses: sima-neat/.github/.github/workflows/vulcan-publish-artifacts.yml@main
+    with:
+      aws_region: us-west-2
+      environment_name: ${{ vars.VULCAN_ENV || 'production' }}
+      artifact_pattern: sdk-offline-package-*
+      artifact_glob: "**/*"
+      min_artifact_count: 10
+
+  mark-offline-package-latest:
+    name: Mark offline SDK package as latest
+    needs: publish-offline-package
+    uses: sima-neat/.github/.github/workflows/vulcan-update-latest-artifacts.yml@main
+    with:
+      aws_region: us-west-2
+      environment_name: ${{ vars.VULCAN_ENV || 'production' }}
