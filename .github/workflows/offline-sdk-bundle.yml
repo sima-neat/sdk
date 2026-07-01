@@ -1,16 +1,12 @@
 name: Build SDK Offline Bundle
 
 on:
-  workflow_run:
-    workflows:
-      - Build SDK Docker Image
-    types:
-      - completed
   workflow_dispatch:
     inputs:
       image_ref:
         description: SDK image ref to package, for example ghcr.io/sima-neat/sdk:release-2.1.
-        required: true
+        required: false
+        default: ghcr.io/sima-neat/sdk:release-2.1
         type: string
       package_version:
         description: Optional package version. Defaults to the image tag.
@@ -22,24 +18,18 @@ on:
         type: string
 
 permissions:
+  actions: write
   contents: read
   id-token: write
   packages: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || inputs.image_ref }}
+  group: ${{ github.workflow }}-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
   resolve-inputs:
     name: Resolve offline bundle inputs
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        startsWith(github.event.workflow_run.head_branch, 'v')
-      )
     runs-on: ubuntu-24.04
     outputs:
       image_ref: ${{ steps.resolve.outputs.image_ref }}
@@ -49,30 +39,16 @@ jobs:
       - name: Resolve image and package version
         id: resolve
         env:
-          EVENT_NAME: ${{ github.event_name }}
           INPUT_IMAGE_REF: ${{ inputs.image_ref }}
           INPUT_PACKAGE_VERSION: ${{ inputs.package_version }}
           INPUT_PACKAGE_RELEASE: ${{ inputs.package_release }}
-          WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
 
-          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
-            image_ref="${INPUT_IMAGE_REF:?}"
-            tag="${image_ref##*:}"
-            package_version="${INPUT_PACKAGE_VERSION:-${tag}}"
-            package_release="${INPUT_PACKAGE_RELEASE:-${GITHUB_SHA}}"
-          else
-            release_tag="${WORKFLOW_HEAD_BRANCH:?}"
-            if [[ ! "${release_tag}" =~ ^v[0-9]+[.][0-9]+[.][0-9]+([.][0-9]+)?$ ]]; then
-              echo "Offline bundle workflow_run only supports release tags, got: ${release_tag}" >&2
-              exit 1
-            fi
-            image_ref="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sdk:${release_tag}"
-            package_version="${release_tag#v}"
-            package_release="${WORKFLOW_HEAD_SHA:?}"
-          fi
+          image_ref="${INPUT_IMAGE_REF:?}"
+          tag="${image_ref##*:}"
+          package_version="${INPUT_PACKAGE_VERSION:-${tag}}"
+          package_release="${INPUT_PACKAGE_RELEASE:-${GITHUB_SHA}}"
 
           {
             echo "image_ref=${image_ref}"
@@ -97,8 +73,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -166,7 +140,7 @@ jobs:
       environment_name: ${{ vars.VULCAN_ENV || 'production' }}
       artifact_pattern: sdk-offline-package-*
       artifact_glob: "**/*"
-      min_artifact_count: 10
+      min_artifact_count: 6
 
   mark-offline-package-latest:
     name: Mark offline SDK package as latest
