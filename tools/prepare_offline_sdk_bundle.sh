@@ -116,7 +116,6 @@ archive_path="${artifacts_dir}/${archive_name}"
 package_name="sdk-offline-${TARGET_ARCH}"
 metadata_name="metadata-offline-${METADATA_ARCH}.json"
 readme_name="README-offline-${METADATA_ARCH}.txt"
-checksums_name="SHA256SUMS-offline-${METADATA_ARCH}"
 
 echo "Pulling SDK image for ${DOCKER_PLATFORM}: ${IMAGE_REF}"
 docker pull --platform "${DOCKER_PLATFORM}" "${IMAGE_REF}"
@@ -145,11 +144,6 @@ The installer loads ${archive_name} into Docker and then runs the normal
 sima-cli SDK setup flow. sima-cli and Docker must already be installed on the
 target host.
 EOF
-
-(
-  cd "${artifacts_dir}"
-  sha256sum "${archive_name}" install_offline_sdk.sh "${readme_name}" > "${checksums_name}"
-)
 
 SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli packages build "${artifacts_dir}" \
   --name "${package_name}" \
