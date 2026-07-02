@@ -99,6 +99,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           COMMIT_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
           REQUIRE_CURRENT_SHA_MANIFEST: ${{ needs.resolve-inputs.outputs.require_current_sha_manifest }}
         run: |
           set -euo pipefail
@@ -113,20 +114,25 @@ jobs:
               gh run list \
                 --repo "${REPOSITORY}" \
                 --workflow docker-build.yml \
-                --commit "${COMMIT_SHA}" \
                 --event push \
-                --limit 20 \
-                --json databaseId,status,conclusion,url,createdAt
+                --limit 100 \
+                --json databaseId,status,conclusion,url,createdAt,headBranch,headSha
             )"
 
-            run_json="$(jq -c 'sort_by(.createdAt) | reverse | .[0] // empty' <<< "${runs_json}")"
+            run_json="$(
+              jq -c \
+                --arg ref "${REF_NAME}" \
+                --arg sha "${COMMIT_SHA}" \
+                '[.[] | select(.headBranch == $ref and .headSha == $sha)] | sort_by(.createdAt) | reverse | .[0] // empty' \
+                <<< "${runs_json}"
+            )"
             if [[ -n "${run_json}" ]]; then
               run_id="$(jq -r '.databaseId' <<< "${run_json}")"
               status="$(jq -r '.status' <<< "${run_json}")"
               conclusion="$(jq -r '.conclusion // ""' <<< "${run_json}")"
               url="$(jq -r '.url' <<< "${run_json}")"
 
-              echo "Docker workflow run ${run_id}: status=${status}, conclusion=${conclusion:-pending}, url=${url}"
+              echo "Docker workflow run ${run_id} for ${REF_NAME}@${COMMIT_SHA}: status=${status}, conclusion=${conclusion:-pending}, url=${url}"
               if [[ "${status}" == "completed" ]]; then
                 if [[ "${conclusion}" == "success" ]]; then
                   exit 0
@@ -135,14 +141,14 @@ jobs:
                 exit 1
               fi
             else
-              echo "No matching Docker workflow run found yet for ${COMMIT_SHA}."
+              echo "No matching Docker workflow run found yet for ${REF_NAME}@${COMMIT_SHA}."
             fi
 
             echo "Waiting for Docker workflow to complete (${attempt}/120)."
             sleep 30
           done
 
-          echo "Timed out waiting for Docker workflow to complete for ${COMMIT_SHA}." >&2
+          echo "Timed out waiting for Docker workflow to complete for ${REF_NAME}@${COMMIT_SHA}." >&2
           exit 1
 
   build-offline-package:
