@@ -66,7 +66,7 @@ fi
 case "${TARGET_ARCH}" in
   x86_64)
     DOCKER_PLATFORM="linux/amd64"
-    METADATA_ARCH="x86"
+    METADATA_ARCH="amd64"
     ;;
   aarch64|arm64)
     TARGET_ARCH="aarch64"
@@ -172,7 +172,7 @@ target_arch = sys.argv[3]
 image_ref = sys.argv[4]
 
 metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-metadata.get("installation", {}).pop("script", None)
+metadata.setdefault("installation", {})["script"] = "echo 'Offline SDK package downloaded. Copy the downloaded files to the offline host, then run: bash ./install_offline_sdk.sh'"
 metadata["release"] = release
 metadata["installation"]["post-message"] = (
     "[bold green]Offline SDK setup complete.[/bold green]\n"
