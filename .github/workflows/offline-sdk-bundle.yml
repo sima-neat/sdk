@@ -22,6 +22,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   packages: read
 
 concurrency:
@@ -37,6 +38,7 @@ jobs:
       package_version: ${{ steps.resolve.outputs.package_version }}
       package_release: ${{ steps.resolve.outputs.package_release }}
       should_publish: ${{ steps.resolve.outputs.should_publish }}
+      require_current_sha_manifest: ${{ steps.resolve.outputs.require_current_sha_manifest }}
     steps:
       - name: Resolve image and package version
         id: resolve
@@ -51,6 +53,7 @@ jobs:
           set -euo pipefail
 
           should_publish=true
+          require_current_sha_manifest=false
 
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             image_ref="${INPUT_IMAGE_REF:?}"
@@ -62,6 +65,7 @@ jobs:
             image_ref="ghcr.io/${owner}/sdk:${REF_NAME}"
             package_version="${REF_NAME#v}"
             package_release="${GITHUB_SHA}"
+            require_current_sha_manifest=true
           else
             echo "Skipping offline bundle: unsupported event ${EVENT_NAME} on ${REF}."
             should_publish=false
@@ -75,17 +79,78 @@ jobs:
             echo "package_version=${package_version}"
             echo "package_release=${package_release}"
             echo "should_publish=${should_publish}"
+            echo "require_current_sha_manifest=${require_current_sha_manifest}"
           } >> "${GITHUB_OUTPUT}"
 
           echo "image_ref=${image_ref}"
           echo "package_version=${package_version}"
           echo "package_release=${package_release}"
           echo "should_publish=${should_publish}"
+          echo "require_current_sha_manifest=${require_current_sha_manifest}"
+
+  wait-for-docker-build:
+    name: Wait for SDK Docker workflow
+    if: ${{ needs.resolve-inputs.outputs.should_publish == 'true' }}
+    needs: resolve-inputs
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Wait for matching Docker workflow run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          REQUIRE_CURRENT_SHA_MANIFEST: ${{ needs.resolve-inputs.outputs.require_current_sha_manifest }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${REQUIRE_CURRENT_SHA_MANIFEST}" != "true" ]]; then
+            echo "Manual dispatch uses an existing image ref; no Docker workflow wait is required."
+            exit 0
+          fi
+
+          for attempt in {1..120}; do
+            runs_json="$(
+              gh run list \
+                --repo "${REPOSITORY}" \
+                --workflow docker-build.yml \
+                --commit "${COMMIT_SHA}" \
+                --event push \
+                --limit 20 \
+                --json databaseId,status,conclusion,url,createdAt
+            )"
+
+            run_json="$(jq -c 'sort_by(.createdAt) | reverse | .[0] // empty' <<< "${runs_json}")"
+            if [[ -n "${run_json}" ]]; then
+              run_id="$(jq -r '.databaseId' <<< "${run_json}")"
+              status="$(jq -r '.status' <<< "${run_json}")"
+              conclusion="$(jq -r '.conclusion // ""' <<< "${run_json}")"
+              url="$(jq -r '.url' <<< "${run_json}")"
+
+              echo "Docker workflow run ${run_id}: status=${status}, conclusion=${conclusion:-pending}, url=${url}"
+              if [[ "${status}" == "completed" ]]; then
+                if [[ "${conclusion}" == "success" ]]; then
+                  exit 0
+                fi
+                echo "Docker workflow completed with conclusion=${conclusion}: ${url}" >&2
+                exit 1
+              fi
+            else
+              echo "No matching Docker workflow run found yet for ${COMMIT_SHA}."
+            fi
+
+            echo "Waiting for Docker workflow to complete (${attempt}/120)."
+            sleep 30
+          done
+
+          echo "Timed out waiting for Docker workflow to complete for ${COMMIT_SHA}." >&2
+          exit 1
 
   build-offline-package:
     name: Build offline package (${{ matrix.arch }})
     if: ${{ needs.resolve-inputs.outputs.should_publish == 'true' }}
-    needs: resolve-inputs
+    needs:
+      - resolve-inputs
+      - wait-for-docker-build
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -110,12 +175,19 @@ jobs:
       - name: Wait for SDK image manifest
         env:
           IMAGE_REF: ${{ needs.resolve-inputs.outputs.image_ref }}
+          REQUIRE_CURRENT_SHA_MANIFEST: ${{ needs.resolve-inputs.outputs.require_current_sha_manifest }}
           EXPECTED_ARCH_TAG: ${{ github.sha }}-${{ matrix.arch }}
         run: |
           set -euo pipefail
 
           for attempt in {1..60}; do
             if docker buildx imagetools inspect "${IMAGE_REF}" --format '{{json .Manifest}}' > /tmp/sdk-image-manifest.json 2>/tmp/sdk-image-manifest.err; then
+              if [[ "${REQUIRE_CURRENT_SHA_MANIFEST}" != "true" ]]; then
+                docker buildx imagetools inspect "${IMAGE_REF}"
+                echo "SDK image manifest is available: ${IMAGE_REF}"
+                exit 0
+              fi
+
               repository="${IMAGE_REF%:*}"
               expected_ref="${repository}:${EXPECTED_ARCH_TAG}"
               expected_digest="$(docker buildx imagetools inspect "${expected_ref}" --format '{{.Manifest.Digest}}' 2>/dev/null || true)"
