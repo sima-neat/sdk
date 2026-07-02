@@ -1,16 +1,15 @@
 name: Build SDK Offline Bundle
 
 on:
-  workflow_run:
-    workflows:
-      - Build SDK Docker Image
-    types:
-      - completed
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       image_ref:
         description: SDK image ref to package, for example ghcr.io/sima-neat/sdk:release-2.1.
-        required: true
+        required: false
+        default: ghcr.io/sima-neat/sdk:release-2.1
         type: string
       package_version:
         description: Optional package version. Defaults to the image tag.
@@ -23,70 +22,141 @@ on:
 
 permissions:
   contents: read
-  id-token: write
+  actions: read
   packages: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || inputs.image_ref }}
+  group: ${{ github.workflow }}-${{ github.event.inputs.image_ref || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   resolve-inputs:
     name: Resolve offline bundle inputs
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        startsWith(github.event.workflow_run.head_branch, 'v')
-      )
     runs-on: ubuntu-24.04
     outputs:
       image_ref: ${{ steps.resolve.outputs.image_ref }}
       package_version: ${{ steps.resolve.outputs.package_version }}
       package_release: ${{ steps.resolve.outputs.package_release }}
+      should_publish: ${{ steps.resolve.outputs.should_publish }}
+      require_current_sha_manifest: ${{ steps.resolve.outputs.require_current_sha_manifest }}
     steps:
       - name: Resolve image and package version
         id: resolve
         env:
           EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
           INPUT_IMAGE_REF: ${{ inputs.image_ref }}
           INPUT_PACKAGE_VERSION: ${{ inputs.package_version }}
           INPUT_PACKAGE_RELEASE: ${{ inputs.package_release }}
-          WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
+
+          should_publish=true
+          require_current_sha_manifest=false
 
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             image_ref="${INPUT_IMAGE_REF:?}"
             tag="${image_ref##*:}"
             package_version="${INPUT_PACKAGE_VERSION:-${tag}}"
             package_release="${INPUT_PACKAGE_RELEASE:-${GITHUB_SHA}}"
+          elif [[ "${REF}" == refs/tags/v* ]]; then
+            owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+            image_ref="ghcr.io/${owner}/sdk:${REF_NAME}"
+            package_version="${REF_NAME#v}"
+            package_release="${GITHUB_SHA}"
+            require_current_sha_manifest=true
           else
-            release_tag="${WORKFLOW_HEAD_BRANCH:?}"
-            if [[ ! "${release_tag}" =~ ^v[0-9]+[.][0-9]+[.][0-9]+([.][0-9]+)?$ ]]; then
-              echo "Offline bundle workflow_run only supports release tags, got: ${release_tag}" >&2
-              exit 1
-            fi
-            image_ref="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sdk:${release_tag}"
-            package_version="${release_tag#v}"
-            package_release="${WORKFLOW_HEAD_SHA:?}"
+            echo "Skipping offline bundle: unsupported event ${EVENT_NAME} on ${REF}."
+            should_publish=false
+            image_ref=""
+            package_version=""
+            package_release=""
           fi
 
           {
             echo "image_ref=${image_ref}"
             echo "package_version=${package_version}"
             echo "package_release=${package_release}"
+            echo "should_publish=${should_publish}"
+            echo "require_current_sha_manifest=${require_current_sha_manifest}"
           } >> "${GITHUB_OUTPUT}"
 
           echo "image_ref=${image_ref}"
           echo "package_version=${package_version}"
           echo "package_release=${package_release}"
+          echo "should_publish=${should_publish}"
+          echo "require_current_sha_manifest=${require_current_sha_manifest}"
+
+  wait-for-docker-build:
+    name: Wait for SDK Docker workflow
+    if: ${{ needs.resolve-inputs.outputs.should_publish == 'true' }}
+    needs: resolve-inputs
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Wait for matching Docker workflow run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          REQUIRE_CURRENT_SHA_MANIFEST: ${{ needs.resolve-inputs.outputs.require_current_sha_manifest }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${REQUIRE_CURRENT_SHA_MANIFEST}" != "true" ]]; then
+            echo "Manual dispatch uses an existing image ref; no Docker workflow wait is required."
+            exit 0
+          fi
+
+          for attempt in {1..120}; do
+            runs_json="$(
+              gh run list \
+                --repo "${REPOSITORY}" \
+                --workflow docker-build.yml \
+                --event push \
+                --limit 100 \
+                --json databaseId,status,conclusion,url,createdAt,headBranch,headSha
+            )"
+
+            run_json="$(
+              jq -c \
+                --arg ref "${REF_NAME}" \
+                --arg sha "${COMMIT_SHA}" \
+                '[.[] | select(.headBranch == $ref and .headSha == $sha)] | sort_by(.createdAt) | reverse | .[0] // empty' \
+                <<< "${runs_json}"
+            )"
+            if [[ -n "${run_json}" ]]; then
+              run_id="$(jq -r '.databaseId' <<< "${run_json}")"
+              status="$(jq -r '.status' <<< "${run_json}")"
+              conclusion="$(jq -r '.conclusion // ""' <<< "${run_json}")"
+              url="$(jq -r '.url' <<< "${run_json}")"
+
+              echo "Docker workflow run ${run_id} for ${REF_NAME}@${COMMIT_SHA}: status=${status}, conclusion=${conclusion:-pending}, url=${url}"
+              if [[ "${status}" == "completed" ]]; then
+                if [[ "${conclusion}" == "success" ]]; then
+                  exit 0
+                fi
+                echo "Docker workflow completed with conclusion=${conclusion}: ${url}" >&2
+                exit 1
+              fi
+            else
+              echo "No matching Docker workflow run found yet for ${REF_NAME}@${COMMIT_SHA}."
+            fi
+
+            echo "Waiting for Docker workflow to complete (${attempt}/120)."
+            sleep 30
+          done
+
+          echo "Timed out waiting for Docker workflow to complete for ${REF_NAME}@${COMMIT_SHA}." >&2
+          exit 1
 
   build-offline-package:
     name: Build offline package (${{ matrix.arch }})
-    needs: resolve-inputs
+    if: ${{ needs.resolve-inputs.outputs.should_publish == 'true' }}
+    needs:
+      - resolve-inputs
+      - wait-for-docker-build
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -97,8 +167,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -109,6 +177,40 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait for SDK image manifest
+        env:
+          IMAGE_REF: ${{ needs.resolve-inputs.outputs.image_ref }}
+          REQUIRE_CURRENT_SHA_MANIFEST: ${{ needs.resolve-inputs.outputs.require_current_sha_manifest }}
+          EXPECTED_ARCH_TAG: ${{ github.sha }}-${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+
+          for attempt in {1..60}; do
+            if docker buildx imagetools inspect "${IMAGE_REF}" --format '{{json .Manifest}}' > /tmp/sdk-image-manifest.json 2>/tmp/sdk-image-manifest.err; then
+              if [[ "${REQUIRE_CURRENT_SHA_MANIFEST}" != "true" ]]; then
+                docker buildx imagetools inspect "${IMAGE_REF}"
+                echo "SDK image manifest is available: ${IMAGE_REF}"
+                exit 0
+              fi
+
+              repository="${IMAGE_REF%:*}"
+              expected_ref="${repository}:${EXPECTED_ARCH_TAG}"
+              expected_digest="$(docker buildx imagetools inspect "${expected_ref}" --format '{{.Manifest.Digest}}' 2>/dev/null || true)"
+
+              if [[ -n "${expected_digest}" ]] &&
+                 jq -e --arg digest "${expected_digest}" '.manifests[]? | select(.digest == $digest)' /tmp/sdk-image-manifest.json >/dev/null; then
+                docker buildx imagetools inspect "${IMAGE_REF}"
+                echo "SDK image manifest includes ${expected_ref} (${expected_digest})."
+                exit 0
+              fi
+            fi
+            echo "SDK image manifest is not updated yet (${attempt}/60): ${IMAGE_REF}"
+            sleep 30
+          done
+
+          echo "Timed out waiting for SDK image manifest to include ${EXPECTED_ARCH_TAG}: ${IMAGE_REF}" >&2
+          exit 1
 
       - name: Install packaging tools
         run: |
@@ -159,18 +261,31 @@ jobs:
 
   publish-offline-package:
     name: Publish offline SDK package to Vulcan
-    needs: build-offline-package
+    if: ${{ needs.resolve-inputs.outputs.should_publish == 'true' }}
+    needs:
+      - resolve-inputs
+      - build-offline-package
+    permissions:
+      contents: read
+      actions: write
+      id-token: write
     uses: sima-neat/.github/.github/workflows/vulcan-publish-artifacts.yml@main
     with:
       aws_region: us-west-2
       environment_name: ${{ vars.VULCAN_ENV || 'production' }}
       artifact_pattern: sdk-offline-package-*
       artifact_glob: "**/*"
-      min_artifact_count: 10
+      min_artifact_count: 6
 
   mark-offline-package-latest:
     name: Mark offline SDK package as latest
-    needs: publish-offline-package
+    if: ${{ needs.resolve-inputs.outputs.should_publish == 'true' }}
+    needs:
+      - resolve-inputs
+      - publish-offline-package
+    permissions:
+      contents: read
+      id-token: write
     uses: sima-neat/.github/.github/workflows/vulcan-update-latest-artifacts.yml@main
     with:
       aws_region: us-west-2

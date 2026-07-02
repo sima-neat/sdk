@@ -66,10 +66,12 @@ fi
 case "${TARGET_ARCH}" in
   x86_64)
     DOCKER_PLATFORM="linux/amd64"
+    METADATA_ARCH="amd64"
     ;;
   aarch64|arm64)
     TARGET_ARCH="aarch64"
     DOCKER_PLATFORM="linux/arm64"
+    METADATA_ARCH="arm64"
     ;;
   *)
     echo "Unsupported target architecture: ${TARGET_ARCH}" >&2
@@ -77,12 +79,18 @@ case "${TARGET_ARCH}" in
     ;;
 esac
 
-for tool in docker sima-cli zstd sha256sum; do
+for tool in docker sima-cli zstd; do
   if ! command -v "${tool}" >/dev/null 2>&1; then
     echo "Required command not found: ${tool}" >&2
     exit 1
   fi
 done
+
+if [[ "${IMAGE_REF}" != ghcr.io/*:* ]]; then
+  echo "--image-ref must use ghcr.io/<owner>/<image>:<tag>, got: ${IMAGE_REF}" >&2
+  exit 1
+fi
+image_resource="ghcr:${IMAGE_REF#ghcr.io/}"
 
 if [[ -z "${PACKAGE_VERSION}" ]]; then
   if [[ "${GITHUB_REF_TYPE:-}" == "tag" && -n "${GITHUB_REF_NAME:-}" ]]; then
@@ -112,6 +120,8 @@ mkdir -p "${artifacts_dir}"
 archive_name="sdk-image-${TARGET_ARCH}.tar.zst"
 archive_path="${artifacts_dir}/${archive_name}"
 package_name="sdk-offline-${TARGET_ARCH}"
+metadata_name="metadata-offline-${METADATA_ARCH}.json"
+readme_name="README-offline-${METADATA_ARCH}.txt"
 
 echo "Pulling SDK image for ${DOCKER_PLATFORM}: ${IMAGE_REF}"
 docker pull --platform "${DOCKER_PLATFORM}" "${IMAGE_REF}"
@@ -125,7 +135,7 @@ docker system prune -af >/dev/null 2>&1 || true
 
 install -m 0755 "${ROOT_DIR}/tools/install_offline_sdk.sh" "${artifacts_dir}/install_offline_sdk.sh"
 
-cat > "${artifacts_dir}/README.txt" <<EOF
+cat > "${artifacts_dir}/${readme_name}" <<EOF
 SiMa.ai Neat SDK offline bundle
 ================================
 
@@ -140,11 +150,6 @@ The installer loads ${archive_name} into Docker and then runs the normal
 sima-cli SDK setup flow. sima-cli and Docker must already be installed on the
 target host.
 EOF
-
-(
-  cd "${artifacts_dir}"
-  sha256sum "${archive_name}" install_offline_sdk.sh README.txt > SHA256SUMS
-)
 
 SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli packages build "${artifacts_dir}" \
   --name "${package_name}" \
@@ -167,10 +172,12 @@ target_arch = sys.argv[3]
 image_ref = sys.argv[4]
 
 metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+metadata.setdefault("installation", {})["script"] = "echo 'Offline SDK package downloaded. Copy the downloaded files to the offline host, then run: bash ./install_offline_sdk.sh'"
 metadata["release"] = release
 metadata["installation"]["post-message"] = (
     "[bold green]Offline SDK setup complete.[/bold green]\n"
-    "Run [cyan]sima-cli sdk neat[/cyan] to open the Neat SDK container.\n"
+    "Copy the downloaded files to the offline host, then run "
+    "[cyan]bash ./install_offline_sdk.sh[/cyan].\n"
 )
 metadata["offline"] = {
     "container-image": image_ref,
@@ -180,7 +187,15 @@ metadata["offline"] = {
 metadata_path.write_text(json.dumps(metadata, indent=4) + "\n", encoding="utf-8")
 PY
 
-python3 -m json.tool "${artifacts_dir}/metadata.json" >/dev/null
+mv "${artifacts_dir}/metadata.json" "${artifacts_dir}/${metadata_name}"
+python3 -m json.tool "${artifacts_dir}/${metadata_name}" >/dev/null
+
+"${ROOT_DIR}/tools/prepare_s3_artifacts.sh" \
+  --output-dir "${tmp_dir}/online-package" \
+  --image-resource "${image_resource}" \
+  --version "${PACKAGE_VERSION}" \
+  --release "${PACKAGE_RELEASE}"
+cp -f "${tmp_dir}/online-package/install_sdk_stub.sh" "${tmp_dir}/online-package/metadata.json" "${artifacts_dir}/"
 
 rm -rf "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}"
