@@ -1,6 +1,9 @@
 name: Build SDK Offline Bundle
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       image_ref:
@@ -18,13 +21,11 @@ on:
         type: string
 
 permissions:
-  actions: write
   contents: read
-  id-token: write
   packages: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event.inputs.image_ref || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -35,33 +36,55 @@ jobs:
       image_ref: ${{ steps.resolve.outputs.image_ref }}
       package_version: ${{ steps.resolve.outputs.package_version }}
       package_release: ${{ steps.resolve.outputs.package_release }}
+      should_publish: ${{ steps.resolve.outputs.should_publish }}
     steps:
       - name: Resolve image and package version
         id: resolve
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
           INPUT_IMAGE_REF: ${{ inputs.image_ref }}
           INPUT_PACKAGE_VERSION: ${{ inputs.package_version }}
           INPUT_PACKAGE_RELEASE: ${{ inputs.package_release }}
         run: |
           set -euo pipefail
 
-          image_ref="${INPUT_IMAGE_REF:?}"
-          tag="${image_ref##*:}"
-          package_version="${INPUT_PACKAGE_VERSION:-${tag}}"
-          package_release="${INPUT_PACKAGE_RELEASE:-${GITHUB_SHA}}"
+          should_publish=true
+
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            image_ref="${INPUT_IMAGE_REF:?}"
+            tag="${image_ref##*:}"
+            package_version="${INPUT_PACKAGE_VERSION:-${tag}}"
+            package_release="${INPUT_PACKAGE_RELEASE:-${GITHUB_SHA}}"
+          elif [[ "${REF}" == refs/tags/v* ]]; then
+            owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+            image_ref="ghcr.io/${owner}/sdk:${REF_NAME}"
+            package_version="${REF_NAME#v}"
+            package_release="${GITHUB_SHA}"
+          else
+            echo "Skipping offline bundle: unsupported event ${EVENT_NAME} on ${REF}."
+            should_publish=false
+            image_ref=""
+            package_version=""
+            package_release=""
+          fi
 
           {
             echo "image_ref=${image_ref}"
             echo "package_version=${package_version}"
             echo "package_release=${package_release}"
+            echo "should_publish=${should_publish}"
           } >> "${GITHUB_OUTPUT}"
 
           echo "image_ref=${image_ref}"
           echo "package_version=${package_version}"
           echo "package_release=${package_release}"
+          echo "should_publish=${should_publish}"
 
   build-offline-package:
     name: Build offline package (${{ matrix.arch }})
+    if: ${{ needs.resolve-inputs.outputs.should_publish == 'true' }}
     needs: resolve-inputs
     runs-on: ubuntu-24.04
     strategy:
@@ -83,6 +106,24 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait for SDK image manifest
+        env:
+          IMAGE_REF: ${{ needs.resolve-inputs.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+
+          for attempt in {1..60}; do
+            if docker buildx imagetools inspect "${IMAGE_REF}" >/dev/null 2>&1; then
+              docker buildx imagetools inspect "${IMAGE_REF}"
+              exit 0
+            fi
+            echo "SDK image is not available yet (${attempt}/60): ${IMAGE_REF}"
+            sleep 30
+          done
+
+          echo "Timed out waiting for SDK image manifest: ${IMAGE_REF}" >&2
+          exit 1
 
       - name: Install packaging tools
         run: |
@@ -133,7 +174,14 @@ jobs:
 
   publish-offline-package:
     name: Publish offline SDK package to Vulcan
-    needs: build-offline-package
+    if: ${{ needs.resolve-inputs.outputs.should_publish == 'true' }}
+    needs:
+      - resolve-inputs
+      - build-offline-package
+    permissions:
+      contents: read
+      actions: write
+      id-token: write
     uses: sima-neat/.github/.github/workflows/vulcan-publish-artifacts.yml@main
     with:
       aws_region: us-west-2
@@ -144,7 +192,13 @@ jobs:
 
   mark-offline-package-latest:
     name: Mark offline SDK package as latest
-    needs: publish-offline-package
+    if: ${{ needs.resolve-inputs.outputs.should_publish == 'true' }}
+    needs:
+      - resolve-inputs
+      - publish-offline-package
+    permissions:
+      contents: read
+      id-token: write
     uses: sima-neat/.github/.github/workflows/vulcan-update-latest-artifacts.yml@main
     with:
       aws_region: us-west-2
