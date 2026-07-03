@@ -92,7 +92,7 @@ You can also run Docker directly:
 ```bash
 docker pull ghcr.io/sima-neat/sdk:latest
 docker run --rm -it --name sdk --privileged \
-  -p 9900:9900 -p 9000-9079:9000-9079 -p 9100-9179:9100-9179 -p 8081:8081 -p 8554:8554 \
+  -p 9900:9900 -p 9999:9999 -p 9000-9079:9000-9079 -p 9100-9179:9100-9179 -p 8081:8081 -p 8554:8554 \
   -v "$(pwd):/workspace" -w /workspace -v /dev:/dev --pid=host \
   ghcr.io/sima-neat/sdk:latest /bin/bash -l
 ```
@@ -102,6 +102,16 @@ The build environment is configured automatically when the container starts. To 
 ```bash
 source /opt/bin/simaai-init-build-env modalix
 ```
+
+The browser-based VS Code server starts automatically with the SDK container on port `9999`. Open the mapped host port in a browser to use it.
+
+To start it manually if supervision is disabled:
+
+```bash
+sima-code
+```
+
+By default, it serves `/workspace`. Set `OPENVSCODE_SERVER_TOKEN` before the container starts if the port is exposed beyond a trusted local machine. Set `OPENVSCODE_SERVER_SUPERVISED=0` to disable automatic startup.
 
 ## Pair With A DevKit
 
