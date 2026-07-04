@@ -111,7 +111,7 @@ To start it manually if supervision is disabled:
 sima-code
 ```
 
-By default, it serves `/workspace`. Set `OPENVSCODE_SERVER_TOKEN` before the container starts if the port is exposed beyond a trusted local machine. Set `OPENVSCODE_SERVER_SUPERVISED=0` to disable automatic startup.
+By default, it serves `/workspace` and runs as the SDK user configured by `sima-cli sdk setup`. Set `OPENVSCODE_SERVER_TOKEN` before the container starts if the port is exposed beyond a trusted local machine. Set `OPENVSCODE_SERVER_SUPERVISED=0` to disable automatic startup.
 
 ## Pair With A DevKit
 
