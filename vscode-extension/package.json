@@ -1,0 +1,62 @@
+{
+  "name": "sima-neat",
+  "displayName": "SiMa Neat",
+  "description": "Experimental VS Code extension for SiMa Neat SDK workspaces.",
+  "version": "0.0.1",
+  "publisher": "sima-neat",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sima-neat/sdk.git",
+    "directory": "vscode-extension"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Themes"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onView:simaNeat.panel",
+    "onCommand:simaNeat.showPanel"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "simaNeat.showPanel",
+        "title": "SiMa Neat: Show Panel"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "simaNeat",
+          "title": "SiMa Neat",
+          "icon": "media/sima-ai-mark.svg"
+        }
+      ]
+    },
+    "views": {
+      "simaNeat": [
+        {
+          "id": "simaNeat.panel",
+          "name": "Neat"
+        }
+      ]
+    },
+    "themes": [
+      {
+        "label": "SiMa Neat Light",
+        "uiTheme": "vs",
+        "path": "./themes/sima-neat-light.json"
+      },
+      {
+        "label": "SiMa Neat Dark",
+        "uiTheme": "vs-dark",
+        "path": "./themes/sima-neat-dark.json"
+      }
+    ]
+  }
+}

@@ -83,6 +83,8 @@ The SDK image also preinstalls the OpenAI Codex CLI. From the SDK shell, run:
 codex
 ```
 
+An experimental VS Code extension scaffold lives in `vscode-extension/`. It adds a SiMa Neat activity bar panel and light/dark themes for SDK workspace experiments.
+
 ## Local Repository Helper
 
 If you are working directly from this repository, you can also start the SDK with:
