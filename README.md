@@ -77,6 +77,12 @@ neat
 
 The SDK workspace is mounted at `/workspace` inside the container.
 
+The SDK image also preinstalls the OpenAI Codex CLI. From the SDK shell, run:
+
+```bash
+codex
+```
+
 ## Local Repository Helper
 
 If you are working directly from this repository, you can also start the SDK with:

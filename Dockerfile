@@ -24,6 +24,7 @@ ARG NEAT_CORE_TARGET=
 ARG NEAT_INSIGHT_BRANCH=
 ARG NEAT_INSIGHT_VERSION=
 ARG OPENVSCODE_SERVER_VERSION=openvscode-server-v1.109.5
+ARG CODEX_CLI_VERSION=0.142.5
 ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libblkid-dev libbsd0 libcharls2 libcpp-httplib-dev libelf1 libexpat1 libffi-dev libffi8 libgdal32 libgfortran5 libglib2.0-0 libgomp1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev libjpeg62-turbo libjson-glib-dev liblapack-dev liblapack3 liblzma5 libmount-dev libopenblas-pthread-dev libopenblas0-pthread libopenjp2-7 libpng16-16 libpython3.11-dev libqt5gui5 libsepol-dev libspdlog-dev libssl3 libstdc++6 libsuperlu-dev libsuperlu5 libtiff6 liburcu-dev libwebp7 python3-dev python3.11-dev zlib1g"
 ENV SDK_PKG_LIST="\
 	libgrpc-dev,\
@@ -103,6 +104,8 @@ RUN apt-get update --allow-releaseinfo-change && \
       libzstd1 \
       openssh-client \
       sshpass \
+      nodejs \
+      npm \
       python3-dev \
       python3-venv \
       ffmpeg \
@@ -111,6 +114,11 @@ RUN apt-get update --allow-releaseinfo-change && \
       plantuml \
       supervisor \
       mkcert && \
+    npm install -g "@openai/codex@${CODEX_CLI_VERSION}" && \
+    npm cache clean --force && \
+    codex --version && \
+    apt-get purge -y npm && \
+    apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
