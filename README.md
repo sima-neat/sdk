@@ -85,17 +85,7 @@ codex
 
 An experimental VS Code extension scaffold lives in `vscode-extension/`. It adds a SiMa Neat activity bar panel and light/dark themes for SDK workspace experiments.
 
-## Local Repository Helper
-
-If you are working directly from this repository, you can also start the SDK with:
-
-```bash
-./run.sh
-```
-
-`run.sh` tries to pull the configured SDK image from GitHub Container Registry first and falls back to a matching local image if present. It mounts the current directory into `/workspace`.
-
-You can also run Docker directly:
+You can run Docker directly for low-level debugging:
 
 ```bash
 docker pull ghcr.io/sima-neat/sdk:latest
