@@ -16,10 +16,12 @@ fi
 wait_seconds="${OPENVSCODE_SERVER_USER_WAIT_SECONDS:-60}"
 deadline=$((SECONDS + wait_seconds))
 home_dir=""
+shell_path=""
 
 while (( SECONDS < deadline )); do
   if user_entry="$(getent passwd "${target_user}" 2>/dev/null)"; then
     home_dir="$(printf '%s' "${user_entry}" | cut -d: -f6)"
+    shell_path="$(printf '%s' "${user_entry}" | cut -d: -f7)"
     if [[ -n "${home_dir}" && -d "${home_dir}" ]]; then
       break
     fi
@@ -32,12 +34,27 @@ if [[ -z "${home_dir}" || ! -d "${home_dir}" ]]; then
   exec /usr/local/bin/sima-code "${workspace}"
 fi
 
+if [[ -z "${shell_path}" ]]; then
+  shell_path="/bin/bash"
+fi
+
 if command -v runuser >/dev/null 2>&1; then
-  exec runuser -u "${target_user}" -- env HOME="${home_dir}" /usr/local/bin/sima-code "${workspace}"
+  exec runuser -u "${target_user}" -- env \
+    HOME="${home_dir}" \
+    USER="${target_user}" \
+    LOGNAME="${target_user}" \
+    SHELL="${shell_path}" \
+    PWD="${workspace}" \
+    /usr/local/bin/sima-code "${workspace}"
 fi
 
 if command -v sudo >/dev/null 2>&1; then
-  exec sudo -H -u "${target_user}" -- /usr/local/bin/sima-code "${workspace}"
+  exec sudo -H -u "${target_user}" -- env \
+    USER="${target_user}" \
+    LOGNAME="${target_user}" \
+    SHELL="${shell_path}" \
+    PWD="${workspace}" \
+    /usr/local/bin/sima-code "${workspace}"
 fi
 
 echo "Neither runuser nor sudo is available; starting OpenVSCode Server as root." >&2

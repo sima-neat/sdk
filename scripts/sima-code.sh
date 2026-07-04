@@ -7,6 +7,16 @@ workspace="${1:-${OPENVSCODE_WORKSPACE:-/workspace}}"
 server_dir="${OPENVSCODE_SERVER_DIR:-/opt/openvscode-server}"
 extensions_dir="${OPENVSCODE_SERVER_EXTENSIONS_DIR:-${HOME:-/root}/.openvscode-server/extensions}"
 
+if user_entry="$(getent passwd "$(id -u)" 2>/dev/null)"; then
+  current_user="$(printf '%s' "${user_entry}" | cut -d: -f1)"
+  current_home="$(printf '%s' "${user_entry}" | cut -d: -f6)"
+  current_shell="$(printf '%s' "${user_entry}" | cut -d: -f7)"
+  export USER="${current_user}"
+  export LOGNAME="${current_user}"
+  export HOME="${current_home}"
+  export SHELL="${current_shell:-/bin/bash}"
+fi
+
 if [[ ! -x "${server_dir}/bin/openvscode-server" ]]; then
   echo "openvscode-server not found at ${server_dir}/bin/openvscode-server" >&2
   exit 1
