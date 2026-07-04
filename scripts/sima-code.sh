@@ -5,12 +5,14 @@ host="${OPENVSCODE_SERVER_HOST:-0.0.0.0}"
 port="${OPENVSCODE_SERVER_PORT:-9999}"
 workspace="${1:-${OPENVSCODE_WORKSPACE:-/workspace}}"
 server_dir="${OPENVSCODE_SERVER_DIR:-/opt/openvscode-server}"
-extensions_dir="${OPENVSCODE_SERVER_EXTENSIONS_DIR:-/opt/openvscode-server/extensions}"
+extensions_dir="${OPENVSCODE_SERVER_EXTENSIONS_DIR:-${HOME:-/root}/.openvscode-server/extensions}"
 
 if [[ ! -x "${server_dir}/bin/openvscode-server" ]]; then
   echo "openvscode-server not found at ${server_dir}/bin/openvscode-server" >&2
   exit 1
 fi
+
+mkdir -p "${extensions_dir}"
 
 args=(
   --host "${host}"
