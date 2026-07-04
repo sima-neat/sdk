@@ -23,6 +23,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 
 DEFAULT_PLATFORM_PACKAGE_PATTERNS = (
@@ -57,6 +58,8 @@ SKIP_PACKAGES = {
     "libdlpack-dev",
 }
 
+APT_UPDATE_RETRY_DELAYS_SECONDS = (10, 30)
+
 
 def load_platform_package_patterns():
     patterns_file = os.environ.get(
@@ -77,6 +80,20 @@ def load_platform_package_patterns():
 
 
 PLATFORM_PACKAGE_PATTERNS = load_platform_package_patterns()
+
+
+def update_apt_cache(cache):
+    attempts = len(APT_UPDATE_RETRY_DELAYS_SECONDS) + 1
+    for attempt in range(attempts):
+        try:
+            cache.update()
+            return
+        except apt.cache.FetchFailedException:
+            if attempt == attempts - 1:
+                raise
+            delay = APT_UPDATE_RETRY_DELAYS_SECONDS[attempt]
+            print(f"Cache update failed; retrying in {delay}s...", flush=True)
+            time.sleep(delay)
 
 
 def usage():
@@ -359,7 +376,7 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
 
     print("Updating cache...")
     cache = apt.Cache()
-    cache.update()
+    update_apt_cache(cache)
     cache.open(None)
 
     if pkg_name not in cache:
