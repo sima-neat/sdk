@@ -33,7 +33,6 @@ ENV NEAT_INSIGHT_VENV_DIR=/opt/neat-insight/venv
 ENV NEAT_INSIGHT_PORT=9900
 ENV NEAT_INSIGHT_SUPERVISED=1
 ENV OPENVSCODE_SERVER_DIR=/opt/openvscode-server
-ENV OPENVSCODE_SERVER_EXTENSIONS_DIR=/opt/openvscode-server/extensions
 ENV OPENVSCODE_SERVER_PORT=9999
 ENV OPENVSCODE_SERVER_SUPERVISED=1
 ENV PIP_DEFAULT_TIMEOUT=120
@@ -128,8 +127,6 @@ RUN set -eux; \
     mkdir -p "${OPENVSCODE_SERVER_DIR}"; \
     tar -xzf "/tmp/${openvscode_archive}" -C "${OPENVSCODE_SERVER_DIR}" --strip-components=1; \
     rm -f "/tmp/${openvscode_archive}"; \
-    mkdir -p "${OPENVSCODE_SERVER_EXTENSIONS_DIR}"; \
-    chmod -R a+rwX "${OPENVSCODE_SERVER_EXTENSIONS_DIR}"; \
     chmod -R a+rX "${OPENVSCODE_SERVER_DIR}"
 
 COPY --from=cross-toolchain /opt/cross-toolchain/ /
