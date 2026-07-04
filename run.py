@@ -363,6 +363,14 @@ def main() -> int:
         "-e", f"CONTAINER_WORKDIR={workdir}",
         chosen_image,
     ]
+    for env_name in (
+        "OPENVSCODE_SERVER_TOKEN",
+        "OPENVSCODE_SERVER_WITHOUT_TOKEN",
+        "OPENVSCODE_SERVER_SUPERVISED",
+    ):
+        env_value = os.getenv(env_name)
+        if env_value:
+            docker_cmd[-1:-1] = ["-e", f"{env_name}={env_value}"]
 
     if host_os.startswith("linux"):
         docker_cmd[2:2] = ["--network", "host"]

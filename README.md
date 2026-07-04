@@ -103,7 +103,7 @@ The build environment is configured automatically when the container starts. To 
 source /opt/bin/simaai-init-build-env modalix
 ```
 
-The browser-based VS Code server starts automatically with the SDK container on port `9999`. Open the mapped host port in a browser to use it. When the container is started by `sima-cli sdk setup`, sima-cli generates an access token and prints the full browser URL.
+The browser-based VS Code server starts automatically with the SDK container on port `9999` and opens `/workspace` by default. Open the mapped host port in a browser to use it. When the container is started by `sima-cli sdk setup`, sima-cli generates an access token and prints the full browser URL.
 
 To start it manually if supervision is disabled:
 
@@ -111,11 +111,13 @@ To start it manually if supervision is disabled:
 sima-code
 ```
 
-By default, it serves `/workspace` and runs as the SDK user configured by `sima-cli sdk setup`. To protect direct access to the browser IDE, set `OPENVSCODE_SERVER_TOKEN` before the container starts:
+By default, it serves `/workspace`, runs as the SDK user configured by `sima-cli sdk setup`, and requires a connection token. To provide a stable token for direct access to the browser IDE, set `OPENVSCODE_SERVER_TOKEN` before the container starts:
 
 ```bash
 OPENVSCODE_SERVER_TOKEN=<token>
 ```
+
+If no token is provided, `sima-code` generates a temporary token for that server process and writes the URL to the process log.
 
 Set `OPENVSCODE_SERVER_SUPERVISED=0` to disable automatic startup.
 
