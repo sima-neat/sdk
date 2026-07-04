@@ -12,7 +12,7 @@ class NeatPanelProvider {
     };
 
     const logoUri = webviewView.webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, "media", "sima-ai-logo.svg")
+      vscode.Uri.joinPath(this.extensionUri, "media", "neat-logo.png")
     );
 
     webviewView.webview.html = getPanelHtml(logoUri);
