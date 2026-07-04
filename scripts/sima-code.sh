@@ -35,7 +35,7 @@ if [[ -z "${token}" && "${OPENVSCODE_SERVER_WITHOUT_TOKEN:-0}" != "1" ]]; then
     display_host="localhost"
   fi
   echo "Generated temporary OpenVSCode Server token for this process." >&2
-  echo "Open the Code UI with: http://${display_host}:${port}/?t=${token}" >&2
+  echo "Open the Code UI with: http://${display_host}:${port}/?tkn=${token}" >&2
 fi
 
 if [[ -n "${token}" ]]; then
