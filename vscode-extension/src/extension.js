@@ -695,7 +695,7 @@ function getPanelHtml(logoUri, samplesState, authState, devKitState) {
   const authDetail = escapeHtml(authState.detail);
   const authButtonLabel = escapeHtml(authState.buttonLabel);
   const authCommand = escapeHtml(authState.command);
-  const authIcon = authState.signedIn ? "in" : "out";
+  const authIcon = authState.signedIn ? "lock" : "out";
   const cloneIcon = samplesState.disabled ? "ok" : "repo";
   const devKitDisabled = devKitState.disabled ? "disabled" : "";
   const devKitButtonLabel = escapeHtml(devKitState.buttonLabel);
@@ -826,6 +826,16 @@ function getPanelHtml(logoUri, samplesState, authState, devKitState) {
     .icon-badge.secondary {
       color: var(--vscode-button-secondaryForeground);
       background: var(--vscode-button-secondaryBackground);
+    }
+
+    .badge-icon {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
 
     .action-copy {
@@ -1000,11 +1010,11 @@ function iconText(name) {
   const icons = {
     docs: "D",
     eye: "I",
-    in: "In",
+    lock: '<svg class="badge-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>',
     out: "Out",
     ok: "OK",
     repo: "G",
-    terminal: "$",
+    terminal: '<svg class="badge-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"></rect><path d="M4 9h3M4 15h3M17 9h3M17 15h3M9 4v3M15 4v3M9 17v3M15 17v3"></path></svg>',
     offline: "!"
   };
   return icons[name] || "";
