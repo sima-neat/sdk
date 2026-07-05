@@ -1,10 +1,11 @@
 {
   "name": "sima-neat",
   "displayName": "Palette Neat Development Environment",
-  "description": "Experimental VS Code extension for SiMa Neat SDK workspaces.",
+  "description": "VS Code extension for SiMa Neat SDK workspaces.",
   "version": "0.0.1",
   "publisher": "sima-neat",
   "license": "UNLICENSED",
+  "icon": "media/neat-logo.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/sima-neat/sdk.git",

@@ -6,6 +6,7 @@ Experimental VS Code extension scaffold for SiMa Neat SDK workspaces.
 
 - Adds a SiMa Neat activity bar container.
 - Shows a Neat webview panel with SDK-oriented placeholder content.
+- Adds Developer Portal Login/Logout controls that store tokens in the same `~/.sima-cli/.tokens.json` cache used by `sima-cli`.
 - Contributes `SiMa Neat Light` and `SiMa Neat Dark` themes.
 
 ## Development
