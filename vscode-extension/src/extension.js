@@ -689,7 +689,7 @@ function getPanelHtml(logoUri, samplesState, authState, devKitState) {
   const cloneDisabled = samplesState.disabled ? "disabled" : "";
   const status = escapeHtml(samplesState.status);
   const samplesDetail = formatSamplesDetail(samplesState);
-  const samplesButtonDescription = samplesState.detailKind === "path-folder" ? "" : status;
+  const samplesStatusLine = samplesState.detailKind ? `<p class="status">${status}${samplesDetail}</p>` : "";
   const buttonLabel = escapeHtml(samplesState.buttonLabel);
   const authStatus = escapeHtml(authState.status);
   const authDetail = escapeHtml(authState.detail);
@@ -828,6 +828,11 @@ function getPanelHtml(logoUri, samplesState, authState, devKitState) {
       background: var(--vscode-button-secondaryBackground);
     }
 
+    .icon-badge.teal {
+      color: #ffffff;
+      background: #008c95;
+    }
+
     .badge-icon {
       width: 16px;
       height: 16px;
@@ -836,6 +841,11 @@ function getPanelHtml(logoUri, samplesState, authState, devKitState) {
       stroke-width: 2;
       stroke-linecap: round;
       stroke-linejoin: round;
+    }
+
+    .github-icon {
+      fill: currentColor;
+      stroke: none;
     }
 
     .action-copy {
@@ -953,13 +963,13 @@ function getPanelHtml(logoUri, samplesState, authState, devKitState) {
     <div class="section-title">Samples</div>
     <div class="stack">
       <button id="cloneSamples" class="action-button" ${cloneDisabled}>
-        <span class="icon-badge secondary" aria-hidden="true">${iconText(cloneIcon)}</span>
+        <span class="icon-badge teal" aria-hidden="true">${iconText(cloneIcon)}</span>
         <span class="action-copy">
           <span class="action-title">${buttonLabel}</span>
-          ${samplesButtonDescription ? `<span class="action-description">${samplesButtonDescription}</span>` : ""}
+          <span class="action-description">${status}</span>
         </span>
       </button>
-      <p class="status">${status}${samplesDetail}</p>
+      ${samplesStatusLine}
     </div>
   </div>
   <script>
@@ -1013,7 +1023,7 @@ function iconText(name) {
     lock: '<svg class="badge-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>',
     out: "Out",
     ok: "OK",
-    repo: "G",
+    repo: '<svg class="badge-icon github-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5a9.5 9.5 0 0 0-3 18.51c.47.08.64-.2.64-.45v-1.65c-2.6.57-3.15-1.1-3.15-1.1-.43-1.08-1.05-1.37-1.05-1.37-.86-.59.07-.58.07-.58.95.07 1.45.98 1.45.98.84 1.44 2.2 1.02 2.74.78.08-.61.33-1.02.6-1.26-2.08-.24-4.27-1.04-4.27-4.64 0-1.02.37-1.86.97-2.52-.1-.24-.42-1.2.09-2.48 0 0 .79-.25 2.6.96a9 9 0 0 1 4.73 0c1.8-1.21 2.6-.96 2.6-.96.51 1.28.19 2.24.09 2.48.6.66.97 1.5.97 2.52 0 3.61-2.2 4.4-4.29 4.63.34.29.64.86.64 1.74v2.58c0 .25.17.54.65.45A9.5 9.5 0 0 0 12 2.5Z"></path></svg>',
     terminal: '<svg class="badge-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"></rect><path d="M4 9h3M4 15h3M17 9h3M17 15h3M9 4v3M15 4v3M9 17v3M15 17v3"></path></svg>',
     offline: "!"
   };
