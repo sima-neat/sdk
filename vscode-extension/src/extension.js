@@ -18,8 +18,15 @@ const DEFAULT_DEVKIT_SYNC_USER = "sima";
 const DEFAULT_DEVKIT_SYNC_PASSWORD = "edgeai";
 const DEFAULT_DEVKIT_SYNC_PORT = "22";
 const SIMA_CLI_CANDIDATE_PATHS = [
+  "/opt/sima-cli/venv/bin/sima-cli",
   "/usr/local/bin/sima-cli",
   "/opt/anaconda3/bin/sima-cli"
+];
+const SIMA_CLI_PYTHON_CANDIDATE_PATHS = [
+  "/opt/sima-cli/venv/bin/python",
+  "/opt/sima-cli/venv/bin/python3",
+  "/opt/anaconda3/bin/python",
+  "/opt/anaconda3/bin/python3"
 ];
 let simaCliExecutable = undefined;
 let simaCliPythonExecutable = undefined;
@@ -587,9 +594,12 @@ async function execPythonSnippet(script) {
   if (simaPython && !candidates.includes(simaPython)) {
     candidates.push(simaPython);
   }
-  if (!candidates.includes("python3")) {
-    candidates.push("python3");
+  for (const candidate of SIMA_CLI_PYTHON_CANDIDATE_PATHS) {
+    if (!candidates.includes(candidate)) {
+      candidates.push(candidate);
+    }
   }
+  candidates.push("python3");
 
   const errors = [];
   for (const pythonExecutable of candidates) {
@@ -643,6 +653,16 @@ async function resolveSimaCliPythonExecutable() {
   }
 
   simaCliPythonExecutable = "";
+
+  for (const candidate of SIMA_CLI_PYTHON_CANDIDATE_PATHS) {
+    try {
+      await fs.promises.access(candidate, fs.constants.X_OK);
+      simaCliPythonExecutable = candidate;
+      return simaCliPythonExecutable;
+    } catch {
+      // Try the next candidate.
+    }
+  }
 
   const simaCliPaths = [...SIMA_CLI_CANDIDATE_PATHS, await resolveSimaCliExecutable()];
 
