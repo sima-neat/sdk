@@ -21,6 +21,7 @@ const SIMA_CLI_CANDIDATE_PATHS = [
   "/usr/local/bin/sima-cli",
   "/opt/anaconda3/bin/sima-cli"
 ];
+let simaCliExecutable = undefined;
 let simaCliPythonExecutable = undefined;
 
 class NeatPanelProvider {
@@ -44,6 +45,14 @@ class NeatPanelProvider {
             await cloneSamples();
           } catch (error) {
             showActionError("Failed to clone samples", error);
+          } finally {
+            await this.refresh();
+          }
+        } else if (message.command === "installTutorials") {
+          try {
+            await installTutorials();
+          } catch (error) {
+            showActionError("Failed to install tutorials", error);
           } finally {
             await this.refresh();
           }
@@ -86,10 +95,11 @@ class NeatPanelProvider {
     );
     const workspaceRoot = getWorkspaceRoot();
     const samplesState = await getSamplesState(workspaceRoot);
+    const tutorialsState = await getTutorialsState(workspaceRoot);
     const authState = await getDeveloperPortalAuthState();
     const devKitState = await getDevKitSyncState();
 
-    this.webviewView.webview.html = getPanelHtml(logoUri, samplesState, authState, devKitState);
+    this.webviewView.webview.html = getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitState);
   }
 
   dispose() {
@@ -197,6 +207,116 @@ async function cloneSamples() {
   );
 
   vscode.window.showInformationMessage("SiMa Neat samples cloned into apps/.");
+}
+
+async function getTutorialsState(workspaceRoot) {
+  if (!workspaceRoot) {
+    return {
+      disabled: true,
+      buttonLabel: "Install Tutorials",
+      status: "Open an SDK workspace folder to install tutorials.",
+      detail: ""
+    };
+  }
+
+  const tutorialsUri = await findTutorialsUri(workspaceRoot);
+  if (tutorialsUri) {
+    const relativePath = vscode.workspace.asRelativePath(tutorialsUri, false);
+    return {
+      disabled: true,
+      buttonLabel: "Tutorials Installed",
+      status: "Tutorials are available under",
+      detail: relativePath,
+      detailKind: "path-folder"
+    };
+  }
+
+  return {
+    disabled: false,
+    buttonLabel: "Install Tutorials",
+    status: "Download Neat tutorials into this workspace.",
+    detail: ""
+  };
+}
+
+async function findTutorialsUri(workspaceRoot) {
+  const candidates = [
+    ["tutorials"],
+    ["tutorial"],
+    ["extras", "tutorials"],
+    ["neat-extras", "tutorials"],
+    ["sima-neat-extras", "tutorials"],
+    ["extras", "share", "sima-neat", "tutorials"],
+    ["extras", "lib", "sima-neat", "tutorials"]
+  ];
+
+  for (const parts of candidates) {
+    const uri = vscode.Uri.joinPath(workspaceRoot, ...parts);
+    if (await pathExists(uri)) {
+      return uri;
+    }
+  }
+
+  try {
+    const entries = await vscode.workspace.fs.readDirectory(workspaceRoot);
+    for (const [name, type] of entries) {
+      if (type !== vscode.FileType.Directory || !name.toLowerCase().includes("extras")) {
+        continue;
+      }
+      const nestedCandidates = [
+        [name, "share", "sima-neat", "tutorials"],
+        [name, "lib", "sima-neat", "tutorials"],
+        [name, "tutorials"]
+      ];
+      for (const parts of nestedCandidates) {
+        const uri = vscode.Uri.joinPath(workspaceRoot, ...parts);
+        if (await pathExists(uri)) {
+          return uri;
+        }
+      }
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
+async function installTutorials() {
+  const workspaceRoot = getWorkspaceRoot();
+  if (!workspaceRoot) {
+    vscode.window.showWarningMessage("Open an SDK workspace folder before installing tutorials.");
+    return;
+  }
+
+  const state = await getTutorialsState(workspaceRoot);
+  if (state.disabled) {
+    vscode.window.showInformationMessage(state.status);
+    return;
+  }
+
+  const simaCli = await resolveSimaCliExecutable();
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "Installing Neat tutorials",
+      cancellable: false
+    },
+    async (progress) => {
+      progress.report({ message: "Downloading core extras package..." });
+      await execFilePromise(simaCli, ["neat", "install", "core", "-t", "extras"], {
+        cwd: workspaceRoot.fsPath
+      });
+      progress.report({ message: "Tutorial package installed." });
+    }
+  );
+
+  const tutorialsUri = await findTutorialsUri(workspaceRoot);
+  if (tutorialsUri) {
+    vscode.window.showInformationMessage(`Neat tutorials installed under ${vscode.workspace.asRelativePath(tutorialsUri, false)}.`);
+  } else {
+    vscode.window.showInformationMessage("Neat tutorials package installed.");
+  }
 }
 
 async function openInsight() {
@@ -483,14 +603,12 @@ async function execPythonSnippet(script) {
   throw new Error(`Unable to load sima-cli Python modules. ${errors.join("; ")}`);
 }
 
-async function resolveSimaCliPythonExecutable() {
-  if (simaCliPythonExecutable !== undefined) {
-    return simaCliPythonExecutable;
+async function resolveSimaCliExecutable() {
+  if (simaCliExecutable !== undefined) {
+    return simaCliExecutable;
   }
 
-  simaCliPythonExecutable = "";
-
-  const simaCliPaths = [...SIMA_CLI_CANDIDATE_PATHS];
+  const candidates = [...SIMA_CLI_CANDIDATE_PATHS];
   try {
     const pathFromShell = (await execFilePromise(
       "bash",
@@ -499,11 +617,34 @@ async function resolveSimaCliPythonExecutable() {
       { showError: false }
     )).trim();
     if (pathFromShell) {
-      simaCliPaths.push(pathFromShell);
+      candidates.push(pathFromShell);
     }
   } catch {
     // Keep the static candidates.
   }
+
+  for (const candidate of [...new Set(candidates)]) {
+    try {
+      await fs.promises.access(candidate, fs.constants.X_OK);
+      simaCliExecutable = candidate;
+      return simaCliExecutable;
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  simaCliExecutable = "sima-cli";
+  return simaCliExecutable;
+}
+
+async function resolveSimaCliPythonExecutable() {
+  if (simaCliPythonExecutable !== undefined) {
+    return simaCliPythonExecutable;
+  }
+
+  simaCliPythonExecutable = "";
+
+  const simaCliPaths = [...SIMA_CLI_CANDIDATE_PATHS, await resolveSimaCliExecutable()];
 
   for (const simaCliPath of [...new Set(simaCliPaths)]) {
     try {
@@ -726,12 +867,19 @@ function execFilePromise(file, args, options, behavior = {}) {
   });
 }
 
-function getPanelHtml(logoUri, samplesState, authState, devKitState) {
+function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitState) {
   const cloneDisabled = samplesState.disabled ? "disabled" : "";
   const status = escapeHtml(samplesState.status);
   const samplesDetail = formatSamplesDetail(samplesState);
   const samplesStatusLine = samplesState.detailKind ? `<p class="status">${status}${samplesDetail}</p>` : "";
   const buttonLabel = escapeHtml(samplesState.buttonLabel);
+  const tutorialsDisabled = tutorialsState.disabled ? "disabled" : "";
+  const tutorialsStatus = escapeHtml(tutorialsState.status);
+  const tutorialsDetail = formatSamplesDetail(tutorialsState);
+  const tutorialsStatusLine = tutorialsState.detailKind ? `<p class="status">${tutorialsStatus}${tutorialsDetail}</p>` : "";
+  const tutorialsButtonDescription = tutorialsState.detailKind ? "" : tutorialsStatus;
+  const tutorialsButtonLabel = escapeHtml(tutorialsState.buttonLabel);
+  const tutorialsIcon = tutorialsState.disabled ? "ok" : "book";
   const authStatus = escapeHtml(authState.status);
   const authDetail = escapeHtml(authState.detail);
   const authButtonLabel = escapeHtml(authState.buttonLabel);
@@ -1001,6 +1149,19 @@ function getPanelHtml(logoUri, samplesState, authState, devKitState) {
     </div>
   </div>
   <div class="panel-section">
+    <div class="section-title">Tutorials</div>
+    <div class="stack">
+      <button id="installTutorials" class="action-button" ${tutorialsDisabled}>
+        <span class="icon-badge teal" aria-hidden="true">${iconText(tutorialsIcon)}</span>
+        <span class="action-copy">
+          <span class="action-title">${tutorialsButtonLabel}</span>
+          ${tutorialsButtonDescription ? `<span class="action-description">${tutorialsButtonDescription}</span>` : ""}
+        </span>
+      </button>
+      ${tutorialsStatusLine}
+    </div>
+  </div>
+  <div class="panel-section">
     <div class="section-title">Samples</div>
     <div class="stack">
       <button id="cloneSamples" class="action-button" ${cloneDisabled}>
@@ -1020,6 +1181,11 @@ function getPanelHtml(logoUri, samplesState, authState, devKitState) {
       cloneButton.disabled = true;
       cloneButton.textContent = "Cloning...";
       vscode.postMessage({ command: "cloneSamples" });
+    });
+    const tutorialsButton = document.getElementById("installTutorials");
+    tutorialsButton?.addEventListener("click", () => {
+      tutorialsButton.disabled = true;
+      vscode.postMessage({ command: "installTutorials" });
     });
     const authButton = document.getElementById("developerPortalAuth");
     authButton?.addEventListener("click", () => {
@@ -1064,6 +1230,7 @@ function iconText(name) {
     lock: '<svg class="badge-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>',
     out: "Out",
     ok: "OK",
+    book: '<svg class="badge-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H7a3 3 0 0 0-3 3V5.5Z"></path><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path></svg>',
     repo: '<svg class="badge-icon github-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5a9.5 9.5 0 0 0-3 18.51c.47.08.64-.2.64-.45v-1.65c-2.6.57-3.15-1.1-3.15-1.1-.43-1.08-1.05-1.37-1.05-1.37-.86-.59.07-.58.07-.58.95.07 1.45.98 1.45.98.84 1.44 2.2 1.02 2.74.78.08-.61.33-1.02.6-1.26-2.08-.24-4.27-1.04-4.27-4.64 0-1.02.37-1.86.97-2.52-.1-.24-.42-1.2.09-2.48 0 0 .79-.25 2.6.96a9 9 0 0 1 4.73 0c1.8-1.21 2.6-.96 2.6-.96.51 1.28.19 2.24.09 2.48.6.66.97 1.5.97 2.52 0 3.61-2.2 4.4-4.29 4.63.34.29.64.86.64 1.74v2.58c0 .25.17.54.65.45A9.5 9.5 0 0 0 12 2.5Z"></path></svg>',
     terminal: '<svg class="badge-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"></rect><path d="M4 9h3M4 15h3M17 9h3M17 15h3M9 4v3M15 4v3M9 17v3M15 17v3"></path></svg>',
     offline: "!"
