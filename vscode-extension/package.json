@@ -1,6 +1,6 @@
 {
   "name": "sima-neat",
-  "displayName": "SiMa Neat",
+  "displayName": "Palette Neat Development Environment",
   "description": "Experimental VS Code extension for SiMa Neat SDK workspaces.",
   "version": "0.0.1",
   "publisher": "sima-neat",
@@ -19,6 +19,7 @@
   ],
   "main": "./src/extension.js",
   "activationEvents": [
+    "onStartupFinished",
     "onView:simaNeat.panel",
     "onCommand:simaNeat.showPanel"
   ],
@@ -42,7 +43,8 @@
       "simaNeat": [
         {
           "id": "simaNeat.panel",
-          "name": "Neat"
+          "name": "Neat",
+          "type": "webview"
         }
       ]
     },
