@@ -17,6 +17,10 @@ const EXTERNAL_AUTH_FILES = [
 const DEFAULT_DEVKIT_SYNC_USER = "sima";
 const DEFAULT_DEVKIT_SYNC_PASSWORD = "edgeai";
 const DEFAULT_DEVKIT_SYNC_PORT = "22";
+const SIMA_CLI_CANDIDATE_PATHS = [
+  "/usr/local/bin/sima-cli",
+  "/opt/anaconda3/bin/sima-cli"
+];
 let simaCliPythonExecutable = undefined;
 
 class NeatPanelProvider {
@@ -458,10 +462,13 @@ async function loadAuthConfig() {
 }
 
 async function execPythonSnippet(script) {
-  const candidates = ["python3"];
+  const candidates = [];
   const simaPython = await resolveSimaCliPythonExecutable();
   if (simaPython && !candidates.includes(simaPython)) {
     candidates.push(simaPython);
+  }
+  if (!candidates.includes("python3")) {
+    candidates.push("python3");
   }
 
   const errors = [];
@@ -482,19 +489,53 @@ async function resolveSimaCliPythonExecutable() {
   }
 
   simaCliPythonExecutable = "";
+
+  const simaCliPaths = [...SIMA_CLI_CANDIDATE_PATHS];
   try {
-    const simaCliPath = (await execFilePromise("which", ["sima-cli"], {}, { showError: false })).trim();
-    const scriptText = await fs.promises.readFile(simaCliPath, "utf8");
-    const firstLine = scriptText.split(/\r?\n/, 1)[0] || "";
-    const shebang = firstLine.startsWith("#!") ? firstLine.slice(2).trim() : "";
-    if (shebang.includes("python")) {
-      simaCliPythonExecutable = shebang.split(/\s+/, 1)[0];
+    const pathFromShell = (await execFilePromise(
+      "bash",
+      ["-lc", "command -v sima-cli || true"],
+      {},
+      { showError: false }
+    )).trim();
+    if (pathFromShell) {
+      simaCliPaths.push(pathFromShell);
     }
   } catch {
-    simaCliPythonExecutable = "";
+    // Keep the static candidates.
+  }
+
+  for (const simaCliPath of [...new Set(simaCliPaths)]) {
+    try {
+      const scriptText = await fs.promises.readFile(simaCliPath, "utf8");
+      const firstLine = scriptText.split(/\r?\n/, 1)[0] || "";
+      const shebang = firstLine.startsWith("#!") ? firstLine.slice(2).trim() : "";
+      const executable = resolvePythonFromShebang(shebang);
+      if (executable) {
+        simaCliPythonExecutable = executable;
+        return simaCliPythonExecutable;
+      }
+    } catch {
+      // Try the next candidate.
+    }
   }
 
   return simaCliPythonExecutable;
+}
+
+function resolvePythonFromShebang(shebang) {
+  if (!shebang || !shebang.includes("python")) {
+    return "";
+  }
+
+  const parts = shebang.split(/\s+/).filter(Boolean);
+  if (parts[0] === "/usr/bin/env" && parts[1]?.includes("python")) {
+    return parts[1];
+  }
+  if (parts[0]?.includes("python")) {
+    return parts[0];
+  }
+  return "";
 }
 
 async function requestDeviceCode(authConfig) {
