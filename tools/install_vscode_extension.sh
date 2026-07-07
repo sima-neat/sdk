@@ -13,8 +13,10 @@ if command -v code >/dev/null 2>&1; then
   code --install-extension "${vsix_path}" --force
 elif command -v openvscode-server >/dev/null 2>&1; then
   openvscode-server --install-extension "${vsix_path}" --force
+elif [[ -x "${OPENVSCODE_SERVER_DIR:-/opt/openvscode-server}/bin/openvscode-server" ]]; then
+  "${OPENVSCODE_SERVER_DIR:-/opt/openvscode-server}/bin/openvscode-server" --install-extension "${vsix_path}" --force
 else
-  echo "'code' command not found. Run this installer from the SDK Code terminal." >&2
+  echo "Neither 'code' nor openvscode-server was found. Run this installer inside an SDK Code container." >&2
   exit 1
 fi
 
