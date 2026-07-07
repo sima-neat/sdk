@@ -10,7 +10,7 @@ Usage: tools/prepare_vscode_extension_package.sh \
 
 Builds the SiMa Neat VS Code extension VSIX and Vulcan/sima-cli package
 metadata. The package is compatible with Palette SDK containers and installs
-the extension by invoking `code --install-extension`.
+the extension by invoking the available VS Code or OpenVSCode Server CLI.
 USAGE
 }
 
@@ -103,7 +103,7 @@ SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli packages build "${artifacts_dir}" \
   --name "${PACKAGE_NAME}" \
   --version "${PACKAGE_VERSION}" \
   --description "SiMa Neat VS Code extension for SDK workspaces" \
-  --install-script "./${INSTALL_SCRIPT_NAME}" \
+  --install-script "bash ./${INSTALL_SCRIPT_NAME}" \
   --palette-platform
 
 python3 - "${artifacts_dir}/metadata.json" "${PACKAGE_RELEASE}" <<'PY'
