@@ -20,8 +20,28 @@ export PKG_CONFIG_LIBDIR="${PKG_CONFIG_LIBDIR:-$SYSROOT/usr/lib/aarch64-linux-gn
 unset PKG_CONFIG_PATH || true
 export LDFLAGS="--sysroot=$SYSROOT -L$SYSROOT/usr/lib/aarch64-linux-gnu -L$SYSROOT/lib/aarch64-linux-gnu ${LDFLAGS:-}"
 
-if [[ "${NEAT_INSIGHT_SUPERVISED:-1}" != "0" ]] && command -v supervisord >/dev/null 2>&1; then
+configure_supervisor_program() {
+  local enabled="$1"
+  local source="$2"
+  local target="$3"
+
+  if [[ "${enabled}" != "0" && -f "${source}" ]]; then
+    ln -sf "${source}" "${target}"
+  else
+    rm -f "${target}"
+  fi
+}
+
+if [[ ( "${NEAT_INSIGHT_SUPERVISED:-1}" != "0" || "${OPENVSCODE_SERVER_SUPERVISED:-1}" != "0" ) ]] && command -v supervisord >/dev/null 2>&1; then
   mkdir -p /tmp/supervisor /var/log/supervisor
+  configure_supervisor_program \
+    "${NEAT_INSIGHT_SUPERVISED:-1}" \
+    /etc/supervisor/conf.available/neat-insight.conf \
+    /etc/supervisor/conf.d/neat-insight.conf
+  configure_supervisor_program \
+    "${OPENVSCODE_SERVER_SUPERVISED:-1}" \
+    /etc/supervisor/conf.available/openvscode.conf \
+    /etc/supervisor/conf.d/openvscode.conf
   if ! supervisorctl status >/dev/null 2>&1; then
     supervisord -c /etc/supervisor/supervisord.conf
   fi

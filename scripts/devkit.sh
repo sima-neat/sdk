@@ -480,7 +480,7 @@ devkit_sync_default_password() {
 
 if [[ -z "${_HOST_IP}" || -z "${_HOST_EXPORT_PATH}" ]]; then
   echo "Missing host export info in environment." >&2
-  echo "Expected NFS_SERVER_HOST_IP and DEVKIT_HOST_EXPORT_PATH (set by run.py)." >&2
+  echo "Expected NFS_SERVER_HOST_IP and DEVKIT_HOST_EXPORT_PATH from SDK setup." >&2
   return 1
 fi
 

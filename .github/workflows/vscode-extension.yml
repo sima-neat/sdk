@@ -1,0 +1,72 @@
+name: Build VS Code Extension Package
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-package:
+    name: Build extension package
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Install sima-cli
+        run: |
+          set -euo pipefail
+
+          python3 -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install sima-cli
+          SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli --version
+
+      - name: Build extension package
+        run: |
+          set -euo pipefail
+
+          source .venv/bin/activate
+          tools/prepare_vscode_extension_package.sh \
+            --output-dir dist \
+            --version "${GITHUB_REF_NAME}" \
+            --release "${GITHUB_SHA}"
+
+      - name: Upload extension package
+        uses: actions/upload-artifact@v7
+        with:
+          name: sdk-vscode-extension
+          path: dist/
+          if-no-files-found: error
+
+  publish-package:
+    name: Publish extension package to Vulcan
+    if: github.event_name != 'pull_request'
+    needs: build-package
+    uses: sima-neat/.github/.github/workflows/vulcan-publish-artifacts.yml@main
+    with:
+      aws_region: us-west-2
+      environment_name: ${{ vars.VULCAN_ENV || 'production' }}
+      artifact_pattern: sdk-vscode-extension
+      artifact_folder: vscode-extension
+      artifact_glob: "**/*"
+      min_artifact_count: 3
