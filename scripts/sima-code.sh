@@ -6,7 +6,6 @@ port="${OPENVSCODE_SERVER_PORT:-9999}"
 https_port="${OPENVSCODE_SERVER_HTTPS_PORT:-10000}"
 workspace="${1:-${OPENVSCODE_WORKSPACE:-/workspace}}"
 server_dir="${OPENVSCODE_SERVER_DIR:-/opt/openvscode-server}"
-extensions_dir="${OPENVSCODE_SERVER_EXTENSIONS_DIR:-${HOME:-/root}/.openvscode-server/extensions}"
 cert_file="${OPENVSCODE_SERVER_CERT:-}"
 cert_key_file="${OPENVSCODE_SERVER_CERT_KEY:-}"
 tls_enabled=0
@@ -21,6 +20,8 @@ if user_entry="$(getent passwd "$(id -u)" 2>/dev/null)"; then
   export HOME="${current_home}"
   export SHELL="${current_shell:-/bin/bash}"
 fi
+
+extensions_dir="${OPENVSCODE_SERVER_EXTENSIONS_DIR:-${HOME:-/root}/.openvscode-server/extensions}"
 
 if [[ ! -x "${server_dir}/bin/openvscode-server" ]]; then
   echo "openvscode-server not found at ${server_dir}/bin/openvscode-server" >&2

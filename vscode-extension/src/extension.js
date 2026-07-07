@@ -17,6 +17,7 @@ const EXTERNAL_AUTH_FILES = [
 const DEFAULT_DEVKIT_SYNC_USER = "sima";
 const DEFAULT_DEVKIT_SYNC_PASSWORD = "edgeai";
 const DEFAULT_DEVKIT_SYNC_PORT = "22";
+const SDK_IMAGE_DEPS_MANIFEST = "/usr/local/share/sima-sdk/deps/manifest.json";
 const SIMA_CLI_CANDIDATE_PATHS = [
   "/opt/sima-cli/venv/bin/sima-cli",
   "/usr/local/bin/sima-cli",
@@ -303,6 +304,7 @@ async function installTutorials() {
   }
 
   const simaCli = await resolveSimaCliExecutable();
+  const coreTarget = await resolveCoreTutorialsTarget(workspaceRoot);
   await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
@@ -310,8 +312,8 @@ async function installTutorials() {
       cancellable: false
     },
     async (progress) => {
-      progress.report({ message: "Downloading core extras package..." });
-      await execFilePromise(simaCli, ["neat", "install", "core", "-t", "extras"], {
+      progress.report({ message: `Downloading ${coreTarget} extras package...` });
+      await execFilePromise(simaCli, ["neat", "install", coreTarget, "-t", "extras"], {
         cwd: workspaceRoot.fsPath
       });
       progress.report({ message: "Tutorial package installed." });
@@ -324,6 +326,76 @@ async function installTutorials() {
   } else {
     vscode.window.showInformationMessage("Neat tutorials package installed.");
   }
+}
+
+async function resolveCoreTutorialsTarget(workspaceRoot) {
+  const manifestPath = await resolveSdkDepsManifestPath(workspaceRoot);
+  if (!manifestPath) {
+    return "core";
+  }
+
+  try {
+    const data = JSON.parse(await fs.promises.readFile(manifestPath, "utf8"));
+    const value = data.core;
+    const ref = typeof value === "string" ? value : value?.ref;
+    if (!ref) {
+      return "core";
+    }
+    return `core@${validateDependencyRef(String(ref), "core")}`;
+  } catch (error) {
+    throw new Error(`Unable to resolve Neat core tutorial version from ${manifestPath}: ${error.message}`);
+  }
+}
+
+async function resolveSdkDepsManifestPath(workspaceRoot) {
+  const candidates = [
+    process.env.SDK_DEPS_MANIFEST,
+    SDK_IMAGE_DEPS_MANIFEST,
+    workspaceRoot ? path.join(workspaceRoot.fsPath, "deps", "manifest.json") : ""
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      await fs.promises.access(candidate, fs.constants.R_OK);
+      return candidate;
+    } catch {
+      // Try the next manifest location.
+    }
+  }
+
+  return "";
+}
+
+function validateDependencyRef(raw, key) {
+  const ref = raw.trim();
+  if (!ref) {
+    throw new Error(`dependency ${key} has an empty ref`);
+  }
+  if (ref.includes("@") || /\s/.test(ref)) {
+    throw new Error(`dependency ${key} ref must not contain '@' or whitespace: ${ref}`);
+  }
+  if (!ref.includes(":")) {
+    if (!/^[A-Za-z0-9._/-]+$/.test(ref)) {
+      throw new Error(`dependency ${key} ref must be a git tag/ref like v0.1.0: ${ref}`);
+    }
+    return ref;
+  }
+
+  const parts = ref.split(":");
+  if (parts.length !== 2) {
+    throw new Error(`dependency ${key} ref must be tag, branch:latest, or branch:githash: ${ref}`);
+  }
+  const [branch, spec] = parts.map((part) => part.trim());
+  if (!branch || !spec) {
+    throw new Error(`dependency ${key} ref must include both branch and spec: ${ref}`);
+  }
+  if (!/^[A-Za-z0-9._/-]+$/.test(branch)) {
+    throw new Error(`dependency ${key} branch contains unsupported characters: ${branch}`);
+  }
+  if (spec !== "latest" && !/^[A-Fa-f0-9]+$/.test(spec)) {
+    throw new Error(`dependency ${key} spec must be 'latest' or a git hash: ${spec}`);
+  }
+  return `${branch}:${spec}`;
 }
 
 async function openInsight() {
