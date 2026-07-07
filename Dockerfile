@@ -23,6 +23,8 @@ ARG NEAT_VERSION=latest
 ARG NEAT_CORE_TARGET=
 ARG NEAT_INSIGHT_BRANCH=
 ARG NEAT_INSIGHT_VERSION=
+ARG OPENVSCODE_SERVER_VERSION=openvscode-server-v1.109.5
+ARG CODEX_CLI_VERSION=0.142.5
 ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libblkid-dev libbsd0 libcharls2 libcpp-httplib-dev libelf1 libexpat1 libffi-dev libffi8 libgdal32 libgfortran5 libglib2.0-0 libgomp1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev libjpeg62-turbo libjson-glib-dev liblapack-dev liblapack3 liblzma5 libmount-dev libopenblas-pthread-dev libopenblas0-pthread libopenjp2-7 libpng16-16 libpython3.11-dev libqt5gui5 libsepol-dev libspdlog-dev libssl3 libstdc++6 libsuperlu-dev libsuperlu5 libtiff6 liburcu-dev libwebp7 python3-dev python3.11-dev zlib1g"
 ENV SDK_PKG_LIST="\
 	libgrpc-dev,\
@@ -31,6 +33,10 @@ ENV SDK_PKG_LIST="\
 ENV NEAT_INSIGHT_VENV_DIR=/opt/neat-insight/venv
 ENV NEAT_INSIGHT_PORT=9900
 ENV NEAT_INSIGHT_SUPERVISED=1
+ENV OPENVSCODE_SERVER_DIR=/opt/openvscode-server
+ENV OPENVSCODE_SERVER_PORT=9999
+ENV OPENVSCODE_SERVER_HTTPS_PORT=10000
+ENV OPENVSCODE_SERVER_SUPERVISED=1
 ENV PIP_DEFAULT_TIMEOUT=120
 ENV PIP_RETRIES=10
 ENV RUSTUP_HOME=/opt/toolchain/rust
@@ -40,7 +46,7 @@ ENV SDK_RELEASE_REF="${SDK_RELEASE_REF}"
 ENV SDK_IMAGE_BRANCH="${SDK_GIT_BRANCH}"
 ENV SDK_IMAGE_TAG="${SDK_RELEASE_REF}"
 ENV SDK_PROMPT_HOSTNAME="neat-sdk-${SDK_RELEASE_REF}"
-ENV PATH="${NEAT_INSIGHT_VENV_DIR}/bin:${CARGO_HOME}/bin:${PATH}"
+ENV PATH="${OPENVSCODE_SERVER_DIR}/bin:${NEAT_INSIGHT_VENV_DIR}/bin:${CARGO_HOME}/bin:${PATH}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -98,6 +104,8 @@ RUN apt-get update --allow-releaseinfo-change && \
       libzstd1 \
       openssh-client \
       sshpass \
+      nodejs \
+      npm \
       python3-dev \
       python3-venv \
       ffmpeg \
@@ -106,8 +114,29 @@ RUN apt-get update --allow-releaseinfo-change && \
       plantuml \
       supervisor \
       mkcert && \
+    npm install -g "@openai/codex@${CODEX_CLI_VERSION}" && \
+    npm cache clean --force && \
+    codex --version && \
+    apt-get purge -y npm && \
+    apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    case "$(dpkg --print-architecture)" in \
+      amd64) openvscode_arch="x64" ;; \
+      arm64) openvscode_arch="arm64" ;; \
+      armhf) openvscode_arch="armhf" ;; \
+      *) echo "Unsupported OpenVSCode Server architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac; \
+    openvscode_archive="${OPENVSCODE_SERVER_VERSION}-linux-${openvscode_arch}.tar.gz"; \
+    curl -fsSL --retry 3 --retry-delay 2 \
+      "https://github.com/gitpod-io/openvscode-server/releases/download/${OPENVSCODE_SERVER_VERSION}/${openvscode_archive}" \
+      -o "/tmp/${openvscode_archive}"; \
+    mkdir -p "${OPENVSCODE_SERVER_DIR}"; \
+    tar -xzf "/tmp/${openvscode_archive}" -C "${OPENVSCODE_SERVER_DIR}" --strip-components=1; \
+    rm -f "/tmp/${openvscode_archive}"; \
+    chmod -R a+rX "${OPENVSCODE_SERVER_DIR}"
 
 COPY --from=cross-toolchain /opt/cross-toolchain/ /
 COPY --from=cross-toolchain /opt/cross-toolchain/ /opt/bookworm-cross-toolchain/
@@ -132,6 +161,7 @@ RUN chmod 755 /usr/local/bin/configure-apt-repos.sh && \
     configure-apt-repos.sh "${BASE_SDK_VERSION}"
 
 RUN mkdir -p /tmp/supervisor /var/log/supervisor && \
+    mkdir -p /etc/supervisor/conf.available && \
     chmod 1777 /tmp/supervisor && \
     chmod -R a+rwX /var/log/supervisor && \
     sed -i \
@@ -144,6 +174,7 @@ COPY scripts/simaai-init-build-env /opt/bin/simaai-init-build-env
 COPY scripts/simaai_setup_sdk.py /opt/bin/simaai_setup_sdk.py
 COPY scripts/install-rustup.sh /usr/local/bin/install-rustup.sh
 COPY scripts/install-sima-cli.sh /usr/local/bin/install-sima-cli.sh
+COPY scripts/sima-code.sh /usr/local/bin/sima-code
 COPY scripts/neat-deps.sh /usr/local/bin/neat-deps.sh
 COPY scripts/setup-sdk-sysroot.sh /usr/local/bin/setup-sdk-sysroot.sh
 COPY scripts/validate-sysroot-package-versions.sh /usr/local/bin/validate-sysroot-package-versions.sh
@@ -151,6 +182,7 @@ RUN chmod 755 /opt/bin/simaai-init-build-env \
               /opt/bin/simaai_setup_sdk.py \
               /usr/local/bin/install-rustup.sh \
               /usr/local/bin/install-sima-cli.sh \
+              /usr/local/bin/sima-code \
               /usr/local/bin/neat-deps.sh \
               /usr/local/bin/setup-sdk-sysroot.sh \
               /usr/local/bin/validate-sysroot-package-versions.sh
@@ -178,10 +210,12 @@ COPY scripts/install-sysroot-overlay.sh /usr/local/bin/install-sysroot-overlay.s
 COPY scripts/install-sdk-sysroot-overlay.sh /usr/local/bin/install-sdk-sysroot-overlay.sh
 COPY scripts/sysroot.sh /usr/local/bin/sysroot
 COPY config/sysroot-overlay.conf /usr/local/share/sima-sdk/sysroot-overlay.conf
-COPY config/supervisor-neat-insight.conf /etc/supervisor/conf.d/neat-insight.conf
+COPY config/supervisor-neat-insight.conf /etc/supervisor/conf.available/neat-insight.conf
+COPY config/supervisor-openvscode.conf /etc/supervisor/conf.available/openvscode.conf
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY scripts/insight-admin.sh /usr/local/bin/insight-admin
 COPY scripts/neat-insight-supervised.sh /usr/local/bin/neat-insight-supervised
+COPY scripts/openvscode-supervised.sh /usr/local/bin/openvscode-supervised
 COPY scripts/devkit.sh /usr/local/bin/devkit.sh
 COPY scripts/devkit-sync-rsync.sh /usr/local/bin/devkit-sync-rsync.sh
 RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
@@ -190,6 +224,7 @@ RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/docker-entrypoint.sh && \
     chmod 755 /usr/local/bin/insight-admin && \
     chmod 755 /usr/local/bin/neat-insight-supervised && \
+    chmod 755 /usr/local/bin/openvscode-supervised && \
     ln -sf /usr/local/bin/insight-admin /usr/local/bin/install-neat-insight && \
     chmod 755 /usr/local/bin/devkit.sh && \
     chmod 755 /usr/local/bin/devkit-sync-rsync.sh && \
@@ -228,7 +263,7 @@ RUN chmod 755 /usr/local/bin/install-neat-resources.sh
 RUN install-neat-resources.sh
 
 # Expose required ports
-EXPOSE 9900 9000-9079 9100-9179 8081 8554
+EXPOSE 9900 9999 10000 9000-9079 9100-9179 8081 8554
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["/bin/bash", "-l"]

@@ -77,22 +77,20 @@ neat
 
 The SDK workspace is mounted at `/workspace` inside the container.
 
-## Local Repository Helper
-
-If you are working directly from this repository, you can also start the SDK with:
+The SDK image also preinstalls the OpenAI Codex CLI. From the SDK shell, run:
 
 ```bash
-./run.sh
+codex
 ```
 
-`run.sh` tries to pull the configured SDK image from GitHub Container Registry first and falls back to a matching local image if present. It mounts the current directory into `/workspace`.
+An experimental VS Code extension scaffold lives in `vscode-extension/`. It adds a SiMa Neat activity bar panel and light/dark themes for SDK workspace experiments.
 
-You can also run Docker directly:
+You can run Docker directly for low-level debugging:
 
 ```bash
 docker pull ghcr.io/sima-neat/sdk:latest
 docker run --rm -it --name sdk --privileged \
-  -p 9900:9900 -p 9000-9079:9000-9079 -p 9100-9179:9100-9179 -p 8081:8081 -p 8554:8554 \
+  -p 9900:9900 -p 9999:9999 -p 10000:10000 -p 9000-9079:9000-9079 -p 9100-9179:9100-9179 -p 8081:8081 -p 8554:8554 \
   -v "$(pwd):/workspace" -w /workspace -v /dev:/dev --pid=host \
   ghcr.io/sima-neat/sdk:latest /bin/bash -l
 ```
@@ -102,6 +100,16 @@ The build environment is configured automatically when the container starts. To 
 ```bash
 source /opt/bin/simaai-init-build-env modalix
 ```
+
+The browser-based VS Code server starts automatically with the SDK container. Full Neat SDK containers keep the HTTP editor endpoint on port `9999` for reverse proxies such as an AWS ALB, and also expose a local HTTPS endpoint using the SDK certificate mounted at `/sdk-cert`. Open the `codeUI` URL printed by `sima-cli sdk setup`; browsers may require trusting the local certificate before loading editor webviews.
+
+To start it manually if supervision is disabled:
+
+```bash
+sima-code
+```
+
+By default, it serves `/workspace` and runs as the SDK user configured by `sima-cli sdk setup`. Set `OPENVSCODE_SERVER_TOKEN` before the container starts if the port is exposed beyond a trusted local machine. Set `OPENVSCODE_SERVER_CERT` and `OPENVSCODE_SERVER_CERT_KEY` to override the HTTPS certificate files, or mount `/sdk-cert/neat-sdk.pem` and `/sdk-cert/neat-sdk-key.pem`. Set `OPENVSCODE_SERVER_HTTPS_PORT` to change the HTTPS listener port. Set `OPENVSCODE_SERVER_SUPERVISED=0` to disable automatic startup.
 
 ## Pair With A DevKit
 
