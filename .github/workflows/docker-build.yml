@@ -592,14 +592,14 @@ jobs:
     runs-on: ubuntu-24.04
     environment: ${{ vars.VULCAN_ENV || 'production' }}
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
       - name: Download image metadata
         uses: actions/download-artifact@v7
         with:
           name: image-promotion-metadata
           path: .smoke
-
-      - name: Check out repository
-        uses: actions/checkout@v5
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
