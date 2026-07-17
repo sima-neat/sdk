@@ -1,9 +1,9 @@
 {
   "core": {
-    "ref": "v0.2.2"
+    "ref": "v0.3.0"
   },
   "insight": {
-    "ref": "v0.0.4"
+    "ref": "v0.0.6"
   },
   "platform-version": "2.1.2"
 }
