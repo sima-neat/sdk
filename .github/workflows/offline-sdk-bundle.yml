@@ -272,6 +272,8 @@ jobs:
     with:
       aws_region: us-west-2
       environment_name: ${{ vars.VULCAN_ENV || 'production' }}
+      source_branch: ${{ github.event.workflow_run.head_branch || '' }}
+      source_commit: ${{ needs.resolve-inputs.outputs.source_sha }}
       artifact_pattern: sdk-offline-package-*
       artifact_glob: "**/*"
       min_artifact_count: 6
@@ -289,3 +291,5 @@ jobs:
     with:
       aws_region: us-west-2
       environment_name: ${{ vars.VULCAN_ENV || 'production' }}
+      source_branch: ${{ github.event.workflow_run.head_branch || '' }}
+      source_commit: ${{ needs.resolve-inputs.outputs.source_sha }}
