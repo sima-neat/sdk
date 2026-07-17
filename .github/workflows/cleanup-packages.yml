@@ -3,6 +3,7 @@ name: Cleanup GHCR Packages
 on:
   schedule:
     - cron: "23 9 * * *"
+  delete:
   workflow_dispatch:
     inputs:
       dry_run:
@@ -10,8 +11,14 @@ on:
         required: false
         default: false
         type: boolean
+      branch_name:
+        description: "Optional deleted branch name to clean up directly"
+        required: false
+        default: ""
+        type: string
 
 permissions:
+  actions: read
   contents: read
   packages: write
 
@@ -28,12 +35,20 @@ jobs:
         uses: actions/github-script@v8
         env:
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          REQUESTED_BRANCH: ${{ github.event_name == 'workflow_dispatch' && inputs.branch_name || '' }}
+          DELETED_REF: ${{ github.event_name == 'delete' && github.event.ref || '' }}
+          DELETED_REF_TYPE: ${{ github.event_name == 'delete' && github.event.ref_type || '' }}
         with:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const repoFullName = `${owner}/${repo}`;
             const dryRun = String(process.env.DRY_RUN).toLowerCase() === 'true';
+            const requestedBranch = String(process.env.REQUESTED_BRANCH || '').trim();
+            const deletedRef = String(process.env.DELETED_REF || '').trim();
+            const deletedRefType = String(process.env.DELETED_REF_TYPE || '').trim();
+            const buildWorkflowFile = 'docker-build.yml';
+            const workflowRunPageLimit = 50;
 
             const protectedBranchNames = new Set(['develop', 'main']);
 
@@ -74,6 +89,13 @@ jobs:
               return !liveBranchSlugs.has(tag);
             }
 
+            async function paginate(route, parameters) {
+              return github.paginate(route, {
+                per_page: 100,
+                ...parameters,
+              });
+            }
+
             function packageRepositoryFullName(pkg) {
               if (pkg.repository?.full_name) {
                 return pkg.repository.full_name;
@@ -86,18 +108,89 @@ jobs:
               return '';
             }
 
-            async function paginate(route, parameters) {
-              return github.paginate(route, {
-                per_page: 100,
-                ...parameters,
-              });
+            async function getPackage(packageName) {
+              try {
+                const response = await github.request('GET /orgs/{org}/packages/{package_type}/{package_name}', {
+                  org: owner,
+                  package_type: 'container',
+                  package_name: packageName,
+                });
+                return response.data;
+              } catch (error) {
+                if (error.status === 404) {
+                  return null;
+                }
+                throw error;
+              }
             }
 
-            async function deletePackage(packageName) {
+            async function packageHasSdkWorkflowVersion(packageName, commitShas) {
+              if (!commitShas || commitShas.size === 0) {
+                return false;
+              }
+
+              const expectedTags = new Set();
+              for (const sha of commitShas) {
+                expectedTags.add(sha);
+                expectedTags.add(`staged-${sha}`);
+                expectedTags.add(`${sha}-x86_64`);
+                expectedTags.add(`${sha}-aarch64`);
+              }
+
+              const versions = await paginate(
+                'GET /orgs/{org}/packages/{package_type}/{package_name}/versions',
+                {
+                  org: owner,
+                  package_type: 'container',
+                  package_name: packageName,
+                },
+              );
+
+              for (const version of versions) {
+                const tags = version.metadata?.container?.tags ?? [];
+                if (tags.some((tag) => expectedTags.has(tag))) {
+                  return true;
+                }
+              }
+              return false;
+            }
+
+            async function deletePackage(packageName, commitShas = new Set()) {
+              const pkg = await getPackage(packageName);
+              if (!pkg) {
+                core.info(`${packageName}: package does not exist; nothing to delete.`);
+                return;
+              }
+
+              const packageRepo = packageRepositoryFullName(pkg);
+              if (packageRepo && packageRepo !== repoFullName) {
+                core.warning(
+                  `${packageName}: skipping package associated with ${packageRepo}; ` +
+                  `expected ${repoFullName}.`,
+                );
+                return;
+              }
+
+              if (!packageRepo) {
+                const hasSdkWorkflowVersion = await packageHasSdkWorkflowVersion(packageName, commitShas);
+                if (!hasSdkWorkflowVersion) {
+                  core.warning(
+                    `${packageName}: skipping package with unknown repository ownership because no version tags ` +
+                    `matched SDK workflow commit history.`,
+                  );
+                  return;
+                }
+                core.warning(
+                  `${packageName}: package repository metadata is unavailable; proceeding because version tags ` +
+                  `match SDK workflow commit history.`,
+                );
+              }
+
               if (dryRun) {
                 core.info(`[dry-run] would delete package ${packageName}`);
                 return;
               }
+
               await github.request('DELETE /orgs/{org}/packages/{package_type}/{package_name}', {
                 org: owner,
                 package_type: 'container',
@@ -137,6 +230,41 @@ jobs:
               }
             }
 
+            async function listWorkflowRunsForBuildWorkflow() {
+              const runs = [];
+              for (let page = 1; page <= workflowRunPageLimit; page += 1) {
+                const response = await github.request(
+                  'GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs',
+                  {
+                    owner,
+                    repo,
+                    workflow_id: buildWorkflowFile,
+                    per_page: 100,
+                    page,
+                  },
+                );
+                const pageRuns = response.data.workflow_runs ?? [];
+                runs.push(...pageRuns);
+                if (pageRuns.length < 100) {
+                  break;
+                }
+              }
+              return runs;
+            }
+
+            function shouldTrackBranchPackageFromRun(run) {
+              if (!run.head_branch) {
+                return false;
+              }
+              if (!['push', 'pull_request', 'workflow_dispatch'].includes(run.event)) {
+                return false;
+              }
+              if (run.head_branch.startsWith('v') && /^v[0-9]/.test(run.head_branch)) {
+                return false;
+              }
+              return true;
+            }
+
             const branches = await paginate('GET /repos/{owner}/{repo}/branches', {
               owner,
               repo,
@@ -158,28 +286,45 @@ jobs:
             core.info(`Found ${branches.length} branch(es).`);
             core.info(`Found ${protectedBranchPackages.size} protected branch package name(s).`);
 
-            const packages = await paginate('GET /orgs/{org}/packages', {
-              org: owner,
-              package_type: 'container',
-            });
-            const sdkBranchPackages = packages
-              .filter((pkg) => pkg.name.startsWith('sdk-'))
-              .filter((pkg) => {
-                const packageRepo = packageRepositoryFullName(pkg);
-                if (packageRepo === repoFullName) {
-                  return true;
+            const sdkBranchPackages = new Map();
+            function addSdkBranchPackage(branchName, commitSha = '') {
+              const packageName = sdkPackageForBranch(branchName);
+              if (!sdkBranchPackages.has(packageName)) {
+                sdkBranchPackages.set(packageName, new Set());
+              }
+              if (commitSha) {
+                sdkBranchPackages.get(packageName).add(commitSha);
+              }
+              return packageName;
+            }
+
+            if (requestedBranch) {
+              addSdkBranchPackage(requestedBranch);
+              core.info(`Added requested branch package candidate for ${requestedBranch}.`);
+            }
+            if (deletedRef && deletedRefType === 'branch') {
+              addSdkBranchPackage(deletedRef);
+              core.info(`Added deleted branch package candidate for ${deletedRef}.`);
+            } else if (deletedRef && deletedRefType) {
+              core.info(`Delete event was for ${deletedRefType} ${deletedRef}; skipping direct branch package cleanup.`);
+            }
+
+            if (!requestedBranch && context.eventName !== 'delete') {
+              const workflowRuns = await listWorkflowRunsForBuildWorkflow();
+              core.info(`Scanned ${workflowRuns.length} ${buildWorkflowFile} workflow run(s).`);
+              for (const run of workflowRuns) {
+                if (shouldTrackBranchPackageFromRun(run)) {
+                  addSdkBranchPackage(run.head_branch, run.head_sha || '');
                 }
-                core.info(`${pkg.name}: skipping package associated with ${packageRepo || 'unknown repository'}.`);
-                return false;
-              })
-              .map((pkg) => pkg.name);
+              }
+            }
 
-            core.info(`Found ${sdkBranchPackages.length} sdk-* GHCR package(s).`);
+            core.info(`Found ${sdkBranchPackages.size} SDK branch package candidate(s).`);
 
-            for (const packageName of sdkBranchPackages) {
+            for (const [packageName, commitShas] of sdkBranchPackages) {
               if (!branchPackages.has(packageName)) {
                 core.info(`${packageName}: no matching branch; deleting entire package.`);
-                await deletePackage(packageName);
+                await deletePackage(packageName, commitShas);
                 continue;
               }
 

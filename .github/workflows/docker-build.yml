@@ -140,6 +140,7 @@ jobs:
             release_tag="${GITHUB_REF_NAME}"
             if [[ "${GITHUB_REF_NAME}" =~ ^v([0-9]+)[.]([0-9]+)[.][0-9]+([.][0-9]+)?$ ]]; then
               release_latest_tag="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}-latest"
+              release_line_ref="release-${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
             else
               echo "Release tags must use vX.Y.Z or vX.Y.Z.N format: ${GITHUB_REF_NAME}" >&2
               exit 1
@@ -160,6 +161,7 @@ jobs:
             echo "commit_sha=${GITHUB_SHA}"
             echo "release_tag=${release_tag}"
             echo "release_latest_tag=${release_latest_tag}"
+            echo "release_line_ref=${release_line_ref:-}"
             echo "branch_tag=${branch_tag}"
             echo "promote_latest=${promote_latest}"
           } > image-metadata/image.env
@@ -582,3 +584,60 @@ jobs:
     with:
       aws_region: us-west-2
       environment_name: ${{ vars.VULCAN_ENV || 'production' }}
+
+  retarget-release-line-install-stub:
+    name: Retarget SDK release-line install stub
+    if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
+    needs: publish-vulcan-install-stub
+    runs-on: ubuntu-24.04
+    environment: ${{ vars.VULCAN_ENV || 'production' }}
+    steps:
+      - name: Download image metadata
+        uses: actions/download-artifact@v7
+        with:
+          name: image-promotion-metadata
+          path: .smoke
+
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: ${{ vars.VULCAN_ARTIFACT_PUBLISHER_ROLE_ARN }}
+          role-session-name: sdk-retarget-release-line-${{ github.run_id }}
+
+      - name: Retarget release-line metadata to tagged SDK image
+        env:
+          ARTIFACT_BUCKET: ${{ vars.VULCAN_ARTIFACT_BUCKET }}
+          SSE_KMS_KEY_ID: ${{ vars.VULCAN_ARTIFACT_KMS_KEY_ID }}
+          CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.VULCAN_ARTIFACT_CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          set -euo pipefail
+
+          metadata_file="$(find .smoke -type f -name image.env -print -quit)"
+          # shellcheck disable=SC1090
+          source "${metadata_file}"
+
+          if [[ -z "${release_line_ref:-}" ]]; then
+            echo "release_line_ref is required for release-line install stub retargeting." >&2
+            exit 1
+          fi
+          if [[ -z "${release_tag:-}" ]]; then
+            echo "release_tag is required for release-line install stub retargeting." >&2
+            exit 1
+          fi
+          if [[ -z "${ARTIFACT_BUCKET:-}" ]]; then
+            echo "VULCAN_ARTIFACT_BUCKET is required." >&2
+            exit 1
+          fi
+          release_image_resource="ghcr:${repository#ghcr.io/}:${release_tag}"
+
+          tools/retarget_release_line_metadata.py \
+            --bucket "${ARTIFACT_BUCKET}" \
+            --repository sdk \
+            --release-line-ref "${release_line_ref}" \
+            --image-resource "${release_image_resource}" \
+            --sse-kms-key-id "${SSE_KMS_KEY_ID:-}" \
+            --cloudfront-distribution-id "${CLOUDFRONT_DISTRIBUTION_ID:-}"

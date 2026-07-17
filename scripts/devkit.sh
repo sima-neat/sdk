@@ -184,7 +184,7 @@ sync_neat_framework_to_devkit() {
 
   local -a deb_files=()
   local -a wheel_files=()
-  mapfile -t deb_files < <(find "${cache_dir}" -maxdepth 1 -type f \( -name 'sima-neat-*-Linux-core.deb' -o -name 'sima-neat-*-Linux-dev.deb' -o -name 'neat-*.deb' -o -name 'sima-lmm-*.deb' \) | sort)
+  mapfile -t deb_files < <(find "${cache_dir}" -maxdepth 1 -type f -name '*.deb' | sort)
   mapfile -t wheel_files < <(find "${cache_dir}" -maxdepth 1 -type f -name '*.whl' | sort)
 
   if [[ "${#deb_files[@]}" -lt 1 ]]; then
@@ -480,7 +480,7 @@ devkit_sync_default_password() {
 
 if [[ -z "${_HOST_IP}" || -z "${_HOST_EXPORT_PATH}" ]]; then
   echo "Missing host export info in environment." >&2
-  echo "Expected NFS_SERVER_HOST_IP and DEVKIT_HOST_EXPORT_PATH (set by run.py)." >&2
+  echo "Expected NFS_SERVER_HOST_IP and DEVKIT_HOST_EXPORT_PATH from SDK setup." >&2
   return 1
 fi
 

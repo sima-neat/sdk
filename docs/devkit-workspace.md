@@ -4,16 +4,16 @@ The DevKit workspace flow uses NFS. The workspace is shared bi-directionally bet
 
 ## Start The SDK Container
 
-Start the SDK container and configure the host-side NFS export:
+Start the SDK container and configure the host-side DevKit integration:
 
 ```bash
-./run.sh --prefer-local --devkit-ip 10.0.0.244
+sima-cli sdk setup --devkit 10.0.0.244
 ```
 
-If the host IP selected for NFS is not reachable from the DevKit, provide the host interface IP explicitly:
+Then open the SDK shell:
 
 ```bash
-./run.sh --prefer-local --devkit-ip 10.0.0.244 --hostip 10.0.0.10
+sima-cli sdk neat
 ```
 
 ## Configure The DevKit Mount

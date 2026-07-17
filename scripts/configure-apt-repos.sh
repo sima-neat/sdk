@@ -11,11 +11,9 @@ if [[ ! -f "${patterns_file}" ]]; then
 fi
 
 wget -qO - https://mirror.elxr.dev/elxr/public.gpg | gpg --dearmor -o /etc/apt/trusted.gpg.d/elxr.gpg
-wget -qO - https://packages.fluentbit.io/fluentbit.key | gpg --dearmor > /etc/apt/trusted.gpg.d/fluentbit.gpg
 wget --no-check-certificate -O - https://repo.sima.ai/elxr/deb/simaai.gpg | gpg --dearmor > /etc/apt/trusted.gpg.d/simaai.gpg
 
 chmod 644 /etc/apt/trusted.gpg.d/elxr.gpg \
-          /etc/apt/trusted.gpg.d/fluentbit.gpg \
           /etc/apt/trusted.gpg.d/simaai.gpg
 
 host_id=""
@@ -27,7 +25,6 @@ fi
 
 cat > /etc/apt/sources.list.d/elxr.list <<'EOF'
 deb [signed-by=/etc/apt/trusted.gpg.d/elxr.gpg] https://mirror.elxr.dev/elxr aria main
-deb [signed-by=/etc/apt/trusted.gpg.d/fluentbit.gpg] https://packages.fluentbit.io/debian/bookworm bookworm main
 deb [trusted=yes] https://repo.sima.ai/elxr/deb/release bookworm non-free  # simaai repo
 EOF
 
@@ -51,9 +48,6 @@ Package: *
 Pin: origin "deb.debian.org"
 Pin-Priority: 100
 
-Package: *
-Pin: origin "packages.fluentbit.io"
-Pin-Priority: 100
 EOF
 else
   cat > /etc/apt/preferences.d/stable.pref <<'EOF'

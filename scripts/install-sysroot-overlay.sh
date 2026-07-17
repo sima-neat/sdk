@@ -94,10 +94,6 @@ Pin: origin "deb.debian.org"
 Pin-Priority: 990
 
 Package: *
-Pin: origin "packages.fluentbit.io"
-Pin-Priority: 990
-
-Package: *
 Pin: release o=Ubuntu
 Pin-Priority: 100
 EOF

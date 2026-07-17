@@ -1,0 +1,68 @@
+{
+  "name": "SiMa Neat Light",
+  "type": "light",
+  "colors": {
+    "activityBar.background": "#F4F7F8",
+    "activityBar.foreground": "#122126",
+    "activityBar.inactiveForeground": "#6B777D",
+    "activityBarBadge.background": "#007C82",
+    "activityBarBadge.foreground": "#FFFFFF",
+    "sideBar.background": "#EEF3F5",
+    "sideBar.foreground": "#17252A",
+    "sideBarSectionHeader.background": "#E1E9EC",
+    "editor.background": "#FFFFFF",
+    "editor.foreground": "#172126",
+    "editorCursor.foreground": "#007C82",
+    "editorLineNumber.foreground": "#8B969C",
+    "editorLineNumber.activeForeground": "#36444A",
+    "editor.selectionBackground": "#B8E2E4",
+    "editor.inactiveSelectionBackground": "#DFEEF0",
+    "editorIndentGuide.background1": "#D7E0E4",
+    "editorIndentGuide.activeBackground1": "#8CA0A8",
+    "statusBar.background": "#007C82",
+    "statusBar.foreground": "#FFFFFF",
+    "titleBar.activeBackground": "#F4F7F8",
+    "titleBar.activeForeground": "#122126",
+    "tab.activeBackground": "#FFFFFF",
+    "tab.activeForeground": "#122126",
+    "tab.inactiveBackground": "#EAF0F2",
+    "tab.inactiveForeground": "#5E6B72",
+    "button.background": "#007C82",
+    "button.foreground": "#FFFFFF",
+    "button.hoverBackground": "#006B6F",
+    "focusBorder": "#007C82",
+    "panel.border": "#CFD9DD"
+  },
+  "tokenColors": [
+    {
+      "scope": ["comment", "punctuation.definition.comment"],
+      "settings": {
+        "foreground": "#6F7B81"
+      }
+    },
+    {
+      "scope": ["keyword", "storage.type", "storage.modifier"],
+      "settings": {
+        "foreground": "#006B8A"
+      }
+    },
+    {
+      "scope": ["string", "constant.other.symbol"],
+      "settings": {
+        "foreground": "#3D741C"
+      }
+    },
+    {
+      "scope": ["constant.numeric", "constant.language"],
+      "settings": {
+        "foreground": "#A45A00"
+      }
+    },
+    {
+      "scope": ["entity.name.function", "support.function"],
+      "settings": {
+        "foreground": "#795E00"
+      }
+    }
+  ]
+}
