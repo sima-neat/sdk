@@ -89,6 +89,11 @@ jobs:
               return !liveBranchSlugs.has(tag);
             }
 
+            function cacheBranchSlug(tag) {
+              const match = tag.match(/^(.*)-(x86_64|aarch64)$/);
+              return match ? match[1] : '';
+            }
+
             async function paginate(route, parameters) {
               return github.paginate(route, {
                 per_page: 100,
@@ -374,5 +379,65 @@ jobs:
               core.info(
                 `sdk: deleted ${deletedCanonical} deleted-branch-only version(s), ` +
                 `kept ${keptCanonical} version(s), skipped ${skippedCanonical} mixed-tag version(s).`,
+              );
+            }
+
+            if (!(await packageExists('sdk-buildcache'))) {
+              core.info('sdk-buildcache: package does not exist; skipping cache cleanup.');
+            } else {
+              const versions = await paginate(
+                'GET /orgs/{org}/packages/{package_type}/{package_name}/versions',
+                {
+                  org: owner,
+                  package_type: 'container',
+                  package_name: 'sdk-buildcache',
+                },
+              );
+              const untaggedRetentionMs = 7 * 24 * 60 * 60 * 1000;
+              const untaggedCutoff = Date.now() - untaggedRetentionMs;
+              let deletedCache = 0;
+              let keptCache = 0;
+              let skippedCache = 0;
+
+              for (const version of versions) {
+                const tags = version.metadata?.container?.tags ?? [];
+                if (tags.length === 0) {
+                  const updatedAt = Date.parse(version.updated_at || version.created_at || '');
+                  if (Number.isFinite(updatedAt) && updatedAt < untaggedCutoff) {
+                    await deletePackageVersion('sdk-buildcache', version);
+                    deletedCache += 1;
+                  } else {
+                    keptCache += 1;
+                  }
+                  continue;
+                }
+
+                const deletedBranchTags = tags.filter((tag) => {
+                  const slug = cacheBranchSlug(tag);
+                  return slug && !branchSlugs.has(slug);
+                });
+                if (deletedBranchTags.length === 0) {
+                  keptCache += 1;
+                  continue;
+                }
+
+                const retainedTags = tags.filter((tag) => !deletedBranchTags.includes(tag));
+                if (retainedTags.length > 0) {
+                  skippedCache += 1;
+                  core.warning(
+                    `sdk-buildcache: version ${version.id} has deleted-branch cache tag(s) ` +
+                    `[${deletedBranchTags.join(', ')}] but also retained tag(s) ` +
+                    `[${retainedTags.join(', ')}]; keeping the version.`,
+                  );
+                  continue;
+                }
+
+                await deletePackageVersion('sdk-buildcache', version);
+                deletedCache += 1;
+              }
+
+              core.info(
+                `sdk-buildcache: deleted ${deletedCache} stale version(s), ` +
+                `kept ${keptCache} version(s), skipped ${skippedCache} mixed-tag version(s).`,
               );
             }
