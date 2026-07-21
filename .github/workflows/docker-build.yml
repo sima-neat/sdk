@@ -40,15 +40,22 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Run SDK package installer tests
-        run: tests/sdk/test-install-sdk-stub.sh
+      - name: Run SDK build and package tests
+        run: |
+          tests/sdk/test-install-sdk-stub.sh
+          tests/sdk/test-neat-deps.sh
+          tests/sdk/test-build-script.sh
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
       - name: Compute image name
         id: image
+        env:
+          IMAGE_SUFFIX: ${{ matrix.image_suffix }}
         run: |
+          set -euo pipefail
+
           owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           if [[ "${GITHUB_REF}" == refs/heads/main || "${GITHUB_REF}" == refs/tags/v* ]]; then
             repo="sdk"
@@ -62,27 +69,57 @@ jobs:
           fi
           echo "name=ghcr.io/${owner}/${repo}" >> "${GITHUB_OUTPUT}"
 
-      - name: Build Docker image
-        run: ./build.sh sdk "${IMAGE_TAG}"
-        env:
-          IMAGE_TAG: ci-${{ matrix.image_suffix }}
+          cache_ref_name="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" && -n "${GITHUB_BASE_REF:-}" ]]; then
+            cache_ref_name="${GITHUB_BASE_REF}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]] &&
+               [[ "${GITHUB_REF_NAME}" =~ ^v([0-9]+)[.]([0-9]+)[.] ]]; then
+            cache_ref_name="release-${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+          fi
+          cache_scope="$(echo "${cache_ref_name}" | tr '[:upper:]' '[:lower:]')"
+          cache_scope="$(echo "${cache_scope}" | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
+          if [[ -z "${cache_scope}" ]]; then
+            cache_scope="branch"
+          fi
+          cache_ref="ghcr.io/${owner}/sdk-buildcache:${cache_scope}-${IMAGE_SUFFIX}"
+          base_cache_ref="ghcr.io/${owner}/sdk-buildcache:develop-${IMAGE_SUFFIX}"
+          echo "cache_ref=${cache_ref}" >> "${GITHUB_OUTPUT}"
+          if [[ "${cache_ref}" == "${base_cache_ref}" ]]; then
+            echo "cache_from=${cache_ref}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "cache_from=${cache_ref} ${base_cache_ref}" >> "${GITHUB_OUTPUT}"
+          fi
 
       - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish architecture image
-        if: github.event_name != 'pull_request'
+      - name: Build Docker image
         run: |
-          docker tag "sdk:ci-${IMAGE_SUFFIX}" "${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
-          docker push "${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
+          set -euo pipefail
+
+          export BUILDX_CACHE_FROM="${CACHE_FROM}"
+          export BUILDX_PROVENANCE=false
+
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            export BUILDX_OUTPUT=load
+            ./build.sh sdk "ci-${IMAGE_SUFFIX}"
+          else
+            export BUILDX_OUTPUT=push
+            if [[ "${GITHUB_REF_TYPE}" == "branch" ]]; then
+              export BUILDX_CACHE_TO="${CACHE_REF}"
+            fi
+            ./build.sh "${IMAGE_NAME}" "${GITHUB_SHA}-${IMAGE_SUFFIX}"
+          fi
         env:
           IMAGE_NAME: ${{ steps.image.outputs.name }}
           IMAGE_SUFFIX: ${{ matrix.image_suffix }}
+          CACHE_REF: ${{ steps.image.outputs.cache_ref }}
+          CACHE_FROM: ${{ steps.image.outputs.cache_from }}
+          DOCKER_PLATFORM: ${{ matrix.platform }}
 
   publish-manifest:
     name: Publish multi-arch manifest
