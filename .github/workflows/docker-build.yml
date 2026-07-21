@@ -53,6 +53,7 @@ jobs:
         id: image
         env:
           IMAGE_SUFFIX: ${{ matrix.image_suffix }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
           set -euo pipefail
 
@@ -70,8 +71,15 @@ jobs:
           echo "name=ghcr.io/${owner}/${repo}" >> "${GITHUB_OUTPUT}"
 
           cache_ref_name="${GITHUB_REF_NAME}"
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" && -n "${GITHUB_BASE_REF:-}" ]]; then
-            cache_ref_name="${GITHUB_BASE_REF}"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            # Fork PRs can consume only the trusted develop cache. Same-repository
+            # PRs may additionally consume the cache previously written by their
+            # source branch, while remaining read-only below.
+            cache_ref_name="develop"
+            if [[ "${PR_HEAD_REPOSITORY:-}" == "${GITHUB_REPOSITORY}" &&
+                  -n "${GITHUB_HEAD_REF:-}" ]]; then
+              cache_ref_name="${GITHUB_HEAD_REF}"
+            fi
           elif [[ "${GITHUB_REF}" == refs/tags/v* ]] &&
                [[ "${GITHUB_REF_NAME}" =~ ^v([0-9]+)[.]([0-9]+)[.] ]]; then
             cache_ref_name="release-${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
