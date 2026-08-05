@@ -2,8 +2,8 @@ name: Sync pre-release Debian mirror
 
 on:
   schedule:
-    # Run away from the top of the hour to reduce GitHub Actions queue delays.
-    - cron: "27 9 * * *"
+    # Run away from the top and half-hour to reduce Actions queue delays.
+    - cron: "17,47 * * * *"
   workflow_dispatch:
     inputs:
       publish:

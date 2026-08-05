@@ -24,6 +24,8 @@ class PrepareDebianByHashTests(unittest.TestCase):
         package_index = b"Package: example\nVersion: 1.0\nArchitecture: amd64\n\n"
         index.write_bytes(gzip.compress(package_index, mtime=0))
         package_digest = hashlib.sha256(package_index).hexdigest()
+        package_sha512 = hashlib.sha512(package_index).hexdigest()
+        compressed_sha512 = hashlib.sha512(index.read_bytes()).hexdigest()
         missing_digest = hashlib.sha256(b"missing source index\n").hexdigest()
         (suite / "Release").write_text(
             "Origin: Test\n"
@@ -32,7 +34,10 @@ class PrepareDebianByHashTests(unittest.TestCase):
             "SHA256:\n"
             f" {package_digest} {len(package_index)} non-free/binary-amd64/Packages\n"
             f" {digest} {index.stat().st_size} non-free/binary-amd64/Packages.gz\n"
-            f" {missing_digest} 21 non-free/source/Sources.gz\n",
+            f" {missing_digest} 21 non-free/source/Sources.gz\n"
+            "SHA512:\n"
+            f" {package_sha512} {len(package_index)} non-free/binary-amd64/Packages\n"
+            f" {compressed_sha512} {index.stat().st_size} non-free/binary-amd64/Packages.gz\n",
             encoding="utf-8",
         )
         (suite / "InRelease").write_text("signed", encoding="utf-8")
@@ -62,6 +67,18 @@ class PrepareDebianByHashTests(unittest.TestCase):
                 index.parent / "by-hash" / "SHA256" / uncompressed_digest
             )
             self.assertEqual(uncompressed_by_hash.read_bytes(), package_index)
+            uncompressed_sha512 = hashlib.sha512(package_index).hexdigest()
+            sha512_by_hash = (
+                index.parent / "by-hash" / "SHA512" / uncompressed_sha512
+            )
+            self.assertEqual(sha512_by_hash.read_bytes(), package_index)
+            compressed_sha512 = hashlib.sha512(index.read_bytes()).hexdigest()
+            compressed_sha512_by_hash = (
+                index.parent / "by-hash" / "SHA512" / compressed_sha512
+            )
+            self.assertEqual(
+                compressed_sha512_by_hash.read_bytes(), index.read_bytes()
+            )
             self.assertIn("non-free/binary-amd64/Packages\n", release)
             self.assertEqual(count, 2)
             self.assertEqual(total_bytes, index.stat().st_size + len(package_index))

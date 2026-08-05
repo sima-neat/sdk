@@ -65,9 +65,9 @@ package-index checks do not establish the upstream publisher's identity.
 5. Run it again with `publish` enabled. The persistent mirror makes this run
    incremental.
 
-After rollout, the daily scheduled run performs the same validation and enables
-publication automatically. It exits successfully without uploading when the
-upstream `InRelease` digest has not changed.
+After rollout, the scheduled run executes every 30 minutes, performs the same
+validation, and enables publication automatically. It exits successfully
+without uploading when the upstream `InRelease` digest has not changed.
 
 Each changed run compares the validated package indexes with the inventory from
 the last successful publication. The Actions summary reports package files
@@ -88,9 +88,9 @@ so clients holding an older `Release` continue to see a consistent generation.
 
 apt-mirror2 may retrieve only compressed `Packages.gz` indexes. Before
 publication, the workflow reconstructs each logical `Packages` index and
-verifies its size and SHA256 against the upstream Release metadata. Both forms
-and their by-hash objects are published so APT clients can discover and fetch
-the package index normally.
+verifies its size and checksums against the upstream Release metadata. Both
+forms and every advertised by-hash algorithm are published so APT clients can
+discover and fetch the package index normally.
 
 Because the destination `Release` is transformed to describe the binary-only
 mirror and enable by-hash, the upstream `InRelease` and `Release.gpg` signatures

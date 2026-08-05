@@ -248,7 +248,7 @@ if [[ "${PUBLISH}" == true ]]; then
   # generation of mutable Packages files.
   aws s3 sync "${PUBLISH_DISTS}/" "s3://${BUCKET}/pre-release/dists/" \
     "${s3_common[@]}" --cache-control 'public,max-age=31536000,immutable' \
-    --exclude '*' --include '*/by-hash/SHA256/*'
+    --exclude '*' --include '*/by-hash/*/*'
 
   # Seed all ordinary index paths, including binary-*/Release, on the initial
   # publication. Keep these paths unchanged on later runs so a client holding
@@ -256,7 +256,7 @@ if [[ "${PUBLISH}" == true ]]; then
   if [[ -z "${previous_digest}" ]]; then
     aws s3 sync "${PUBLISH_DISTS}/" "s3://${BUCKET}/pre-release/dists/" \
       "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate' \
-      --exclude '*/by-hash/SHA256/*' \
+      --exclude '*/by-hash/*/*' \
       --exclude "${SUITE}/Release"
   fi
 
