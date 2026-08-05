@@ -44,7 +44,7 @@ while (($#)); do
   shift
 done
 
-for command in aws curl debmirror flock jq python3 sha256sum; do
+for command in aws cp curl debmirror find flock jq python3 sha256sum; do
   command -v "${command}" >/dev/null || {
     echo "Required command is unavailable: ${command}" >&2
     exit 1
@@ -80,6 +80,7 @@ PREVIOUS_INVENTORY_JSON="${TEMP_DIR}/previous-inventory.json"
 PREVIOUS_PUBLICATION_JSON="${TEMP_DIR}/previous-publication.json"
 CHANGES_JSON="${TEMP_DIR}/changes.json"
 PUBLICATION_JSON="${TEMP_DIR}/publication.json"
+PUBLISH_DISTS="${TEMP_DIR}/publish-dists"
 
 getent hosts "${UPSTREAM_HOST}" >/dev/null
 curl --fail --silent --show-error --location --max-time 120 \
@@ -154,6 +155,14 @@ python3 "${SCRIPT_DIR}/validate-debian-mirror.py" \
   --architectures "${ARCHITECTURES}" \
   --output "${VALIDATION_JSON}"
 
+# Publish a transformed unsigned Release with Acquire-By-Hash enabled. The
+# upstream signature cannot be retained because --nosource removes source
+# indexes and the Release file must describe only the mirrored content.
+cp -a "${REPOSITORY}/dists" "${PUBLISH_DISTS}"
+python3 "${SCRIPT_DIR}/prepare-debian-by-hash.py" \
+  "${PUBLISH_DISTS}" \
+  --suite "${SUITE}"
+
 jq '{schema_version: 1, packages: .packages}' \
   "${VALIDATION_JSON}" >"${CURRENT_INVENTORY_JSON}"
 previous_inventory_arguments=()
@@ -161,6 +170,11 @@ if [[ "${previous_inventory_key}" == pre-release/.mirror/inventories/*.json ]] &
   aws s3 cp "s3://${BUCKET}/${previous_inventory_key}" "${PREVIOUS_INVENTORY_JSON}" \
     --region "${AWS_REGION}" --only-show-errors 2>/dev/null; then
   previous_inventory_arguments=(--previous "${PREVIOUS_INVENTORY_JSON}")
+fi
+if [[ "${PUBLISH}" == true && -n "${previous_digest}" && \
+  ${#previous_inventory_arguments[@]} -eq 0 ]]; then
+  echo "Previous publication inventory is unavailable; refusing publication" >&2
+  exit 1
 fi
 python3 "${SCRIPT_DIR}/compare-debian-mirror-inventories.py" \
   "${previous_inventory_arguments[@]}" \
@@ -172,6 +186,13 @@ total_bytes="$(jq -r '.total_bytes' "${VALIDATION_JSON}")"
 added_count="$(jq -r '.counts.added_files' "${CHANGES_JSON}")"
 removed_count="$(jq -r '.counts.removed_files' "${CHANGES_JSON}")"
 version_change_count="$(jq -r '.counts.version_changes' "${CHANGES_JSON}")"
+reused_file_content_count="$(jq -r '.counts.reused_file_content' "${CHANGES_JSON}")"
+if [[ "${PUBLISH}" == true && "${reused_file_content_count}" -gt 0 ]]; then
+  echo "Upstream reused ${reused_file_content_count} pool filename(s) with different content; refusing publication" >&2
+  jq -r '.reused_file_content[] | "- \(.filename): \(.previous_sha256) -> \(.current_sha256)"' \
+    "${CHANGES_JSON}" >&2
+  exit 1
+fi
 publication_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 inventory_key="pre-release/.mirror/inventories/${source_digest}.json"
 changes_key="pre-release/.mirror/changes/${source_digest}.json"
@@ -188,7 +209,7 @@ jq -n \
   --argjson package_count "${package_count}" \
   --argjson total_bytes "${total_bytes}" \
   --slurpfile changes "${CHANGES_JSON}" \
-  '{schema_version: 1, source: {url: $source_url, date: $source_date, inrelease_sha256: $source_digest}, validation: {package_count: $package_count, total_bytes: $total_bytes}, changes: $changes[0].counts, publication: {published_at: $published_at, repository: $repository, workflow_run: $workflow_run, commit: $commit, inventory_key: $inventory_key, changes_key: $changes_key}}' \
+  '{schema_version: 1, source: {url: $source_url, date: $source_date, inrelease_sha256: $source_digest}, validation: {package_count: $package_count, total_bytes: $total_bytes}, changes: $changes[0].counts, publication: {published_at: $published_at, repository: $repository, workflow_run: $workflow_run, commit: $commit, inventory_key: $inventory_key, changes_key: $changes_key, apt_release_mode: "unsigned-by-hash"}}' \
   >"${PUBLICATION_JSON}"
 
 if [[ "${PUBLISH}" == true ]]; then
@@ -208,21 +229,48 @@ if [[ "${PUBLISH}" == true ]]; then
   aws s3 sync "${REPOSITORY}/pool/" "s3://${BUCKET}/pre-release/pool/" \
     "${s3_common[@]}" --cache-control 'public,max-age=31536000,immutable'
 
-  # Upload package-index metadata first. The upstream Release files are promoted
-  # one at a time, with InRelease last, so a failed run cannot advertise files
-  # that have not already reached the bucket.
-  aws s3 sync "${REPOSITORY}/dists/" "s3://${BUCKET}/pre-release/dists/" \
-    "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate' \
-    --exclude '*/InRelease' --exclude '*/Release' --exclude '*/Release.gpg'
+  # Upload immutable index objects before the Release file that advertises
+  # them. APT fetches these digest-addressed paths after reading the new
+  # Acquire-By-Hash Release, so an interrupted upload cannot create a mixed
+  # generation of mutable Packages files.
+  aws s3 sync "${PUBLISH_DISTS}/" "s3://${BUCKET}/pre-release/dists/" \
+    "${s3_common[@]}" --cache-control 'public,max-age=31536000,immutable' \
+    --exclude '*' --include '*/by-hash/SHA256/*'
 
-  for metadata_name in Release Release.gpg InRelease; do
-    metadata_path="${REPOSITORY}/dists/${SUITE}/${metadata_name}"
-    if [[ -f "${metadata_path}" ]]; then
-      aws s3 cp "${metadata_path}" \
-        "s3://${BUCKET}/pre-release/dists/${SUITE}/${metadata_name}" \
+  # Seed all ordinary index paths, including binary-*/Release, on the initial
+  # publication. Keep these paths unchanged on later runs so a client holding
+  # the previous Release can still fetch a consistent generation.
+  if [[ -z "${previous_digest}" ]]; then
+    aws s3 sync "${PUBLISH_DISTS}/" "s3://${BUCKET}/pre-release/dists/" \
+      "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate' \
+      --exclude '*/by-hash/SHA256/*' \
+      --exclude "${SUITE}/Release"
+  fi
+
+  # Older publisher versions excluded every path named Release. Seed any
+  # missing nested Release files without replacing a previous generation.
+  while IFS= read -r -d '' nested_release; do
+    relative_path="${nested_release#"${PUBLISH_DISTS}/"}"
+    object_key="pre-release/dists/${relative_path}"
+    if ! aws s3api head-object --bucket "${BUCKET}" --key "${object_key}" \
+      --region "${AWS_REGION}" >/dev/null 2>&1; then
+      aws s3 cp "${nested_release}" "s3://${BUCKET}/${object_key}" \
         "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate'
     fi
+  done < <(find "${PUBLISH_DISTS}/${SUITE}" -mindepth 3 -type f \
+    -name Release -print0)
+
+  # The transformed Release is intentionally unsigned. Remove any previously
+  # published source signatures before switching the suite Release.
+  for signature_name in InRelease Release.gpg; do
+    aws s3 rm "s3://${BUCKET}/pre-release/dists/${SUITE}/${signature_name}" \
+      --region "${AWS_REGION}" --only-show-errors
   done
+
+  # This single S3 object replacement is the publication boundary.
+  aws s3 cp "${PUBLISH_DISTS}/${SUITE}/Release" \
+    "s3://${BUCKET}/pre-release/dists/${SUITE}/Release" \
+    "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate'
 
   aws s3 cp "${PUBLICATION_JSON}" \
     "s3://${BUCKET}/pre-release/.mirror/publication.json" \

@@ -58,6 +58,25 @@ class DebianMirrorValidatorTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
                 MODULE.validate_repository(repository, "bookworm", "non-free", ["amd64"], 1)
 
+    def test_rejects_conflicting_compressed_index(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = self.create_repository(Path(directory))
+            binary_directory = (
+                repository / "dists" / "bookworm" / "non-free" / "binary-amd64"
+            )
+            with gzip.open(
+                binary_directory / "Packages.gz", "rt", encoding="utf-8"
+            ) as compressed_index:
+                record = compressed_index.read()
+            (binary_directory / "Packages").write_text(
+                record.replace("Version: 1.0", "Version: 2.0"), encoding="utf-8"
+            )
+
+            with self.assertRaisesRegex(ValueError, "Packages index mismatch"):
+                MODULE.validate_repository(
+                    repository, "bookworm", "non-free", ["amd64"], 1
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

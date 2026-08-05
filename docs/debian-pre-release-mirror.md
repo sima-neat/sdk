@@ -77,9 +77,18 @@ under digest-addressed `.mirror/inventories/` and `.mirror/changes/` S3 keys.
 "Removed" means no longer referenced by the published APT indexes. Old package
 objects remain in the S3 pool during the initial rollout for safe rollback.
 
-Package objects are uploaded before repository metadata. `Release`,
-`Release.gpg`, and `InRelease` are promoted last, with `InRelease` last of all.
-Old package-pool objects are not deleted by the initial implementation.
+Package objects and immutable `by-hash` indexes are uploaded before repository
+metadata. On the first publication, all ordinary index paths are also seeded,
+including the nested `binary-*/Release` files. The suite-level `Release` is
+replaced last and contains `Acquire-By-Hash: yes`, making that single S3 object
+the publication boundary. Later runs retain the previous ordinary index paths
+so clients holding an older `Release` continue to see a consistent generation.
+
+Because the destination `Release` is transformed to describe the binary-only
+mirror and enable by-hash, the upstream `InRelease` and `Release.gpg` signatures
+are not published. This is consistent with the explicitly trusted pre-release
+client configuration above. Old package-pool objects are not deleted by the
+initial implementation.
 
 The production CloudFront endpoint is currently blocked by WAF. Publishing can
 be validated through S3, but `apt update` requires a separately approved public
@@ -99,7 +108,8 @@ Use the `force` input only when the local mirror must be rebuilt or revalidated.
 ## Rollback
 
 The production bucket is versioned. To roll back, identify the last known-good
-versions under `pre-release/dists/`, restore all referenced metadata, and restore
-`InRelease` last. Do not delete package-pool objects. Invalidate
-`/pre-release/dists/*` after restoration, then verify the restored index and
-all referenced package checksums before reopening client access.
+version of `pre-release/dists/bookworm/Release` and restore that object last.
+The digest-addressed indexes and package-pool objects are immutable and must not
+be deleted. Invalidate `/pre-release/dists/*` after restoration, then verify the
+restored index and all referenced package checksums before reopening client
+access.

@@ -27,6 +27,23 @@ def compare_inventories(
 
     added = [current_by_file[name] for name in sorted(current_by_file.keys() - previous_by_file)]
     removed = [previous_by_file[name] for name in sorted(previous_by_file.keys() - current_by_file)]
+    reused_file_content = []
+    for filename in sorted(previous_by_file.keys() & current_by_file.keys()):
+        before = previous_by_file[filename]
+        after = current_by_file[filename]
+        if (before.get("size"), before.get("sha256")) != (
+            after.get("size"),
+            after.get("sha256"),
+        ):
+            reused_file_content.append(
+                {
+                    "filename": filename,
+                    "previous_size": before.get("size"),
+                    "current_size": after.get("size"),
+                    "previous_sha256": before.get("sha256"),
+                    "current_sha256": after.get("sha256"),
+                }
+            )
 
     def versions_by_identity(
         packages: list[dict[str, object]],
@@ -59,10 +76,12 @@ def compare_inventories(
         "counts": {
             "added_files": len(added),
             "removed_files": len(removed),
+            "reused_file_content": len(reused_file_content),
             "version_changes": len(version_changes),
         },
         "added": added,
         "removed": removed,
+        "reused_file_content": reused_file_content,
         "version_changes": version_changes,
     }
 

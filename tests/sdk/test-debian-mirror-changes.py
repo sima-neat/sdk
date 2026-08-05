@@ -35,6 +35,7 @@ class DebianMirrorChangesTest(unittest.TestCase):
         self.assertEqual(result["counts"], {
             "added_files": 2,
             "removed_files": 2,
+            "reused_file_content": 0,
             "version_changes": 1,
         })
         self.assertEqual(result["version_changes"][0]["package"], "upgrade")
@@ -43,6 +44,16 @@ class DebianMirrorChangesTest(unittest.TestCase):
         result = MODULE.compare_inventories([], [package("first", "1")], False)
         self.assertFalse(result["baseline_available"])
         self.assertEqual(result["counts"]["added_files"], 1)
+
+    def test_reports_changed_content_at_same_pool_filename(self) -> None:
+        previous = package("reused", "1")
+        current = dict(previous, size=2, sha256="1" * 64)
+        result = MODULE.compare_inventories([previous], [current], True)
+
+        self.assertEqual(result["counts"]["reused_file_content"], 1)
+        self.assertEqual(
+            result["reused_file_content"][0]["filename"], previous["filename"]
+        )
 
 
 if __name__ == "__main__":

@@ -52,13 +52,48 @@ def parse_control_records(lines: Iterable[str]) -> Iterable[dict[str, str]]:
         yield record
 
 
-def find_index(repository: Path, suite: str, component: str, architecture: str) -> Path:
+def find_indexes(
+    repository: Path, suite: str, component: str, architecture: str
+) -> list[Path]:
     directory = repository / "dists" / suite / component / f"binary-{architecture}"
-    for name in INDEX_NAMES:
-        candidate = directory / name
-        if candidate.is_file():
-            return candidate
-    raise FileNotFoundError(f"no Packages index found under {directory}")
+    indexes = [directory / name for name in INDEX_NAMES if (directory / name).is_file()]
+    if not indexes:
+        raise FileNotFoundError(f"no Packages index found under {directory}")
+    return indexes
+
+
+def read_index_metadata(index_path: Path) -> dict[str, dict[str, object]]:
+    packages: dict[str, dict[str, object]] = {}
+    with open_index(index_path) as package_index:
+        for ordinal, record in enumerate(parse_control_records(package_index), start=1):
+            missing = {
+                "Package",
+                "Version",
+                "Architecture",
+                "Filename",
+                "Size",
+                "SHA256",
+            } - record.keys()
+            if missing:
+                raise ValueError(
+                    f"{index_path}: record {ordinal} is missing {sorted(missing)}"
+                )
+            filename = record["Filename"]
+            relative_path = Path(filename)
+            if relative_path.is_absolute() or ".." in relative_path.parts:
+                raise ValueError(f"unsafe package filename in {index_path}: {filename}")
+            metadata: dict[str, object] = {
+                "package": record["Package"],
+                "version": record["Version"],
+                "architecture": record["Architecture"],
+                "filename": filename,
+                "size": int(record["Size"]),
+                "sha256": record["SHA256"].lower(),
+            }
+            previous = packages.setdefault(filename, metadata)
+            if previous != metadata:
+                raise ValueError(f"conflicting metadata for {filename} in {index_path}")
+    return packages
 
 
 def package_metadata(
@@ -66,31 +101,20 @@ def package_metadata(
 ) -> dict[str, dict[str, object]]:
     packages: dict[str, dict[str, object]] = {}
     for architecture in architectures:
-        index_path = find_index(repository, suite, component, architecture)
-        with open_index(index_path) as package_index:
-            for ordinal, record in enumerate(parse_control_records(package_index), start=1):
-                missing = {
-                    "Package", "Version", "Architecture", "Filename", "Size", "SHA256"
-                } - record.keys()
-                if missing:
-                    raise ValueError(
-                        f"{index_path}: record {ordinal} is missing {sorted(missing)}"
-                    )
-                filename = record["Filename"]
-                relative_path = Path(filename)
-                if relative_path.is_absolute() or ".." in relative_path.parts:
-                    raise ValueError(f"unsafe package filename in {index_path}: {filename}")
-                metadata: dict[str, object] = {
-                    "package": record["Package"],
-                    "version": record["Version"],
-                    "architecture": record["Architecture"],
-                    "filename": filename,
-                    "size": int(record["Size"]),
-                    "sha256": record["SHA256"].lower(),
-                }
-                previous = packages.setdefault(filename, metadata)
-                if previous != metadata:
-                    raise ValueError(f"conflicting metadata for {filename}")
+        indexes = find_indexes(repository, suite, component, architecture)
+        reference_path = indexes[0]
+        architecture_packages = read_index_metadata(reference_path)
+        for index_path in indexes[1:]:
+            candidate_packages = read_index_metadata(index_path)
+            if candidate_packages != architecture_packages:
+                raise ValueError(
+                    f"Packages index mismatch: {index_path} does not match "
+                    f"{reference_path}"
+                )
+        for filename, metadata in architecture_packages.items():
+            previous = packages.setdefault(filename, metadata)
+            if previous != metadata:
+                raise ValueError(f"conflicting metadata for {filename}")
     return packages
 
 
