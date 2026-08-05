@@ -1,0 +1,7 @@
+self-hosted-runner:
+  labels:
+    - apt-mirror
+
+config-variables: null
+
+paths:
