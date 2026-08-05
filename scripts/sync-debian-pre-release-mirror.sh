@@ -2,7 +2,6 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 UPSTREAM_HOST="sw-web.eng.sima.ai"
 UPSTREAM_ROOT="deb/pre-release"
@@ -10,8 +9,6 @@ UPSTREAM_BASE_URL="http://${UPSTREAM_HOST}/${UPSTREAM_ROOT}"
 SUITE="bookworm"
 COMPONENT="non-free"
 ARCHITECTURES="arm64,arc,armhf,i386,amd64"
-EXPECTED_KEY_FINGERPRINT="${DEBIAN_MIRROR_SIGNING_KEY_FINGERPRINT:-1BF9F1E5FB3390385B218F1787E953B7D88B741D}"
-PINNED_KEY="${DEBIAN_MIRROR_SIGNING_KEY_PATH:-${REPO_DIR}/config/keys/simaai-pre-release.asc}"
 
 PUBLISH=false
 FORCE=false
@@ -47,7 +44,7 @@ while (($#)); do
   shift
 done
 
-for command in aws curl debmirror flock gpg gpgv jq python3 sha256sum; do
+for command in aws curl debmirror flock jq python3 sha256sum; do
   command -v "${command}" >/dev/null || {
     echo "Required command is unavailable: ${command}" >&2
     exit 1
@@ -72,12 +69,10 @@ if ! flock -n 9; then
 fi
 
 REPOSITORY="${WORK_ROOT}/repository"
-STATE_DIR="${WORK_ROOT}/state"
-mkdir -p "${REPOSITORY}" "${STATE_DIR}"
+mkdir -p "${REPOSITORY}"
 TEMP_DIR="$(mktemp -d "${WORK_ROOT}/run.XXXXXX")"
 trap 'rm -rf -- "${TEMP_DIR}"' EXIT
 
-KEYRING="${STATE_DIR}/simaai-pre-release.gpg"
 INRELEASE="${TEMP_DIR}/InRelease"
 VALIDATION_JSON="${TEMP_DIR}/validation.json"
 CURRENT_INVENTORY_JSON="${TEMP_DIR}/inventory.json"
@@ -86,17 +81,9 @@ PREVIOUS_PUBLICATION_JSON="${TEMP_DIR}/previous-publication.json"
 CHANGES_JSON="${TEMP_DIR}/changes.json"
 PUBLICATION_JSON="${TEMP_DIR}/publication.json"
 
-actual_fingerprint="$(gpg --batch --show-keys --with-colons "${PINNED_KEY}" | awk -F: '$1 == "fpr" {print $10; exit}')"
-if [[ "${actual_fingerprint}" != "${EXPECTED_KEY_FINGERPRINT}" ]]; then
-  echo "Pinned key fingerprint mismatch: expected ${EXPECTED_KEY_FINGERPRINT}, got ${actual_fingerprint}" >&2
-  exit 1
-fi
-gpg --batch --yes --dearmor --output "${KEYRING}" "${PINNED_KEY}"
-
 getent hosts "${UPSTREAM_HOST}" >/dev/null
 curl --fail --silent --show-error --location --max-time 120 \
   --output "${INRELEASE}" "${UPSTREAM_BASE_URL}/dists/${SUITE}/InRelease"
-gpgv --keyring "${KEYRING}" "${INRELEASE}"
 
 source_digest="$(sha256sum "${INRELEASE}" | awk '{print $1}')"
 source_date="$(sed -n 's/^Date: //p' "${INRELEASE}" | head -n 1)"
@@ -149,12 +136,11 @@ debmirror "${REPOSITORY}" \
   --section="${COMPONENT}" \
   --arch="${ARCHITECTURES}" \
   --nosource \
+  --ignore-release-gpg \
   --rsync-extra=none \
   --omit-suite-symlinks \
-  --keyring="${KEYRING}" \
   --progress
 
-gpgv --keyring "${KEYRING}" "${REPOSITORY}/dists/${SUITE}/InRelease"
 mirrored_digest="$(sha256sum "${REPOSITORY}/dists/${SUITE}/InRelease" | awk '{print $1}')"
 if [[ "${mirrored_digest}" != "${source_digest}" ]]; then
   echo "Mirrored InRelease changed during synchronization; refusing publication" >&2
@@ -222,7 +208,7 @@ if [[ "${PUBLISH}" == true ]]; then
   aws s3 sync "${REPOSITORY}/pool/" "s3://${BUCKET}/pre-release/pool/" \
     "${s3_common[@]}" --cache-control 'public,max-age=31536000,immutable'
 
-  # Upload unsigned/index metadata first. The signed Release files are promoted
+  # Upload package-index metadata first. The upstream Release files are promoted
   # one at a time, with InRelease last, so a failed run cannot advertise files
   # that have not already reached the bucket.
   aws s3 sync "${REPOSITORY}/dists/" "s3://${BUCKET}/pre-release/dists/" \

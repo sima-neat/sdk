@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 workflow="${repo_root}/.github/workflows/sync-debian-pre-release-mirror.yml"
 sync_script="${repo_root}/scripts/sync-debian-pre-release-mirror.sh"
+documentation="${repo_root}/docs/debian-pre-release-mirror.md"
 
 bash -n "${sync_script}"
 python3 -m py_compile "${repo_root}/scripts/validate-debian-mirror.py"
@@ -20,6 +21,12 @@ grep -Fq 'environment: production' "${workflow}"
 grep -Fq 'id-token: write' "${workflow}"
 grep -Fq -- '--rsync-extra=none' "${sync_script}"
 grep -Fq -- '--omit-suite-symlinks' "${sync_script}"
+grep -Fq -- '--ignore-release-gpg' "${sync_script}"
+grep -Fq 'deb [trusted=yes] https://debian.neat.sima.ai/pre-release bookworm non-free' "${documentation}"
+if grep -Eq 'gpgv|SIGNING_KEY|PINNED_KEY' "${sync_script}" "${workflow}"; then
+  echo "The internal pre-release mirror must not require an APT signing key" >&2
+  exit 1
+fi
 grep -Fq 'Added package files:' "${sync_script}"
 grep -Fq 'Removed from package indexes:' "${sync_script}"
 grep -Fq 'Package version changes:' "${sync_script}"

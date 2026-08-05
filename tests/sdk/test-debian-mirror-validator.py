@@ -36,7 +36,7 @@ class DebianMirrorValidatorTest(unittest.TestCase):
         index.parent.mkdir(parents=True)
         with gzip.open(index, "wt", encoding="utf-8") as package_index:
             package_index.write(record)
-        (repository / "dists" / "bookworm" / "InRelease").write_text("signed metadata\n")
+        (repository / "dists" / "bookworm" / "InRelease").write_text("metadata\n")
         return repository
 
     def test_validates_indexed_package(self) -> None:

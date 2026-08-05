@@ -129,7 +129,7 @@ def validate_repository(
 ) -> dict[str, object]:
     inrelease = repository / "dists" / suite / "InRelease"
     if not inrelease.is_file():
-        raise FileNotFoundError(f"signed repository metadata is missing: {inrelease}")
+        raise FileNotFoundError(f"repository metadata is missing: {inrelease}")
 
     packages = package_metadata(repository, suite, component, architectures)
     if not packages:

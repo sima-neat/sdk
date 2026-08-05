@@ -32,12 +32,25 @@ workflow stores incremental mirror state outside the Actions checkout at:
 Set the protected SDK `production` environment variable
 `DEBIAN_MIRROR_WORK_ROOT` if the persistent volume is mounted elsewhere.
 
-The repository pins the public key currently advertised by the private mirror.
-If the mirror owner rotates its signing key, place the approved public key on
-the runner and set both `DEBIAN_MIRROR_SIGNING_KEY_PATH` and
-`DEBIAN_MIRROR_SIGNING_KEY_FINGERPRINT` in the protected `production`
-environment. The workflow fails closed if the configured key fingerprint or
-the upstream signature does not match.
+## Pre-release trust model
+
+This mirror is limited to controlled internal pre-release testing. The private
+source is transported over the corporate network using HTTP, and its current
+repository signature cannot be verified with the public key it advertises.
+The synchronization therefore ignores the upstream Release signature while
+still verifying that every referenced package exists and matches the size and
+SHA256 recorded in the downloaded package indexes.
+
+Clients access the Vulcan mirror through HTTPS and must explicitly mark this
+pre-release source as trusted:
+
+```text
+deb [trusted=yes] https://debian.neat.sima.ai/pre-release bookworm non-free
+```
+
+This configuration must not be reused for a production or publicly trusted
+package channel. HTTPS protects transport from Vulcan to the client, but the
+package-index checks do not establish the upstream publisher's identity.
 
 ## First manual run
 
@@ -88,5 +101,5 @@ Use the `force` input only when the local mirror must be rebuilt or revalidated.
 The production bucket is versioned. To roll back, identify the last known-good
 versions under `pre-release/dists/`, restore all referenced metadata, and restore
 `InRelease` last. Do not delete package-pool objects. Invalidate
-`/pre-release/dists/*` after restoration, then verify the restored signature and
+`/pre-release/dists/*` after restoration, then verify the restored index and
 all referenced package checksums before reopening client access.
