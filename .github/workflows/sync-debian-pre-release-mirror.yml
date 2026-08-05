@@ -1,6 +1,9 @@
 name: Sync pre-release Debian mirror
 
 on:
+  schedule:
+    # Run away from the top of the hour to reduce GitHub Actions queue delays.
+    - cron: "27 9 * * *"
   workflow_dispatch:
     inputs:
       publish:
@@ -78,11 +81,11 @@ jobs:
 
       - name: Synchronize and validate mirror
         env:
-          MINIMUM_FREE_GIB: ${{ inputs.minimum_free_gib }}
+          MINIMUM_FREE_GIB: ${{ inputs.minimum_free_gib || '100' }}
         run: |
           set -euo pipefail
           arguments=(--minimum-free-gib "${MINIMUM_FREE_GIB}")
-          if [[ "${{ inputs.publish }}" == "true" ]]; then
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ inputs.publish }}" == "true" ]]; then
             arguments+=(--publish)
           fi
           if [[ "${{ inputs.force }}" == "true" ]]; then

@@ -9,10 +9,10 @@ bash -n "${sync_script}"
 python3 -m py_compile "${repo_root}/scripts/validate-debian-mirror.py"
 
 grep -Fq 'workflow_dispatch:' "${workflow}"
-if grep -Fq 'schedule:' "${workflow}"; then
-  echo "The initial mirror workflow must remain manual-only" >&2
-  exit 1
-fi
+grep -Fq 'schedule:' "${workflow}"
+grep -Fq 'cron: "27 9 * * *"' "${workflow}"
+grep -Fq 'github.event_name }}" == "schedule"' "${workflow}"
+grep -Fq "inputs.minimum_free_gib || '100'" "${workflow}"
 grep -Fq 'runs-on: [self-hosted, Linux, X64, apt-mirror]' "${workflow}"
 grep -Fq 'cancel-in-progress: false' "${workflow}"
 grep -Fq 'environment: production' "${workflow}"

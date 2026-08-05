@@ -8,8 +8,9 @@ This is an operational mirror-transfer workflow only. It does not build or
 modify the SDK container, SDK packages, or SDK installation behavior; the SDK
 repository is only the home for the workflow and its synchronization utility.
 
-The first rollout is deliberately manual. There is no scheduled trigger until
-the production sync has completed successfully and client validation is done.
+The workflow runs daily at 09:27 UTC and can also be started manually. Scheduled
+runs publish after validation; manual runs expose an explicit `publish` switch
+so the first production validation can download and verify without changing S3.
 
 ## Private runner
 
@@ -48,6 +49,10 @@ the upstream signature does not match.
    date, and `InRelease` digest.
 5. Run it again with `publish` enabled. The persistent mirror makes this run
    incremental.
+
+After rollout, the daily scheduled run performs the same validation and enables
+publication automatically. It exits successfully without uploading when the
+upstream `InRelease` digest has not changed.
 
 Package objects are uploaded before repository metadata. `Release`,
 `Release.gpg`, and `InRelease` are promoted last, with `InRelease` last of all.
