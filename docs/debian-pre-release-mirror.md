@@ -11,6 +11,8 @@ repository is only the home for the workflow and its synchronization utility.
 The workflow runs daily at 09:27 UTC and can also be started manually. Scheduled
 runs publish after validation; manual runs expose an explicit `publish` switch
 so the first production validation can download and verify without changing S3.
+Package downloads use `apt-mirror2` with 16 asynchronous workers by default.
+Manual runs can override `download_workers`; use a value from 1 through 64.
 
 ## Private runner
 
@@ -37,7 +39,7 @@ Set the protected SDK `production` environment variable
 This mirror is limited to controlled internal pre-release testing. The private
 source is transported over the corporate network using HTTP, and its current
 repository signature cannot be verified with the public key it advertises.
-The synchronization therefore ignores the upstream Release signature while
+The synchronization therefore disables upstream Release signature verification while
 still verifying that every referenced package exists and matches the size and
 SHA256 recorded in the downloaded package indexes.
 
