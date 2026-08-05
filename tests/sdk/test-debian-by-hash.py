@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import gzip
 import hashlib
 import importlib.util
 import tempfile
@@ -20,13 +21,16 @@ class PrepareDebianByHashTests(unittest.TestCase):
         suite = root / "bookworm"
         index = suite / "non-free" / "binary-amd64" / "Packages.gz"
         index.parent.mkdir(parents=True)
-        index.write_bytes(b"package index\n")
+        package_index = b"Package: example\nVersion: 1.0\nArchitecture: amd64\n\n"
+        index.write_bytes(gzip.compress(package_index, mtime=0))
+        package_digest = hashlib.sha256(package_index).hexdigest()
         missing_digest = hashlib.sha256(b"missing source index\n").hexdigest()
         (suite / "Release").write_text(
             "Origin: Test\n"
             "Architectures: amd64\n"
             "Components: non-free\n"
             "SHA256:\n"
+            f" {package_digest} {len(package_index)} non-free/binary-amd64/Packages\n"
             f" {digest} {index.stat().st_size} non-free/binary-amd64/Packages.gz\n"
             f" {missing_digest} 21 non-free/source/Sources.gz\n",
             encoding="utf-8",
@@ -38,7 +42,8 @@ class PrepareDebianByHashTests(unittest.TestCase):
     def test_prepares_by_hash_and_unsigned_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            digest = hashlib.sha256(b"package index\n").hexdigest()
+            package_index = b"Package: example\nVersion: 1.0\nArchitecture: amd64\n\n"
+            digest = hashlib.sha256(gzip.compress(package_index, mtime=0)).hexdigest()
             suite, index = self.make_distribution(root, digest)
 
             count, total_bytes = MODULE.prepare_distribution(root, "bookworm")
@@ -48,10 +53,18 @@ class PrepareDebianByHashTests(unittest.TestCase):
             self.assertNotIn("non-free/source/Sources.gz", release)
             self.assertFalse((suite / "InRelease").exists())
             self.assertFalse((suite / "Release.gpg").exists())
+            uncompressed = index.with_name("Packages")
+            self.assertEqual(uncompressed.read_bytes(), package_index)
             by_hash = index.parent / "by-hash" / "SHA256" / digest
             self.assertEqual(by_hash.read_bytes(), index.read_bytes())
-            self.assertEqual(count, 1)
-            self.assertEqual(total_bytes, index.stat().st_size)
+            uncompressed_digest = hashlib.sha256(package_index).hexdigest()
+            uncompressed_by_hash = (
+                index.parent / "by-hash" / "SHA256" / uncompressed_digest
+            )
+            self.assertEqual(uncompressed_by_hash.read_bytes(), package_index)
+            self.assertIn("non-free/binary-amd64/Packages\n", release)
+            self.assertEqual(count, 2)
+            self.assertEqual(total_bytes, index.stat().st_size + len(package_index))
 
     def test_rejects_digest_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

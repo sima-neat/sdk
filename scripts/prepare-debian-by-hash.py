@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import os
 import re
@@ -30,10 +31,78 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def materialize_uncompressed_package_indexes(
+    suite_dir: Path, lines: list[str]
+) -> int:
+    """Restore logical Packages indexes when only Packages.gz was mirrored."""
+    checksum_section: str | None = None
+    materialized = 0
+
+    for line in lines:
+        if line in CHECKSUM_HEADERS:
+            checksum_section = line
+            continue
+        if checksum_section is None or not line.startswith(" "):
+            checksum_section = None
+            continue
+        if checksum_section != "SHA256:":
+            continue
+
+        fields = line.split(maxsplit=2)
+        if len(fields) != 3:
+            raise ValueError(f"malformed {checksum_section} entry: {line}")
+        expected_digest, expected_size_text, relative_text = fields
+        relative_path = safe_relative_path(relative_text)
+        if relative_path.name != "Packages":
+            continue
+
+        destination = suite_dir / relative_path
+        if destination.is_file():
+            continue
+
+        compressed_source = destination.with_name("Packages.gz")
+        if not compressed_source.is_file():
+            continue
+        if not SHA256_RE.fullmatch(expected_digest):
+            raise ValueError(f"invalid SHA256 digest for {relative_text}")
+        try:
+            expected_size = int(expected_size_text)
+        except ValueError as error:
+            raise ValueError(
+                f"invalid size for {relative_text}: {expected_size_text}"
+            ) from error
+
+        temporary = destination.with_name("Packages.tmp")
+        try:
+            with gzip.open(compressed_source, "rb") as source, temporary.open(
+                "wb"
+            ) as output:
+                shutil.copyfileobj(source, output)
+            actual_size = temporary.stat().st_size
+            actual_digest = sha256_file(temporary)
+            if (
+                actual_size != expected_size
+                or actual_digest != expected_digest.lower()
+            ):
+                raise ValueError(
+                    f"decompressed index mismatch for {relative_text}: "
+                    f"expected {expected_digest.lower()}/{expected_size}, "
+                    f"got {actual_digest}/{actual_size}"
+                )
+            os.replace(temporary, destination)
+        finally:
+            temporary.unlink(missing_ok=True)
+        materialized += 1
+
+    return materialized
+
+
 def prepare_distribution(dists_root: Path, suite: str) -> tuple[int, int]:
     suite_dir = dists_root / suite
     release_path = suite_dir / "Release"
     lines = release_path.read_text(encoding="utf-8").splitlines()
+
+    materialize_uncompressed_package_indexes(suite_dir, lines)
 
     output: list[str] = []
     sha256_entries: list[tuple[str, int, Path]] = []

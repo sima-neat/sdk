@@ -86,6 +86,12 @@ replaced last and contains `Acquire-By-Hash: yes`, making that single S3 object
 the publication boundary. Later runs retain the previous ordinary index paths
 so clients holding an older `Release` continue to see a consistent generation.
 
+apt-mirror2 may retrieve only compressed `Packages.gz` indexes. Before
+publication, the workflow reconstructs each logical `Packages` index and
+verifies its size and SHA256 against the upstream Release metadata. Both forms
+and their by-hash objects are published so APT clients can discover and fetch
+the package index normally.
+
 Because the destination `Release` is transformed to describe the binary-only
 mirror and enable by-hash, the upstream `InRelease` and `Release.gpg` signatures
 are not published. This is consistent with the explicitly trusted pre-release
