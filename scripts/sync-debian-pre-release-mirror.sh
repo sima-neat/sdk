@@ -80,6 +80,10 @@ trap 'rm -rf -- "${TEMP_DIR}"' EXIT
 KEYRING="${STATE_DIR}/simaai-pre-release.gpg"
 INRELEASE="${TEMP_DIR}/InRelease"
 VALIDATION_JSON="${TEMP_DIR}/validation.json"
+CURRENT_INVENTORY_JSON="${TEMP_DIR}/inventory.json"
+PREVIOUS_INVENTORY_JSON="${TEMP_DIR}/previous-inventory.json"
+PREVIOUS_PUBLICATION_JSON="${TEMP_DIR}/previous-publication.json"
+CHANGES_JSON="${TEMP_DIR}/changes.json"
 PUBLICATION_JSON="${TEMP_DIR}/publication.json"
 
 actual_fingerprint="$(gpg --batch --show-keys --with-colons "${PINNED_KEY}" | awk -F: '$1 == "fpr" {print $10; exit}')"
@@ -106,16 +110,26 @@ source_components="$(sed -n 's/^Components: //p' "${INRELEASE}" | head -n 1)"
 [[ " ${source_architectures} " == *" amd64 "* ]]
 [[ " ${source_components} " == *" ${COMPONENT} "* ]]
 
-previous_digest="$(
-  aws s3 cp "s3://${BUCKET}/pre-release/.mirror/publication.json" - \
-    --region "${AWS_REGION}" --only-show-errors 2>/dev/null |
-    jq -r '.source.inrelease_sha256 // empty' 2>/dev/null || true
-)"
+previous_digest=""
+previous_inventory_key=""
+if aws s3 cp "s3://${BUCKET}/pre-release/.mirror/publication.json" \
+  "${PREVIOUS_PUBLICATION_JSON}" --region "${AWS_REGION}" --only-show-errors 2>/dev/null; then
+  previous_digest="$(jq -r '.source.inrelease_sha256 // empty' "${PREVIOUS_PUBLICATION_JSON}")"
+  previous_inventory_key="$(jq -r '.publication.inventory_key // empty' "${PREVIOUS_PUBLICATION_JSON}")"
+fi
 
 if [[ "${FORCE}" != true && -n "${previous_digest}" && "${source_digest}" == "${previous_digest}" ]]; then
   echo "Upstream InRelease is unchanged (${source_digest}); nothing to publish."
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-    printf "## Debian mirror synchronization\n\nNo change: \`%s\`\n" "${source_digest}" >>"${GITHUB_STEP_SUMMARY}"
+    {
+      echo '## Debian mirror synchronization'
+      echo
+      echo "- Result: No change"
+      echo "- InRelease SHA256: \`${source_digest}\`"
+      echo "- Added package files: 0"
+      echo "- Removed from package indexes: 0"
+      echo "- Package version changes: 0"
+    } >>"${GITHUB_STEP_SUMMARY}"
   fi
   exit 0
 fi
@@ -154,9 +168,27 @@ python3 "${SCRIPT_DIR}/validate-debian-mirror.py" \
   --architectures "${ARCHITECTURES}" \
   --output "${VALIDATION_JSON}"
 
+jq '{schema_version: 1, packages: .packages}' \
+  "${VALIDATION_JSON}" >"${CURRENT_INVENTORY_JSON}"
+previous_inventory_arguments=()
+if [[ "${previous_inventory_key}" == pre-release/.mirror/inventories/*.json ]] && \
+  aws s3 cp "s3://${BUCKET}/${previous_inventory_key}" "${PREVIOUS_INVENTORY_JSON}" \
+    --region "${AWS_REGION}" --only-show-errors 2>/dev/null; then
+  previous_inventory_arguments=(--previous "${PREVIOUS_INVENTORY_JSON}")
+fi
+python3 "${SCRIPT_DIR}/compare-debian-mirror-inventories.py" \
+  "${previous_inventory_arguments[@]}" \
+  --current "${CURRENT_INVENTORY_JSON}" \
+  --output "${CHANGES_JSON}"
+
 package_count="$(jq -r '.package_count' "${VALIDATION_JSON}")"
 total_bytes="$(jq -r '.total_bytes' "${VALIDATION_JSON}")"
+added_count="$(jq -r '.counts.added_files' "${CHANGES_JSON}")"
+removed_count="$(jq -r '.counts.removed_files' "${CHANGES_JSON}")"
+version_change_count="$(jq -r '.counts.version_changes' "${CHANGES_JSON}")"
 publication_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+inventory_key="pre-release/.mirror/inventories/${source_digest}.json"
+changes_key="pre-release/.mirror/changes/${source_digest}.json"
 jq -n \
   --arg source_url "${UPSTREAM_BASE_URL}" \
   --arg source_date "${source_date}" \
@@ -165,13 +197,25 @@ jq -n \
   --arg repository "${GITHUB_REPOSITORY:-local}" \
   --arg workflow_run "${GITHUB_RUN_ID:-local}" \
   --arg commit "${GITHUB_SHA:-local}" \
+  --arg inventory_key "${inventory_key}" \
+  --arg changes_key "${changes_key}" \
   --argjson package_count "${package_count}" \
   --argjson total_bytes "${total_bytes}" \
-  '{schema_version: 1, source: {url: $source_url, date: $source_date, inrelease_sha256: $source_digest}, validation: {package_count: $package_count, total_bytes: $total_bytes}, publication: {published_at: $published_at, repository: $repository, workflow_run: $workflow_run, commit: $commit}}' \
+  --slurpfile changes "${CHANGES_JSON}" \
+  '{schema_version: 1, source: {url: $source_url, date: $source_date, inrelease_sha256: $source_digest}, validation: {package_count: $package_count, total_bytes: $total_bytes}, changes: $changes[0].counts, publication: {published_at: $published_at, repository: $repository, workflow_run: $workflow_run, commit: $commit, inventory_key: $inventory_key, changes_key: $changes_key}}' \
   >"${PUBLICATION_JSON}"
 
 if [[ "${PUBLISH}" == true ]]; then
   s3_common=(--region "${AWS_REGION}" --sse aws:kms --sse-kms-key-id "${KMS_KEY_ID}" --only-show-errors)
+
+  # Versioned inventory records are uploaded before publication and become
+  # authoritative only when the final publication manifest references them.
+  aws s3 cp "${CURRENT_INVENTORY_JSON}" "s3://${BUCKET}/${inventory_key}" \
+    "${s3_common[@]}" --cache-control 'public,max-age=31536000,immutable' \
+    --content-type application/json
+  aws s3 cp "${CHANGES_JSON}" "s3://${BUCKET}/${changes_key}" \
+    "${s3_common[@]}" --cache-control 'public,max-age=31536000,immutable' \
+    --content-type application/json
 
   # Package objects are immutable and must be available before any metadata
   # that references them becomes visible to APT clients.
@@ -219,5 +263,36 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     echo "- InRelease SHA256: \`${source_digest}\`"
     echo "- Unique packages: ${package_count}"
     echo "- Referenced bytes: ${total_bytes}"
+    echo "- Added package files: ${added_count}"
+    echo "- Removed from package indexes: ${removed_count}"
+    echo "- Package version changes: ${version_change_count}"
+    if [[ "$(jq -r '.baseline_available' "${CHANGES_JSON}")" != true ]]; then
+      echo "- Baseline: no previous inventory; all current package files are reported as added"
+    fi
+    echo
+    echo '### Version changes (up to 50)'
+    echo
+    echo '| Package | Architecture | Previous | Current |'
+    echo '|---|---|---|---|'
+    jq -r '.version_changes[:50][] | "| `\(.package)` | `\(.architecture)` | `\(.previous_versions | join(", "))` | `\(.current_versions | join(", "))` |"' "${CHANGES_JSON}"
+    echo
+    echo '### Added package files (up to 50)'
+    echo
+    echo '| Package | Version | Architecture | File |'
+    echo '|---|---|---|---|'
+    jq -r '.added[:50][] | "| `\(.package)` | `\(.version)` | `\(.architecture)` | `\(.filename)` |"' "${CHANGES_JSON}"
+    echo
+    echo '### Removed from package indexes (up to 50)'
+    echo
+    echo '| Package | Version | Architecture | File |'
+    echo '|---|---|---|---|'
+    jq -r '.removed[:50][] | "| `\(.package)` | `\(.version)` | `\(.architecture)` | `\(.filename)` |"' "${CHANGES_JSON}"
+    echo
+    if [[ "${PUBLISH}" == true ]]; then
+      echo "Full inventory: \`${inventory_key}\`"
+      echo "Full change report: \`${changes_key}\`"
+    else
+      echo 'Full inventory and change report will be retained when publication is enabled.'
+    fi
   } >>"${GITHUB_STEP_SUMMARY}"
 fi

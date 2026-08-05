@@ -26,6 +26,7 @@ class DebianMirrorValidatorTest(unittest.TestCase):
         digest = checksum or hashlib.sha256(package.read_bytes()).hexdigest()
         record = (
             "Package: hello\n"
+            "Version: 1.0\n"
             "Architecture: amd64\n"
             "Filename: pool/non-free/h/hello/hello.deb\n"
             f"Size: {package.stat().st_size}\n"
@@ -49,6 +50,7 @@ class DebianMirrorValidatorTest(unittest.TestCase):
             )
         self.assertEqual(result["package_count"], 1)
         self.assertEqual(result["total_bytes"], len(b"package bytes"))
+        self.assertEqual(result["packages"][0]["version"], "1.0")
 
     def test_rejects_checksum_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

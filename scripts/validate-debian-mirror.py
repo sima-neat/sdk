@@ -63,13 +63,15 @@ def find_index(repository: Path, suite: str, component: str, architecture: str) 
 
 def package_metadata(
     repository: Path, suite: str, component: str, architectures: list[str]
-) -> dict[str, tuple[int, str]]:
-    packages: dict[str, tuple[int, str]] = {}
+) -> dict[str, dict[str, object]]:
+    packages: dict[str, dict[str, object]] = {}
     for architecture in architectures:
         index_path = find_index(repository, suite, component, architecture)
         with open_index(index_path) as package_index:
             for ordinal, record in enumerate(parse_control_records(package_index), start=1):
-                missing = {"Filename", "Size", "SHA256"} - record.keys()
+                missing = {
+                    "Package", "Version", "Architecture", "Filename", "Size", "SHA256"
+                } - record.keys()
                 if missing:
                     raise ValueError(
                         f"{index_path}: record {ordinal} is missing {sorted(missing)}"
@@ -78,15 +80,26 @@ def package_metadata(
                 relative_path = Path(filename)
                 if relative_path.is_absolute() or ".." in relative_path.parts:
                     raise ValueError(f"unsafe package filename in {index_path}: {filename}")
-                metadata = (int(record["Size"]), record["SHA256"].lower())
+                metadata: dict[str, object] = {
+                    "package": record["Package"],
+                    "version": record["Version"],
+                    "architecture": record["Architecture"],
+                    "filename": filename,
+                    "size": int(record["Size"]),
+                    "sha256": record["SHA256"].lower(),
+                }
                 previous = packages.setdefault(filename, metadata)
                 if previous != metadata:
                     raise ValueError(f"conflicting metadata for {filename}")
     return packages
 
 
-def validate_package(repository: Path, item: tuple[str, tuple[int, str]]) -> tuple[str, int]:
-    filename, (expected_size, expected_sha256) = item
+def validate_package(
+    repository: Path, item: tuple[str, dict[str, object]]
+) -> tuple[str, int]:
+    filename, metadata = item
+    expected_size = int(metadata["size"])
+    expected_sha256 = str(metadata["sha256"])
     package_path = repository / filename
     if not package_path.is_file():
         raise FileNotFoundError(f"referenced package is missing: {filename}")
@@ -133,6 +146,7 @@ def validate_repository(
         "architectures": architectures,
         "component": component,
         "package_count": len(packages),
+        "packages": sorted(packages.values(), key=lambda package: str(package["filename"])),
         "suite": suite,
         "total_bytes": total_bytes,
     }
@@ -171,7 +185,8 @@ def main() -> int:
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.write_text(rendered, encoding="utf-8")
-    print(rendered, end="")
+    else:
+        print(rendered, end="")
     return 0
 
 

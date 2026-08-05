@@ -7,6 +7,7 @@ sync_script="${repo_root}/scripts/sync-debian-pre-release-mirror.sh"
 
 bash -n "${sync_script}"
 python3 -m py_compile "${repo_root}/scripts/validate-debian-mirror.py"
+python3 -m py_compile "${repo_root}/scripts/compare-debian-mirror-inventories.py"
 
 grep -Fq 'workflow_dispatch:' "${workflow}"
 grep -Fq 'schedule:' "${workflow}"
@@ -19,6 +20,13 @@ grep -Fq 'environment: production' "${workflow}"
 grep -Fq 'id-token: write' "${workflow}"
 grep -Fq -- '--rsync-extra=none' "${sync_script}"
 grep -Fq -- '--omit-suite-symlinks' "${sync_script}"
+grep -Fq 'Added package files:' "${sync_script}"
+grep -Fq 'Removed from package indexes:' "${sync_script}"
+grep -Fq 'Package version changes:' "${sync_script}"
+# shellcheck disable=SC2016
+grep -Fq '.mirror/inventories/${source_digest}.json' "${sync_script}"
+# shellcheck disable=SC2016
+grep -Fq '.mirror/changes/${source_digest}.json' "${sync_script}"
 
 # These grep patterns intentionally match literal shell expressions in the
 # implementation rather than expanding them in this test process.

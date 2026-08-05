@@ -54,6 +54,16 @@ After rollout, the daily scheduled run performs the same validation and enables
 publication automatically. It exits successfully without uploading when the
 upstream `InRelease` digest has not changed.
 
+Each changed run compares the validated package indexes with the inventory from
+the last successful publication. The Actions summary reports package files
+added to the indexes, package files removed from the indexes, and correlated
+version changes by package and architecture. It shows up to 50 entries in each
+category and records the complete machine-readable inventory and change report
+under digest-addressed `.mirror/inventories/` and `.mirror/changes/` S3 keys.
+
+"Removed" means no longer referenced by the published APT indexes. Old package
+objects remain in the S3 pool during the initial rollout for safe rollback.
+
 Package objects are uploaded before repository metadata. `Release`,
 `Release.gpg`, and `InRelease` are promoted last, with `InRelease` last of all.
 Old package-pool objects are not deleted by the initial implementation.
