@@ -2,8 +2,8 @@ name: Sync pre-release Debian mirror
 
 on:
   schedule:
-    # Run away from the top of the hour to reduce GitHub Actions queue delays.
-    - cron: "27 9 * * *"
+    # Run away from the top and half-hour to reduce Actions queue delays.
+    - cron: "17,47 * * * *"
   workflow_dispatch:
     inputs:
       publish:
@@ -20,6 +20,11 @@ on:
         description: Minimum persistent disk space required before synchronization
         required: true
         default: "100"
+        type: string
+      download_workers:
+        description: Maximum concurrent apt-mirror2 downloads
+        required: true
+        default: "16"
         type: string
 
 permissions:
@@ -55,7 +60,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             awscli \
             curl \
-            debmirror \
+            apt-mirror2 \
             jq \
             python3 \
             util-linux
@@ -78,6 +83,7 @@ jobs:
 
       - name: Synchronize and validate mirror
         env:
+          APT_MIRROR2_THREADS: ${{ inputs.download_workers || '16' }}
           MINIMUM_FREE_GIB: ${{ inputs.minimum_free_gib || '100' }}
         run: |
           set -euo pipefail
