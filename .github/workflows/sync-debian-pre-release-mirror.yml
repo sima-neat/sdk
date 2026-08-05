@@ -1,0 +1,91 @@
+name: Sync pre-release Debian mirror
+
+on:
+  schedule:
+    # Run away from the top of the hour to reduce GitHub Actions queue delays.
+    - cron: "27 9 * * *"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the validated mirror to production S3
+        required: true
+        default: false
+        type: boolean
+      force:
+        description: Run even when the published InRelease digest is unchanged
+        required: true
+        default: false
+        type: boolean
+      minimum_free_gib:
+        description: Minimum persistent disk space required before synchronization
+        required: true
+        default: "100"
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: debian-pre-release-mirror-production
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Validate and optionally publish production mirror
+    environment: production
+    runs-on: [self-hosted, Linux, X64, apt-mirror]
+    timeout-minutes: 720
+    env:
+      AWS_REGION: ${{ vars.VULCAN_DEBIAN_MIRROR_AWS_REGION || 'us-west-2' }}
+      DEBIAN_MIRROR_WORK_ROOT: ${{ vars.DEBIAN_MIRROR_WORK_ROOT || '/var/lib/sima-neat/debian-mirror' }}
+      VULCAN_DEBIAN_MIRROR_BUCKET: ${{ vars.VULCAN_DEBIAN_MIRROR_BUCKET || 'sima-neat-debian-production' }}
+      VULCAN_DEBIAN_MIRROR_CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.VULCAN_DEBIAN_MIRROR_CLOUDFRONT_DISTRIBUTION_ID || 'E64NIJ10VID5O' }}
+      VULCAN_DEBIAN_MIRROR_KMS_KEY_ID: ${{ vars.VULCAN_DEBIAN_MIRROR_KMS_KEY_ID || 'arn:aws:kms:us-west-2:069171140053:key/4bf76f64-6ff3-4447-8572-b4f92163d497' }}
+      VULCAN_DEBIAN_MIRROR_PUBLISHER_ROLE_ARN: ${{ vars.VULCAN_DEBIAN_MIRROR_PUBLISHER_ROLE_ARN || 'arn:aws:iam::069171140053:role/NeatProductionDebianMirrorPublisher' }}
+
+    steps:
+      - name: Check out SDK
+        uses: actions/checkout@v5
+
+      - name: Install mirror dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            awscli \
+            curl \
+            debmirror \
+            jq \
+            python3 \
+            util-linux
+
+      - name: Prepare persistent mirror workspace
+        run: |
+          set -euo pipefail
+          sudo install -d \
+            -o "$(id -u)" \
+            -g "$(id -g)" \
+            -m 0750 \
+            "${DEBIAN_MIRROR_WORK_ROOT}"
+
+      - name: Configure production AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.VULCAN_DEBIAN_MIRROR_PUBLISHER_ROLE_ARN }}
+          role-session-name: sdk-debian-mirror-${{ github.run_id }}
+
+      - name: Synchronize and validate mirror
+        env:
+          MINIMUM_FREE_GIB: ${{ inputs.minimum_free_gib || '100' }}
+        run: |
+          set -euo pipefail
+          arguments=(--minimum-free-gib "${MINIMUM_FREE_GIB}")
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ inputs.publish }}" == "true" ]]; then
+            arguments+=(--publish)
+          fi
+          if [[ "${{ inputs.force }}" == "true" ]]; then
+            arguments+=(--force)
+          fi
+          scripts/sync-debian-pre-release-mirror.sh "${arguments[@]}"
