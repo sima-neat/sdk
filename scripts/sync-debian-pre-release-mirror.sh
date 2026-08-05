@@ -9,6 +9,7 @@ UPSTREAM_BASE_URL="http://${UPSTREAM_HOST}/${UPSTREAM_ROOT}"
 SUITE="bookworm"
 COMPONENT="non-free"
 ARCHITECTURES="arm64,arc,armhf,i386,amd64"
+APT_MIRROR2_THREADS="${APT_MIRROR2_THREADS:-16}"
 
 PUBLISH=false
 FORCE=false
@@ -44,7 +45,7 @@ while (($#)); do
   shift
 done
 
-for command in aws cp curl debmirror find flock jq python3 sha256sum; do
+for command in apt-mirror2 aws cp curl find flock jq python3 sha256sum; do
   command -v "${command}" >/dev/null || {
     echo "Required command is unavailable: ${command}" >&2
     exit 1
@@ -53,6 +54,12 @@ done
 
 if ! [[ "${MINIMUM_FREE_GIB}" =~ ^[0-9]+$ ]]; then
   echo "--minimum-free-gib must be a non-negative integer" >&2
+  exit 2
+fi
+
+if ! [[ "${APT_MIRROR2_THREADS}" =~ ^[0-9]+$ ]] || \
+  ((APT_MIRROR2_THREADS < 1 || APT_MIRROR2_THREADS > 64)); then
+  echo "APT_MIRROR2_THREADS must be an integer from 1 through 64" >&2
   exit 2
 fi
 
@@ -81,6 +88,7 @@ PREVIOUS_PUBLICATION_JSON="${TEMP_DIR}/previous-publication.json"
 CHANGES_JSON="${TEMP_DIR}/changes.json"
 PUBLICATION_JSON="${TEMP_DIR}/publication.json"
 PUBLISH_DISTS="${TEMP_DIR}/publish-dists"
+APT_MIRROR2_CONFIG="${TEMP_DIR}/apt-mirror2.list"
 
 getent hosts "${UPSTREAM_HOST}" >/dev/null
 curl --fail --silent --show-error --location --max-time 120 \
@@ -129,18 +137,23 @@ if ((available_kib < required_kib)); then
   exit 1
 fi
 
-debmirror "${REPOSITORY}" \
-  --host="${UPSTREAM_HOST}" \
-  --root="${UPSTREAM_ROOT}" \
-  --method=http \
-  --dist="${SUITE}" \
-  --section="${COMPONENT}" \
-  --arch="${ARCHITECTURES}" \
-  --nosource \
-  --ignore-release-gpg \
-  --rsync-extra=none \
-  --omit-suite-symlinks \
-  --progress
+cat >"${APT_MIRROR2_CONFIG}" <<EOF
+set base_path ${WORK_ROOT}/apt-mirror2
+set mirror_path ${WORK_ROOT}
+set skel_path ${WORK_ROOT}/apt-mirror2/skel
+set var_path ${WORK_ROOT}/apt-mirror2/var
+set nthreads ${APT_MIRROR2_THREADS}
+set gpg_verify off
+set write_file_lists off
+set _autoclean 0
+set use_dists_move 1
+
+mirror_path ${UPSTREAM_BASE_URL} repository
+deb [ arch=${ARCHITECTURES} by-hash=no ] ${UPSTREAM_BASE_URL} ${SUITE} ${COMPONENT}
+EOF
+
+echo "Mirroring with apt-mirror2 using ${APT_MIRROR2_THREADS} concurrent downloads"
+apt-mirror2 "${APT_MIRROR2_CONFIG}"
 
 mirrored_digest="$(sha256sum "${REPOSITORY}/dists/${SUITE}/InRelease" | awk '{print $1}')"
 if [[ "${mirrored_digest}" != "${source_digest}" ]]; then
@@ -235,7 +248,7 @@ if [[ "${PUBLISH}" == true ]]; then
   # generation of mutable Packages files.
   aws s3 sync "${PUBLISH_DISTS}/" "s3://${BUCKET}/pre-release/dists/" \
     "${s3_common[@]}" --cache-control 'public,max-age=31536000,immutable' \
-    --exclude '*' --include '*/by-hash/SHA256/*'
+    --exclude '*' --include '*/by-hash/*/*'
 
   # Seed all ordinary index paths, including binary-*/Release, on the initial
   # publication. Keep these paths unchanged on later runs so a client holding
@@ -243,7 +256,7 @@ if [[ "${PUBLISH}" == true ]]; then
   if [[ -z "${previous_digest}" ]]; then
     aws s3 sync "${PUBLISH_DISTS}/" "s3://${BUCKET}/pre-release/dists/" \
       "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate' \
-      --exclude '*/by-hash/SHA256/*' \
+      --exclude '*/by-hash/*/*' \
       --exclude "${SUITE}/Release"
   fi
 

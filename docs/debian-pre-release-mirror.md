@@ -11,6 +11,8 @@ repository is only the home for the workflow and its synchronization utility.
 The workflow runs daily at 09:27 UTC and can also be started manually. Scheduled
 runs publish after validation; manual runs expose an explicit `publish` switch
 so the first production validation can download and verify without changing S3.
+Package downloads use `apt-mirror2` with 16 asynchronous workers by default.
+Manual runs can override `download_workers`; use a value from 1 through 64.
 
 ## Private runner
 
@@ -37,7 +39,7 @@ Set the protected SDK `production` environment variable
 This mirror is limited to controlled internal pre-release testing. The private
 source is transported over the corporate network using HTTP, and its current
 repository signature cannot be verified with the public key it advertises.
-The synchronization therefore ignores the upstream Release signature while
+The synchronization therefore disables upstream Release signature verification while
 still verifying that every referenced package exists and matches the size and
 SHA256 recorded in the downloaded package indexes.
 
@@ -63,9 +65,9 @@ package-index checks do not establish the upstream publisher's identity.
 5. Run it again with `publish` enabled. The persistent mirror makes this run
    incremental.
 
-After rollout, the daily scheduled run performs the same validation and enables
-publication automatically. It exits successfully without uploading when the
-upstream `InRelease` digest has not changed.
+After rollout, the scheduled run executes every 30 minutes, performs the same
+validation, and enables publication automatically. It exits successfully
+without uploading when the upstream `InRelease` digest has not changed.
 
 Each changed run compares the validated package indexes with the inventory from
 the last successful publication. The Actions summary reports package files
@@ -83,6 +85,12 @@ including the nested `binary-*/Release` files. The suite-level `Release` is
 replaced last and contains `Acquire-By-Hash: yes`, making that single S3 object
 the publication boundary. Later runs retain the previous ordinary index paths
 so clients holding an older `Release` continue to see a consistent generation.
+
+apt-mirror2 may retrieve only compressed `Packages.gz` indexes. Before
+publication, the workflow reconstructs each logical `Packages` index and
+verifies its size and checksums against the upstream Release metadata. Both
+forms and every advertised by-hash algorithm are published so APT clients can
+discover and fetch the package index normally.
 
 Because the destination `Release` is transformed to describe the binary-only
 mirror and enable by-hash, the upstream `InRelease` and `Release.gpg` signatures
