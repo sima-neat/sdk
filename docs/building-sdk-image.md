@@ -40,6 +40,23 @@ Host architecture: arm64
 Docker platform: linux/arm64
 ```
 
+## Build Against Pre-release Platform Packages
+
+CI reads the repository variable `PRE_RELEASE_BASE`. A value such as `2.1.3`
+selects the highest Debian version matching `2.1.3~pre*`; a value such as
+`2.1.3~pre4460` pins that exact build. The workflow resolves the value once and
+passes the same immutable version to both architecture builds.
+
+Pre-release images use the `platform-cross` profile. They contain the cross
+compiler and exact target sysroot but do not bundle Neat Core binaries or source
+checkouts. `/etc/sdk-release` records the requested selector, resolved platform
+version, repository, profile, and `Neat Core = not bundled`.
+
+Floating selectors are rejected on `main`, `release-*` branches, and tags.
+Those refs use the stable channel when `PRE_RELEASE_BASE` is unset and accept
+pre-release packages only when an exact `X.Y.Z~preN` version is explicitly
+pinned.
+
 ## Add Sysroot Packages
 
 Inside a running SDK container, install additional ARM64 Debian packages into the sysroot with `sysroot`:

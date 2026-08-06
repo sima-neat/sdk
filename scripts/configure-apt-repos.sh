@@ -4,6 +4,24 @@ set -euo pipefail
 
 base_sdk_version="${1:?Usage: configure-apt-repos.sh BASE_SDK_VERSION [PATTERNS_FILE]}"
 patterns_file="${2:-/usr/local/share/sima-sdk/platform-package-patterns.txt}"
+sdk_apt_channel="${SDK_APT_CHANNEL:-release}"
+sdk_platform_repository="${SDK_PLATFORM_REPOSITORY:-}"
+sdk_apt_origin="${SDK_APT_ORIGIN:-}"
+
+case "${sdk_apt_channel}" in
+  release)
+    sdk_platform_repository="${sdk_platform_repository:-https://repo.sima.ai/elxr/deb/release}"
+    sdk_apt_origin="${sdk_apt_origin:-repo.sima.ai/elxr}"
+    ;;
+  pre-release)
+    sdk_platform_repository="${sdk_platform_repository:-https://debian.neat.sima.ai/pre-release}"
+    sdk_apt_origin="${sdk_apt_origin:-debian.neat.sima.ai}"
+    ;;
+  *)
+    echo "Unsupported SDK_APT_CHANNEL: ${sdk_apt_channel}" >&2
+    exit 1
+    ;;
+esac
 
 if [[ ! -f "${patterns_file}" ]]; then
   echo "Platform package patterns file not found: ${patterns_file}" >&2
@@ -23,9 +41,9 @@ if [[ -r /etc/os-release ]]; then
   host_id="${ID:-}"
 fi
 
-cat > /etc/apt/sources.list.d/elxr.list <<'EOF'
+cat > /etc/apt/sources.list.d/elxr.list <<EOF
 deb [signed-by=/etc/apt/trusted.gpg.d/elxr.gpg] https://mirror.elxr.dev/elxr aria main
-deb [trusted=yes] https://repo.sima.ai/elxr/deb/release bookworm non-free  # simaai repo
+deb [trusted=yes] ${sdk_platform_repository} bookworm non-free  # simaai ${sdk_apt_channel} repo
 EOF
 
 if [[ "${host_id}" == "ubuntu" ]]; then
@@ -35,9 +53,9 @@ deb [arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http:/
 deb [arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian-security bookworm-security main
 EOF
 
-  cat > /etc/apt/preferences.d/stable.pref <<'EOF'
+  cat > /etc/apt/preferences.d/stable.pref <<EOF
 Package: *
-Pin: origin "repo.sima.ai/elxr"
+Pin: origin "${sdk_apt_origin}"
 Pin-Priority: 100
 
 Package: *
@@ -50,9 +68,9 @@ Pin-Priority: 100
 
 EOF
 else
-  cat > /etc/apt/preferences.d/stable.pref <<'EOF'
+  cat > /etc/apt/preferences.d/stable.pref <<EOF
 Package: *
-Pin: origin "repo.sima.ai/elxr"
+Pin: origin "${sdk_apt_origin}"
 Pin-Priority: 999
 EOF
 fi

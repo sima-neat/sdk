@@ -20,8 +20,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  resolve-platform-config:
+    name: Resolve platform package configuration
+    runs-on: ubuntu-24.04
+    outputs:
+      sdk_apt_channel: ${{ steps.resolve.outputs.sdk_apt_channel }}
+      requested_pre_release_base: ${{ steps.resolve.outputs.requested_pre_release_base }}
+      base_sdk_version: ${{ steps.resolve.outputs.base_sdk_version }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Resolve stable or pre-release platform version
+        id: resolve
+        env:
+          PRE_RELEASE_BASE: ${{ vars.PRE_RELEASE_BASE }}
+        run: |
+          set -euo pipefail
+          scripts/resolve-platform-config.sh | tee "${RUNNER_TEMP}/platform-config.env"
+          cat "${RUNNER_TEMP}/platform-config.env" >> "${GITHUB_OUTPUT}"
+
+      - name: Run platform profile tests
+        run: |
+          tests/sdk/test-resolve-platform-config.sh
+          tests/sdk/test-write-sdk-release.sh
+          tests/sdk/test-devkit-platform-profile.sh
+
   build:
     name: Build on ${{ matrix.arch }}
+    needs: resolve-platform-config
     runs-on: ${{ matrix.runs_on }}
     strategy:
       fail-fast: false
@@ -66,6 +94,9 @@ jobs:
         run: ./build.sh sdk "${IMAGE_TAG}"
         env:
           IMAGE_TAG: ci-${{ matrix.image_suffix }}
+          SDK_APT_CHANNEL: ${{ needs.resolve-platform-config.outputs.sdk_apt_channel }}
+          REQUESTED_PRE_RELEASE_BASE: ${{ needs.resolve-platform-config.outputs.requested_pre_release_base }}
+          BASE_SDK_VERSION: ${{ needs.resolve-platform-config.outputs.base_sdk_version }}
 
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'

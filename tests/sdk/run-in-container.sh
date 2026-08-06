@@ -10,6 +10,7 @@ REPRESENTATIVE_WORK="${WORK_DIR}/representative-builds"
 STATUS_JSON="${WORK_DIR}/neat-status.json"
 INSIGHT_WAIT_SECONDS="${NEAT_SDK_INSIGHT_WAIT_SECONDS:-30}"
 SDK_DEPS_MANIFEST="${SDK_DEPS_MANIFEST:-/usr/local/share/sima-sdk/deps/manifest.json}"
+SDK_RELEASE_FILE="${SDK_RELEASE_FILE:-/etc/sdk-release}"
 
 setup_sdk_environment() {
   if [[ -f /opt/bin/simaai-init-build-env ]]; then
@@ -254,12 +255,51 @@ test_hello_neat_python() {
   echo "Skipping Python runtime example; pyneat is validated on the DevKit side."
 }
 
+sdk_release_value() {
+  local key="$1"
+  awk -F= -v key="${key}" '
+    $1 ~ "^[[:space:]]*" key "[[:space:]]*$" {
+      value = $2
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      print value
+      exit
+    }
+  ' "${SDK_RELEASE_FILE}"
+}
+
+test_platform_cross_profile() {
+  local profile core_status platform_version platform_channel
+
+  test -r "${SDK_RELEASE_FILE}"
+  profile="$(sdk_release_value "SDK Profile")"
+  core_status="$(sdk_release_value "Neat Core")"
+  platform_version="$(sdk_release_value "Platform Version")"
+  platform_channel="$(sdk_release_value "Platform Channel")"
+
+  test "${profile}" = "platform-cross"
+  test "${core_status}" = "not bundled"
+  test "${platform_channel}" = "pre-release"
+  [[ "${platform_version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+~pre[0-9]+$ ]]
+  test ! -e /neat-resources/core-extra
+  test ! -e /neat-resources/core-src
+  test ! -e /neat-resources/apps-src
+}
+
 setup_sdk_environment
 
 rm -rf "${WORK_DIR}"
 mkdir -p "${HELLO_WORK}" "${REPRESENTATIVE_WORK}" "$(dirname "${STATUS_JSON}")"
 cp -a "${HELLO_SRC}/." "${HELLO_WORK}/"
 cp -a "${REPRESENTATIVE_SRC}/." "${REPRESENTATIVE_WORK}/"
+
+if [[ -r "${SDK_RELEASE_FILE}" ]] && [[ "$(sdk_release_value "SDK Profile")" == "platform-cross" ]]; then
+  run_test "Platform-only SDK profile" test_platform_cross_profile
+  run_test "Modalix cross toolchain" test_modalix_cross_toolchain
+  run_test "Representative sysroot overlay install" test_sysroot_overlay_representative
+  printf '\nPlatform-only SDK smoke tests passed.\n'
+  exit 0
+fi
 
 run_test "SDK status: neat --json" test_neat_status
 run_test "Modalix cross toolchain" test_modalix_cross_toolchain
