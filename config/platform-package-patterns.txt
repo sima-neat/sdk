@@ -3,7 +3,8 @@
 # Some SiMa packages intentionally carry independent package versions even when
 # they are part of an SDK release. Keep this list limited to packages whose
 # Debian version is expected to equal the SDK/platform version.
-simaai-palette-*
+simaai-palette-modalix
+simaai-palette-davinci
 appcomplex
 a65apps
 evtransforms

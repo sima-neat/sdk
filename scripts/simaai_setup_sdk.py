@@ -27,7 +27,8 @@ import time
 
 
 DEFAULT_PLATFORM_PACKAGE_PATTERNS = (
-    "simaai-palette-*",
+    "simaai-palette-modalix",
+    "simaai-palette-davinci",
     "appcomplex",
     "a65apps",
     "evtransforms",

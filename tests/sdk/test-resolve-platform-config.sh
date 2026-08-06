@@ -79,4 +79,15 @@ if PRE_RELEASE_BASE=latest GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop run_re
   fail "malformed selector was accepted"
 fi
 
+patterns_file="${ROOT_DIR}/config/platform-package-patterns.txt"
+grep -Fxq 'simaai-palette-modalix' "${patterns_file}" || fail "Modalix palette is not platform-versioned"
+grep -Fxq 'simaai-palette-davinci' "${patterns_file}" || fail "Davinci palette is not platform-versioned"
+if grep -Fxq 'simaai-palette-*' "${patterns_file}"; then
+  fail "palette wildcard incorrectly forces simaai-palette-upgrade to the platform version"
+fi
+if grep -Fq '"simaai-palette-*"' "${ROOT_DIR}/scripts/simaai_setup_sdk.py" || \
+   grep -Fq '  simaai-palette-*' "${ROOT_DIR}/scripts/validate-sysroot-package-versions.sh"; then
+  fail "fallback platform patterns still classify simaai-palette-upgrade as platform-versioned"
+fi
+
 echo "platform config resolver tests passed"
