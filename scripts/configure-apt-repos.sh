@@ -7,6 +7,8 @@ patterns_file="${2:-/usr/local/share/sima-sdk/platform-package-patterns.txt}"
 sdk_apt_channel="${SDK_APT_CHANNEL:-release}"
 sdk_platform_repository="${SDK_PLATFORM_REPOSITORY:-}"
 sdk_apt_origin="${SDK_APT_ORIGIN:-}"
+sdk_fallback_repository=""
+sdk_fallback_origin=""
 
 case "${sdk_apt_channel}" in
   release)
@@ -16,6 +18,11 @@ case "${sdk_apt_channel}" in
   pre-release)
     sdk_platform_repository="${sdk_platform_repository:-https://debian.neat.sima.ai/pre-release}"
     sdk_apt_origin="${sdk_apt_origin:-debian.neat.sima.ai}"
+    # The pre-release mirror is an overlay, not a complete replacement for the
+    # release repository. Some SDK-pinned dependencies, including Modalix UAPI
+    # headers, intentionally remain available only from the release channel.
+    sdk_fallback_repository="https://repo.sima.ai/elxr/deb/release"
+    sdk_fallback_origin="repo.sima.ai/elxr"
     ;;
   *)
     echo "Unsupported SDK_APT_CHANNEL: ${sdk_apt_channel}" >&2
@@ -46,6 +53,12 @@ deb [signed-by=/etc/apt/trusted.gpg.d/elxr.gpg] https://mirror.elxr.dev/elxr ari
 deb [trusted=yes] ${sdk_platform_repository} bookworm non-free  # simaai ${sdk_apt_channel} repo
 EOF
 
+if [[ -n "${sdk_fallback_repository}" ]]; then
+  cat >> /etc/apt/sources.list.d/elxr.list <<EOF
+deb [trusted=yes] ${sdk_fallback_repository} bookworm non-free  # simaai release fallback
+EOF
+fi
+
 if [[ "${host_id}" == "ubuntu" ]]; then
   cat > /etc/apt/sources.list.d/debian-target.list <<'EOF'
 deb [arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian bookworm main
@@ -67,12 +80,30 @@ Pin: origin "deb.debian.org"
 Pin-Priority: 100
 
 EOF
+
+  if [[ -n "${sdk_fallback_origin}" ]]; then
+    cat >> /etc/apt/preferences.d/stable.pref <<EOF
+Package: *
+Pin: origin "${sdk_fallback_origin}"
+Pin-Priority: 100
+
+EOF
+  fi
 else
   cat > /etc/apt/preferences.d/stable.pref <<EOF
 Package: *
 Pin: origin "${sdk_apt_origin}"
 Pin-Priority: 999
 EOF
+
+  if [[ -n "${sdk_fallback_origin}" ]]; then
+    cat >> /etc/apt/preferences.d/stable.pref <<EOF
+
+Package: *
+Pin: origin "${sdk_fallback_origin}"
+Pin-Priority: 100
+EOF
+  fi
 fi
 
 platform_packages="$(

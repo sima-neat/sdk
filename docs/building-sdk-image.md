@@ -52,6 +52,11 @@ compiler and exact target sysroot but do not bundle Neat Core binaries or source
 checkouts. `/etc/sdk-release` records the requested selector, resolved platform
 version, repository, profile, and `Neat Core = not bundled`.
 
+The pre-release mirror is configured as an overlay on the official release
+repository. Exact platform-version pins select the requested pre-release
+packages, while SDK-pinned dependencies that are not duplicated in the
+pre-release mirror remain available from the release repository.
+
 Floating selectors are rejected on `main`, `release-*` branches, and tags.
 Those refs use the stable channel when `PRE_RELEASE_BASE` is unset and accept
 pre-release packages only when an exact `X.Y.Z~preN` version is explicitly

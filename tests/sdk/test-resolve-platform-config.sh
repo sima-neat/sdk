@@ -90,4 +90,10 @@ if grep -Fq '"simaai-palette-*"' "${ROOT_DIR}/scripts/simaai_setup_sdk.py" || \
   fail "fallback platform patterns still classify simaai-palette-upgrade as platform-versioned"
 fi
 
+apt_config_script="${ROOT_DIR}/scripts/configure-apt-repos.sh"
+grep -Fq 'sdk_fallback_repository="https://repo.sima.ai/elxr/deb/release"' "${apt_config_script}" || \
+  fail "pre-release APT configuration does not retain the release repository fallback"
+grep -Fq 'deb [trusted=yes] ${sdk_fallback_repository} bookworm non-free' "${apt_config_script}" || \
+  fail "release fallback is not written to the APT source list"
+
 echo "platform config resolver tests passed"
