@@ -153,4 +153,10 @@ grep -Fq 'sdk_fallback_repository="https://repo.sima.ai/elxr/deb/release"' "${ap
 grep -Fq 'deb [trusted=yes] ${sdk_fallback_repository} bookworm non-free' "${apt_config_script}" || \
   fail "release fallback is not written to the APT source list"
 
+docker_workflow="${ROOT_DIR}/.github/workflows/docker-build.yml"
+grep -Fq 'pre_release_base:' "${docker_workflow}" || \
+  fail "manual workflow dispatch does not expose a pre-release selector"
+grep -Fq 'PRE_RELEASE_BASE: ${{ inputs.pre_release_base || vars.PRE_RELEASE_BASE }}' "${docker_workflow}" || \
+  fail "manual pre-release selector does not override the repository variable"
+
 echo "platform config resolver tests passed"

@@ -47,6 +47,11 @@ selects the highest Debian version matching `2.1.3~pre*`; a value such as
 `2.1.3~pre4460` pins that exact build. The workflow resolves the value once and
 passes the same immutable version to both architecture builds.
 
+For a manual workflow run, the optional **Platform selector** input overrides
+the repository variable. Leave it empty to use `PRE_RELEASE_BASE`, enter
+`X.Y.Z` to select the latest matching pre-release, or enter `X.Y.Z~preN` to pin
+that exact platform build.
+
 Floating selectors follow the mirror's `Release` metadata to its current
 Acquire-By-Hash package index. Exact `X.Y.Z~preN` values bypass latest-version
 selection but are still checked against that current index before the build.
