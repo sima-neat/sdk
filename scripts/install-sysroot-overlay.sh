@@ -9,7 +9,7 @@ LINUX_LIBC_DEV_ARM64_VERSION="${SDK_SYSROOT_LINUX_LIBC_DEV_ARM64_VERSION:-${SDK_
 if [[ "${SDK_APT_CHANNEL:-release}" == "pre-release" ]]; then
   SDK_APT_ORIGIN="debian.neat.sima.ai"
 else
-  SDK_APT_ORIGIN="repo.sima.ai/elxr"
+  SDK_APT_ORIGIN="repo.sima.ai"
 fi
 
 CONFIG_CANDIDATES=()

@@ -93,3 +93,59 @@ raise SystemExit(
 )
 PY
 }
+
+neat_dependency_ref() {
+  local key="$1"
+  local marker="manifest-ref"
+  local target
+
+  target="$(neat_dependency_target "${key}" "${marker}")"
+  printf '%s\n' "${target#"${marker}"@}"
+}
+
+neat_resolve_git_ref() {
+  local repository="$1"
+  local spec="$2"
+  local branch version refs resolved
+
+  if [[ "${spec}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+    printf '%s\n' "${spec}" | tr '[:upper:]' '[:lower:]'
+    return
+  fi
+
+  if [[ "${spec}" == *:* ]]; then
+    branch="${spec%%:*}"
+    version="${spec#*:}"
+    if [[ -z "${branch}" ]]; then
+      echo "Git source refs must include a branch before the version: ${spec}" >&2
+      return 1
+    fi
+    if [[ "${version}" == "latest" ]]; then
+      resolved="$(git ls-remote "${repository}" "refs/heads/${branch}" | awk 'NR == 1 {print $1}')"
+    elif [[ "${version}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+      resolved="${version}"
+    else
+      echo "Git source refs must use branch:latest, branch:<full-sha>, a tag, or a full commit SHA: ${spec}" >&2
+      return 1
+    fi
+  else
+    refs="$(git ls-remote "${repository}" "refs/tags/${spec}" "refs/tags/${spec}^{}")"
+    resolved="$(awk '$2 ~ /\^\{\}$/ {print $1; exit}' <<< "${refs}")"
+    if [[ -z "${resolved}" ]]; then
+      resolved="$(awk 'NR == 1 {print $1}' <<< "${refs}")"
+    fi
+  fi
+
+  if [[ ! "${resolved}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+    echo "Unable to resolve ${repository} ref ${spec} to a full Git commit SHA." >&2
+    return 1
+  fi
+  printf '%s\n' "${resolved}" | tr '[:upper:]' '[:lower:]'
+}
+
+neat_resolve_dependency_source_ref() {
+  local key="$1"
+  local repository="$2"
+
+  neat_resolve_git_ref "${repository}" "$(neat_dependency_ref "${key}")"
+}

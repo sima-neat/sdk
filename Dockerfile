@@ -13,9 +13,6 @@ RUN chmod 755 /usr/local/bin/install-cross-toolchain.sh && \
 FROM ${SDK_BASE_IMAGE}
 
 ARG SDK_PKG_LIST
-ARG SDK_GIT_BRANCH=unknown
-ARG SDK_GIT_HASH=nogit
-ARG SDK_RELEASE_REF=unknown-nogit
 ARG BASE_SDK_VERSION=2.1.2
 ARG SDK_APT_CHANNEL=release
 ARG REQUESTED_PRE_RELEASE_BASE=
@@ -44,11 +41,6 @@ ENV SDK_APT_CHANNEL=${SDK_APT_CHANNEL}
 ENV PIP_RETRIES=10
 ENV RUSTUP_HOME=/opt/toolchain/rust
 ENV CARGO_HOME=/opt/toolchain/rust
-ENV SDK_GIT_BRANCH="${SDK_GIT_BRANCH}"
-ENV SDK_RELEASE_REF="${SDK_RELEASE_REF}"
-ENV SDK_IMAGE_BRANCH="${SDK_GIT_BRANCH}"
-ENV SDK_IMAGE_TAG="${SDK_RELEASE_REF}"
-ENV SDK_PROMPT_HOSTNAME="neat-sdk-${SDK_RELEASE_REF}"
 ENV PATH="${OPENVSCODE_SERVER_DIR}/bin:${NEAT_INSIGHT_VENV_DIR}/bin:${CARGO_HOME}/bin:${PATH}"
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -157,7 +149,6 @@ RUN chmod 755 /usr/local/bin/pin-cross-toolchain.sh && \
     rm -f /tmp/cross-smoke.o /tmp/cross-smoke.c /tmp/cross-smoke.cpp /tmp/cross-smoke-cxx
 
 COPY config/platform-package-patterns.txt /usr/local/share/sima-sdk/platform-package-patterns.txt
-COPY deps/manifest.json /usr/local/share/sima-sdk/deps/manifest.json
 COPY scripts/configure-apt-repos.sh /usr/local/bin/configure-apt-repos.sh
 
 RUN chmod 755 /usr/local/bin/configure-apt-repos.sh && \
@@ -178,7 +169,6 @@ COPY scripts/simaai_setup_sdk.py /opt/bin/simaai_setup_sdk.py
 COPY scripts/install-rustup.sh /usr/local/bin/install-rustup.sh
 COPY scripts/install-sima-cli.sh /usr/local/bin/install-sima-cli.sh
 COPY scripts/sima-code.sh /usr/local/bin/sima-code
-COPY scripts/neat-deps.sh /usr/local/bin/neat-deps.sh
 COPY scripts/setup-sdk-sysroot.sh /usr/local/bin/setup-sdk-sysroot.sh
 COPY scripts/validate-sysroot-package-versions.sh /usr/local/bin/validate-sysroot-package-versions.sh
 RUN chmod 755 /opt/bin/simaai-init-build-env \
@@ -186,7 +176,6 @@ RUN chmod 755 /opt/bin/simaai-init-build-env \
               /usr/local/bin/install-rustup.sh \
               /usr/local/bin/install-sima-cli.sh \
               /usr/local/bin/sima-code \
-              /usr/local/bin/neat-deps.sh \
               /usr/local/bin/setup-sdk-sysroot.sh \
               /usr/local/bin/validate-sysroot-package-versions.sh
 
@@ -197,7 +186,6 @@ RUN getent group docker >/dev/null || groupadd --system docker
 RUN install-rustup.sh
 
 RUN setup-sdk-sysroot.sh "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}" && \
-    install-sima-cli.sh && \
     cp -a /opt/bookworm-cross-toolchain/. / && \
     pin-cross-toolchain.sh && \
     aarch64-linux-gnu-gcc --version && \
@@ -209,9 +197,24 @@ RUN setup-sdk-sysroot.sh "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}" && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /tmp/*
 
+# sima-cli uses /etc/sdk-release to distinguish a Palette SDK from a generic
+# Linux host. Keep this build-time marker stable so dependency layers are not
+# invalidated by the branch/commit identity written into the final image.
+RUN printf 'Platform Version = %s\nSDK Version = %s_Palette_SDK\n' \
+      "${BASE_SDK_VERSION}" "${BASE_SDK_VERSION}" > /etc/sdk-release
+
+ARG SIMA_CLI_REF
+ARG SIMA_CLI_VERSION
+RUN SIMA_CLI_REF="${SIMA_CLI_REF}" \
+    SIMA_CLI_VERSION="${SIMA_CLI_VERSION}" \
+    install-sima-cli.sh && \
+    rm -rf /tmp/*
+
 COPY scripts/install-sysroot-overlay.sh /usr/local/bin/install-sysroot-overlay.sh
 COPY scripts/install-sdk-sysroot-overlay.sh /usr/local/bin/install-sdk-sysroot-overlay.sh
 COPY scripts/sysroot.sh /usr/local/bin/sysroot
+COPY scripts/neat-deps.sh /usr/local/bin/neat-deps.sh
+COPY deps/manifest.json /usr/local/share/sima-sdk/deps/manifest.json
 COPY config/sysroot-overlay.conf /usr/local/share/sima-sdk/sysroot-overlay.conf
 COPY config/supervisor-neat-insight.conf /etc/supervisor/conf.available/neat-insight.conf
 COPY config/supervisor-openvscode.conf /etc/supervisor/conf.available/openvscode.conf
@@ -224,6 +227,7 @@ COPY scripts/devkit-sync-rsync.sh /usr/local/bin/devkit-sync-rsync.sh
 RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/install-sdk-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/sysroot && \
+    chmod 755 /usr/local/bin/neat-deps.sh && \
     chmod 755 /usr/local/bin/docker-entrypoint.sh && \
     chmod 755 /usr/local/bin/insight-admin && \
     chmod 755 /usr/local/bin/neat-insight-supervised && \
@@ -244,19 +248,37 @@ COPY config/profile.d/*.sh /etc/profile.d/
 RUN chmod 755 /etc/profile.d/neat-sdk-prompt.sh \
               /etc/profile.d/pkg-config-sysroot.sh
 
-COPY scripts/write-sdk-release.sh /usr/local/bin/write-sdk-release.sh
-RUN chmod 755 /usr/local/bin/write-sdk-release.sh && write-sdk-release.sh
-
 WORKDIR /workspace
 
 # Preinstall Neat Framework and resources
 COPY scripts/install-neat-resources.sh /usr/local/bin/install-neat-resources.sh
 RUN chmod 755 /usr/local/bin/install-neat-resources.sh
+ARG NEAT_CORE_SOURCE_REF=
+ARG NEAT_APPS_SOURCE_REF=
 RUN if [ "${SDK_APT_CHANNEL}" = pre-release ]; then \
       echo "Skipping bundled Neat Core resources for the pre-release platform SDK"; \
     else \
+      NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}" \
+      NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF}" \
       install-neat-resources.sh; \
     fi
+
+# Apply volatile build identity only after the stable SDK/toolchain/resource layers. Keeping these
+# values at the tail lets closely related images reuse the large layers below them.
+ARG SDK_GIT_BRANCH=unknown
+ARG SDK_GIT_HASH=nogit
+ARG SDK_RELEASE_REF=unknown-nogit
+ENV SDK_GIT_BRANCH="${SDK_GIT_BRANCH}"
+ENV SDK_RELEASE_REF="${SDK_RELEASE_REF}"
+ENV SDK_IMAGE_BRANCH="${SDK_GIT_BRANCH}"
+ENV SDK_IMAGE_TAG="${SDK_RELEASE_REF}"
+ENV SDK_PROMPT_HOSTNAME="neat-sdk-${SDK_RELEASE_REF}"
+LABEL org.opencontainers.image.source="https://github.com/sima-neat/sdk" \
+      org.opencontainers.image.revision="${SDK_GIT_HASH}" \
+      org.opencontainers.image.version="${SDK_RELEASE_REF}"
+
+COPY scripts/write-sdk-release.sh /usr/local/bin/write-sdk-release.sh
+RUN chmod 755 /usr/local/bin/write-sdk-release.sh && write-sdk-release.sh
 
 # Expose required ports
 EXPOSE 9900 9999 10000 9000-9079 9100-9179 8081 8554

@@ -50,17 +50,17 @@ check_remote_passwordless_sudo() {
 
 sdk_platform_version_from_release_file() {
   local sdk_release="$1"
+  local sdk_profile=""
   local platform_version=""
 
-  platform_version="$(
-    awk -F= '
-      /^[[:space:]]*Platform Version[[:space:]]*=/ {
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2)
-        print $2
-        exit
-      }
-    ' "${sdk_release}"
-  )"
+  sdk_profile="$(sdk_release_value "SDK Profile" "${sdk_release}" 2>/dev/null || true)"
+  if [[ "${sdk_profile}" == "platform-cross" ]]; then
+    platform_version="$(sdk_release_value "Platform Base" "${sdk_release}" 2>/dev/null || true)"
+  fi
+
+  if [[ -z "${platform_version}" ]]; then
+    platform_version="$(sdk_release_value "Platform Version" "${sdk_release}" 2>/dev/null || true)"
+  fi
 
   if [[ -n "${platform_version}" ]]; then
     printf "%s\n" "${platform_version}"

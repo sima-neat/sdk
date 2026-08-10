@@ -290,7 +290,7 @@ download_for_manifest() {
   local arch="$1"
   local outdir="$2"
   local sysroot_pref=/etc/apt/preferences.d/00-sima-sdk-sysroot-target.pref
-  local sdk_apt_origin="repo.sima.ai/elxr"
+  local sdk_apt_origin="repo.sima.ai"
   shift 2
 
   if [[ "${SDK_APT_CHANNEL:-release}" == "pre-release" ]]; then

@@ -8,7 +8,7 @@ sysroot_pref=/etc/apt/preferences.d/00-sima-sdk-sysroot-target.pref
 if [[ "${SDK_APT_CHANNEL:-release}" == "pre-release" ]]; then
   sdk_apt_origin="debian.neat.sima.ai"
 else
-  sdk_apt_origin="repo.sima.ai/elxr"
+  sdk_apt_origin="repo.sima.ai"
 fi
 
 cleanup_sysroot_pref() {

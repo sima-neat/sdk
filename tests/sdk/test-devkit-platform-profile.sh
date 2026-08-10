@@ -17,8 +17,12 @@ DEVKIT_SH_FUNCTIONS_ONLY=1 source "${ROOT_DIR}/scripts/devkit.sh"
 cat > "${tmpdir}/platform-release" <<'EOF'
 SDK Profile = platform-cross
 Platform Version = 2.1.3~pre4460
+Platform Base = 2.1.3
 Neat Core = not bundled
 EOF
+
+[[ "$(sdk_platform_version_from_release_file "${tmpdir}/platform-release")" == "2.1.3" ]] || \
+  fail "platform-cross profile did not use Platform Base for DevKit compatibility"
 
 platform_output="$(
   SDK_RELEASE_FILE="${tmpdir}/platform-release" \
@@ -35,6 +39,9 @@ SDK Profile = full
 Platform Version = 2.1.2
 Neat Core = bundled
 EOF
+
+[[ "$(sdk_platform_version_from_release_file "${tmpdir}/full-release")" == "2.1.2" ]] || \
+  fail "full profile did not retain Platform Version compatibility"
 
 full_output="$(
   SDK_RELEASE_FILE="${tmpdir}/full-release" \

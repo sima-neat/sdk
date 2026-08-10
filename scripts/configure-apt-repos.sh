@@ -13,7 +13,7 @@ sdk_fallback_origin=""
 case "${sdk_apt_channel}" in
   release)
     sdk_platform_repository="${sdk_platform_repository:-https://repo.sima.ai/elxr/deb/release}"
-    sdk_apt_origin="${sdk_apt_origin:-repo.sima.ai/elxr}"
+    sdk_apt_origin="${sdk_apt_origin:-repo.sima.ai}"
     ;;
   pre-release)
     sdk_platform_repository="${sdk_platform_repository:-https://debian.neat.sima.ai/pre-release}"
@@ -22,7 +22,7 @@ case "${sdk_apt_channel}" in
     # release repository. Some SDK-pinned dependencies, including Modalix UAPI
     # headers, intentionally remain available only from the release channel.
     sdk_fallback_repository="https://repo.sima.ai/elxr/deb/release"
-    sdk_fallback_origin="repo.sima.ai/elxr"
+    sdk_fallback_origin="repo.sima.ai"
     ;;
   *)
     echo "Unsupported SDK_APT_CHANNEL: ${sdk_apt_channel}" >&2

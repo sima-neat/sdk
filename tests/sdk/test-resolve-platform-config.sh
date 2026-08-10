@@ -150,8 +150,20 @@ fi
 apt_config_script="${ROOT_DIR}/scripts/configure-apt-repos.sh"
 grep -Fq 'sdk_fallback_repository="https://repo.sima.ai/elxr/deb/release"' "${apt_config_script}" || \
   fail "pre-release APT configuration does not retain the release repository fallback"
+grep -Fq 'sdk_fallback_origin="repo.sima.ai"' "${apt_config_script}" || \
+  fail "release fallback APT origin is not the repository hostname"
 grep -Fq 'deb [trusted=yes] ${sdk_fallback_repository} bookworm non-free' "${apt_config_script}" || \
   fail "release fallback is not written to the APT source list"
+
+for apt_script in \
+  "${apt_config_script}" \
+  "${ROOT_DIR}/scripts/install-sysroot-overlay.sh" \
+  "${ROOT_DIR}/scripts/setup-sdk-sysroot.sh" \
+  "${ROOT_DIR}/scripts/sysroot.sh"; do
+  if grep -Fq 'repo.sima.ai/elxr"' "${apt_script}"; then
+    fail "APT origin includes a URL path instead of only the hostname in ${apt_script}"
+  fi
+done
 
 docker_workflow="${ROOT_DIR}/.github/workflows/docker-build.yml"
 grep -Fq 'pre_release_base:' "${docker_workflow}" || \
