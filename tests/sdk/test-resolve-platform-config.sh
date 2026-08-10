@@ -31,6 +31,39 @@ Version: 2.1.2~pre9999
 Architecture: arm64
 EOF
 
+cat > "${tmpdir}/CurrentPackages" <<'EOF'
+Package: simaai-palette-modalix
+Version: 2.1.3~pre4460
+Architecture: arm64
+
+Package: simaai-palette-modalix
+Version: 2.1.3~pre4593
+Architecture: arm64
+EOF
+gzip -c "${tmpdir}/CurrentPackages" > "${tmpdir}/CurrentPackages.gz"
+if command -v sha256sum >/dev/null 2>&1; then
+  current_packages_digest="$(sha256sum "${tmpdir}/CurrentPackages.gz" | awk '{print $1}')"
+else
+  current_packages_digest="$(shasum -a 256 "${tmpdir}/CurrentPackages.gz" | awk '{print $1}')"
+fi
+cat > "${tmpdir}/Release" <<EOF
+Acquire-By-Hash: yes
+SHA256:
+ ${current_packages_digest} $(wc -c < "${tmpdir}/CurrentPackages.gz" | tr -d ' ') non-free/binary-arm64/Packages.gz
+EOF
+
+cat > "${tmpdir}/curl" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+url="\${!#}"
+case "\${url}" in
+  */Release) cat "${tmpdir}/Release" ;;
+  */by-hash/SHA256/${current_packages_digest}) cat "${tmpdir}/CurrentPackages.gz" ;;
+  *) echo "unexpected URL: \${url}" >&2; exit 1 ;;
+esac
+EOF
+chmod 755 "${tmpdir}/curl"
+
 cat > "${tmpdir}/dpkg" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -42,7 +75,7 @@ EOF
 chmod 755 "${tmpdir}/dpkg"
 
 run_resolver() {
-  PRE_RELEASE_PACKAGES_FILE="${tmpdir}/Packages" \
+  PRE_RELEASE_PACKAGES_FILE="${PRE_RELEASE_PACKAGES_FILE-${tmpdir}/Packages}" \
     DPKG_COMMAND="${tmpdir}/dpkg" \
     STABLE_BASE_SDK_VERSION=2.1.2 \
     "${RESOLVER}"
@@ -55,6 +88,30 @@ grep -Fxq 'base_sdk_version=2.1.2' <<< "${stable}" || fail "stable version was i
 floating="$(PRE_RELEASE_BASE=2.1.3 GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop run_resolver)"
 grep -Fxq 'sdk_apt_channel=pre-release' <<< "${floating}" || fail "pre-release channel was not selected"
 grep -Fxq 'base_sdk_version=2.1.3~pre4460' <<< "${floating}" || fail "floating selector did not choose the newest Debian version"
+
+by_hash_floating="$(
+  PRE_RELEASE_BASE=2.1.3 \
+    PRE_RELEASE_PACKAGES_FILE= \
+    PRE_RELEASE_RELEASE_URL=https://mirror.test/pre-release/dists/bookworm/Release \
+    CURL_COMMAND="${tmpdir}/curl" \
+    GITHUB_REF_TYPE=branch \
+    GITHUB_REF_NAME=develop \
+    run_resolver
+)"
+grep -Fxq 'base_sdk_version=2.1.3~pre4593' <<< "${by_hash_floating}" || \
+  fail "floating selector did not use the current by-hash package index"
+
+by_hash_pinned="$(
+  PRE_RELEASE_BASE=2.1.3~pre4460 \
+    PRE_RELEASE_PACKAGES_FILE= \
+    PRE_RELEASE_RELEASE_URL=https://mirror.test/pre-release/dists/bookworm/Release \
+    CURL_COMMAND="${tmpdir}/curl" \
+    GITHUB_REF_TYPE=branch \
+    GITHUB_REF_NAME=develop \
+    run_resolver
+)"
+grep -Fxq 'base_sdk_version=2.1.3~pre4460' <<< "${by_hash_pinned}" || \
+  fail "exact pre-release selector did not remain pinned"
 
 pinned="$(PRE_RELEASE_BASE=2.1.3~pre4040 GITHUB_REF_TYPE=branch GITHUB_REF_NAME=main run_resolver)"
 grep -Fxq 'base_sdk_version=2.1.3~pre4040' <<< "${pinned}" || fail "pinned selector changed versions"

@@ -8,9 +8,12 @@ manifest_path="${SDK_DEPS_MANIFEST:-${script_dir}/../deps/manifest.json}"
 stable_base_sdk_version="${STABLE_BASE_SDK_VERSION:-}"
 github_ref_type="${GITHUB_REF_TYPE:-branch}"
 github_ref_name="${GITHUB_REF_NAME:-local}"
-packages_url="${PRE_RELEASE_PACKAGES_URL:-https://debian.neat.sima.ai/pre-release/dists/bookworm/non-free/binary-arm64/Packages.gz}"
+release_url="${PRE_RELEASE_RELEASE_URL:-https://debian.neat.sima.ai/pre-release/dists/bookworm/Release}"
+packages_url="${PRE_RELEASE_PACKAGES_URL:-}"
+packages_path="${PRE_RELEASE_PACKAGES_PATH:-non-free/binary-arm64/Packages.gz}"
 anchor_package="${PRE_RELEASE_ANCHOR_PACKAGE:-simaai-palette-modalix}"
 dpkg_command="${DPKG_COMMAND:-dpkg}"
+curl_command="${CURL_COMMAND:-curl}"
 
 if [[ -z "${stable_base_sdk_version}" ]]; then
   command -v python3 >/dev/null 2>&1 || {
@@ -85,9 +88,23 @@ if [[ -n "${PRE_RELEASE_PACKAGES_FILE:-}" ]]; then
   [[ -r "${PRE_RELEASE_PACKAGES_FILE}" ]] || die "Packages fixture is not readable: ${PRE_RELEASE_PACKAGES_FILE}"
   cp "${PRE_RELEASE_PACKAGES_FILE}" "${packages_file}"
 else
-  command -v curl >/dev/null 2>&1 || die "curl is required to query the pre-release mirror"
+  command -v "${curl_command}" >/dev/null 2>&1 || die "curl is required to query the pre-release mirror"
   command -v gzip >/dev/null 2>&1 || die "gzip is required to read the pre-release package index"
-  curl -fsSL --retry 4 --retry-all-errors "${packages_url}" | gzip -dc > "${packages_file}"
+  if [[ -z "${packages_url}" ]]; then
+    release_file="${tmpdir}/Release"
+    "${curl_command}" -fsSL --retry 4 --retry-all-errors "${release_url}" > "${release_file}"
+    packages_digest="$(
+      awk -v wanted="${packages_path}" '
+        $0 == "SHA256:" { in_sha256 = 1; next }
+        in_sha256 && $0 !~ /^ / { in_sha256 = 0 }
+        in_sha256 && $3 == wanted { print $1; exit }
+      ' "${release_file}"
+    )"
+    [[ "${packages_digest}" =~ ^[0-9a-fA-F]{64}$ ]] || \
+      die "Release does not contain a valid SHA256 for ${packages_path}"
+    packages_url="${release_url%/*}/${packages_path%/*}/by-hash/SHA256/${packages_digest}"
+  fi
+  "${curl_command}" -fsSL --retry 4 --retry-all-errors "${packages_url}" | gzip -dc > "${packages_file}"
 fi
 
 resolved=""
