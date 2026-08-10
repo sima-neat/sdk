@@ -38,6 +38,17 @@ expected_commit="$(git -C "${git_repo}" rev-parse HEAD)"
 
 [[ "$(neat_resolve_git_ref "${git_repo}" v1.0.0)" == "${expected_commit}" ]]
 [[ "$(neat_resolve_git_ref "${git_repo}" main:latest)" == "${expected_commit}" ]]
+[[ "$(neat_resolve_git_ref "${git_repo}" "main:${expected_commit}")" == "${expected_commit}" ]]
 [[ "$(neat_resolve_git_ref "${git_repo}" "${expected_commit}")" == "${expected_commit}" ]]
+
+export SDK_DEPS_MANIFEST="${TMP_DIR}/manifest.json"
+cat > "${SDK_DEPS_MANIFEST}" <<JSON
+{
+  "core": {
+    "ref": "main:${expected_commit}"
+  }
+}
+JSON
+[[ "$(neat_resolve_dependency_source_ref core "${git_repo}")" == "${expected_commit}" ]]
 
 echo "Neat dependency manifest tests passed."

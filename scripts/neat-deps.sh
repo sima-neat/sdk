@@ -116,11 +116,18 @@ neat_resolve_git_ref() {
   if [[ "${spec}" == *:* ]]; then
     branch="${spec%%:*}"
     version="${spec#*:}"
-    if [[ -z "${branch}" || "${version}" != "latest" ]]; then
-      echo "Git source refs must use branch:latest, a tag, or a full commit SHA: ${spec}" >&2
+    if [[ -z "${branch}" ]]; then
+      echo "Git source refs must include a branch before the version: ${spec}" >&2
       return 1
     fi
-    resolved="$(git ls-remote "${repository}" "refs/heads/${branch}" | awk 'NR == 1 {print $1}')"
+    if [[ "${version}" == "latest" ]]; then
+      resolved="$(git ls-remote "${repository}" "refs/heads/${branch}" | awk 'NR == 1 {print $1}')"
+    elif [[ "${version}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+      resolved="${version}"
+    else
+      echo "Git source refs must use branch:latest, branch:<full-sha>, a tag, or a full commit SHA: ${spec}" >&2
+      return 1
+    fi
   else
     refs="$(git ls-remote "${repository}" "refs/tags/${spec}" "refs/tags/${spec}^{}")"
     resolved="$(awk '$2 ~ /\^\{\}$/ {print $1; exit}' <<< "${refs}")"
