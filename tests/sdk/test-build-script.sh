@@ -84,7 +84,7 @@ fi
 palette_marker_line="$(grep -nF "SDK Version = %s_Palette_SDK" "${ROOT_DIR}/Dockerfile" | head -n 1 | cut -d: -f1)"
 sima_cli_install_line="$(grep -nF 'install-sima-cli.sh &&' "${ROOT_DIR}/Dockerfile" | tail -n 1 | cut -d: -f1)"
 resource_install_line="$(grep -nF 'install-neat-resources.sh' "${ROOT_DIR}/Dockerfile" | tail -n 1 | cut -d: -f1)"
-release_marker_line="$(grep -nF 'SDK Release = %s' "${ROOT_DIR}/Dockerfile" | head -n 1 | cut -d: -f1)"
+release_marker_line="$(grep -nF 'write-sdk-release.sh &&' "${ROOT_DIR}/Dockerfile" | tail -n 1 | cut -d: -f1)"
 
 if (( palette_marker_line >= sima_cli_install_line )); then
   echo "The stable Palette SDK marker must exist before sima-cli installs dependencies." >&2
@@ -92,6 +92,15 @@ if (( palette_marker_line >= sima_cli_install_line )); then
 fi
 if (( release_marker_line <= resource_install_line )); then
   echo "The volatile SDK release marker must remain after dependency/resource layers." >&2
+  exit 1
+fi
+
+installer_script="${ROOT_DIR}/scripts/install-sima-cli.sh"
+grep -Fq 'installer_source_commit=6c29a46682bc74a5e95dd2410e8653c7c5264c53' "${installer_script}"
+grep -Fq 'raw.githubusercontent.com/sima-neat/sima-cli/${installer_source_commit}/scripts/install/install.py' "${installer_script}"
+grep -Fq 'installer_sha256=9d7acf0bfb24f7b32abd305754359744f1034bbd1a440b6310037eef90696c25' "${installer_script}"
+if grep -Fq 'artifacts.neat.sima.ai/sima-cli/install.py' "${installer_script}"; then
+  echo "The SDK must not checksum a mutable sima-cli installer URL." >&2
   exit 1
 fi
 

@@ -290,7 +290,12 @@ download_for_manifest() {
   local arch="$1"
   local outdir="$2"
   local sysroot_pref=/etc/apt/preferences.d/00-sima-sdk-sysroot-target.pref
+  local sdk_apt_origin="repo.sima.ai"
   shift 2
+
+  if [[ "${SDK_APT_CHANNEL:-release}" == "pre-release" ]]; then
+    sdk_apt_origin="debian.neat.sima.ai"
+  fi
 
   mkdir -p "${outdir}/archives/partial"
   touch "${outdir}/status"
@@ -300,9 +305,9 @@ download_for_manifest() {
   fi
 
   if [[ -f /etc/apt/sources.list.d/debian-target.list ]]; then
-    cat >"${sysroot_pref}" <<'EOF'
+    cat >"${sysroot_pref}" <<EOF
 Package: *
-Pin: origin "repo.sima.ai/elxr"
+Pin: origin "${sdk_apt_origin}"
 Pin-Priority: 990
 
 Package: *

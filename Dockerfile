@@ -14,6 +14,8 @@ FROM ${SDK_BASE_IMAGE}
 
 ARG SDK_PKG_LIST
 ARG BASE_SDK_VERSION=2.1.2
+ARG SDK_APT_CHANNEL=release
+ARG REQUESTED_PRE_RELEASE_BASE=
 ARG MINIMAL_IMAGE=0
 ARG NEAT_BRANCH=main
 ARG NEAT_VERSION=latest
@@ -35,6 +37,7 @@ ENV OPENVSCODE_SERVER_PORT=9999
 ENV OPENVSCODE_SERVER_HTTPS_PORT=10000
 ENV OPENVSCODE_SERVER_SUPERVISED=1
 ENV PIP_DEFAULT_TIMEOUT=120
+ENV SDK_APT_CHANNEL=${SDK_APT_CHANNEL}
 ENV PIP_RETRIES=10
 ENV RUSTUP_HOME=/opt/toolchain/rust
 ENV CARGO_HOME=/opt/toolchain/rust
@@ -252,9 +255,13 @@ COPY scripts/install-neat-resources.sh /usr/local/bin/install-neat-resources.sh
 RUN chmod 755 /usr/local/bin/install-neat-resources.sh
 ARG NEAT_CORE_SOURCE_REF=
 ARG NEAT_APPS_SOURCE_REF=
-RUN NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}" \
-    NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF}" \
-    install-neat-resources.sh
+RUN if [ "${SDK_APT_CHANNEL}" = pre-release ]; then \
+      echo "Skipping bundled Neat Core resources for the pre-release platform SDK"; \
+    else \
+      NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}" \
+      NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF}" \
+      install-neat-resources.sh; \
+    fi
 
 # Apply volatile build identity only after the stable SDK/toolchain/resource layers. Keeping these
 # values at the tail lets closely related images reuse the large layers below them.
@@ -269,19 +276,9 @@ ENV SDK_PROMPT_HOSTNAME="neat-sdk-${SDK_RELEASE_REF}"
 LABEL org.opencontainers.image.source="https://github.com/sima-neat/sdk" \
       org.opencontainers.image.revision="${SDK_GIT_HASH}" \
       org.opencontainers.image.version="${SDK_RELEASE_REF}"
-RUN if printf '%s' "${SDK_RELEASE_REF}" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+'; then \
-      printf 'SDK Release = %s\nPlatform Version = %s\nSDK Version = %s_Palette_SDK_neat_%s\neLXr Version = %s_release_neat_%s\n' \
-        "${SDK_RELEASE_REF}" \
-        "${BASE_SDK_VERSION}" \
-        "${BASE_SDK_VERSION}" "${SDK_RELEASE_REF}" \
-        "${BASE_SDK_VERSION}" "${SDK_RELEASE_REF}"; \
-    else \
-      printf 'SDK Release = %s\nPlatform Version = %s\nSDK Version = %s_Palette_SDK_neat_%s_%s\neLXr Version = %s_release_neat_%s_%s\n' \
-        "${SDK_RELEASE_REF}" \
-        "${BASE_SDK_VERSION}" \
-        "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}" \
-        "${BASE_SDK_VERSION}" "${SDK_GIT_BRANCH}" "${SDK_GIT_HASH}"; \
-    fi > /etc/sdk-release
+
+COPY scripts/write-sdk-release.sh /usr/local/bin/write-sdk-release.sh
+RUN chmod 755 /usr/local/bin/write-sdk-release.sh && write-sdk-release.sh
 
 # Expose required ports
 EXPOSE 9900 9999 10000 9000-9079 9100-9179 8081 8554
