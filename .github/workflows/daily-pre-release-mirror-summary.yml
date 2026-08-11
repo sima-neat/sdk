@@ -116,7 +116,7 @@ jobs:
             --max-characters 3000
 
       - name: Post mirror digest to Slack
-        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.post_to_slack == true) || (github.event_name == 'pull_request' && contains(github.event.pull_request.title, '[test-slack]'))
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.post_to_slack == true)
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ vars.SLACK_MIRROR_NOTIFICATION_CHANNEL_ID }}
@@ -126,7 +126,7 @@ jobs:
             --report out/debian-mirror-summary.md
 
       - name: Preview mirror digest
-        if: (github.event_name == 'pull_request' && !contains(github.event.pull_request.title, '[test-slack]')) || (github.event_name == 'workflow_dispatch' && inputs.post_to_slack != true)
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.post_to_slack != true)
         run: |
           set -euo pipefail
           python3 scripts/post-debian-mirror-summary.py \
