@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       window_hours:
-        description: Number of hours of retained mirror history to summarize
+        description: Retained mirror history to summarize (1-72 hours)
         required: true
         default: "24"
         type: string
@@ -154,4 +154,4 @@ jobs:
             out/debian-mirror-summary-prompt.md
             out/debian-mirror-summary.md
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 3

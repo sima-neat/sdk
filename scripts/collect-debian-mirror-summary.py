@@ -358,8 +358,8 @@ def main() -> int:
     parser.add_argument("--as-of")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    if args.window_hours < 1 or args.window_hours > 168:
-        parser.error("--window-hours must be between 1 and 168")
+    if args.window_hours < 1 or args.window_hours > 72:
+        parser.error("--window-hours must be between 1 and 72")
     as_of = parse_utc(args.as_of) if args.as_of else dt.datetime.now(dt.timezone.utc)
     since = as_of - dt.timedelta(hours=args.window_hours)
     result_source: ResultSource = FixtureSource(args.fixture_root) if args.fixture_root else GithubSource(args.repository, args.workflow)

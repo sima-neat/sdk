@@ -63,7 +63,8 @@ grep -Fq '.mirror/inventories/${source_digest}.json' "${sync_script}"
 grep -Fq '.mirror/changes/${source_digest}.json' "${sync_script}"
 grep -Fq 'debian-pre-release-mirror-result-${{ github.run_id }}' "${workflow}"
 grep -Fq 'DEBIAN_MIRROR_REPORT_DIR' "${workflow}"
-grep -Fq 'retention-days: 8' "${workflow}"
+grep -Fq 'retention-days: 3' "${workflow}"
+grep -Fq 'window-hours must be between 1 and 72' "${repo_root}/scripts/collect-debian-mirror-summary.py"
 
 # These grep patterns intentionally match literal shell expressions in the
 # implementation rather than expanding them in this test process.

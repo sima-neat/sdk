@@ -75,7 +75,7 @@ added to the indexes, package files removed from the indexes, and correlated
 version changes by package and architecture. It shows up to 50 entries in each
 category and records the complete machine-readable inventory and change report
 under digest-addressed `.mirror/inventories/` and `.mirror/changes/` S3 keys.
-Each run also uploads an eight-day, machine-readable GitHub Actions artifact
+Each run also uploads a three-day, machine-readable GitHub Actions artifact
 containing its complete change report, platform version, and publication
 provenance. This is the input to the daily reporting workflow.
 
@@ -93,6 +93,8 @@ runs from the previous 24 hours and download their short-lived result artifacts.
 It does not assume a Vulcan or AWS role. Scheduled runs post a concise digest to
 `neat-sync-mirror-notification`; manual runs default to preview-only and can
 replay a bounded window with an explicit UTC `as_of` timestamp.
+Manual replay windows are limited to 72 hours to match the repository's maximum
+GitHub Actions artifact retention.
 
 Configure the following GitHub settings:
 
