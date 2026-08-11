@@ -29,6 +29,7 @@ grep -Fq 'environment: production' "${workflow}"
 grep -Fq 'id-token: write' "${workflow}"
 grep -Fq 'apt-mirror2' "${workflow}"
 grep -Fq 'cron: "10 15 * * *"' "${summary_workflow}"
+grep -Fq -- '--schedule "${EVENT_SCHEDULE}"' "${summary_workflow}"
 grep -Fq 'runs-on: [self-hosted, Linux, X64, issue-triage]' "${summary_workflow}"
 if grep -Eqi 'alice' "${summary_workflow}" "${documentation}"; then
   echo "User-facing mirror summary text must use agent summary terminology" >&2

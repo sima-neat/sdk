@@ -37,6 +37,7 @@ jobs:
     env:
       WINDOW_HOURS: ${{ inputs.window_hours || '24' }}
       AS_OF: ${{ inputs.as_of || '' }}
+      EVENT_SCHEDULE: ${{ github.event.schedule || '' }}
       SIMA_CLI_CHECK_FOR_UPDATE: "0"
 
     steps:
@@ -83,7 +84,9 @@ jobs:
             --window-hours "${WINDOW_HOURS}"
             --output out/debian-mirror-summary-context.json
           )
-          if [[ -n "${AS_OF}" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
+            arguments+=(--schedule "${EVENT_SCHEDULE}")
+          elif [[ -n "${AS_OF}" ]]; then
             arguments+=(--as-of "${AS_OF}")
           fi
           python3 scripts/collect-debian-mirror-summary.py "${arguments[@]}"

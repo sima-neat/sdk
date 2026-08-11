@@ -37,6 +37,8 @@ def fallback_report(context: dict[str, Any], max_characters: int) -> str:
         lines.append(f"• Platform: `{slack_text(previous)}` → `{slack_text(current)}`")
     elif previous and platform_observed and current is None:
         lines.append(f"• Platform: `{slack_text(previous)}` → removed")
+    elif platform.get("changed") and previous is None and current:
+        lines.append(f"• Platform: added `{slack_text(current)}`")
     elif current:
         lines.append(f"• Platform: `{slack_text(current)}` (unchanged in window)")
     elif platform_observed:

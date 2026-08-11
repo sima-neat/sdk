@@ -242,20 +242,14 @@ def load_publications(
     deduplicated: list[dict[str, Any]] = []
     for publication in ordered:
         digest = str(publication["source"]["inrelease_sha256"])
-        changes = publication.get("changes", {})
-        counts = changes.get("counts", {}) if isinstance(changes, dict) else {}
-        has_changes = any(int(value) != 0 for value in counts.values()) or any(
-            bool(changes.get(field, []))
-            for field in ("added", "removed", "version_changes", "reused_file_content")
-        )
         if (
             deduplicated
             and digest == deduplicated[-1]["source"]["inrelease_sha256"]
-            and not has_changes
         ):
-            # Suppress only an immediately repeated, no-op publication. Using
-            # a global digest key would incorrectly erase a real A -> B -> A
-            # rollback later in the reporting window.
+            # A retry after the Release boundary can emit the same changed
+            # report again when publication.json was not updated. Collapse
+            # only adjacent identical generations; a nonadjacent A -> B -> A
+            # rollback remains visible.
             continue
         deduplicated.append(publication)
     return deduplicated
@@ -320,7 +314,7 @@ def platform_summary(publications: list[dict[str, Any]]) -> dict[str, Any]:
         )
     previous_version = timeline[0]["version"] if timeline else None
     baseline_found = False
-    for publication in publications:
+    for index, publication in enumerate(publications):
         for item in publication.get("changes", {}).get("version_changes", []):
             if item.get("package") == ANCHOR_PACKAGE and item.get("architecture") == ANCHOR_ARCHITECTURE:
                 previous = sorted_versions([str(value) for value in item.get("previous_versions", []) if PLATFORM_VERSION_RE.fullmatch(str(value))])
@@ -328,6 +322,28 @@ def platform_summary(publications: list[dict[str, Any]]) -> dict[str, Any]:
                     previous_version = previous[-1]
                     baseline_found = True
                     break
+        if not baseline_found and index == 0:
+            removed_versions = sorted_versions(
+                [
+                    str(item.get("version"))
+                    for item in publication.get("changes", {}).get("removed", [])
+                    if item.get("package") == ANCHOR_PACKAGE
+                    and item.get("architecture") == ANCHOR_ARCHITECTURE
+                    and PLATFORM_VERSION_RE.fullmatch(str(item.get("version")))
+                ]
+            )
+            if removed_versions:
+                previous_version = removed_versions[-1]
+                baseline_found = True
+            elif any(
+                item.get("package") == ANCHOR_PACKAGE
+                and item.get("architecture") == ANCHOR_ARCHITECTURE
+                for item in publication.get("changes", {}).get("added", [])
+            ):
+                # The first publication introduced the anchor, so its state at
+                # the beginning of the reporting window was absent.
+                previous_version = None
+                baseline_found = True
         if baseline_found:
             break
     current_version = timeline[-1]["version"] if timeline else None
@@ -368,6 +384,25 @@ def build_context(publications: list[dict[str, Any]], since: dt.datetime, as_of:
     }
 
 
+def scheduled_cutoff(now: dt.datetime, schedule: str) -> dt.datetime:
+    fields = schedule.split()
+    if len(fields) != 5 or fields[2:] != ["*", "*", "*"]:
+        raise ValueError(f"unsupported summary schedule: {schedule}")
+    try:
+        minute = int(fields[0])
+        hour = int(fields[1])
+    except ValueError as error:
+        raise ValueError(f"unsupported summary schedule: {schedule}") from error
+    if not 0 <= minute <= 59 or not 0 <= hour <= 23:
+        raise ValueError(f"unsupported summary schedule: {schedule}")
+    cutoff = now.astimezone(dt.timezone.utc).replace(
+        hour=hour, minute=minute, second=0, microsecond=0
+    )
+    if cutoff > now:
+        cutoff -= dt.timedelta(days=1)
+    return cutoff
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     source = parser.add_mutually_exclusive_group(required=True)
@@ -375,13 +410,21 @@ def main() -> int:
     source.add_argument("--fixture-root", type=Path)
     parser.add_argument("--workflow", default="sync-debian-pre-release-mirror.yml")
     parser.add_argument("--window-hours", type=int, default=24)
-    parser.add_argument("--as-of")
+    cutoff = parser.add_mutually_exclusive_group()
+    cutoff.add_argument("--as-of")
+    cutoff.add_argument("--schedule")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.window_hours < 1 or args.window_hours > 72:
         parser.error("--window-hours must be between 1 and 72")
     now = dt.datetime.now(dt.timezone.utc)
-    as_of = parse_utc(args.as_of) if args.as_of else now
+    as_of = (
+        parse_utc(args.as_of)
+        if args.as_of
+        else scheduled_cutoff(now, args.schedule)
+        if args.schedule
+        else now
+    )
     since = as_of - dt.timedelta(hours=args.window_hours)
     if as_of > now + dt.timedelta(minutes=5):
         parser.error("--as-of cannot be in the future")

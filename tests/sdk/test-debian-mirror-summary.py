@@ -226,23 +226,56 @@ def test_collection_preserves_digest_rollback() -> None:
     )
 
 
+def test_collection_collapses_adjacent_changed_retry() -> None:
+    digest = "d" * 64
+    changes = {
+        "counts": {"added_files": 1, "removed_files": 0, "version_changes": 0},
+        "added": [package("foo", "1.1", "arm64")],
+        "removed": [],
+        "version_changes": [],
+    }
+    publications_by_run = {
+        401: result(digest, "2026-08-10T05:00:00Z", "2.1.3~pre4617", changes),
+        402: result(digest, "2026-08-10T05:10:00Z", "2.1.3~pre4617", changes),
+    }
+
+    class RetrySource:
+        def list_runs(self) -> list[dict[str, Any]]:
+            return [
+                {
+                    "id": run_id,
+                    "run_started_at": publication["publication"]["published_at"],
+                    "html_url": f"https://github.com/sima-neat/sdk/actions/runs/{run_id}",
+                }
+                for run_id, publication in publications_by_run.items()
+            ]
+
+        def read_result(self, run: dict[str, Any]) -> dict[str, Any]:
+            return publications_by_run[int(run["id"])]
+
+    as_of = collector.parse_utc("2026-08-11T00:00:00Z")
+    publications = collector.load_publications(
+        RetrySource(), as_of - collector.dt.timedelta(hours=24), as_of
+    )
+    assert len(publications) == 1
+    assert publications[0]["_run"]["id"] == 401
+    context = collector.build_context(
+        publications, as_of - collector.dt.timedelta(hours=24), as_of
+    )
+    assert context["publication_count"] == 1
+    assert context["counts"]["added_files"] == 1
+
+
 def test_platform_summary_reports_anchor_removal() -> None:
     publication = result(
         "c" * 64,
         "2026-08-10T04:00:00Z",
         "ignored",
         {
-            "counts": {"removed_files": 1, "version_changes": 1},
+            "counts": {"removed_files": 1, "version_changes": 0},
             "added": [],
             "removed": [package("simaai-palette-modalix", "2.1.3~pre4617", "arm64")],
-            "version_changes": [
-                {
-                    "package": "simaai-palette-modalix",
-                    "architecture": "arm64",
-                    "previous_versions": ["2.1.3~pre4617"],
-                    "current_versions": [],
-                }
-            ],
+            "version_changes": [],
         },
     )
     publication["platform"]["versions"] = []
@@ -263,6 +296,50 @@ def test_platform_summary_reports_anchor_removal() -> None:
         collector.parse_utc("2026-08-11T00:00:00Z"),
     )
     assert "`2.1.3~pre4617` → removed" in generator.fallback_report(context, 1000)
+
+
+def test_platform_summary_reports_anchor_addition() -> None:
+    publication = result(
+        "e" * 64,
+        "2026-08-10T04:00:00Z",
+        "2.1.3~pre4617",
+        {
+            "counts": {"added_files": 1, "version_changes": 0},
+            "added": [package("simaai-palette-modalix", "2.1.3~pre4617", "arm64")],
+            "removed": [],
+            "version_changes": [],
+        },
+    )
+    publication["_run"] = {
+        "id": 302,
+        "html_url": "https://github.com/sima-neat/sdk/actions/runs/302",
+        "started_at": "2026-08-10T04:00:00Z",
+    }
+
+    summary = collector.platform_summary([publication])
+    assert summary["previous_version"] is None
+    assert summary["current_version"] == "2.1.3~pre4617"
+    assert summary["changed"] is True
+    context = collector.build_context(
+        [publication],
+        collector.parse_utc("2026-08-10T00:00:00Z"),
+        collector.parse_utc("2026-08-11T00:00:00Z"),
+    )
+    assert "Platform: added `2.1.3~pre4617`" in generator.fallback_report(
+        context, 1000
+    )
+
+
+def test_scheduled_cutoff_is_stable() -> None:
+    schedule = "10 15 * * *"
+    delayed = collector.parse_utc("2026-08-11T15:20:00Z")
+    early = collector.parse_utc("2026-08-11T15:05:00Z")
+    assert collector.utc_text(collector.scheduled_cutoff(delayed, schedule)) == (
+        "2026-08-11T15:10:00Z"
+    )
+    assert collector.utc_text(collector.scheduled_cutoff(early, schedule)) == (
+        "2026-08-10T15:10:00Z"
+    )
 
 
 def test_failed_run_after_publication_is_included() -> None:
@@ -370,7 +447,10 @@ def main() -> int:
     test_collection_and_fallback()
     test_platform_summary_preserves_earliest_baseline()
     test_collection_preserves_digest_rollback()
+    test_collection_collapses_adjacent_changed_retry()
     test_platform_summary_reports_anchor_removal()
+    test_platform_summary_reports_anchor_addition()
+    test_scheduled_cutoff_is_stable()
     test_failed_run_after_publication_is_included()
     test_expired_replay_is_rejected()
     test_slack_validation_and_dry_run()
