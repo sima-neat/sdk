@@ -66,6 +66,9 @@ grep -Fq 'pool filename(s) with different content; refusing publication' "${sync
 grep -Fq '.mirror/inventories/${source_digest}.json' "${sync_script}"
 # shellcheck disable=SC2016
 grep -Fq '.mirror/changes/${source_digest}.json' "${sync_script}"
+grep -Fq '.Metadata["source-inrelease-sha256"]' "${sync_script}"
+grep -Fq '.Metadata["inventory-key"]' "${sync_script}"
+grep -Fq -- '--metadata "source-inrelease-sha256=${source_digest},inventory-key=${inventory_key}"' "${sync_script}"
 grep -Fq 'debian-pre-release-mirror-result-${{ github.run_id }}' "${workflow}"
 grep -Fq 'DEBIAN_MIRROR_REPORT_DIR' "${workflow}"
 grep -Fq 'retention-days: 3' "${workflow}"

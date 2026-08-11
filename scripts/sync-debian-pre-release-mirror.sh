@@ -86,6 +86,7 @@ VALIDATION_JSON="${TEMP_DIR}/validation.json"
 CURRENT_INVENTORY_JSON="${TEMP_DIR}/inventory.json"
 PREVIOUS_INVENTORY_JSON="${TEMP_DIR}/previous-inventory.json"
 PREVIOUS_PUBLICATION_JSON="${TEMP_DIR}/previous-publication.json"
+PUBLISHED_RELEASE_HEAD_JSON="${TEMP_DIR}/published-release-head.json"
 CHANGES_JSON="${TEMP_DIR}/changes.json"
 PUBLICATION_JSON="${TEMP_DIR}/publication.json"
 PUBLISH_DISTS="${TEMP_DIR}/publish-dists"
@@ -125,6 +126,28 @@ if aws s3 cp "s3://${BUCKET}/pre-release/.mirror/publication.json" \
   "${PREVIOUS_PUBLICATION_JSON}" --region "${AWS_REGION}" --only-show-errors 2>/dev/null; then
   previous_digest="$(jq -r '.source.inrelease_sha256 // empty' "${PREVIOUS_PUBLICATION_JSON}")"
   previous_inventory_key="$(jq -r '.publication.inventory_key // empty' "${PREVIOUS_PUBLICATION_JSON}")"
+fi
+
+# The mutable suite Release is the actual APT publication boundary. New
+# publications stamp it with the source digest and matching immutable inventory,
+# allowing the next run to recover the authoritative baseline even if the
+# subsequent convenience-manifest upload failed. Fall back to publication.json
+# only for Release objects created before this metadata was introduced.
+if aws s3api head-object \
+  --bucket "${BUCKET}" \
+  --key "pre-release/dists/${SUITE}/Release" \
+  --region "${AWS_REGION}" \
+  --output json >"${PUBLISHED_RELEASE_HEAD_JSON}" 2>/dev/null; then
+  release_source_digest="$(jq -r '.Metadata["source-inrelease-sha256"] // empty' "${PUBLISHED_RELEASE_HEAD_JSON}")"
+  release_inventory_key="$(jq -r '.Metadata["inventory-key"] // empty' "${PUBLISHED_RELEASE_HEAD_JSON}")"
+  if [[ "${release_source_digest}" =~ ^[0-9a-f]{64}$ && \
+    "${release_inventory_key}" == pre-release/.mirror/inventories/*.json ]]; then
+    if [[ -n "${previous_digest}" && "${previous_digest}" != "${release_source_digest}" ]]; then
+      echo "Recovering publication baseline from authoritative Release metadata (${release_source_digest})" >&2
+    fi
+    previous_digest="${release_source_digest}"
+    previous_inventory_key="${release_inventory_key}"
+  fi
 fi
 
 if [[ "${FORCE}" != true && -n "${previous_digest}" && "${source_digest}" == "${previous_digest}" ]]; then
@@ -318,7 +341,8 @@ if [[ "${PUBLISH}" == true ]]; then
   # This single S3 object replacement is the publication boundary.
   aws s3 cp "${PUBLISH_DISTS}/${SUITE}/Release" \
     "s3://${BUCKET}/pre-release/dists/${SUITE}/Release" \
-    "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate'
+    "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate' \
+    --metadata "source-inrelease-sha256=${source_digest},inventory-key=${inventory_key}"
 
   # Record when the Release replacement completed, rather than when this
   # potentially long-running sync began. Daily reporting uses this timestamp

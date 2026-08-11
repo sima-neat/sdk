@@ -128,6 +128,10 @@ including the nested `binary-*/Release` files. The suite-level `Release` is
 replaced last and contains `Acquire-By-Hash: yes`, making that single S3 object
 the publication boundary. Later runs retain the previous ordinary index paths
 so clients holding an older `Release` continue to see a consistent generation.
+The suite `Release` object also records the source digest and immutable inventory
+key as S3 metadata. The next run uses that metadata as its authoritative change
+baseline, so a failure while updating the later convenience manifest cannot
+cause the following publication to compare against stale package state.
 
 apt-mirror2 may retrieve only compressed `Packages.gz` indexes. Before
 publication, the workflow reconstructs each logical `Packages` index and
