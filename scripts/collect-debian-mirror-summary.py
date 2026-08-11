@@ -213,6 +213,8 @@ def load_publications(
         started_at = parse_utc(str(timestamp_text))
         if started_at < since - DISCOVERY_MARGIN:
             continue
+        completed_text = run.get("updated_at") or timestamp_text
+        completed_at = parse_utc(str(completed_text))
         result = source.read_result(run)
         if not result or result.get("result") != "Published":
             continue
@@ -220,7 +222,13 @@ def load_publications(
         if not published_text:
             raise CollectionError(f"run {run.get('id')} has no publication timestamp")
         published_at = parse_utc(str(published_text))
-        if published_at < since or published_at > as_of:
+        # A result cannot be reported until both the mirror publication and its
+        # workflow artifact exist. Assign it to the first half-open digest
+        # window whose upper boundary includes that discoverability time. This
+        # prevents a pre-cutoff publication from being lost when its workflow
+        # finishes after the cutoff.
+        reported_at = max(published_at, completed_at)
+        if reported_at <= since - DISCOVERY_MARGIN or reported_at > as_of:
             continue
         digest = str(result.get("source", {}).get("inrelease_sha256", ""))
         if not re.fullmatch(r"[0-9a-f]{64}", digest):
@@ -229,6 +237,8 @@ def load_publications(
             "id": int(run["id"]),
             "html_url": run.get("html_url"),
             "started_at": utc_text(started_at),
+            "completed_at": utc_text(completed_at),
+            "reported_at": utc_text(reported_at),
         }
         publications.append(result)
 
@@ -252,7 +262,11 @@ def load_publications(
             # rollback remains visible.
             continue
         deduplicated.append(publication)
-    return deduplicated
+    return [
+        publication
+        for publication in deduplicated
+        if parse_utc(str(publication["_run"]["reported_at"])) > since
+    ]
 
 
 def grouped_package_files(publications: list[dict[str, Any]], field: str) -> list[dict[str, Any]]:
@@ -365,6 +379,9 @@ def build_context(publications: list[dict[str, Any]], since: dt.datetime, as_of:
         {
             "digest": item["source"]["inrelease_sha256"],
             "published_at": item["publication"]["published_at"],
+            "reported_at": item["_run"].get(
+                "reported_at", item["publication"]["published_at"]
+            ),
             "source_date": item["source"].get("date"),
             "workflow_run_url": item["_run"].get("html_url"),
             "counts": item.get("changes", {}).get("counts", {}),

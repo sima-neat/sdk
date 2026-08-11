@@ -342,6 +342,117 @@ def test_scheduled_cutoff_is_stable() -> None:
     )
 
 
+def test_collection_uses_half_open_windows() -> None:
+    lower = "2026-08-10T15:10:00Z"
+    upper = "2026-08-11T15:10:00Z"
+    publications_by_run = {
+        501: result("5" * 64, lower, "2.1.3~pre4617", {"counts": {}}),
+        502: result("6" * 64, upper, "2.1.3~pre4625", {"counts": {}}),
+    }
+
+    class BoundarySource:
+        def list_runs(self) -> list[dict[str, Any]]:
+            return [
+                {
+                    "id": run_id,
+                    "run_started_at": publication["publication"]["published_at"],
+                    "updated_at": publication["publication"]["published_at"],
+                    "html_url": f"https://github.com/sima-neat/sdk/actions/runs/{run_id}",
+                }
+                for run_id, publication in publications_by_run.items()
+            ]
+
+        def read_result(self, run: dict[str, Any]) -> dict[str, Any]:
+            return publications_by_run[int(run["id"])]
+
+    publications = collector.load_publications(
+        BoundarySource(), collector.parse_utc(lower), collector.parse_utc(upper)
+    )
+    assert [item["_run"]["id"] for item in publications] == [502]
+
+
+def test_late_artifact_moves_publication_to_next_window() -> None:
+    publication = result(
+        "7" * 64,
+        "2026-08-10T15:09:00Z",
+        "2.1.3~pre4617",
+        {"counts": {}, "added": [], "removed": [], "version_changes": []},
+    )
+
+    class DelayedArtifactSource:
+        def list_runs(self) -> list[dict[str, Any]]:
+            return [
+                {
+                    "id": 601,
+                    "run_started_at": "2026-08-10T14:47:00Z",
+                    "updated_at": "2026-08-10T15:12:00Z",
+                    "html_url": "https://github.com/sima-neat/sdk/actions/runs/601",
+                }
+            ]
+
+        def read_result(self, _run: dict[str, Any]) -> dict[str, Any]:
+            return publication
+
+    source = DelayedArtifactSource()
+    first_cutoff = collector.parse_utc("2026-08-10T15:10:00Z")
+    first = collector.load_publications(
+        source, first_cutoff - collector.dt.timedelta(hours=24), first_cutoff
+    )
+    assert first == []
+
+    second_cutoff = collector.parse_utc("2026-08-11T15:10:00Z")
+    second = collector.load_publications(
+        source, second_cutoff - collector.dt.timedelta(hours=24), second_cutoff
+    )
+    assert len(second) == 1
+    assert second[0]["_run"]["reported_at"] == "2026-08-10T15:12:00Z"
+
+
+def test_retry_is_deduplicated_across_window_boundary() -> None:
+    digest = "8" * 64
+    changes = {
+        "counts": {"added_files": 1},
+        "added": [package("foo", "1.1", "arm64")],
+        "removed": [],
+        "version_changes": [],
+    }
+    publications_by_run = {
+        701: result(digest, "2026-08-10T15:00:00Z", "2.1.3~pre4617", changes),
+        702: result(digest, "2026-08-10T15:15:00Z", "2.1.3~pre4617", changes),
+    }
+    completion_by_run = {
+        701: "2026-08-10T15:09:00Z",
+        702: "2026-08-10T15:20:00Z",
+    }
+
+    class CrossWindowRetrySource:
+        def list_runs(self) -> list[dict[str, Any]]:
+            return [
+                {
+                    "id": run_id,
+                    "run_started_at": publication["publication"]["published_at"],
+                    "updated_at": completion_by_run[run_id],
+                    "html_url": f"https://github.com/sima-neat/sdk/actions/runs/{run_id}",
+                }
+                for run_id, publication in publications_by_run.items()
+            ]
+
+        def read_result(self, run: dict[str, Any]) -> dict[str, Any]:
+            return publications_by_run[int(run["id"])]
+
+    cutoff = collector.parse_utc("2026-08-10T15:10:00Z")
+    first = collector.load_publications(
+        CrossWindowRetrySource(), cutoff - collector.dt.timedelta(hours=24), cutoff
+    )
+    assert [item["_run"]["id"] for item in first] == [701]
+
+    next_cutoff = cutoff + collector.dt.timedelta(hours=24)
+    second = collector.load_publications(
+        CrossWindowRetrySource(), cutoff, next_cutoff
+    )
+    assert second == []
+
+
 def test_failed_run_after_publication_is_included() -> None:
     published = result(
         "4" * 64,
@@ -451,6 +562,9 @@ def main() -> int:
     test_platform_summary_reports_anchor_removal()
     test_platform_summary_reports_anchor_addition()
     test_scheduled_cutoff_is_stable()
+    test_collection_uses_half_open_windows()
+    test_late_artifact_moves_publication_to_next_window()
+    test_retry_is_deduplicated_across_window_boundary()
     test_failed_run_after_publication_is_included()
     test_expired_replay_is_rejected()
     test_slack_validation_and_dry_run()
