@@ -1,6 +1,14 @@
 name: Daily pre-release mirror summary
 
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/daily-pre-release-mirror-summary.yml"
+      - "scripts/collect-debian-mirror-summary.py"
+      - "scripts/generate-debian-mirror-summary.py"
+      - "scripts/post-debian-mirror-summary.py"
+      - "tests/sdk/fixtures/debian-mirror-summary-context.json"
+      - "tests/sdk/test-debian-mirror-summary.py"
   schedule:
     # 8:10am Pacific during daylight saving time. GitHub cron is UTC.
     - cron: "10 15 * * *"
@@ -26,7 +34,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: daily-pre-release-mirror-summary
+  group: daily-pre-release-mirror-summary-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'production' }}
   cancel-in-progress: false
 
 jobs:
@@ -73,6 +81,7 @@ jobs:
           codex --version
 
       - name: Collect mirror-sync workflow results
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -88,6 +97,15 @@ jobs:
           fi
           python3 scripts/collect-debian-mirror-summary.py "${arguments[@]}"
 
+      - name: Load deterministic PR simulation context
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp tests/sdk/fixtures/debian-mirror-summary-context.json \
+            out/debian-mirror-summary-context.json
+          python3 tests/sdk/test-debian-mirror-summary.py
+
       - name: Generate concise mirror digest
         run: |
           set -euo pipefail
@@ -98,7 +116,7 @@ jobs:
             --max-characters 3000
 
       - name: Post mirror digest to Slack
-        if: github.event_name == 'schedule' || inputs.post_to_slack == true
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.post_to_slack == true)
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_ID: ${{ vars.SLACK_MIRROR_NOTIFICATION_CHANNEL_ID }}
@@ -108,7 +126,7 @@ jobs:
             --report out/debian-mirror-summary.md
 
       - name: Preview mirror digest
-        if: github.event_name == 'workflow_dispatch' && inputs.post_to_slack != true
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.post_to_slack != true)
         run: |
           set -euo pipefail
           python3 scripts/post-debian-mirror-summary.py \
