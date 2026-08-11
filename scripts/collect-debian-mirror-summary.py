@@ -236,8 +236,14 @@ def load_publications(
                 str(previous["publication"]["published_at"])
             )
             previous_started_at = parse_utc(str(previous["_run"]["started_at"]))
-            replace_previous = published_at > previous_published_at or (
-                published_at == previous_published_at and started_at > previous_started_at
+            # A forced re-publication of the same digest compares the mirror
+            # against itself and normally has empty changes. Preserve the
+            # earliest report that introduced the digest. Only use run start
+            # time to break ties for artifacts with the exact same publication
+            # timestamp.
+            replace_previous = published_at < previous_published_at or (
+                published_at == previous_published_at
+                and started_at > previous_started_at
             )
         if replace_previous:
             publications[digest] = result

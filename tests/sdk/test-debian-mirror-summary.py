@@ -64,7 +64,7 @@ def build_fixture(root: Path) -> None:
     runs = [
         {"id": 101, "conclusion": "success", "run_started_at": "2026-08-09T23:50:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/101", "result_file": "101.json"},
         {"id": 102, "conclusion": "success", "run_started_at": "2026-08-10T22:00:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/102", "result_file": "102.json"},
-        {"id": 105, "conclusion": "success", "run_started_at": "2026-08-10T22:10:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/105", "result_file": "102.json"},
+        {"id": 105, "conclusion": "success", "run_started_at": "2026-08-10T22:10:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/105", "result_file": "105.json"},
         {"id": 103, "conclusion": "success", "run_started_at": "2026-08-08T22:00:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/103", "result_file": "missing.json"},
         {"id": 104, "conclusion": "failure", "run_started_at": "2026-08-10T23:00:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/104", "result_file": "missing.json"},
     ]
@@ -87,6 +87,22 @@ def build_fixture(root: Path) -> None:
     }
     (root / "101.json").write_text(json.dumps(result(first, "2026-08-10T12:05:00Z", "2.1.3~pre4593", first_changes)), encoding="utf-8")
     (root / "102.json").write_text(json.dumps(result(second, "2026-08-10T22:05:00Z", "2.1.3~pre4617", second_changes)), encoding="utf-8")
+    (root / "105.json").write_text(
+        json.dumps(
+            result(
+                second,
+                "2026-08-10T22:15:00Z",
+                "2.1.3~pre4617",
+                {
+                    "counts": {"added_files": 0, "removed_files": 0, "version_changes": 0},
+                    "added": [],
+                    "removed": [],
+                    "version_changes": [],
+                },
+            )
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_version_ordering() -> None:
@@ -102,7 +118,7 @@ def test_collection_and_fallback() -> None:
         since = as_of - collector.dt.timedelta(hours=24)
         publications = collector.load_publications(source, since, as_of)
         assert len(publications) == 2
-        assert publications[-1]["_run"]["id"] == 105
+        assert publications[-1]["_run"]["id"] == 102
         context = collector.build_context(publications, since, as_of)
         assert context["platform"]["previous_version"] == "2.1.3~pre4593"
         assert context["platform"]["current_version"] == "2.1.3~pre4617"
