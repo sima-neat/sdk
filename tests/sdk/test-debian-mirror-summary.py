@@ -7,9 +7,7 @@ import contextlib
 import importlib.util
 import io
 import json
-import os
 from pathlib import Path
-import subprocess
 import sys
 import tempfile
 from typing import Any
@@ -534,49 +532,6 @@ def test_github_run_query_is_time_bounded() -> None:
     ]
 
 
-def test_codex_runs_isolated_and_uses_only_final_message() -> None:
-    with tempfile.TemporaryDirectory() as directory:
-        prompt = Path(directory) / "prompt.md"
-        prompt.write_text("normalized context\n", encoding="utf-8")
-        original_which = generator.shutil.which
-        original_run = generator.subprocess.run
-        original_sensitive_environment = {
-            key: os.environ.get(key) for key in ("GH_TOKEN", "SLACK_BOT_TOKEN")
-        }
-        captured: dict[str, Any] = {}
-
-        def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-            captured.update({"command": command, **kwargs})
-            output_path = Path(command[command.index("--output-last-message") + 1])
-            output_path.write_text("safe final digest\n", encoding="utf-8")
-            return subprocess.CompletedProcess(command, 0, stdout="ignored trace", stderr="")
-
-        try:
-            generator.shutil.which = lambda _name: "/usr/local/bin/codex"
-            generator.subprocess.run = fake_run
-            os.environ["GH_TOKEN"] = "must-not-leak"
-            os.environ["SLACK_BOT_TOKEN"] = "must-not-leak"
-            assert generator.run_codex(prompt, 10) == "safe final digest\n"
-        finally:
-            generator.shutil.which = original_which
-            generator.subprocess.run = original_run
-            for key, value in original_sensitive_environment.items():
-                if value is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = value
-
-        command = captured["command"]
-        assert command[0:2] == ["/usr/local/bin/codex", "exec"]
-        assert ["--sandbox", "read-only"] == command[2:4]
-        assert "--ephemeral" in command
-        assert "--ignore-user-config" in command
-        assert 'shell_environment_policy.inherit="none"' in command
-        assert captured["input"].startswith("Return only the final Slack")
-        assert "GH_TOKEN" not in captured["env"]
-        assert "SLACK_BOT_TOKEN" not in captured["env"]
-
-
 class FakeResponse:
     def __init__(self, document: dict[str, Any]) -> None:
         self.document = document
@@ -634,7 +589,6 @@ def main() -> int:
     test_failed_run_after_publication_is_included()
     test_expired_replay_is_rejected()
     test_github_run_query_is_time_bounded()
-    test_codex_runs_isolated_and_uses_only_final_message()
     test_slack_validation_and_dry_run()
     print("Debian mirror summary tests passed")
     return 0

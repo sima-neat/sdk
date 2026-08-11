@@ -107,17 +107,13 @@ Configure the following GitHub settings:
 - variable `SLACK_MIRROR_NOTIFICATION_CHANNEL_ID` containing the Slack channel
   ID (not its display name).
 
-The report generator follows the same Codex agent-summary pattern as the process
-repository. Package counts, version ordering, grouping, and the fallback report
-are deterministic Python logic; Codex is used only to tighten the wording. The
-normalized context, prompt, and rendered digest are retained as short-lived
-workflow artifacts for auditing. Jenkins correlation is not part of this
-initial implementation.
-
-Codex runs in an isolated temporary working directory with a read-only sandbox,
-no user configuration, no inherited shell environment, and no GitHub, Slack, or
-AWS credentials. If Codex is unavailable, times out, rejects these controls, or
-returns an invalid response, the deterministic digest is posted unchanged.
+Package counts, Debian version ordering, grouping, and report rendering use
+deterministic Python logic. The workflow does not pass upstream package metadata
+to an agent CLI because that would expose persistent-runner read tools and
+credentials to prompt injection. The normalized context and rendered digest are
+retained as short-lived workflow artifacts for auditing. A future model-assisted
+wording step must use a tool-free API boundary. Jenkins correlation is not part
+of this initial implementation.
 
 "Removed" means no longer referenced by the published APT indexes. Old package
 objects remain in the S3 pool during the initial rollout for safe rollback.

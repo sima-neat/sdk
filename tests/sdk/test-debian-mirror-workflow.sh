@@ -37,8 +37,11 @@ if grep -Eqi 'alice' "${summary_workflow}" "${documentation}"; then
 fi
 grep -Fq 'actions: read' "${summary_workflow}"
 grep -Fq 'GH_TOKEN: ${{ github.token }}' "${summary_workflow}"
-grep -Fq 'if command -v codex >/dev/null 2>&1; then' "${summary_workflow}"
-grep -Fq 'using the deterministic mirror digest' "${summary_workflow}"
+if grep -Eqi 'codex exec|CODEX_HOME|OPENAI_API_KEY|prompt-output' \
+  "${summary_workflow}" "${repo_root}/scripts/generate-debian-mirror-summary.py"; then
+  echo "The mirror digest must not execute an agent over untrusted package metadata" >&2
+  exit 1
+fi
 if grep -Eq 'AWS_|VULCAN_|configure-aws-credentials|id-token: write' "${summary_workflow}"; then
   echo "The daily summary must read GitHub workflow results without AWS/Vulcan credentials" >&2
   exit 1

@@ -71,11 +71,6 @@ jobs:
           python3 --version
           gh --version
           gh auth status
-          if command -v codex >/dev/null 2>&1; then
-            codex --version
-          else
-            echo "::warning::Codex is unavailable; using the deterministic mirror digest"
-          fi
 
       - name: Collect mirror-sync workflow results
         env:
@@ -95,12 +90,11 @@ jobs:
           fi
           python3 scripts/collect-debian-mirror-summary.py "${arguments[@]}"
 
-      - name: Generate concise mirror digest
+      - name: Generate deterministic mirror digest
         run: |
           set -euo pipefail
           python3 scripts/generate-debian-mirror-summary.py \
             --context out/debian-mirror-summary-context.json \
-            --prompt-output out/debian-mirror-summary-prompt.md \
             --output out/debian-mirror-summary.md \
             --max-characters 3000
 
@@ -140,7 +134,6 @@ jobs:
           name: daily-pre-release-mirror-summary
           path: |
             out/debian-mirror-summary-context.json
-            out/debian-mirror-summary-prompt.md
             out/debian-mirror-summary.md
           if-no-files-found: ignore
           retention-days: 3
