@@ -5,7 +5,11 @@ set -euo pipefail
 root_venv=/root/.sima-cli/.venv
 install_venv=/opt/sima-cli/venv
 installer=/tmp/sima-cli-install.py
-installer_url=https://artifacts.neat.sima.ai/sima-cli/install.py
+# Keep the installer source and checksum immutable. The floating CDN path is
+# updated whenever sima-cli main publishes and can otherwise break an SDK build
+# whose expected checksum intentionally remains pinned.
+installer_source_commit=6c29a46682bc74a5e95dd2410e8653c7c5264c53
+installer_url="https://raw.githubusercontent.com/sima-neat/sima-cli/${installer_source_commit}/scripts/install/install.py"
 installer_sha256=9d7acf0bfb24f7b32abd305754359744f1034bbd1a440b6310037eef90696c25
 sima_cli_ref="${SIMA_CLI_REF:?SIMA_CLI_REF is required}"
 sima_cli_version="${SIMA_CLI_VERSION:?SIMA_CLI_VERSION is required}"

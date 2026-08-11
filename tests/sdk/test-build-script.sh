@@ -95,4 +95,13 @@ if (( release_marker_line <= resource_install_line )); then
   exit 1
 fi
 
+installer_script="${ROOT_DIR}/scripts/install-sima-cli.sh"
+grep -Fq 'installer_source_commit=6c29a46682bc74a5e95dd2410e8653c7c5264c53' "${installer_script}"
+grep -Fq 'raw.githubusercontent.com/sima-neat/sima-cli/${installer_source_commit}/scripts/install/install.py' "${installer_script}"
+grep -Fq 'installer_sha256=9d7acf0bfb24f7b32abd305754359744f1034bbd1a440b6310037eef90696c25' "${installer_script}"
+if grep -Fq 'artifacts.neat.sima.ai/sima-cli/install.py' "${installer_script}"; then
+  echo "The SDK must not checksum a mutable sima-cli installer URL." >&2
+  exit 1
+fi
+
 echo "SDK build helper tests passed."
