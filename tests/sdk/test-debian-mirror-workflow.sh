@@ -37,6 +37,8 @@ if grep -Eqi 'alice' "${summary_workflow}" "${documentation}"; then
 fi
 grep -Fq 'actions: read' "${summary_workflow}"
 grep -Fq 'GH_TOKEN: ${{ github.token }}' "${summary_workflow}"
+grep -Fq 'if command -v codex >/dev/null 2>&1; then' "${summary_workflow}"
+grep -Fq 'using the deterministic mirror digest' "${summary_workflow}"
 if grep -Eq 'AWS_|VULCAN_|configure-aws-credentials|id-token: write' "${summary_workflow}"; then
   echo "The daily summary must read GitHub workflow results without AWS/Vulcan credentials" >&2
   exit 1

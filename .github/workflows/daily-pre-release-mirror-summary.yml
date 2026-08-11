@@ -71,7 +71,11 @@ jobs:
           python3 --version
           gh --version
           gh auth status
-          codex --version
+          if command -v codex >/dev/null 2>&1; then
+            codex --version
+          else
+            echo "::warning::Codex is unavailable; using the deterministic mirror digest"
+          fi
 
       - name: Collect mirror-sync workflow results
         env:

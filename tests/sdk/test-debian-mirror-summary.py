@@ -7,7 +7,9 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 from typing import Any
@@ -203,7 +205,7 @@ def test_collection_preserves_digest_rollback() -> None:
         )
 
     class RollbackSource:
-        def list_runs(self) -> list[dict[str, Any]]:
+        def list_runs(self, _earliest_started_at: collector.dt.datetime) -> list[dict[str, Any]]:
             return runs
 
         def read_result(self, run: dict[str, Any]) -> dict[str, Any]:
@@ -240,7 +242,7 @@ def test_collection_collapses_adjacent_changed_retry() -> None:
     }
 
     class RetrySource:
-        def list_runs(self) -> list[dict[str, Any]]:
+        def list_runs(self, _earliest_started_at: collector.dt.datetime) -> list[dict[str, Any]]:
             return [
                 {
                     "id": run_id,
@@ -351,7 +353,7 @@ def test_collection_uses_half_open_windows() -> None:
     }
 
     class BoundarySource:
-        def list_runs(self) -> list[dict[str, Any]]:
+        def list_runs(self, _earliest_started_at: collector.dt.datetime) -> list[dict[str, Any]]:
             return [
                 {
                     "id": run_id,
@@ -380,7 +382,7 @@ def test_late_artifact_moves_publication_to_next_window() -> None:
     )
 
     class DelayedArtifactSource:
-        def list_runs(self) -> list[dict[str, Any]]:
+        def list_runs(self, _earliest_started_at: collector.dt.datetime) -> list[dict[str, Any]]:
             return [
                 {
                     "id": 601,
@@ -426,7 +428,7 @@ def test_retry_is_deduplicated_across_window_boundary() -> None:
     }
 
     class CrossWindowRetrySource:
-        def list_runs(self) -> list[dict[str, Any]]:
+        def list_runs(self, _earliest_started_at: collector.dt.datetime) -> list[dict[str, Any]]:
             return [
                 {
                     "id": run_id,
@@ -462,7 +464,7 @@ def test_failed_run_after_publication_is_included() -> None:
     )
 
     class FailedRunSource:
-        def list_runs(self) -> list[dict[str, Any]]:
+        def list_runs(self, _earliest_started_at: collector.dt.datetime) -> list[dict[str, Any]]:
             return [
                 {
                     "id": 201,
@@ -509,6 +511,70 @@ def test_expired_replay_is_rejected() -> None:
                     raise AssertionError("expired replay window was accepted")
         finally:
             sys.argv = original_argv
+
+
+def test_github_run_query_is_time_bounded() -> None:
+    source = collector.GithubSource("sima-neat/sdk", "sync.yml")
+    calls: list[list[str]] = []
+
+    def fake_run_json(arguments: list[str]) -> list[dict[str, Any]]:
+        calls.append(arguments)
+        return [{"workflow_runs": []}]
+
+    source._run_json = fake_run_json
+    earliest = collector.parse_utc("2026-08-09T02:10:00Z")
+    assert source.list_runs(earliest) == []
+    assert calls == [
+        [
+            "--paginate",
+            "--slurp",
+            "repos/sima-neat/sdk/actions/workflows/sync.yml/runs?"
+            "status=completed&created=%3E%3D2026-08-09T02%3A10%3A00Z&per_page=100",
+        ]
+    ]
+
+
+def test_codex_runs_isolated_and_uses_only_final_message() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        prompt = Path(directory) / "prompt.md"
+        prompt.write_text("normalized context\n", encoding="utf-8")
+        original_which = generator.shutil.which
+        original_run = generator.subprocess.run
+        original_sensitive_environment = {
+            key: os.environ.get(key) for key in ("GH_TOKEN", "SLACK_BOT_TOKEN")
+        }
+        captured: dict[str, Any] = {}
+
+        def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+            captured.update({"command": command, **kwargs})
+            output_path = Path(command[command.index("--output-last-message") + 1])
+            output_path.write_text("safe final digest\n", encoding="utf-8")
+            return subprocess.CompletedProcess(command, 0, stdout="ignored trace", stderr="")
+
+        try:
+            generator.shutil.which = lambda _name: "/usr/local/bin/codex"
+            generator.subprocess.run = fake_run
+            os.environ["GH_TOKEN"] = "must-not-leak"
+            os.environ["SLACK_BOT_TOKEN"] = "must-not-leak"
+            assert generator.run_codex(prompt, 10) == "safe final digest\n"
+        finally:
+            generator.shutil.which = original_which
+            generator.subprocess.run = original_run
+            for key, value in original_sensitive_environment.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        command = captured["command"]
+        assert command[0:2] == ["/usr/local/bin/codex", "exec"]
+        assert ["--sandbox", "read-only"] == command[2:4]
+        assert "--ephemeral" in command
+        assert "--ignore-user-config" in command
+        assert 'shell_environment_policy.inherit="none"' in command
+        assert captured["input"].startswith("Return only the final Slack")
+        assert "GH_TOKEN" not in captured["env"]
+        assert "SLACK_BOT_TOKEN" not in captured["env"]
 
 
 class FakeResponse:
@@ -567,6 +633,8 @@ def main() -> int:
     test_retry_is_deduplicated_across_window_boundary()
     test_failed_run_after_publication_is_included()
     test_expired_replay_is_rejected()
+    test_github_run_query_is_time_bounded()
+    test_codex_runs_isolated_and_uses_only_final_message()
     test_slack_validation_and_dry_run()
     print("Debian mirror summary tests passed")
     return 0

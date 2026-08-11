@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 from typing import Any, Protocol
+import urllib.parse
 import zipfile
 
 
@@ -30,7 +31,7 @@ class CollectionError(RuntimeError):
 
 
 class ResultSource(Protocol):
-    def list_runs(self) -> list[dict[str, Any]]: ...
+    def list_runs(self, earliest_started_at: dt.datetime) -> list[dict[str, Any]]: ...
 
     def read_result(self, run: dict[str, Any]) -> dict[str, Any] | None: ...
 
@@ -132,10 +133,17 @@ class GithubSource:
             raise CollectionError(f"GitHub returned a non-object for {endpoint}")
         return document
 
-    def list_runs(self) -> list[dict[str, Any]]:
+    def list_runs(self, earliest_started_at: dt.datetime) -> list[dict[str, Any]]:
+        query = urllib.parse.urlencode(
+            {
+                "status": "completed",
+                "created": f">={utc_text(earliest_started_at)}",
+                "per_page": 100,
+            }
+        )
         endpoint = (
             f"repos/{self.repository}/actions/workflows/{self.workflow}/runs"
-            "?status=completed&per_page=100"
+            f"?{query}"
         )
         pages = self._run_json(["--paginate", "--slurp", endpoint])
         if not isinstance(pages, list):
@@ -191,8 +199,13 @@ class FixtureSource:
         self.root = root
         self.runs = json.loads((root / "runs.json").read_text(encoding="utf-8"))
 
-    def list_runs(self) -> list[dict[str, Any]]:
-        return list(self.runs)
+    def list_runs(self, earliest_started_at: dt.datetime) -> list[dict[str, Any]]:
+        return [
+            run
+            for run in self.runs
+            if parse_utc(str(run.get("run_started_at") or run.get("created_at")))
+            >= earliest_started_at
+        ]
 
     def read_result(self, run: dict[str, Any]) -> dict[str, Any] | None:
         result_file = run.get("result_file")
@@ -206,12 +219,13 @@ def load_publications(
     source: ResultSource, since: dt.datetime, as_of: dt.datetime
 ) -> list[dict[str, Any]]:
     publications: list[dict[str, Any]] = []
-    for run in source.list_runs():
+    earliest_started_at = since - DISCOVERY_MARGIN
+    for run in source.list_runs(earliest_started_at):
         timestamp_text = run.get("run_started_at") or run.get("created_at")
         if not timestamp_text:
             continue
         started_at = parse_utc(str(timestamp_text))
-        if started_at < since - DISCOVERY_MARGIN:
+        if started_at < earliest_started_at:
             continue
         completed_text = run.get("updated_at") or timestamp_text
         completed_at = parse_utc(str(completed_text))

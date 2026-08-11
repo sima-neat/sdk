@@ -96,6 +96,10 @@ replay a bounded window with an explicit UTC `as_of` timestamp.
 Manual replay windows are limited to 72 hours to match the repository's maximum
 GitHub Actions artifact retention. An historical `as_of` is accepted only when
 the entire requested window remains inside that retention period.
+Digest windows use `(since, as_of]` boundaries. A publication is assigned by
+the later of its mirror publication time and workflow completion time, so a
+publication whose result artifact becomes visible just after a cutoff is
+reported once in the next window rather than dropped.
 
 Configure the following GitHub settings:
 
@@ -109,6 +113,11 @@ are deterministic Python logic; Codex is used only to tighten the wording. The
 normalized context, prompt, and rendered digest are retained as short-lived
 workflow artifacts for auditing. Jenkins correlation is not part of this
 initial implementation.
+
+Codex runs in an isolated temporary working directory with a read-only sandbox,
+no user configuration, no inherited shell environment, and no GitHub, Slack, or
+AWS credentials. If Codex is unavailable, times out, rejects these controls, or
+returns an invalid response, the deterministic digest is posted unchanged.
 
 "Removed" means no longer referenced by the published APT indexes. Old package
 objects remain in the S3 pool during the initial rollout for safe rollback.
