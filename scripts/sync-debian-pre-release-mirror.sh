@@ -220,24 +220,27 @@ if [[ "${PUBLISH}" == true && "${reused_file_content_count}" -gt 0 ]]; then
     "${CHANGES_JSON}" >&2
   exit 1
 fi
-publication_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 inventory_key="pre-release/.mirror/inventories/${source_digest}.json"
 changes_key="pre-release/.mirror/changes/${source_digest}.json"
-jq -n \
-  --arg source_url "${UPSTREAM_BASE_URL}" \
-  --arg source_date "${source_date}" \
-  --arg source_digest "${source_digest}" \
-  --arg published_at "${publication_time}" \
-  --arg repository "${GITHUB_REPOSITORY:-local}" \
-  --arg workflow_run "${GITHUB_RUN_ID:-local}" \
-  --arg commit "${GITHUB_SHA:-local}" \
-  --arg inventory_key "${inventory_key}" \
-  --arg changes_key "${changes_key}" \
-  --argjson package_count "${package_count}" \
-  --argjson total_bytes "${total_bytes}" \
-  --slurpfile changes "${CHANGES_JSON}" \
-  '{schema_version: 1, source: {url: $source_url, date: $source_date, inrelease_sha256: $source_digest}, validation: {package_count: $package_count, total_bytes: $total_bytes}, changes: $changes[0].counts, publication: {published_at: $published_at, repository: $repository, workflow_run: $workflow_run, commit: $commit, inventory_key: $inventory_key, changes_key: $changes_key, apt_release_mode: "unsigned-by-hash"}}' \
-  >"${PUBLICATION_JSON}"
+
+write_publication_manifest() {
+  local published_at="$1"
+  jq -n \
+    --arg source_url "${UPSTREAM_BASE_URL}" \
+    --arg source_date "${source_date}" \
+    --arg source_digest "${source_digest}" \
+    --arg published_at "${published_at}" \
+    --arg repository "${GITHUB_REPOSITORY:-local}" \
+    --arg workflow_run "${GITHUB_RUN_ID:-local}" \
+    --arg commit "${GITHUB_SHA:-local}" \
+    --arg inventory_key "${inventory_key}" \
+    --arg changes_key "${changes_key}" \
+    --argjson package_count "${package_count}" \
+    --argjson total_bytes "${total_bytes}" \
+    --slurpfile changes "${CHANGES_JSON}" \
+    '{schema_version: 1, source: {url: $source_url, date: $source_date, inrelease_sha256: $source_digest}, validation: {package_count: $package_count, total_bytes: $total_bytes}, changes: $changes[0].counts, publication: {published_at: $published_at, repository: $repository, workflow_run: $workflow_run, commit: $commit, inventory_key: $inventory_key, changes_key: $changes_key, apt_release_mode: "unsigned-by-hash"}}' \
+    >"${PUBLICATION_JSON}"
+}
 
 write_change_report() {
   local result="$1"
@@ -317,6 +320,11 @@ if [[ "${PUBLISH}" == true ]]; then
     "s3://${BUCKET}/pre-release/dists/${SUITE}/Release" \
     "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate'
 
+  # Record when the Release replacement completed, rather than when this
+  # potentially long-running sync began. Daily reporting uses this timestamp
+  # to assign the publication to its actual reporting window.
+  publication_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  write_publication_manifest "${publication_time}"
   aws s3 cp "${PUBLICATION_JSON}" \
     "s3://${BUCKET}/pre-release/.mirror/publication.json" \
     "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate' \
@@ -335,6 +343,8 @@ if [[ "${PUBLISH}" == true ]]; then
     >/dev/null
 else
   result="Validated only"
+  publication_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  write_publication_manifest "${publication_time}"
   write_change_report "${result}"
 fi
 

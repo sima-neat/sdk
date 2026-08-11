@@ -205,7 +205,7 @@ class FixtureSource:
 def load_publications(
     source: ResultSource, since: dt.datetime, as_of: dt.datetime
 ) -> list[dict[str, Any]]:
-    publications: dict[str, dict[str, Any]] = {}
+    publications: list[dict[str, Any]] = []
     for run in source.list_runs():
         timestamp_text = run.get("run_started_at") or run.get("created_at")
         if not timestamp_text:
@@ -230,28 +230,35 @@ def load_publications(
             "html_url": run.get("html_url"),
             "started_at": utc_text(started_at),
         }
-        previous = publications.get(digest)
-        replace_previous = previous is None
-        if previous is not None:
-            previous_published_at = parse_utc(
-                str(previous["publication"]["published_at"])
-            )
-            previous_started_at = parse_utc(str(previous["_run"]["started_at"]))
-            # A forced re-publication of the same digest compares the mirror
-            # against itself and normally has empty changes. Preserve the
-            # earliest report that introduced the digest. Only use run start
-            # time to break ties for artifacts with the exact same publication
-            # timestamp.
-            replace_previous = published_at < previous_published_at or (
-                published_at == previous_published_at
-                and started_at > previous_started_at
-            )
-        if replace_previous:
-            publications[digest] = result
-    return sorted(
-        publications.values(),
-        key=lambda item: parse_utc(str(item["publication"]["published_at"])),
+        publications.append(result)
+
+    ordered = sorted(
+        publications,
+        key=lambda item: (
+            parse_utc(str(item["publication"]["published_at"])),
+            parse_utc(str(item["_run"]["started_at"])),
+        ),
     )
+    deduplicated: list[dict[str, Any]] = []
+    for publication in ordered:
+        digest = str(publication["source"]["inrelease_sha256"])
+        changes = publication.get("changes", {})
+        counts = changes.get("counts", {}) if isinstance(changes, dict) else {}
+        has_changes = any(int(value) != 0 for value in counts.values()) or any(
+            bool(changes.get(field, []))
+            for field in ("added", "removed", "version_changes", "reused_file_content")
+        )
+        if (
+            deduplicated
+            and digest == deduplicated[-1]["source"]["inrelease_sha256"]
+            and not has_changes
+        ):
+            # Suppress only an immediately repeated, no-op publication. Using
+            # a global digest key would incorrectly erase a real A -> B -> A
+            # rollback later in the reporting window.
+            continue
+        deduplicated.append(publication)
+    return deduplicated
 
 
 def grouped_package_files(publications: list[dict[str, Any]], field: str) -> list[dict[str, Any]]:

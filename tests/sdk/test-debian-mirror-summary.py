@@ -166,6 +166,66 @@ def test_platform_summary_preserves_earliest_baseline() -> None:
     assert summary["current_version"] == "2.1.3~pre4625"
 
 
+def test_collection_preserves_digest_rollback() -> None:
+    versions = ["2.1.3~pre4593", "2.1.3~pre4617", "2.1.3~pre4593"]
+    digests = ["a" * 64, "b" * 64, "a" * 64]
+    results = []
+    runs = []
+    for index, (digest, version) in enumerate(zip(digests, versions), start=1):
+        previous = versions[index - 2] if index > 1 else "2.1.3~pre4500"
+        timestamp = f"2026-08-10T0{index}:00:00Z"
+        results.append(
+            result(
+                digest,
+                timestamp,
+                version,
+                {
+                    "counts": {"version_changes": 1},
+                    "added": [],
+                    "removed": [],
+                    "version_changes": [
+                        {
+                            "package": "simaai-palette-modalix",
+                            "architecture": "arm64",
+                            "previous_versions": [previous],
+                            "current_versions": [version],
+                        }
+                    ],
+                },
+            )
+        )
+        runs.append(
+            {
+                "id": index,
+                "run_started_at": timestamp,
+                "html_url": f"https://github.com/sima-neat/sdk/actions/runs/{index}",
+            }
+        )
+
+    class RollbackSource:
+        def list_runs(self) -> list[dict[str, Any]]:
+            return runs
+
+        def read_result(self, run: dict[str, Any]) -> dict[str, Any]:
+            return results[int(run["id"]) - 1]
+
+    as_of = collector.parse_utc("2026-08-11T00:00:00Z")
+    publications = collector.load_publications(
+        RollbackSource(), as_of - collector.dt.timedelta(hours=24), as_of
+    )
+    assert [item["source"]["inrelease_sha256"] for item in publications] == digests
+    context = collector.build_context(
+        publications, as_of - collector.dt.timedelta(hours=24), as_of
+    )
+    assert context["publication_count"] == 3
+    assert context["platform"]["timeline"][-1]["version"] == "2.1.3~pre4593"
+    assert any(
+        item["previous_versions"] == ["2.1.3~pre4617"]
+        and item["current_versions"] == ["2.1.3~pre4593"]
+        for item in context["package_transitions"]
+    )
+
+
 def test_failed_run_after_publication_is_included() -> None:
     published = result(
         "4" * 64,
@@ -270,6 +330,7 @@ def main() -> int:
     test_version_ordering()
     test_collection_and_fallback()
     test_platform_summary_preserves_earliest_baseline()
+    test_collection_preserves_digest_rollback()
     test_failed_run_after_publication_is_included()
     test_expired_replay_is_rejected()
     test_slack_validation_and_dry_run()
