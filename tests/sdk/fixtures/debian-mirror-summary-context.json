@@ -28,9 +28,9 @@
   "counts": {
     "package_transitions": 1,
     "added_package_groups": 1,
-    "removed_package_groups": 1,
+    "removed_package_groups": 0,
     "added_files": 2,
-    "removed_files": 1
+    "removed_files": 0
   },
   "package_transitions": [
     {
@@ -51,13 +51,6 @@
       "files": 2
     }
   ],
-  "removed_packages": [
-    {
-      "package": "obsolete",
-      "version": "0.9",
-      "architectures": ["arm64"],
-      "files": 1
-    }
-  ],
+  "removed_packages": [],
   "reports": []
 }
