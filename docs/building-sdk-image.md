@@ -87,6 +87,37 @@ The `sima-cli` dependency is also selected by `deps/manifest.json`. Release refs
 resolves `latest.tag` before invoking Buildx and passes the resulting artifact commit into
 the Docker build, so a new branch artifact invalidates the cached installation layer.
 
+## Build Against Pre-release Platform Packages
+
+CI reads the repository variable `PRE_RELEASE_BASE`. A value such as `2.1.3`
+selects the highest Debian version matching `2.1.3~pre*`; a value such as
+`2.1.3~pre4460` pins that exact build. The workflow resolves the value once and
+passes the same immutable version to both architecture builds.
+
+For a manual workflow run, the optional **Platform selector** input overrides
+the repository variable. Leave it empty to use `PRE_RELEASE_BASE`, enter
+`X.Y.Z` to select the latest matching pre-release, or enter `X.Y.Z~preN` to pin
+that exact platform build.
+
+Floating selectors follow the mirror's `Release` metadata to its current
+Acquire-By-Hash package index. Exact `X.Y.Z~preN` values bypass latest-version
+selection but are still checked against that current index before the build.
+
+Pre-release images use the `platform-cross` profile. They contain the cross
+compiler and exact target sysroot but do not bundle Neat Core binaries or source
+checkouts. `/etc/sdk-release` records the requested selector, resolved platform
+version, repository, profile, and `Neat Core = not bundled`.
+
+The pre-release mirror is configured as an overlay on the official release
+repository. Exact platform-version pins select the requested pre-release
+packages, while SDK-pinned dependencies that are not duplicated in the
+pre-release mirror remain available from the release repository.
+
+Floating selectors are rejected on `main`, `release-*` branches, and tags.
+Those refs use the stable channel when `PRE_RELEASE_BASE` is unset and accept
+pre-release packages only when an exact `X.Y.Z~preN` version is explicitly
+pinned.
+
 ## Add Sysroot Packages
 
 Inside a running SDK container, install additional ARM64 Debian packages into the sysroot with `sysroot`:

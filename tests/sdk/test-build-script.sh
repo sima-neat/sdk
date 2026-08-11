@@ -84,7 +84,7 @@ fi
 palette_marker_line="$(grep -nF "SDK Version = %s_Palette_SDK" "${ROOT_DIR}/Dockerfile" | head -n 1 | cut -d: -f1)"
 sima_cli_install_line="$(grep -nF 'install-sima-cli.sh &&' "${ROOT_DIR}/Dockerfile" | tail -n 1 | cut -d: -f1)"
 resource_install_line="$(grep -nF 'install-neat-resources.sh' "${ROOT_DIR}/Dockerfile" | tail -n 1 | cut -d: -f1)"
-release_marker_line="$(grep -nF 'SDK Release = %s' "${ROOT_DIR}/Dockerfile" | head -n 1 | cut -d: -f1)"
+release_marker_line="$(grep -nF 'write-sdk-release.sh &&' "${ROOT_DIR}/Dockerfile" | tail -n 1 | cut -d: -f1)"
 
 if (( palette_marker_line >= sima_cli_install_line )); then
   echo "The stable Palette SDK marker must exist before sima-cli installs dependencies." >&2

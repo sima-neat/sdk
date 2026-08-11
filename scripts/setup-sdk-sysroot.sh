@@ -5,6 +5,11 @@ set -euo pipefail
 base_sdk_version="${1:?Usage: setup-sdk-sysroot.sh BASE_SDK_VERSION SDK_PKG_LIST}"
 sdk_pkg_list="${2:-}"
 sysroot_pref=/etc/apt/preferences.d/00-sima-sdk-sysroot-target.pref
+if [[ "${SDK_APT_CHANNEL:-release}" == "pre-release" ]]; then
+  sdk_apt_origin="debian.neat.sima.ai"
+else
+  sdk_apt_origin="repo.sima.ai"
+fi
 
 cleanup_sysroot_pref() {
   rm -f "${sysroot_pref}"
@@ -21,9 +26,9 @@ if [[ "${MINIMAL_IMAGE:-0}" == "1" ]]; then
 fi
 
 if [[ -f /etc/apt/sources.list.d/debian-target.list ]]; then
-  cat >"${sysroot_pref}" <<'EOF'
+  cat >"${sysroot_pref}" <<EOF
 Package: *
-Pin: origin "repo.sima.ai/elxr"
+Pin: origin "${sdk_apt_origin}"
 Pin-Priority: 990
 
 Package: *

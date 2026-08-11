@@ -15,6 +15,8 @@ SDK_BASE_IMAGE="${SDK_BASE_IMAGE:-ubuntu:24.04}"
 SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE:-debian:bookworm}"
 DOCKER_PLATFORM="${DOCKER_PLATFORM:-}"
 BASE_SDK_VERSION="${BASE_SDK_VERSION:-2.1.2}"
+SDK_APT_CHANNEL="${SDK_APT_CHANNEL:-release}"
+REQUESTED_PRE_RELEASE_BASE="${REQUESTED_PRE_RELEASE_BASE:-}"
 NEAT_BRANCH="${NEAT_BRANCH:-main}"
 NEAT_VERSION="${NEAT_VERSION:-latest}"
 NEAT_CORE_TARGET="${NEAT_CORE_TARGET:-}"
@@ -49,6 +51,7 @@ Environment overrides:
   SDK_BASE_IMAGE  Base Docker image for the SDK host/container userspace (default: ${SDK_BASE_IMAGE})
   SDK_CROSS_TOOLCHAIN_IMAGE  Base image used only to source the pinned aarch64 cross compiler (default: ${SDK_CROSS_TOOLCHAIN_IMAGE})
   BASE_SDK_VERSION  Base eLxr/SiMa SDK package version to install (default: ${BASE_SDK_VERSION})
+  SDK_APT_CHANNEL  Platform package channel: release or pre-release (default: ${SDK_APT_CHANNEL})
   NEAT_BRANCH  NEAT Framework branch to bake into /neat-resources (default: ${NEAT_BRANCH})
   NEAT_VERSION  NEAT Framework version/tag to bake into /neat-resources (default: ${NEAT_VERSION})
   NEAT_CORE_TARGET  Override the Neat Core Vulcan package target from deps/manifest.json
@@ -195,6 +198,8 @@ echo "Git branch: ${git_branch}"
 echo "Git hash: ${git_hash}"
 echo "SDK release ref: ${sdk_release_ref}"
 echo "Base SDK version: ${BASE_SDK_VERSION}"
+echo "SDK apt channel: ${SDK_APT_CHANNEL}"
+echo "Requested pre-release base: ${REQUESTED_PRE_RELEASE_BASE:-<none>}"
 echo "SDK base image: ${SDK_BASE_IMAGE}"
 echo "SDK cross toolchain image: ${SDK_CROSS_TOOLCHAIN_IMAGE}"
 echo "Minimal image mode: ${MINIMAL_IMAGE}"
@@ -219,6 +224,8 @@ if docker buildx version >/dev/null 2>&1; then
     --build-arg SDK_BASE_IMAGE="${SDK_BASE_IMAGE}"
     --build-arg SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE}"
     --build-arg BASE_SDK_VERSION="${BASE_SDK_VERSION}"
+    --build-arg SDK_APT_CHANNEL="${SDK_APT_CHANNEL}"
+    --build-arg REQUESTED_PRE_RELEASE_BASE="${REQUESTED_PRE_RELEASE_BASE}"
     --build-arg NEAT_BRANCH="${NEAT_BRANCH}"
     --build-arg NEAT_VERSION="${NEAT_VERSION}"
     --build-arg NEAT_CORE_TARGET="${NEAT_CORE_TARGET}"
@@ -279,6 +286,8 @@ build_cmd=(
   --build-arg SDK_BASE_IMAGE="${SDK_BASE_IMAGE}"
   --build-arg SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE}"
   --build-arg BASE_SDK_VERSION="${BASE_SDK_VERSION}"
+  --build-arg SDK_APT_CHANNEL="${SDK_APT_CHANNEL}"
+  --build-arg REQUESTED_PRE_RELEASE_BASE="${REQUESTED_PRE_RELEASE_BASE}"
   --build-arg NEAT_BRANCH="${NEAT_BRANCH}"
   --build-arg NEAT_VERSION="${NEAT_VERSION}"
   --build-arg NEAT_CORE_TARGET="${NEAT_CORE_TARGET}"

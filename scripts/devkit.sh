@@ -6,10 +6,40 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   exit 2
 fi
 
-if [[ -z "${1:-}" && -z "${DEVKIT_SYNC_DEVKIT_IP:-}" ]]; then
+if [[ "${DEVKIT_SH_FUNCTIONS_ONLY:-0}" != "1" && -z "${1:-}" && -z "${DEVKIT_SYNC_DEVKIT_IP:-}" ]]; then
   echo "Usage: source devkit.sh [devkit-ip|$DEVKIT_SYNC_DEVKIT_IP] [devkit-user=sima] [devkit-port=22]" >&2
   return 2
 fi
+
+sdk_release_value() {
+  local key="$1"
+  local sdk_release="${2:-${SDK_RELEASE_FILE:-/etc/sdk-release}}"
+
+  [[ -r "${sdk_release}" ]] || return 1
+  awk -F= -v key="${key}" '
+    $1 ~ "^[[:space:]]*" key "[[:space:]]*$" {
+      value = $2
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      print value
+      exit
+    }
+  ' "${sdk_release}"
+}
+
+sdk_bundles_neat_core() {
+  local sdk_release="${1:-${SDK_RELEASE_FILE:-/etc/sdk-release}}"
+  local sdk_profile=""
+  local core_status=""
+
+  sdk_profile="$(sdk_release_value "SDK Profile" "${sdk_release}" 2>/dev/null || true)"
+  core_status="$(sdk_release_value "Neat Core" "${sdk_release}" 2>/dev/null || true)"
+
+  if [[ "${sdk_profile}" == "platform-cross" || "${core_status}" == "not bundled" ]]; then
+    return 1
+  fi
+  return 0
+}
 
 check_remote_passwordless_sudo() {
   local user="$1"
@@ -20,17 +50,17 @@ check_remote_passwordless_sudo() {
 
 sdk_platform_version_from_release_file() {
   local sdk_release="$1"
+  local sdk_profile=""
   local platform_version=""
 
-  platform_version="$(
-    awk -F= '
-      /^[[:space:]]*Platform Version[[:space:]]*=/ {
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2)
-        print $2
-        exit
-      }
-    ' "${sdk_release}"
-  )"
+  sdk_profile="$(sdk_release_value "SDK Profile" "${sdk_release}" 2>/dev/null || true)"
+  if [[ "${sdk_profile}" == "platform-cross" ]]; then
+    platform_version="$(sdk_release_value "Platform Base" "${sdk_release}" 2>/dev/null || true)"
+  fi
+
+  if [[ -z "${platform_version}" ]]; then
+    platform_version="$(sdk_release_value "Platform Version" "${sdk_release}" 2>/dev/null || true)"
+  fi
 
   if [[ -n "${platform_version}" ]]; then
     printf "%s\n" "${platform_version}"
@@ -151,6 +181,11 @@ sync_neat_framework_to_devkit() {
     fi
     return 0
   }
+
+  if ! sdk_bundles_neat_core; then
+    echo "Neat Core is not bundled in this platform SDK; skipping DevKit Core synchronization."
+    return 0
+  fi
 
   case "${sync_enabled}" in
     OFF|off|0|false|FALSE|no|NO)
@@ -438,6 +473,10 @@ copy_insight_port_map_to_devkit() {
   printf "%bInsight port map copied to DevKit: ~/%s%b\n" "${c_green}" "${remote_port_map}" "${c_reset}"
   return 0
 }
+
+if [[ "${DEVKIT_SH_FUNCTIONS_ONLY:-0}" == "1" ]]; then
+  return 0
+fi
 
 _DEVKIT_IP="${1:-${DEVKIT_SYNC_DEVKIT_IP:-}}"
 _DEVKIT_USER="${2:-sima}"
