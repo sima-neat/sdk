@@ -81,8 +81,8 @@ provenance. This is the input to the daily reporting workflow.
 
 ## Daily change digest
 
-The `Daily pre-release mirror summary` workflow runs once per day on the
-corporate Alice reporting runner using these labels:
+The `Daily pre-release mirror summary` workflow runs once per day on the agent
+summary runner using these labels:
 
 ```text
 self-hosted, Linux, X64, issue-triage
@@ -103,7 +103,7 @@ Configure the following GitHub settings:
 - variable `SLACK_MIRROR_NOTIFICATION_CHANNEL_ID` containing the Slack channel
   ID (not its display name).
 
-The report generator follows the same Codex-on-Alice pattern as the process
+The report generator follows the same Codex agent-summary pattern as the process
 repository. Package counts, version ordering, grouping, and the fallback report
 are deterministic Python logic; Codex is used only to tighten the wording. The
 normalized context, prompt, and rendered digest are retained as short-lived
