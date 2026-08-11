@@ -104,4 +104,4 @@ jobs:
           name: debian-pre-release-mirror-result-${{ github.run_id }}
           path: out/debian-mirror-sync/mirror-sync-result.json
           if-no-files-found: ignore
-          retention-days: 3
+          retention-days: 8

@@ -62,7 +62,7 @@ def result(
 def build_fixture(root: Path) -> None:
     first, second = "1" * 64, "2" * 64
     runs = [
-        {"id": 101, "conclusion": "success", "run_started_at": "2026-08-10T12:00:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/101", "result_file": "101.json"},
+        {"id": 101, "conclusion": "success", "run_started_at": "2026-08-09T23:50:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/101", "result_file": "101.json"},
         {"id": 102, "conclusion": "success", "run_started_at": "2026-08-10T22:00:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/102", "result_file": "102.json"},
         {"id": 105, "conclusion": "success", "run_started_at": "2026-08-10T22:10:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/105", "result_file": "102.json"},
         {"id": 103, "conclusion": "success", "run_started_at": "2026-08-08T22:00:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/103", "result_file": "missing.json"},
@@ -116,6 +116,40 @@ def test_collection_and_fallback() -> None:
         assert "No mirror publications were found" in empty_report
 
 
+def test_platform_summary_preserves_earliest_baseline() -> None:
+    publications = []
+    for index, (previous, current) in enumerate(
+        [(None, "2.1.3~pre4593"), ("2.1.3~pre4593", "2.1.3~pre4617"), ("2.1.3~pre4617", "2.1.3~pre4625")],
+        start=1,
+    ):
+        changes = {"version_changes": []}
+        if previous:
+            changes["version_changes"].append(
+                {
+                    "package": "simaai-palette-modalix",
+                    "architecture": "arm64",
+                    "previous_versions": [previous],
+                    "current_versions": [current],
+                }
+            )
+        publication = result(
+            str(index) * 64,
+            f"2026-08-10T0{index}:00:00Z",
+            current,
+            changes,
+        )
+        publication["_run"] = {
+            "id": index,
+            "html_url": f"https://github.com/sima-neat/sdk/actions/runs/{index}",
+            "started_at": f"2026-08-10T0{index}:00:00Z",
+        }
+        publications.append(publication)
+
+    summary = collector.platform_summary(publications)
+    assert summary["previous_version"] == "2.1.3~pre4593"
+    assert summary["current_version"] == "2.1.3~pre4625"
+
+
 class FakeResponse:
     def __init__(self, document: dict[str, Any]) -> None:
         self.document = document
@@ -161,6 +195,7 @@ def test_slack_validation_and_dry_run() -> None:
 def main() -> int:
     test_version_ordering()
     test_collection_and_fallback()
+    test_platform_summary_preserves_earliest_baseline()
     test_slack_validation_and_dry_run()
     print("Debian mirror summary tests passed")
     return 0

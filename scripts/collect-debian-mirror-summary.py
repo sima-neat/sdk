@@ -21,6 +21,7 @@ RESULT_FILENAME = "mirror-sync-result.json"
 ANCHOR_PACKAGE = "simaai-palette-modalix"
 ANCHOR_ARCHITECTURE = "arm64"
 PLATFORM_VERSION_RE = re.compile(r"^[0-9]+(?:[.][0-9]+){2}~pre[0-9]+$")
+DISCOVERY_MARGIN = dt.timedelta(hours=13)
 
 
 class CollectionError(RuntimeError):
@@ -208,11 +209,17 @@ def load_publications(
         timestamp_text = run.get("run_started_at") or run.get("created_at")
         if not timestamp_text:
             continue
-        timestamp = parse_utc(str(timestamp_text))
-        if timestamp < since or timestamp > as_of or run.get("conclusion") != "success":
+        started_at = parse_utc(str(timestamp_text))
+        if started_at < since - DISCOVERY_MARGIN or run.get("conclusion") != "success":
             continue
         result = source.read_result(run)
         if not result or result.get("result") != "Published":
+            continue
+        published_text = result.get("publication", {}).get("published_at")
+        if not published_text:
+            raise CollectionError(f"run {run.get('id')} has no publication timestamp")
+        published_at = parse_utc(str(published_text))
+        if published_at < since or published_at > as_of:
             continue
         digest = str(result.get("source", {}).get("inrelease_sha256", ""))
         if not re.fullmatch(r"[0-9a-f]{64}", digest):
@@ -220,12 +227,24 @@ def load_publications(
         result["_run"] = {
             "id": int(run["id"]),
             "html_url": run.get("html_url"),
-            "started_at": utc_text(timestamp),
+            "started_at": utc_text(started_at),
         }
         previous = publications.get(digest)
-        if previous is None or timestamp > parse_utc(previous["_run"]["started_at"]):
+        replace_previous = previous is None
+        if previous is not None:
+            previous_published_at = parse_utc(
+                str(previous["publication"]["published_at"])
+            )
+            previous_started_at = parse_utc(str(previous["_run"]["started_at"]))
+            replace_previous = published_at > previous_published_at or (
+                published_at == previous_published_at and started_at > previous_started_at
+            )
+        if replace_previous:
             publications[digest] = result
-    return sorted(publications.values(), key=lambda item: item["_run"]["started_at"])
+    return sorted(
+        publications.values(),
+        key=lambda item: parse_utc(str(item["publication"]["published_at"])),
+    )
 
 
 def grouped_package_files(publications: list[dict[str, Any]], field: str) -> list[dict[str, Any]]:
@@ -281,14 +300,16 @@ def platform_summary(publications: list[dict[str, Any]]) -> dict[str, Any]:
         if versions:
             timeline.append({"published_at": publication["publication"]["published_at"], "version": versions[-1], "digest": publication["source"]["inrelease_sha256"]})
     previous_version = timeline[0]["version"] if timeline else None
+    baseline_found = False
     for publication in publications:
         for item in publication.get("changes", {}).get("version_changes", []):
             if item.get("package") == ANCHOR_PACKAGE and item.get("architecture") == ANCHOR_ARCHITECTURE:
                 previous = sorted_versions([str(value) for value in item.get("previous_versions", []) if PLATFORM_VERSION_RE.fullmatch(str(value))])
                 if previous:
                     previous_version = previous[-1]
+                    baseline_found = True
                     break
-        if timeline and previous_version != timeline[0]["version"]:
+        if baseline_found:
             break
     current_version = timeline[-1]["version"] if timeline else None
     return {"anchor_package": ANCHOR_PACKAGE, "architecture": ANCHOR_ARCHITECTURE, "previous_version": previous_version, "current_version": current_version, "changed": bool(previous_version and current_version and previous_version != current_version), "timeline": timeline}

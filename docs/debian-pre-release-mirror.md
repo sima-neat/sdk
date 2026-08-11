@@ -75,7 +75,7 @@ added to the indexes, package files removed from the indexes, and correlated
 version changes by package and architecture. It shows up to 50 entries in each
 category and records the complete machine-readable inventory and change report
 under digest-addressed `.mirror/inventories/` and `.mirror/changes/` S3 keys.
-Each run also uploads a three-day, machine-readable GitHub Actions artifact
+Each run also uploads an eight-day, machine-readable GitHub Actions artifact
 containing its complete change report, platform version, and publication
 provenance. This is the input to the daily reporting workflow.
 
