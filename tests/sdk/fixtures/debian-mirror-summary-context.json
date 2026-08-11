@@ -59,28 +59,5 @@
       "files": 1
     }
   ],
-  "reports": [
-    {
-      "digest": "1111111111111111111111111111111111111111111111111111111111111111",
-      "published_at": "2026-08-10T12:05:00Z",
-      "source_date": "2026-08-10T12:00:00Z",
-      "workflow_run_url": "https://github.com/sima-neat/sdk/actions/runs/101",
-      "counts": {
-        "added_files": 0,
-        "removed_files": 0,
-        "version_changes": 0
-      }
-    },
-    {
-      "digest": "2222222222222222222222222222222222222222222222222222222222222222",
-      "published_at": "2026-08-10T22:05:00Z",
-      "source_date": "2026-08-10T22:00:00Z",
-      "workflow_run_url": "https://github.com/sima-neat/sdk/actions/runs/102",
-      "counts": {
-        "added_files": 2,
-        "removed_files": 1,
-        "version_changes": 2
-      }
-    }
-  ]
+  "reports": []
 }
