@@ -325,16 +325,16 @@ if [[ "${PUBLISH}" == true ]]; then
   # to assign the publication to its actual reporting window.
   publication_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
   write_publication_manifest "${publication_time}"
+  result="Published"
+  # The Release object above is the authoritative publication boundary.
+  # Persist the local reporting artifact immediately so the workflow's
+  # always() upload can retain it even if a later S3 or CloudFront call fails.
+  write_change_report "${result}"
+
   aws s3 cp "${PUBLICATION_JSON}" \
     "s3://${BUCKET}/pre-release/.mirror/publication.json" \
     "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate' \
     --content-type application/json
-
-  result="Published"
-  # The publication manifest above is the authoritative boundary. Persist its
-  # reporting artifact before cache invalidation so a later operational failure
-  # cannot erase the package transitions from the daily digest.
-  write_change_report "${result}"
 
   aws cloudfront create-invalidation \
     --region "${AWS_REGION}" \

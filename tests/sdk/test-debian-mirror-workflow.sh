@@ -85,9 +85,9 @@ invalidation_line="$(grep -nF 'aws cloudfront create-invalidation' "${sync_scrip
 test "${pool_upload_line}" -lt "${by_hash_upload_line}"
 test "${by_hash_upload_line}" -lt "${release_upload_line}"
 test "${release_upload_line}" -lt "${publication_time_line}"
-test "${publication_time_line}" -lt "${publication_upload_line}"
+test "${publication_time_line}" -lt "${report_write_line}"
 test "${release_upload_line}" -lt "${manifest_upload_line}"
-test "${publication_upload_line}" -lt "${report_write_line}"
+test "${report_write_line}" -lt "${publication_upload_line}"
 test "${report_write_line}" -lt "${invalidation_line}"
 
 echo "Debian mirror workflow checks passed"

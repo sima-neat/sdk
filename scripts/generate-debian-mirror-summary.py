@@ -32,10 +32,15 @@ def fallback_report(context: dict[str, Any], max_characters: int) -> str:
         f"*Pre-release mirror — last {window.get('hours', 24):g} hours*",
         "",
     ]
+    platform_observed = bool(platform.get("timeline"))
     if previous and current and previous != current:
         lines.append(f"• Platform: `{slack_text(previous)}` → `{slack_text(current)}`")
+    elif previous and platform_observed and current is None:
+        lines.append(f"• Platform: `{slack_text(previous)}` → removed")
     elif current:
         lines.append(f"• Platform: `{slack_text(current)}` (unchanged in window)")
+    elif platform_observed:
+        lines.append("• Platform: anchor package absent in latest publication")
     else:
         lines.append("• Platform: no platform publication detected in window")
     lines.extend(

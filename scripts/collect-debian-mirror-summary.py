@@ -311,8 +311,13 @@ def platform_summary(publications: list[dict[str, Any]]) -> dict[str, Any]:
                 if PLATFORM_VERSION_RE.fullmatch(str(value))
             ]
         )
-        if versions:
-            timeline.append({"published_at": publication["publication"]["published_at"], "version": versions[-1], "digest": publication["source"]["inrelease_sha256"]})
+        timeline.append(
+            {
+                "published_at": publication["publication"]["published_at"],
+                "version": versions[-1] if versions else None,
+                "digest": publication["source"]["inrelease_sha256"],
+            }
+        )
     previous_version = timeline[0]["version"] if timeline else None
     baseline_found = False
     for publication in publications:
@@ -326,7 +331,14 @@ def platform_summary(publications: list[dict[str, Any]]) -> dict[str, Any]:
         if baseline_found:
             break
     current_version = timeline[-1]["version"] if timeline else None
-    return {"anchor_package": ANCHOR_PACKAGE, "architecture": ANCHOR_ARCHITECTURE, "previous_version": previous_version, "current_version": current_version, "changed": bool(previous_version and current_version and previous_version != current_version), "timeline": timeline}
+    return {
+        "anchor_package": ANCHOR_PACKAGE,
+        "architecture": ANCHOR_ARCHITECTURE,
+        "previous_version": previous_version,
+        "current_version": current_version,
+        "changed": bool(timeline) and previous_version != current_version,
+        "timeline": timeline,
+    }
 
 
 def build_context(publications: list[dict[str, Any]], since: dt.datetime, as_of: dt.datetime) -> dict[str, Any]:

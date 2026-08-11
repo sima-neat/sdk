@@ -226,6 +226,45 @@ def test_collection_preserves_digest_rollback() -> None:
     )
 
 
+def test_platform_summary_reports_anchor_removal() -> None:
+    publication = result(
+        "c" * 64,
+        "2026-08-10T04:00:00Z",
+        "ignored",
+        {
+            "counts": {"removed_files": 1, "version_changes": 1},
+            "added": [],
+            "removed": [package("simaai-palette-modalix", "2.1.3~pre4617", "arm64")],
+            "version_changes": [
+                {
+                    "package": "simaai-palette-modalix",
+                    "architecture": "arm64",
+                    "previous_versions": ["2.1.3~pre4617"],
+                    "current_versions": [],
+                }
+            ],
+        },
+    )
+    publication["platform"]["versions"] = []
+    publication["_run"] = {
+        "id": 301,
+        "html_url": "https://github.com/sima-neat/sdk/actions/runs/301",
+        "started_at": "2026-08-10T04:00:00Z",
+    }
+
+    summary = collector.platform_summary([publication])
+    assert summary["previous_version"] == "2.1.3~pre4617"
+    assert summary["current_version"] is None
+    assert summary["changed"] is True
+    assert summary["timeline"][-1]["version"] is None
+    context = collector.build_context(
+        [publication],
+        collector.parse_utc("2026-08-10T00:00:00Z"),
+        collector.parse_utc("2026-08-11T00:00:00Z"),
+    )
+    assert "`2.1.3~pre4617` → removed" in generator.fallback_report(context, 1000)
+
+
 def test_failed_run_after_publication_is_included() -> None:
     published = result(
         "4" * 64,
@@ -331,6 +370,7 @@ def main() -> int:
     test_collection_and_fallback()
     test_platform_summary_preserves_earliest_baseline()
     test_collection_preserves_digest_rollback()
+    test_platform_summary_reports_anchor_removal()
     test_failed_run_after_publication_is_included()
     test_expired_replay_is_rejected()
     test_slack_validation_and_dry_run()
