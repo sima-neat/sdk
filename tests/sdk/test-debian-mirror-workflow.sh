@@ -5,12 +5,17 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 workflow="${repo_root}/.github/workflows/sync-debian-pre-release-mirror.yml"
 sync_script="${repo_root}/scripts/sync-debian-pre-release-mirror.sh"
 documentation="${repo_root}/docs/debian-pre-release-mirror.md"
+summary_workflow="${repo_root}/.github/workflows/daily-pre-release-mirror-summary.yml"
 
 bash -n "${sync_script}"
 python3 -m py_compile "${repo_root}/scripts/validate-debian-mirror.py"
 python3 -m py_compile "${repo_root}/scripts/compare-debian-mirror-inventories.py"
 python3 -m py_compile "${repo_root}/scripts/prepare-debian-by-hash.py"
+python3 -m py_compile "${repo_root}/scripts/collect-debian-mirror-summary.py"
+python3 -m py_compile "${repo_root}/scripts/generate-debian-mirror-summary.py"
+python3 -m py_compile "${repo_root}/scripts/post-debian-mirror-summary.py"
 python3 "${repo_root}/tests/sdk/test-debian-by-hash.py"
+python3 "${repo_root}/tests/sdk/test-debian-mirror-summary.py"
 
 grep -Fq 'workflow_dispatch:' "${workflow}"
 grep -Fq 'schedule:' "${workflow}"
@@ -23,6 +28,17 @@ grep -Fq 'cancel-in-progress: false' "${workflow}"
 grep -Fq 'environment: production' "${workflow}"
 grep -Fq 'id-token: write' "${workflow}"
 grep -Fq 'apt-mirror2' "${workflow}"
+grep -Fq 'cron: "10 15 * * *"' "${summary_workflow}"
+grep -Fq 'runs-on: [self-hosted, Linux, X64, issue-triage]' "${summary_workflow}"
+grep -Fq 'actions: read' "${summary_workflow}"
+grep -Fq 'GH_TOKEN: ${{ github.token }}' "${summary_workflow}"
+if grep -Eq 'AWS_|VULCAN_|configure-aws-credentials|id-token: write' "${summary_workflow}"; then
+  echo "The daily summary must read GitHub workflow results without AWS/Vulcan credentials" >&2
+  exit 1
+fi
+grep -Fq 'SLACK_BOT_TOKEN' "${summary_workflow}"
+grep -Fq 'SLACK_MIRROR_NOTIFICATION_CHANNEL_ID' "${summary_workflow}"
+grep -Fq 'post_to_slack != true' "${summary_workflow}"
 grep -Fq 'set nthreads ${APT_MIRROR2_THREADS}' "${sync_script}"
 grep -Fq 'set gpg_verify off' "${sync_script}"
 grep -Fq 'by-hash=no' "${sync_script}"
@@ -42,6 +58,8 @@ grep -Fq 'pool filename(s) with different content; refusing publication' "${sync
 grep -Fq '.mirror/inventories/${source_digest}.json' "${sync_script}"
 # shellcheck disable=SC2016
 grep -Fq '.mirror/changes/${source_digest}.json' "${sync_script}"
+grep -Fq 'debian-pre-release-mirror-result-${{ github.run_id }}' "${workflow}"
+grep -Fq 'DEBIAN_MIRROR_REPORT_DIR' "${workflow}"
 
 # These grep patterns intentionally match literal shell expressions in the
 # implementation rather than expanding them in this test process.

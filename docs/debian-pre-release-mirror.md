@@ -8,7 +8,7 @@ This is an operational mirror-transfer workflow only. It does not build or
 modify the SDK container, SDK packages, or SDK installation behavior; the SDK
 repository is only the home for the workflow and its synchronization utility.
 
-The workflow runs daily at 09:27 UTC and can also be started manually. Scheduled
+The workflow runs every 30 minutes at 17 and 47 minutes past the hour and can also be started manually. Scheduled
 runs publish after validation; manual runs expose an explicit `publish` switch
 so the first production validation can download and verify without changing S3.
 Package downloads use `apt-mirror2` with 16 asynchronous workers by default.
@@ -75,6 +75,37 @@ added to the indexes, package files removed from the indexes, and correlated
 version changes by package and architecture. It shows up to 50 entries in each
 category and records the complete machine-readable inventory and change report
 under digest-addressed `.mirror/inventories/` and `.mirror/changes/` S3 keys.
+Each run also uploads a three-day, machine-readable GitHub Actions artifact
+containing its complete change report, platform version, and publication
+provenance. This is the input to the daily reporting workflow.
+
+## Daily change digest
+
+The `Daily pre-release mirror summary` workflow runs once per day on the
+corporate Alice reporting runner using these labels:
+
+```text
+self-hosted, Linux, X64, issue-triage
+```
+
+It uses read-only GitHub Actions permission to enumerate successful mirror-sync
+runs from the previous 24 hours and download their short-lived result artifacts.
+It does not assume a Vulcan or AWS role. Scheduled runs post a concise digest to
+`neat-sync-mirror-notification`; manual runs default to preview-only and can
+replay a bounded window with an explicit UTC `as_of` timestamp.
+
+Configure the following GitHub settings:
+
+- organization secret `SLACK_BOT_TOKEN`;
+- variable `SLACK_MIRROR_NOTIFICATION_CHANNEL_ID` containing the Slack channel
+  ID (not its display name).
+
+The report generator follows the same Codex-on-Alice pattern as the process
+repository. Package counts, version ordering, grouping, and the fallback report
+are deterministic Python logic; Codex is used only to tighten the wording. The
+normalized context, prompt, and rendered digest are retained as short-lived
+workflow artifacts for auditing. Jenkins correlation is not part of this
+initial implementation.
 
 "Removed" means no longer referenced by the published APT indexes. Old package
 objects remain in the S3 pool during the initial rollout for safe rollback.

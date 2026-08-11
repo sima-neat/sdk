@@ -19,6 +19,7 @@ AWS_REGION="${AWS_REGION:-us-west-2}"
 BUCKET="${VULCAN_DEBIAN_MIRROR_BUCKET:-}"
 KMS_KEY_ID="${VULCAN_DEBIAN_MIRROR_KMS_KEY_ID:-}"
 CLOUDFRONT_DISTRIBUTION_ID="${VULCAN_DEBIAN_MIRROR_CLOUDFRONT_DISTRIBUTION_ID:-}"
+REPORT_DIR="${DEBIAN_MIRROR_REPORT_DIR:-}"
 
 usage() {
   cat <<'EOF'
@@ -90,6 +91,18 @@ PUBLICATION_JSON="${TEMP_DIR}/publication.json"
 PUBLISH_DISTS="${TEMP_DIR}/publish-dists"
 APT_MIRROR2_CONFIG="${TEMP_DIR}/apt-mirror2.list"
 
+write_no_change_report() {
+  [[ -n "${REPORT_DIR}" ]] || return 0
+  mkdir -p "${REPORT_DIR}"
+  jq -n \
+    --arg generated_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --arg source_digest "${source_digest}" \
+    --arg repository "${GITHUB_REPOSITORY:-local}" \
+    --arg workflow_run "${GITHUB_RUN_ID:-local}" \
+    '{schema_version: 1, result: "No change", generated_at: $generated_at, source: {inrelease_sha256: $source_digest}, publication: {repository: $repository, workflow_run: $workflow_run}}' \
+    >"${REPORT_DIR}/mirror-sync-result.json"
+}
+
 getent hosts "${UPSTREAM_HOST}" >/dev/null
 curl --fail --silent --show-error --location --max-time 120 \
   --output "${INRELEASE}" "${UPSTREAM_BASE_URL}/dists/${SUITE}/InRelease"
@@ -116,6 +129,7 @@ fi
 
 if [[ "${FORCE}" != true && -n "${previous_digest}" && "${source_digest}" == "${previous_digest}" ]]; then
   echo "Upstream InRelease is unchanged (${source_digest}); nothing to publish."
+  write_no_change_report
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     {
       echo '## Debian mirror synchronization'
@@ -298,6 +312,21 @@ if [[ "${PUBLISH}" == true ]]; then
   result="Published"
 else
   result="Validated only"
+fi
+
+if [[ -n "${REPORT_DIR}" ]]; then
+  mkdir -p "${REPORT_DIR}"
+  platform_versions="$(jq -c \
+    '[.packages[] | select(.package == "simaai-palette-modalix" and .architecture == "arm64") | .version] | unique' \
+    "${CURRENT_INVENTORY_JSON}")"
+  jq -n \
+    --arg result "${result}" \
+    --arg generated_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --argjson platform_versions "${platform_versions}" \
+    --slurpfile publication "${PUBLICATION_JSON}" \
+    --slurpfile changes "${CHANGES_JSON}" \
+    '{schema_version: 1, result: $result, generated_at: $generated_at, source: $publication[0].source, validation: $publication[0].validation, publication: $publication[0].publication, platform: {anchor_package: "simaai-palette-modalix", architecture: "arm64", versions: $platform_versions}, changes: $changes[0]}' \
+    >"${REPORT_DIR}/mirror-sync-result.json"
 fi
 
 echo "${result}: ${package_count} packages, ${total_bytes} bytes, InRelease ${source_digest}"

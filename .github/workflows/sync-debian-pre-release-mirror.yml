@@ -84,6 +84,7 @@ jobs:
       - name: Synchronize and validate mirror
         env:
           APT_MIRROR2_THREADS: ${{ inputs.download_workers || '16' }}
+          DEBIAN_MIRROR_REPORT_DIR: ${{ github.workspace }}/out/debian-mirror-sync
           MINIMUM_FREE_GIB: ${{ inputs.minimum_free_gib || '100' }}
         run: |
           set -euo pipefail
@@ -95,3 +96,12 @@ jobs:
             arguments+=(--force)
           fi
           scripts/sync-debian-pre-release-mirror.sh "${arguments[@]}"
+
+      - name: Upload machine-readable synchronization result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: debian-pre-release-mirror-result-${{ github.run_id }}
+          path: out/debian-mirror-sync/mirror-sync-result.json
+          if-no-files-found: ignore
+          retention-days: 3
