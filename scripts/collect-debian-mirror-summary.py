@@ -22,6 +22,7 @@ ANCHOR_PACKAGE = "simaai-palette-modalix"
 ANCHOR_ARCHITECTURE = "arm64"
 PLATFORM_VERSION_RE = re.compile(r"^[0-9]+(?:[.][0-9]+){2}~pre[0-9]+$")
 DISCOVERY_MARGIN = dt.timedelta(hours=13)
+ARTIFACT_RETENTION = dt.timedelta(hours=72)
 
 
 class CollectionError(RuntimeError):
@@ -210,7 +211,7 @@ def load_publications(
         if not timestamp_text:
             continue
         started_at = parse_utc(str(timestamp_text))
-        if started_at < since - DISCOVERY_MARGIN or run.get("conclusion") != "success":
+        if started_at < since - DISCOVERY_MARGIN:
             continue
         result = source.read_result(run)
         if not result or result.get("result") != "Published":
@@ -360,8 +361,15 @@ def main() -> int:
     args = parser.parse_args()
     if args.window_hours < 1 or args.window_hours > 72:
         parser.error("--window-hours must be between 1 and 72")
-    as_of = parse_utc(args.as_of) if args.as_of else dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.now(dt.timezone.utc)
+    as_of = parse_utc(args.as_of) if args.as_of else now
     since = as_of - dt.timedelta(hours=args.window_hours)
+    if as_of > now + dt.timedelta(minutes=5):
+        parser.error("--as-of cannot be in the future")
+    if since < now - ARTIFACT_RETENTION:
+        parser.error(
+            "the requested replay window starts outside the 72-hour artifact retention period"
+        )
     result_source: ResultSource = FixtureSource(args.fixture_root) if args.fixture_root else GithubSource(args.repository, args.workflow)
     try:
         publications = load_publications(result_source, since, as_of)

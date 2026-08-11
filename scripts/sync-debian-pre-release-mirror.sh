@@ -239,6 +239,24 @@ jq -n \
   '{schema_version: 1, source: {url: $source_url, date: $source_date, inrelease_sha256: $source_digest}, validation: {package_count: $package_count, total_bytes: $total_bytes}, changes: $changes[0].counts, publication: {published_at: $published_at, repository: $repository, workflow_run: $workflow_run, commit: $commit, inventory_key: $inventory_key, changes_key: $changes_key, apt_release_mode: "unsigned-by-hash"}}' \
   >"${PUBLICATION_JSON}"
 
+write_change_report() {
+  local result="$1"
+  [[ -n "${REPORT_DIR}" ]] || return 0
+  mkdir -p "${REPORT_DIR}"
+  local platform_versions
+  platform_versions="$(jq -c \
+    '[.packages[] | select(.package == "simaai-palette-modalix" and .architecture == "arm64") | .version] | unique' \
+    "${CURRENT_INVENTORY_JSON}")"
+  jq -n \
+    --arg result "${result}" \
+    --arg generated_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --argjson platform_versions "${platform_versions}" \
+    --slurpfile publication "${PUBLICATION_JSON}" \
+    --slurpfile changes "${CHANGES_JSON}" \
+    '{schema_version: 1, result: $result, generated_at: $generated_at, source: $publication[0].source, validation: $publication[0].validation, publication: $publication[0].publication, platform: {anchor_package: "simaai-palette-modalix", architecture: "arm64", versions: $platform_versions}, changes: $changes[0]}' \
+    >"${REPORT_DIR}/mirror-sync-result.json"
+}
+
 if [[ "${PUBLISH}" == true ]]; then
   s3_common=(--region "${AWS_REGION}" --sse aws:kms --sse-kms-key-id "${KMS_KEY_ID}" --only-show-errors)
 
@@ -304,29 +322,20 @@ if [[ "${PUBLISH}" == true ]]; then
     "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate' \
     --content-type application/json
 
+  result="Published"
+  # The publication manifest above is the authoritative boundary. Persist its
+  # reporting artifact before cache invalidation so a later operational failure
+  # cannot erase the package transitions from the daily digest.
+  write_change_report "${result}"
+
   aws cloudfront create-invalidation \
     --region "${AWS_REGION}" \
     --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID}" \
     --paths '/pre-release/dists/*' '/pre-release/.mirror/publication.json' \
     >/dev/null
-  result="Published"
 else
   result="Validated only"
-fi
-
-if [[ -n "${REPORT_DIR}" ]]; then
-  mkdir -p "${REPORT_DIR}"
-  platform_versions="$(jq -c \
-    '[.packages[] | select(.package == "simaai-palette-modalix" and .architecture == "arm64") | .version] | unique' \
-    "${CURRENT_INVENTORY_JSON}")"
-  jq -n \
-    --arg result "${result}" \
-    --arg generated_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
-    --argjson platform_versions "${platform_versions}" \
-    --slurpfile publication "${PUBLICATION_JSON}" \
-    --slurpfile changes "${CHANGES_JSON}" \
-    '{schema_version: 1, result: $result, generated_at: $generated_at, source: $publication[0].source, validation: $publication[0].validation, publication: $publication[0].publication, platform: {anchor_package: "simaai-palette-modalix", architecture: "arm64", versions: $platform_versions}, changes: $changes[0]}' \
-    >"${REPORT_DIR}/mirror-sync-result.json"
+  write_change_report "${result}"
 fi
 
 echo "${result}: ${package_count} packages, ${total_bytes} bytes, InRelease ${source_digest}"

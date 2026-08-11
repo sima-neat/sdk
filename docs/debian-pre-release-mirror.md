@@ -94,7 +94,8 @@ It does not assume a Vulcan or AWS role. Scheduled runs post a concise digest to
 `neat-sync-mirror-notification`; manual runs default to preview-only and can
 replay a bounded window with an explicit UTC `as_of` timestamp.
 Manual replay windows are limited to 72 hours to match the repository's maximum
-GitHub Actions artifact retention.
+GitHub Actions artifact retention. An historical `as_of` is accepted only when
+the entire requested window remains inside that retention period.
 
 Configure the following GitHub settings:
 

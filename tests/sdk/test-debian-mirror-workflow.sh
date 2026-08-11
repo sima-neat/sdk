@@ -75,9 +75,14 @@ by_hash_upload_line="$(grep -nF 's3 sync "${PUBLISH_DISTS}/' "${sync_script}" | 
 # shellcheck disable=SC2016
 release_upload_line="$(grep -nF 'aws s3 cp "${PUBLISH_DISTS}/${SUITE}/Release"' "${sync_script}" | cut -d: -f1)"
 manifest_upload_line="$(grep -n 'pre-release/.mirror/publication.json' "${sync_script}" | tail -n 1 | cut -d: -f1)"
+publication_upload_line="$(grep -nF 'aws s3 cp "${PUBLICATION_JSON}"' "${sync_script}" | cut -d: -f1)"
+report_write_line="$(grep -nF 'write_change_report "${result}"' "${sync_script}" | head -n 1 | cut -d: -f1)"
+invalidation_line="$(grep -nF 'aws cloudfront create-invalidation' "${sync_script}" | cut -d: -f1)"
 
 test "${pool_upload_line}" -lt "${by_hash_upload_line}"
 test "${by_hash_upload_line}" -lt "${release_upload_line}"
 test "${release_upload_line}" -lt "${manifest_upload_line}"
+test "${publication_upload_line}" -lt "${report_write_line}"
+test "${report_write_line}" -lt "${invalidation_line}"
 
 echo "Debian mirror workflow checks passed"

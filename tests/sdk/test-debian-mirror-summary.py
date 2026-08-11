@@ -66,7 +66,7 @@ def build_fixture(root: Path) -> None:
         {"id": 102, "conclusion": "success", "run_started_at": "2026-08-10T22:00:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/102", "result_file": "102.json"},
         {"id": 105, "conclusion": "success", "run_started_at": "2026-08-10T22:10:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/105", "result_file": "105.json"},
         {"id": 103, "conclusion": "success", "run_started_at": "2026-08-08T22:00:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/103", "result_file": "missing.json"},
-        {"id": 104, "conclusion": "failure", "run_started_at": "2026-08-10T23:00:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/104", "result_file": "missing.json"},
+        {"id": 104, "conclusion": "failure", "run_started_at": "2026-08-10T23:00:00Z", "html_url": "https://github.com/sima-neat/sdk/actions/runs/104"},
     ]
     (root / "runs.json").write_text(json.dumps(runs), encoding="utf-8")
     first_changes = {
@@ -166,6 +166,64 @@ def test_platform_summary_preserves_earliest_baseline() -> None:
     assert summary["current_version"] == "2.1.3~pre4625"
 
 
+def test_failed_run_after_publication_is_included() -> None:
+    published = result(
+        "4" * 64,
+        "2026-08-10T12:05:00Z",
+        "2.1.3~pre4617",
+        {"counts": {}, "added": [], "removed": [], "version_changes": []},
+    )
+
+    class FailedRunSource:
+        def list_runs(self) -> list[dict[str, Any]]:
+            return [
+                {
+                    "id": 201,
+                    "conclusion": "failure",
+                    "run_started_at": "2026-08-10T12:00:00Z",
+                    "html_url": "https://github.com/sima-neat/sdk/actions/runs/201",
+                }
+            ]
+
+        def read_result(self, _run: dict[str, Any]) -> dict[str, Any]:
+            return published
+
+    as_of = collector.parse_utc("2026-08-11T00:00:00Z")
+    publications = collector.load_publications(
+        FailedRunSource(), as_of - collector.dt.timedelta(hours=24), as_of
+    )
+    assert len(publications) == 1
+    assert publications[0]["_run"]["id"] == 201
+
+
+def test_expired_replay_is_rejected() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        (root / "runs.json").write_text("[]\n", encoding="utf-8")
+        original_argv = sys.argv
+        sys.argv = [
+            "collect-debian-mirror-summary.py",
+            "--fixture-root",
+            str(root),
+            "--window-hours",
+            "24",
+            "--as-of",
+            "2020-01-02T00:00:00Z",
+            "--output",
+            str(root / "context.json"),
+        ]
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                try:
+                    collector.main()
+                except SystemExit as error:
+                    assert error.code == 2
+                else:
+                    raise AssertionError("expired replay window was accepted")
+        finally:
+            sys.argv = original_argv
+
+
 class FakeResponse:
     def __init__(self, document: dict[str, Any]) -> None:
         self.document = document
@@ -212,6 +270,8 @@ def main() -> int:
     test_version_ordering()
     test_collection_and_fallback()
     test_platform_summary_preserves_earliest_baseline()
+    test_failed_run_after_publication_is_included()
+    test_expired_replay_is_rejected()
     test_slack_validation_and_dry_run()
     print("Debian mirror summary tests passed")
     return 0
