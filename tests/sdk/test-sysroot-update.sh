@@ -163,6 +163,12 @@ grep -Fq 'Sysroot overlay state:    incomplete' <<< "${failed_status}" || \
   fail "failed update did not leave visible incomplete overlay state"
 grep -Fq 'WARNING: The sysroot overlay is not complete' <<< "${failed_status}" || \
   fail "incomplete overlay did not report recovery guidance"
+if env "${common_env[@]}" SYSROOT_INSTALLER=/bin/true \
+  "${SYSROOT_COMMAND}" install test-package:arm64 >"${tmpdir}/out" 2>"${tmpdir}/err"; then
+  fail "package install proceeded against an incomplete overlay"
+fi
+grep -Fq 'sysroot overlay state is incomplete' "${tmpdir}/err" || \
+  fail "package install did not explain the incomplete overlay rejection"
 
 update_output="$(run_sysroot update 2.1.3~pre4617)"
 grep -Fq 'Sysroot overlay is active at 2.1.3~pre4617' <<< "${update_output}" || \
@@ -183,6 +189,51 @@ grep -Fxq 'Version: 2.1.3~pre4617' \
   fail "update did not refresh an existing tracked package manifest"
 grep -Fxq $'2.1.3~pre4617\t0\t4617' "${tmpdir}/setup.log" || \
   fail "actual update did not constrain dependencies to the selected build cohort"
+
+mkdir -p "${tmpdir}/bin"
+cat > "${tmpdir}/fake-installer" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${SDK_APT_CHANNEL:-}" == "pre-release" ]]
+grep -Fq 'Pin: version 2.1.3~pre4617' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
+printf 'overlay-selection-ok\n' > "${SYSROOT_UPDATE_INSTALL_TEST_LOG:?}"
+EOF
+cat > "${tmpdir}/bin/apt-get" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+archive_dir=""
+for argument in "$@"; do
+  case "${argument}" in
+    Dir::Cache::archives=*) archive_dir="${argument#*=}" ;;
+  esac
+done
+if [[ -n "${archive_dir}" ]]; then
+  mkdir -p "${archive_dir}"
+  cp "${SYSROOT_UPDATE_DOWNLOAD_DIR}"/*.deb "${archive_dir}/"
+fi
+EOF
+chmod 755 "${tmpdir}/fake-installer" "${tmpdir}/bin/apt-get"
+env "${common_env[@]}" \
+  PATH="${tmpdir}/bin:${PATH}" \
+  SYSROOT_INSTALLER="${tmpdir}/fake-installer" \
+  SYSROOT_UPDATE_INSTALL_TEST_LOG="${tmpdir}/install.log" \
+  "${SYSROOT_COMMAND}" install test-package:arm64 >/dev/null
+grep -Fxq 'overlay-selection-ok' "${tmpdir}/install.log" || \
+  fail "package install did not reconstruct active overlay APT selection"
+
+incomplete_prompt_output="$(
+  cp "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay" "${tmpdir}/active-overlay"
+  sed -i 's/^Overlay State = active$/Overlay State = incomplete/' \
+    "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay"
+  SYSROOT="${tmpdir}/sysroot" \
+  SDK_PROMPT_HOSTNAME=neat-sdk-test \
+  bash --noprofile --norc -ic \
+    "source '${ROOT_DIR}/config/profile.d/neat-sdk-prompt.sh'; printf '%s\\n' \"\${SDK_PROMPT_HOSTNAME}\"" \
+    2>/dev/null
+)"
+mv "${tmpdir}/active-overlay" "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay"
+grep -Fq 'neat-sdk-test-overlay-incomplete-2-1-3-pre4617' <<< "${incomplete_prompt_output}" || \
+  fail "interactive prompt mislabeled an incomplete overlay as active"
 
 setup_count_before="$(wc -l < "${tmpdir}/setup.log" | tr -d ' ')"
 idempotent_output="$(run_sysroot update 2.1.3~pre4617)"

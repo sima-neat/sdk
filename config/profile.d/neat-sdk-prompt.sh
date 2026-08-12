@@ -15,8 +15,13 @@ if [[ $- == *i* ]]; then
   SDK_PROMPT_HOSTNAME="${SDK_BASE_PROMPT_HOSTNAME}"
   _sdk_sysroot_overlay="${SYSROOT:-/opt/toolchain/aarch64/modalix}/var/lib/sima-sdk/sysroot-overlay"
   if [[ -r "${_sdk_sysroot_overlay}" ]]; then
+    _sdk_overlay_state="$(awk -F ' = ' '$1 == "Overlay State" { print $2; exit }' "${_sdk_sysroot_overlay}")"
     _sdk_overlay_revision="$(awk -F ' = ' '$1 == "Platform Revision" { print $2; exit }' "${_sdk_sysroot_overlay}")"
-    SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME}-overlay-$(_sdk_prompt_slug "${_sdk_overlay_revision:-active}")"
+    if [[ "${_sdk_overlay_state}" == "active" ]]; then
+      SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME}-overlay-$(_sdk_prompt_slug "${_sdk_overlay_revision:-unknown}")"
+    else
+      SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME}-overlay-$(_sdk_prompt_slug "${_sdk_overlay_state:-unknown}")-$(_sdk_prompt_slug "${_sdk_overlay_revision:-unknown}")"
+    fi
   fi
   export SDK_PROMPT_HOSTNAME
   _sdk_rewrite_prompt_hostname() {

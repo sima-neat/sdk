@@ -787,6 +787,27 @@ cleanup_update_apt() {
   fi
 }
 
+configure_active_overlay_apt() {
+  local overlay state revision repository
+
+  overlay="$(sysroot_overlay_path "${sysroot}")"
+  [[ -r "${overlay}" ]] || return
+  state="$(read_release_field "${overlay}" "Overlay State")"
+  [[ "${state}" == "active" ]] || \
+    die "sysroot overlay state is ${state:-unknown}; rerun the update or recreate the SDK container before installing packages"
+  revision="$(read_release_field "${overlay}" "Platform Revision")"
+  repository="$(read_release_field "${overlay}" "Platform Repository")"
+  [[ "${revision}" =~ ^[0-9]+\.[0-9]+\.[0-9]+~pre[0-9]+$ ]] || \
+    die "active sysroot overlay has an invalid platform revision: ${revision:-<missing>}"
+  [[ -n "${repository}" ]] || die "active sysroot overlay repository is missing"
+
+  PRE_RELEASE_REPOSITORY="${repository}"
+  export SDK_APT_CHANNEL=pre-release
+  trap cleanup_update_apt EXIT
+  configure_update_apt "${revision}"
+  echo "Using active sysroot overlay package selection: ${revision} (${repository})"
+}
+
 cleanup_update_transaction() {
   cleanup_update_apt
   if [[ "${update_overlay_pending:-0}" == "1" ]]; then
@@ -797,6 +818,14 @@ cleanup_update_transaction() {
       "${update_target_revision}" \
       "incomplete"
   fi
+}
+
+cleanup_install_transaction() {
+  if [[ -n "${install_workdir:-}" ]]; then
+    rm -rf "${install_workdir}"
+  fi
+  rm -f /etc/apt/preferences.d/00-sima-sdk-sysroot-target.pref
+  cleanup_update_apt
 }
 
 apply_sysroot_update() {
@@ -1009,10 +1038,12 @@ cmd_install() {
     exit 0
   fi
 
+  configure_active_overlay_apt
   run_as_root "${INSTALLER}" "${sysroot}" "${normalized[@]}"
 
   workdir="$(mktemp -d)"
-  trap 'rm -rf "${workdir}"; rm -f /etc/apt/preferences.d/00-sima-sdk-sysroot-target.pref' EXIT
+  install_workdir="${workdir}"
+  trap cleanup_install_transaction EXIT
   download_for_manifest "${arch}" "${workdir}" "${normalized[@]}"
   record_manifests "${sysroot}" "${arch}" "${workdir}/archives"
   merge_package_inventory "${sysroot}" "${workdir}/archives"
