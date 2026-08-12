@@ -52,6 +52,23 @@ assert (
     == rewritten_config
 )
 
+custom_sysroot_usr = "/usr/local/modalix/usr"
+mixed_config = (
+    'set(SIMA_INCLUDE_DIR "/usr/include")\n'
+    'set(SIMA_LIBRARY_DIR "/usr/local/modalix/usr/lib")\n'
+)
+custom_rewritten_config = module.rewrite_config_paths(
+    mixed_config, "/usr", custom_sysroot_usr
+)
+assert custom_rewritten_config == (
+    'set(SIMA_INCLUDE_DIR "/usr/local/modalix/usr/include")\n'
+    'set(SIMA_LIBRARY_DIR "/usr/local/modalix/usr/lib")\n'
+)
+assert (
+    module.rewrite_config_paths(custom_rewritten_config, "/usr", custom_sysroot_usr)
+    == custom_rewritten_config
+)
+
 with tempfile.TemporaryDirectory() as temporary:
     root = pathlib.Path(temporary)
     downloads = root / "downloads"

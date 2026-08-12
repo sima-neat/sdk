@@ -206,6 +206,7 @@ cat > "${tmpdir}/fake-installer" <<'EOF'
 set -euo pipefail
 [[ "${SDK_APT_CHANNEL:-}" == "pre-release" ]]
 grep -Fq 'Pin: version 2.1.3~pre4617' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
+[[ "${2:-}" == "libopencv-dnn4:arm64" ]]
 printf 'overlay-selection-ok\n' > "${SYSROOT_UPDATE_INSTALL_TEST_LOG:?}"
 EOF
 cat > "${tmpdir}/bin/apt-get" <<'EOF'
@@ -222,12 +223,38 @@ if [[ -n "${archive_dir}" ]]; then
   cp "${SYSROOT_UPDATE_DOWNLOAD_DIR}"/*.deb "${archive_dir}/"
 fi
 EOF
-chmod 755 "${tmpdir}/fake-installer" "${tmpdir}/bin/apt-get"
+cat > "${tmpdir}/bin/apt-cache" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+grep -Fq 'Pin: version 2.1.3~pre4617' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
+case "${1:-}" in
+  policy)
+    printf '%s\n' '  Candidate: (none)'
+    ;;
+  search)
+    if [[ "${2:-}" == '^libopencv-dnn[0-9]+$' ]]; then
+      printf '%s\n' 'libopencv-dnn4 - test overlay component'
+    fi
+    ;;
+esac
+EOF
+chmod 755 "${tmpdir}/fake-installer" "${tmpdir}/bin/apt-get" "${tmpdir}/bin/apt-cache"
+overlay_dry_run="$(
+  env "${common_env[@]}" \
+    PATH="${tmpdir}/bin:${PATH}" \
+    "${SYSROOT_COMMAND}" install opencv_dnn --dry-run
+)"
+grep -Fq 'Resolved opencv_dnn -> libopencv-dnn4' <<< "${overlay_dry_run}" || \
+  fail "dry-run component alias resolution did not use active overlay APT selection"
+[[ ! -e "${tmpdir}/apt/sources/pre-release.list" ]] || \
+  fail "dry-run component alias resolution did not clean up its temporary APT source"
+[[ ! -e "${tmpdir}/apt/preferences/pre-release.pref" ]] || \
+  fail "dry-run component alias resolution did not clean up its temporary APT pin"
 env "${common_env[@]}" \
   PATH="${tmpdir}/bin:${PATH}" \
   SYSROOT_INSTALLER="${tmpdir}/fake-installer" \
   SYSROOT_UPDATE_INSTALL_TEST_LOG="${tmpdir}/install.log" \
-  "${SYSROOT_COMMAND}" install test-package:arm64 >/dev/null
+  "${SYSROOT_COMMAND}" install opencv_dnn >/dev/null
 grep -Fxq 'overlay-selection-ok' "${tmpdir}/install.log" || \
   fail "package install did not reconstruct active overlay APT selection"
 

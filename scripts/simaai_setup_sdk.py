@@ -71,23 +71,23 @@ def rewrite_config_paths(data, old, new):
     """Replace config paths without rewriting an already-prefixed value."""
     if not old or old == new:
         return data
-    if not new.endswith(old):
-        return data.replace(old, new)
 
-    prefix = new[: -len(old)]
     rewritten = []
     cursor = 0
     while True:
-        position = data.find(old, cursor)
-        if position < 0:
+        old_position = data.find(old, cursor)
+        new_position = data.find(new, cursor)
+        if old_position < 0:
             rewritten.append(data[cursor:])
             break
-        rewritten.append(data[cursor:position])
-        if prefix and data[max(0, position - len(prefix)) : position] == prefix:
-            rewritten.append(old)
-        else:
-            rewritten.append(new)
-        cursor = position + len(old)
+        if new_position >= 0 and new_position <= old_position:
+            end = new_position + len(new)
+            rewritten.append(data[cursor:end])
+            cursor = end
+            continue
+        rewritten.append(data[cursor:old_position])
+        rewritten.append(new)
+        cursor = old_position + len(old)
     return "".join(rewritten)
 
 

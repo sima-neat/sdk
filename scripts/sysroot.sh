@@ -1044,6 +1044,11 @@ cmd_install() {
     exit 1
   fi
 
+  # Restore an active overlay's exact APT source and pin before translating
+  # component aliases. Alias discovery must see the same package universe as
+  # the installer, including during a dry run.
+  configure_active_overlay_apt
+
   resolved=()
   normalized=()
   for pkg in "${args[@]}"; do
@@ -1067,7 +1072,6 @@ cmd_install() {
     exit 0
   fi
 
-  configure_active_overlay_apt
   run_as_root "${INSTALLER}" "${sysroot}" "${normalized[@]}"
 
   workdir="$(mktemp -d)"
