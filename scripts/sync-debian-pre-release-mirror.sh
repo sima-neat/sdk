@@ -19,6 +19,7 @@ AWS_REGION="${AWS_REGION:-us-west-2}"
 BUCKET="${VULCAN_DEBIAN_MIRROR_BUCKET:-}"
 KMS_KEY_ID="${VULCAN_DEBIAN_MIRROR_KMS_KEY_ID:-}"
 CLOUDFRONT_DISTRIBUTION_ID="${VULCAN_DEBIAN_MIRROR_CLOUDFRONT_DISTRIBUTION_ID:-}"
+REPORT_DIR="${DEBIAN_MIRROR_REPORT_DIR:-}"
 
 usage() {
   cat <<'EOF'
@@ -85,10 +86,23 @@ VALIDATION_JSON="${TEMP_DIR}/validation.json"
 CURRENT_INVENTORY_JSON="${TEMP_DIR}/inventory.json"
 PREVIOUS_INVENTORY_JSON="${TEMP_DIR}/previous-inventory.json"
 PREVIOUS_PUBLICATION_JSON="${TEMP_DIR}/previous-publication.json"
+PUBLISHED_RELEASE_HEAD_JSON="${TEMP_DIR}/published-release-head.json"
 CHANGES_JSON="${TEMP_DIR}/changes.json"
 PUBLICATION_JSON="${TEMP_DIR}/publication.json"
 PUBLISH_DISTS="${TEMP_DIR}/publish-dists"
 APT_MIRROR2_CONFIG="${TEMP_DIR}/apt-mirror2.list"
+
+write_no_change_report() {
+  [[ -n "${REPORT_DIR}" ]] || return 0
+  mkdir -p "${REPORT_DIR}"
+  jq -n \
+    --arg generated_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --arg source_digest "${source_digest}" \
+    --arg repository "${GITHUB_REPOSITORY:-local}" \
+    --arg workflow_run "${GITHUB_RUN_ID:-local}" \
+    '{schema_version: 1, result: "No change", generated_at: $generated_at, source: {inrelease_sha256: $source_digest}, publication: {repository: $repository, workflow_run: $workflow_run}}' \
+    >"${REPORT_DIR}/mirror-sync-result.json"
+}
 
 getent hosts "${UPSTREAM_HOST}" >/dev/null
 curl --fail --silent --show-error --location --max-time 120 \
@@ -114,8 +128,31 @@ if aws s3 cp "s3://${BUCKET}/pre-release/.mirror/publication.json" \
   previous_inventory_key="$(jq -r '.publication.inventory_key // empty' "${PREVIOUS_PUBLICATION_JSON}")"
 fi
 
+# The mutable suite Release is the actual APT publication boundary. New
+# publications stamp it with the source digest and matching immutable inventory,
+# allowing the next run to recover the authoritative baseline even if the
+# subsequent convenience-manifest upload failed. Fall back to publication.json
+# only for Release objects created before this metadata was introduced.
+if aws s3api head-object \
+  --bucket "${BUCKET}" \
+  --key "pre-release/dists/${SUITE}/Release" \
+  --region "${AWS_REGION}" \
+  --output json >"${PUBLISHED_RELEASE_HEAD_JSON}" 2>/dev/null; then
+  release_source_digest="$(jq -r '.Metadata["source-inrelease-sha256"] // empty' "${PUBLISHED_RELEASE_HEAD_JSON}")"
+  release_inventory_key="$(jq -r '.Metadata["inventory-key"] // empty' "${PUBLISHED_RELEASE_HEAD_JSON}")"
+  if [[ "${release_source_digest}" =~ ^[0-9a-f]{64}$ && \
+    "${release_inventory_key}" == pre-release/.mirror/inventories/*.json ]]; then
+    if [[ -n "${previous_digest}" && "${previous_digest}" != "${release_source_digest}" ]]; then
+      echo "Recovering publication baseline from authoritative Release metadata (${release_source_digest})" >&2
+    fi
+    previous_digest="${release_source_digest}"
+    previous_inventory_key="${release_inventory_key}"
+  fi
+fi
+
 if [[ "${FORCE}" != true && -n "${previous_digest}" && "${source_digest}" == "${previous_digest}" ]]; then
   echo "Upstream InRelease is unchanged (${source_digest}); nothing to publish."
+  write_no_change_report
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     {
       echo '## Debian mirror synchronization'
@@ -206,24 +243,45 @@ if [[ "${PUBLISH}" == true && "${reused_file_content_count}" -gt 0 ]]; then
     "${CHANGES_JSON}" >&2
   exit 1
 fi
-publication_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 inventory_key="pre-release/.mirror/inventories/${source_digest}.json"
 changes_key="pre-release/.mirror/changes/${source_digest}.json"
-jq -n \
-  --arg source_url "${UPSTREAM_BASE_URL}" \
-  --arg source_date "${source_date}" \
-  --arg source_digest "${source_digest}" \
-  --arg published_at "${publication_time}" \
-  --arg repository "${GITHUB_REPOSITORY:-local}" \
-  --arg workflow_run "${GITHUB_RUN_ID:-local}" \
-  --arg commit "${GITHUB_SHA:-local}" \
-  --arg inventory_key "${inventory_key}" \
-  --arg changes_key "${changes_key}" \
-  --argjson package_count "${package_count}" \
-  --argjson total_bytes "${total_bytes}" \
-  --slurpfile changes "${CHANGES_JSON}" \
-  '{schema_version: 1, source: {url: $source_url, date: $source_date, inrelease_sha256: $source_digest}, validation: {package_count: $package_count, total_bytes: $total_bytes}, changes: $changes[0].counts, publication: {published_at: $published_at, repository: $repository, workflow_run: $workflow_run, commit: $commit, inventory_key: $inventory_key, changes_key: $changes_key, apt_release_mode: "unsigned-by-hash"}}' \
-  >"${PUBLICATION_JSON}"
+
+write_publication_manifest() {
+  local published_at="$1"
+  jq -n \
+    --arg source_url "${UPSTREAM_BASE_URL}" \
+    --arg source_date "${source_date}" \
+    --arg source_digest "${source_digest}" \
+    --arg published_at "${published_at}" \
+    --arg repository "${GITHUB_REPOSITORY:-local}" \
+    --arg workflow_run "${GITHUB_RUN_ID:-local}" \
+    --arg commit "${GITHUB_SHA:-local}" \
+    --arg inventory_key "${inventory_key}" \
+    --arg changes_key "${changes_key}" \
+    --argjson package_count "${package_count}" \
+    --argjson total_bytes "${total_bytes}" \
+    --slurpfile changes "${CHANGES_JSON}" \
+    '{schema_version: 1, source: {url: $source_url, date: $source_date, inrelease_sha256: $source_digest}, validation: {package_count: $package_count, total_bytes: $total_bytes}, changes: $changes[0].counts, publication: {published_at: $published_at, repository: $repository, workflow_run: $workflow_run, commit: $commit, inventory_key: $inventory_key, changes_key: $changes_key, apt_release_mode: "unsigned-by-hash"}}' \
+    >"${PUBLICATION_JSON}"
+}
+
+write_change_report() {
+  local result="$1"
+  [[ -n "${REPORT_DIR}" ]] || return 0
+  mkdir -p "${REPORT_DIR}"
+  local platform_versions
+  platform_versions="$(jq -c \
+    '[.packages[] | select(.package == "simaai-palette-modalix" and .architecture == "arm64") | .version] | unique' \
+    "${CURRENT_INVENTORY_JSON}")"
+  jq -n \
+    --arg result "${result}" \
+    --arg generated_at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --argjson platform_versions "${platform_versions}" \
+    --slurpfile publication "${PUBLICATION_JSON}" \
+    --slurpfile changes "${CHANGES_JSON}" \
+    '{schema_version: 1, result: $result, generated_at: $generated_at, source: $publication[0].source, validation: $publication[0].validation, publication: $publication[0].publication, platform: {anchor_package: "simaai-palette-modalix", architecture: "arm64", versions: $platform_versions}, changes: $changes[0]}' \
+    >"${REPORT_DIR}/mirror-sync-result.json"
+}
 
 if [[ "${PUBLISH}" == true ]]; then
   s3_common=(--region "${AWS_REGION}" --sse aws:kms --sse-kms-key-id "${KMS_KEY_ID}" --only-show-errors)
@@ -283,7 +341,19 @@ if [[ "${PUBLISH}" == true ]]; then
   # This single S3 object replacement is the publication boundary.
   aws s3 cp "${PUBLISH_DISTS}/${SUITE}/Release" \
     "s3://${BUCKET}/pre-release/dists/${SUITE}/Release" \
-    "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate'
+    "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate' \
+    --metadata "source-inrelease-sha256=${source_digest},inventory-key=${inventory_key}"
+
+  # Record when the Release replacement completed, rather than when this
+  # potentially long-running sync began. Daily reporting uses this timestamp
+  # to assign the publication to its actual reporting window.
+  publication_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  write_publication_manifest "${publication_time}"
+  result="Published"
+  # The Release object above is the authoritative publication boundary.
+  # Persist the local reporting artifact immediately so the workflow's
+  # always() upload can retain it even if a later S3 or CloudFront call fails.
+  write_change_report "${result}"
 
   aws s3 cp "${PUBLICATION_JSON}" \
     "s3://${BUCKET}/pre-release/.mirror/publication.json" \
@@ -295,9 +365,11 @@ if [[ "${PUBLISH}" == true ]]; then
     --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID}" \
     --paths '/pre-release/dists/*' '/pre-release/.mirror/publication.json' \
     >/dev/null
-  result="Published"
 else
   result="Validated only"
+  publication_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  write_publication_manifest "${publication_time}"
+  write_change_report "${result}"
 fi
 
 echo "${result}: ${package_count} packages, ${total_bytes} bytes, InRelease ${source_digest}"
