@@ -616,6 +616,34 @@ merge_package_inventory() {
   rm -f "${additions}"
 }
 
+merge_tracked_manifests_into_inventory() {
+  local sysroot="$1"
+  local inventory root manifest_entries merged manifest
+
+  inventory="$(sysroot_inventory_path "${sysroot}")"
+  root="$(manifest_root "${sysroot}")"
+  [[ -s "${inventory}" && -d "${root}" ]] || return
+  manifest_entries="${inventory}.manifests"
+  merged="${inventory}.tmp"
+  : > "${manifest_entries}"
+  while IFS= read -r -d '' manifest; do
+    printf '%s\t%s\t%s\t%s\n' \
+      "$(awk -F ': ' '$1 == "Package" { print $2; exit }' "${manifest}")" \
+      "$(awk -F ': ' '$1 == "Architecture" { print $2; exit }' "${manifest}")" \
+      "$(awk -F ': ' '$1 == "Version" { print $2; exit }' "${manifest}")" \
+      "$(package_locations_from_manifest "${manifest}")" \
+      >> "${manifest_entries}"
+  done < <(find "${root}" -maxdepth 1 -type f -name '*.manifest' -print0)
+
+  # Manifest entries are emitted first so a package from the newly resolved
+  # platform cohort wins when the same package exists in both sources.
+  cat "${manifest_entries}" "${inventory}" |
+    awk -F '\t' 'NF >= 3 { entry[$1 FS $2] = $0 } END { for (key in entry) print entry[key] }' |
+    sort > "${merged}"
+  mv "${merged}" "${inventory}"
+  rm -f "${manifest_entries}"
+}
+
 remove_package_from_inventory() {
   local sysroot="$1"
   local package="$2"
@@ -868,6 +896,7 @@ apply_sysroot_update() {
   if [[ ! -s "$(sysroot_inventory_path "${sysroot}")" ]]; then
     write_package_inventory "${sysroot}" "${download_dir}"
   fi
+  merge_tracked_manifests_into_inventory "${sysroot}"
   refresh_tracked_manifests "${sysroot}" "${arch}" "${download_dir}"
   write_overlay_metadata "${sysroot}" "${platform_base}" "${platform_revision}"
   update_overlay_pending=0

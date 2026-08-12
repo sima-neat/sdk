@@ -114,6 +114,13 @@ Version: 2.1.3~pre4460
 
 usr/lib/aarch64-linux-gnu/old-file.txt
 EOF
+cat > "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-packages/manual-package_arm64.manifest" <<'EOF'
+Package: manual-package
+Architecture: arm64
+Version: 9.8.7
+
+opt/manual-package/libmanual.so
+EOF
 initial_list="$(run_sysroot list)"
 grep -Eq '^base-sdk-package[[:space:]]+arm64[[:space:]]+1\.0\.0[[:space:]]+/usr/lib$' \
   <<< "${initial_list}" || \
@@ -184,6 +191,9 @@ updated_list="$(run_sysroot list)"
 grep -Eq '^simaai-palette-modalix[[:space:]]+arm64[[:space:]]+2\.1\.3~pre4617[[:space:]]+/usr/lib/aarch64-linux-gnu$' \
   <<< "${updated_list}" || \
   fail "list did not report the updated full package inventory"
+grep -Eq '^manual-package[[:space:]]+arm64[[:space:]]+9\.8\.7[[:space:]]+/opt/manual-package$' \
+  <<< "${updated_list}" || \
+  fail "platform update dropped a manually installed package from the inventory"
 grep -Fxq 'Version: 2.1.3~pre4617' \
   "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-packages/simaai-palette-modalix_arm64.manifest" || \
   fail "update did not refresh an existing tracked package manifest"
