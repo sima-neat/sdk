@@ -510,11 +510,11 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
     selected_downloads_lock = threading.Lock()
     download_progress = DownloadProgress()
 
-    def record_expected_version(pkg, expected_version):
+    def record_expected_version(pkg, architecture, expected_version):
         if expected_version:
             with expected_versions_lock:
                 with open(expected_versions_manifest, "at", encoding="utf-8") as wf:
-                    wf.write(f"{pkg}\t{expected_version}\n")
+                    wf.write(f"{pkg}\t{architecture}\t{expected_version}\n")
 
     def file_sha256(path):
         digest = hashlib.sha256()
@@ -524,24 +524,44 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
         return digest.hexdigest()
 
     def downloaded_package_matches(
-        dlname, expected_package, expected_version, expected_sha256
+        dlname,
+        expected_package,
+        expected_architecture,
+        expected_version,
+        expected_sha256,
     ):
         if not os.path.isfile(dlname):
             return False
         try:
             pkg = package_field(dlname, "Package")
+            architecture = package_field(dlname, "Architecture")
             ver = package_field(dlname, "Version")
         except (OSError, subprocess.SubprocessError):
             return False
-        if pkg != expected_package or ver != expected_version:
+        if (
+            pkg != expected_package
+            or architecture != expected_architecture
+            or ver != expected_version
+        ):
             return False
         return not expected_sha256 or file_sha256(dlname) == expected_sha256
 
-    def download(uri, dlname, expected_package, expected_version, expected_sha256):
+    def download(
+        uri,
+        dlname,
+        expected_package,
+        expected_architecture,
+        expected_version,
+        expected_sha256,
+    ):
         """Download a package and validate the resolved package version."""
 
         cached = downloaded_package_matches(
-            dlname, expected_package, expected_version, expected_sha256
+            dlname,
+            expected_package,
+            expected_architecture,
+            expected_version,
+            expected_sha256,
         )
         if not cached:
             partial = f"{dlname}.partial"
@@ -568,12 +588,18 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
                 ) from exc
 
         pkg = package_field(dlname, "Package")
+        architecture = package_field(dlname, "Architecture")
         ver = package_field(dlname, "Version")
         if pkg != expected_package:
             raise RuntimeError(f"Unexpected package {pkg}; expected {expected_package}")
+        if architecture != expected_architecture:
+            raise RuntimeError(
+                f"Unexpected {pkg} architecture {architecture}; "
+                f"expected {expected_architecture}"
+            )
         if expected_version and ver != expected_version:
             raise RuntimeError(f"Unexpected {pkg} version {ver}; expected {expected_version}")
-        record_expected_version(pkg, expected_version)
+        record_expected_version(pkg, architecture, expected_version)
         with selected_downloads_lock:
             selected_downloads.add(os.path.abspath(dlname))
         return cached
@@ -594,6 +620,7 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
                         candidate.uri,
                         os.path.join(dldir, f"{name}.deb"),
                         base_package_name(name),
+                        candidate.architecture,
                         candidate.version,
                         candidate.record.get("SHA256", ""),
                     ): name

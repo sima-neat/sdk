@@ -69,11 +69,15 @@ is_platform_package() {
 errors=0
 deb_count=0
 declare -A expected_versions=()
+declare -A legacy_expected_versions=()
 
 if [[ -f "${expected_versions_manifest}" ]]; then
-  while IFS=$'\t' read -r pkg ver; do
-    if [[ -n "${pkg}" && -n "${ver}" ]]; then
-      expected_versions["${pkg}"]="${ver}"
+  while IFS=$'\t' read -r pkg architecture ver; do
+    if [[ -n "${pkg}" && -n "${architecture}" && -n "${ver}" ]]; then
+      expected_versions["${pkg}:${architecture}"]="${ver}"
+    elif [[ -n "${pkg}" && -n "${architecture}" ]]; then
+      # Compatibility with manifests generated before architecture was added.
+      legacy_expected_versions["${pkg}"]="${architecture}"
     fi
   done < "${expected_versions_manifest}"
 fi
@@ -81,9 +85,13 @@ fi
 while IFS= read -r -d '' deb; do
   deb_count=$((deb_count + 1))
   pkg="$(dpkg-deb -f "${deb}" Package)"
+  architecture="$(dpkg-deb -f "${deb}" Architecture)"
   ver="$(dpkg-deb -f "${deb}" Version)"
 
-  expected_pkg_version="${expected_versions["${pkg}"]:-}"
+  expected_pkg_version="${expected_versions["${pkg}:${architecture}"]:-}"
+  if [[ -z "${expected_pkg_version}" ]]; then
+    expected_pkg_version="${legacy_expected_versions["${pkg}"]:-}"
+  fi
   if [[ -z "${expected_pkg_version}" ]] && is_platform_package "${pkg}"; then
     expected_pkg_version="${expected_version}"
   fi
