@@ -138,12 +138,83 @@ For OpenCV CMake component names, `sysroot` can resolve names such as `opencv_dn
 sudo sysroot install opencv_dnn
 ```
 
-Packages installed through `sysroot install` are tracked in lightweight manifests, so they can be listed or removed later:
+Packages installed through `sysroot install` are tracked in lightweight
+manifests so they can be removed later. `sysroot list` reports the complete
+image or overlay inventory:
 
 ```bash
 sysroot list
 sudo sysroot remove libzix-dev
 ```
+
+### Test a Pre-release Platform Sysroot Overlay
+
+To test a newer pre-release platform revision without rebuilding the SDK
+image, use `sysroot update` inside the SDK container. With no revision, the
+command queries the public pre-release mirror and offers only revisions that
+match the immutable image's `Platform Base` from `/etc/sdk-release`:
+
+```bash
+sudo sysroot update
+```
+
+Providing an exact revision is noninteractive and is suitable for automation:
+
+```bash
+sudo sysroot update 2.1.3~pre4617
+```
+
+Following the newest eligible revision requires explicit confirmation in
+noninteractive environments. A dry run downloads and validates the dependency
+cohort without extracting it into the sysroot:
+
+```bash
+sudo sysroot update --latest --yes
+sudo sysroot update 2.1.3~pre4617 --dry-run
+```
+
+This command is deliberately restricted to pre-release development and
+testing. It refuses stable versions and revisions outside the SDK's Platform
+Base. For example, an SDK with `Platform Base = 2.1.3` cannot update its
+sysroot to `2.2.0~preN`.
+
+An update creates a visible **sysroot overlay** rather than changing the
+immutable SDK image identity. Inspect both states with:
+
+```bash
+sysroot status
+```
+
+List the complete package inventory for either the image-default sysroot or
+the active overlay with:
+
+```bash
+sysroot list
+```
+
+The table includes package name, architecture, exact version, and summarized
+payload locations relative to the displayed sysroot. A package may show
+multiple locations because Debian packages commonly contain both headers and
+libraries. Manual `sysroot install` and `sysroot remove` operations update the
+same inventory.
+
+New interactive shells include the active overlay revision in the SDK prompt.
+The overlay descriptor and exact package inventory are stored under
+`/opt/toolchain/aarch64/modalix/var/lib/sima-sdk/`. Recreate the SDK container
+to discard the overlay and restore the image-default sysroot. Because this is
+an in-place overlay, recreating the container is also the way to guarantee that
+files removed between platform revisions are absent from the sysroot.
+
+Package downloads use eight workers by default and validated downloads are
+cached per platform revision under `/tmp`. Override the concurrency when
+needed, for example `SIMAAI_DOWNLOAD_WORKERS=16 sudo -E sysroot update ...`.
+Retries of the same revision reuse valid cached packages. Interactive terminals
+show animated download and extraction progress; CI logs receive periodic
+plain-text progress updates.
+
+The pre-release repository currently uses HTTPS transport with APT
+`trusted=yes`; this is not equivalent to signed APT repository metadata. The
+command prints this trust mode before every update.
 
 ## NEAT Insight Version
 

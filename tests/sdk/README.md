@@ -16,6 +16,13 @@ container after `sima-cli sdk setup -y -n` starts it.
 - `test-resolve-platform-config.sh`, `test-write-sdk-release.sh`, and
   `test-devkit-platform-profile.sh` cover pre-release selection, image
   provenance, protected release refs, and intentional Core-sync skipping.
+- `test-sysroot-update.sh` covers interactive safety, exact and latest
+  pre-release resolution, Platform Base enforcement, dry-run validation,
+  overlay provenance, idempotence, and the shell prompt overlay marker.
+- `test-sysroot-unprivileged-dry-run.sh` verifies that an ordinary user can
+  resolve overlay package aliases without writing under the system APT paths.
+- `test-sysroot-progress.py` verifies package download/cache and extraction
+  progress summaries used by `sysroot update`.
 - `neat-status/` validates the `neat --json` assembly/status contract.
 - `insight-video-routing/` downloads a small H.264 video, streams it from the
   runner into the SDK container's published Insight video UDP port with
