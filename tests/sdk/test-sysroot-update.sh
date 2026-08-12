@@ -161,6 +161,23 @@ grep -Fq 'Dry run complete: 2.1.3~pre4617 resolved and validated' <<< "${latest_
 grep -Fxq $'2.1.3~pre4617\t1\t4617' "${tmpdir}/setup.log" || \
   fail "latest dry run did not constrain dependencies to the selected build cohort"
 
+# A fresh SDK image has an image inventory but no manifests created by
+# `sysroot install`.  Optional manifest bookkeeping must remain a successful
+# no-op so a fully extracted update can still be committed as active.
+fresh_sysroot="${tmpdir}/fresh-sysroot"
+mkdir -p "${fresh_sysroot}/var/lib/sima-sdk"
+printf 'base-sdk-package\tarm64\t1.0.0\t/usr/lib\n' > \
+  "${fresh_sysroot}/var/lib/sima-sdk/sysroot-packages.tsv"
+fresh_update_output="$(
+  env "${common_env[@]}" SYSROOT="${fresh_sysroot}" \
+    "${SYSROOT_COMMAND}" update 2.1.3~pre4593
+)"
+grep -Fq 'Sysroot overlay is active at 2.1.3~pre4593' <<< "${fresh_update_output}" || \
+  fail "fresh SDK update without tracked manifests did not activate the overlay"
+grep -Fxq 'Overlay State = active' \
+  "${fresh_sysroot}/var/lib/sima-sdk/sysroot-overlay" || \
+  fail "fresh SDK update was left incomplete"
+
 if env "${common_env[@]}" SYSROOT_UPDATE_TEST_FAIL=1 \
   "${SYSROOT_COMMAND}" update 2.1.3~pre4593 >"${tmpdir}/out" 2>"${tmpdir}/err"; then
   fail "failed platform setup was reported as successful"

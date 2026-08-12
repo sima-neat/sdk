@@ -521,7 +521,9 @@ refresh_tracked_manifests() {
   local root workdir manifest package package_arch candidate target matched
 
   root="$(manifest_root "${sysroot}")"
-  [[ -d "${root}" ]] || return
+  # A newly built SDK has no per-package manifests until the user installs a
+  # package with `sysroot install`.  That is a successful no-op, not an error.
+  [[ -d "${root}" ]] || return 0
   workdir="$(mktemp -d)"
   while IFS= read -r -d '' manifest; do
     package="$(awk -F ': ' '$1 == "Package" { print $2; exit }' "${manifest}")"
@@ -624,7 +626,9 @@ merge_tracked_manifests_into_inventory() {
 
   inventory="$(sysroot_inventory_path "${sysroot}")"
   root="$(manifest_root "${sysroot}")"
-  [[ -s "${inventory}" && -d "${root}" ]] || return
+  # The image inventory can exist without any user-managed package manifests.
+  # Return success so `set -e` does not abort a completed platform update.
+  [[ -s "${inventory}" && -d "${root}" ]] || return 0
   manifest_entries="${inventory}.manifests"
   merged="${inventory}.tmp"
   : > "${manifest_entries}"
@@ -653,7 +657,7 @@ remove_package_from_inventory() {
   local inventory temporary
 
   inventory="$(sysroot_inventory_path "${sysroot}")"
-  [[ -r "${inventory}" ]] || return
+  [[ -r "${inventory}" ]] || return 0
   temporary="${inventory}.tmp"
   awk -F '\t' -v package="${package}" -v architecture="${architecture}" \
     'NF < 3 || $1 != package || $2 != architecture' "${inventory}" > "${temporary}"
@@ -827,7 +831,7 @@ configure_active_overlay_apt() {
   local overlay state revision repository
 
   overlay="$(sysroot_overlay_path "${sysroot}")"
-  [[ -r "${overlay}" ]] || return
+  [[ -r "${overlay}" ]] || return 0
   state="$(read_release_field "${overlay}" "Overlay State")"
   [[ "${state}" == "active" ]] || \
     die "sysroot overlay state is ${state:-unknown}; rerun the update or recreate the SDK container before installing packages"
