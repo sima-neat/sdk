@@ -41,6 +41,17 @@ text = output.getvalue()
 assert "2/2 ready (1 downloaded, 1 cached)" in text
 assert "Package extraction complete: 2/2" in text
 
+sysroot_usr = "/opt/toolchain/aarch64/modalix/usr"
+cmake_config = 'set(SIMA_INCLUDE_DIR "/usr/include")\n'
+rewritten_config = module.rewrite_config_paths(cmake_config, "/usr", sysroot_usr)
+assert rewritten_config == (
+    'set(SIMA_INCLUDE_DIR "/opt/toolchain/aarch64/modalix/usr/include")\n'
+)
+assert (
+    module.rewrite_config_paths(rewritten_config, "/usr", sysroot_usr)
+    == rewritten_config
+)
+
 with tempfile.TemporaryDirectory() as temporary:
     root = pathlib.Path(temporary)
     downloads = root / "downloads"

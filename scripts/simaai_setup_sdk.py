@@ -67,6 +67,30 @@ SKIP_PACKAGES = {
 APT_UPDATE_RETRY_DELAYS_SECONDS = (10, 30)
 
 
+def rewrite_config_paths(data, old, new):
+    """Replace config paths without rewriting an already-prefixed value."""
+    if not old or old == new:
+        return data
+    if not new.endswith(old):
+        return data.replace(old, new)
+
+    prefix = new[: -len(old)]
+    rewritten = []
+    cursor = 0
+    while True:
+        position = data.find(old, cursor)
+        if position < 0:
+            rewritten.append(data[cursor:])
+            break
+        rewritten.append(data[cursor:position])
+        if prefix and data[max(0, position - len(prefix)) : position] == prefix:
+            rewritten.append(old)
+        else:
+            rewritten.append(new)
+        cursor = position + len(old)
+    return "".join(rewritten)
+
+
 def load_platform_package_patterns():
     patterns_file = os.environ.get(
         "PLATFORM_PACKAGE_PATTERNS_FILE",
@@ -658,7 +682,7 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
 
             with open(f, "rt", encoding="utf-8") as rf:
                 data = rf.read()
-                data = data.replace(old, new)
+                data = rewrite_config_paths(data, old, new)
             with open(f, "wt", encoding="utf-8") as wf:
                 wf.write(data)
 
