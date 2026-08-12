@@ -19,6 +19,8 @@ container after `sima-cli sdk setup -y -n` starts it.
 - `test-sysroot-update.sh` covers interactive safety, exact and latest
   pre-release resolution, Platform Base enforcement, dry-run validation,
   overlay provenance, idempotence, and the shell prompt overlay marker.
+- `test-sysroot-unprivileged-dry-run.sh` verifies that an ordinary user can
+  resolve overlay package aliases without writing under the system APT paths.
 - `test-sysroot-progress.py` verifies package download/cache and extraction
   progress summaries used by `sysroot update`.
 - `neat-status/` validates the `neat --json` assembly/status contract.

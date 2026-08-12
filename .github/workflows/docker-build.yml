@@ -51,6 +51,7 @@ jobs:
           tests/sdk/test-resolve-platform-config.sh
           tests/sdk/test-write-sdk-release.sh
           tests/sdk/test-devkit-platform-profile.sh
+          tests/sdk/test-sysroot-unprivileged-dry-run.sh
           tests/sdk/test-sysroot-update.sh
           python3 tests/sdk/test-sysroot-progress.py
 
