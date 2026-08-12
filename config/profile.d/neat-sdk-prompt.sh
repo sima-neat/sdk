@@ -11,7 +11,14 @@ if [[ $- == *i* ]]; then
     value="$(printf '%s' "${value}" | sed -E 's/[^a-z0-9-]+/-/g; s/-+/-/g; s/^-|-$//g')"
     printf '%s' "${value:-unknown}"
   }
-  export SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME:-neat-sdk-$(_sdk_prompt_slug "${SDK_PROMPT_REF}")}"
+  export SDK_BASE_PROMPT_HOSTNAME="${SDK_BASE_PROMPT_HOSTNAME:-${SDK_PROMPT_HOSTNAME:-neat-sdk-$(_sdk_prompt_slug "${SDK_PROMPT_REF}")}}"
+  SDK_PROMPT_HOSTNAME="${SDK_BASE_PROMPT_HOSTNAME}"
+  _sdk_sysroot_overlay="${SYSROOT:-/opt/toolchain/aarch64/modalix}/var/lib/sima-sdk/sysroot-overlay"
+  if [[ -r "${_sdk_sysroot_overlay}" ]]; then
+    _sdk_overlay_revision="$(awk -F ' = ' '$1 == "Platform Revision" { print $2; exit }' "${_sdk_sysroot_overlay}")"
+    SDK_PROMPT_HOSTNAME="${SDK_PROMPT_HOSTNAME}-overlay-$(_sdk_prompt_slug "${_sdk_overlay_revision:-active}")"
+  fi
+  export SDK_PROMPT_HOSTNAME
   _sdk_rewrite_prompt_hostname() {
     local prompt="${1-}"
     prompt="${prompt//\\h/${SDK_PROMPT_HOSTNAME}}"
