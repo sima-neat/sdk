@@ -10,6 +10,8 @@ SDK_RELEASE_FILE="${SDK_RELEASE_FILE:-/etc/sdk-release}"
 PRE_RELEASE_REPOSITORY="${SYSROOT_PRE_RELEASE_REPOSITORY:-https://debian.neat.sima.ai/pre-release}"
 PRE_RELEASE_ANCHOR_PACKAGE="${PRE_RELEASE_ANCHOR_PACKAGE:-simaai-palette-modalix}"
 PLATFORM_PATTERNS_FILE="${PLATFORM_PACKAGE_PATTERNS_FILE:-/usr/local/share/sima-sdk/platform-package-patterns.txt}"
+apt_cache_options=()
+overlay_apt_workdir=""
 
 usage() {
   cat <<EOF
@@ -317,7 +319,7 @@ apt_package_exists() {
   local arch="$2"
 
   command -v apt-cache >/dev/null 2>&1 || return 1
-  apt-cache policy "${pkg}:${arch}" 2>/dev/null | grep -q 'Candidate: [^(]'
+  apt-cache "${apt_cache_options[@]}" policy "${pkg}:${arch}" 2>/dev/null | grep -q 'Candidate: [^(]'
 }
 
 resolve_component_name() {
@@ -343,8 +345,8 @@ resolve_component_name() {
       if command -v apt-cache >/dev/null 2>&1; then
         mapfile -t candidates < <(
           {
-            apt-cache search "^libopencv-${component}[0-9]+$" 2>/dev/null | awk '{print $1}'
-            apt-cache search "^libopencv-${component}-dev$" 2>/dev/null | awk '{print $1}'
+            apt-cache "${apt_cache_options[@]}" search "^libopencv-${component}[0-9]+$" 2>/dev/null | awk '{print $1}'
+            apt-cache "${apt_cache_options[@]}" search "^libopencv-${component}-dev$" 2>/dev/null | awk '{print $1}'
           } | awk '!seen[$0]++'
         )
         if [[ ${#candidates[@]} -eq 1 ]]; then
@@ -783,7 +785,8 @@ configure_update_apt() {
   update_source_created=0
   update_preferences_created=0
 
-  if ! grep -RhsF "${PRE_RELEASE_REPOSITORY}" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null | grep -q .; then
+  if [[ "${dry_run:-0}" == "1" ]] || \
+    ! grep -RhsF "${PRE_RELEASE_REPOSITORY}" /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null | grep -q .; then
     [[ ! -e "${source_file}" ]] || die "temporary APT source already exists: ${source_file}"
     mkdir -p "$(dirname "${source_file}")"
     printf 'deb [arch=arm64 trusted=yes] %s bookworm non-free\n' "${PRE_RELEASE_REPOSITORY}" > "${source_file}"
@@ -813,6 +816,11 @@ cleanup_update_apt() {
   if [[ "${update_preferences_created:-0}" == "1" ]]; then
     rm -f "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:-/etc/apt/preferences.d/00-sima-sdk-sysroot-pre-release.pref}"
   fi
+  if [[ -n "${overlay_apt_workdir:-}" ]]; then
+    rm -rf "${overlay_apt_workdir}"
+    overlay_apt_workdir=""
+  fi
+  apt_cache_options=()
 }
 
 configure_active_overlay_apt() {
@@ -832,6 +840,15 @@ configure_active_overlay_apt() {
   PRE_RELEASE_REPOSITORY="${repository}"
   export SDK_APT_CHANNEL=pre-release
   trap cleanup_update_apt EXIT
+  if [[ "${dry_run}" == "1" ]]; then
+    overlay_apt_workdir="$(mktemp -d)"
+    SYSROOT_UPDATE_APT_SOURCE_FILE="${overlay_apt_workdir}/sources.list"
+    SYSROOT_UPDATE_APT_PREFERENCES_FILE="${overlay_apt_workdir}/preferences"
+    apt_cache_options=(
+      -o "Dir::Etc::sourcelist=${SYSROOT_UPDATE_APT_SOURCE_FILE}"
+      -o "Dir::Etc::preferences=${SYSROOT_UPDATE_APT_PREFERENCES_FILE}"
+    )
+  fi
   configure_update_apt "${revision}"
   echo "Using active sysroot overlay package selection: ${revision} (${repository})"
 }

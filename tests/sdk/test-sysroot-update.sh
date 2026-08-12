@@ -226,7 +226,22 @@ EOF
 cat > "${tmpdir}/bin/apt-cache" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-grep -Fq 'Pin: version 2.1.3~pre4617' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
+source_file="${SYSROOT_UPDATE_APT_SOURCE_FILE:?}"
+preferences_file="${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
+while [[ "${1:-}" == "-o" ]]; do
+  case "${2:-}" in
+    Dir::Etc::sourcelist=*) source_file="${2#*=}" ;;
+    Dir::Etc::preferences=*) preferences_file="${2#*=}" ;;
+  esac
+  shift 2
+done
+if [[ "${SIMA_EXPECT_UNPRIVILEGED_DRY_RUN:-0}" == "1" ]]; then
+  [[ "${source_file}" != "${SYSROOT_UPDATE_APT_SOURCE_FILE:?}" ]]
+  [[ "${preferences_file}" != "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}" ]]
+fi
+grep -Fq 'deb [arch=arm64 trusted=yes] https://debian.neat.sima.ai/pre-release bookworm non-free' \
+  "${source_file}"
+grep -Fq 'Pin: version 2.1.3~pre4617' "${preferences_file}"
 case "${1:-}" in
   policy)
     printf '%s\n' '  Candidate: (none)'
@@ -242,6 +257,7 @@ chmod 755 "${tmpdir}/fake-installer" "${tmpdir}/bin/apt-get" "${tmpdir}/bin/apt-
 overlay_dry_run="$(
   env "${common_env[@]}" \
     PATH="${tmpdir}/bin:${PATH}" \
+    SIMA_EXPECT_UNPRIVILEGED_DRY_RUN=1 \
     "${SYSROOT_COMMAND}" install opencv_dnn --dry-run
 )"
 grep -Fq 'Resolved opencv_dnn -> libopencv-dnn4' <<< "${overlay_dry_run}" || \
