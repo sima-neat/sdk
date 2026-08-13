@@ -809,6 +809,30 @@ configure_update_apt() {
 Package: ${platform_packages}
 Pin: version ${platform_revision}
 Pin-Priority: 1002
+
+Package: *
+Pin: origin "debian.neat.sima.ai"
+Pin-Priority: 990
+
+Package: *
+Pin: origin "repo.sima.ai"
+Pin-Priority: 990
+
+Package: *
+Pin: origin "mirror.elxr.dev"
+Pin-Priority: 990
+
+Package: *
+Pin: origin "deb.debian.org"
+Pin-Priority: 990
+
+Package: *
+Pin: origin "security.debian.org"
+Pin-Priority: 990
+
+Package: *
+Pin: release o=Ubuntu
+Pin-Priority: 100
 EOF
   update_preferences_created=1
 }
@@ -901,6 +925,7 @@ apply_sysroot_update() {
     SYSROOT_UPDATE_DOWNLOAD_DIR="${download_dir}" \
     SDK_APT_CHANNEL=pre-release \
     SIMAAI_PLATFORM_BUILD_REVISION="${platform_revision##*~pre}" \
+    SIMAAI_VALIDATE_TARGET_ORIGIN=1 \
     SIMAAI_SETUP_DOWNLOAD_ONLY="${dry_run}" \
     "${PLATFORM_SETUP}" "${platform_revision}" "${SDK_PKG_LIST:-}"; then
     if [[ "${dry_run}" != "1" ]]; then
