@@ -16,9 +16,9 @@ Local SDK image changes:
   generic build dependencies.
 - Skip libdlpack-dev because the SiMa TVM package owns the compatible
   dlpack/dlpack.h header in this sysroot.
+- Reject SDK-host distribution packages before modifying the target sysroot.
 """
 
-import apt
 import concurrent.futures
 import fnmatch
 import glob
@@ -29,7 +29,9 @@ import subprocess
 import sys
 import threading
 import time
+from urllib.parse import urlparse
 
+import apt
 
 DEFAULT_PLATFORM_PACKAGE_PATTERNS = (
     "simaai-palette-modalix",
@@ -65,6 +67,19 @@ SKIP_PACKAGES = {
 }
 
 APT_UPDATE_RETRY_DELAYS_SECONDS = (10, 30)
+TARGET_PACKAGE_SITES = {
+    "debian.neat.sima.ai",
+    "repo.sima.ai",
+    "mirror.elxr.dev",
+    "deb.debian.org",
+    "security.debian.org",
+}
+HOST_DISTRIBUTION_ORIGINS = {"Ubuntu"}
+HOST_DISTRIBUTION_SITES = {
+    "archive.ubuntu.com",
+    "ports.ubuntu.com",
+    "security.ubuntu.com",
+}
 
 
 def rewrite_config_paths(data, old, new):
@@ -345,6 +360,51 @@ def package_payload_locations(deb_path):
     return ",".join(sorted(locations))
 
 
+def candidate_origin_details(candidate):
+    """Return stable source metadata for diagnostics and policy checks."""
+
+    details = []
+    for origin in candidate.origins:
+        details.append(
+            {
+                "origin": origin.origin or "",
+                "site": origin.site or "",
+                "archive": origin.archive or "",
+                "label": origin.label or "",
+            }
+        )
+    return details
+
+
+def validate_target_candidate(pkgname, candidate):
+    """Prevent an SDK-host package from entering the Modalix target sysroot."""
+
+    if candidate is None or os.environ.get("SIMAAI_VALIDATE_TARGET_ORIGIN") != "1":
+        return
+    details = candidate_origin_details(candidate)
+    origins = {item["origin"] for item in details if item["origin"]}
+    candidate_site = urlparse(candidate.uri).hostname or ""
+    if candidate_site in TARGET_PACKAGE_SITES:
+        return
+    if (
+        origins.intersection(HOST_DISTRIBUTION_ORIGINS)
+        or candidate_site in HOST_DISTRIBUTION_SITES
+    ):
+        source = ", ".join(
+            sorted(
+                {
+                    f"{item['origin'] or '<unknown>'}@{item['site'] or '<unknown>'}"
+                    for item in details
+                }
+            )
+        )
+        raise RuntimeError(
+            f"Refusing host-distribution package {pkgname} = {candidate.version} "
+            f"from {source}; the Modalix sysroot accepts target-repository "
+            "packages only"
+        )
+
+
 def write_sysroot_package_inventory(download_dir, sysroot):
     """Record every package represented by the resolved sysroot cohort."""
 
@@ -463,6 +523,7 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
         if requested_version:
             for candidate in pkg.versions:
                 if fnmatch.fnmatch(candidate.version, requested_version):
+                    validate_target_candidate(pkgname, candidate)
                     return candidate
             if is_platform_package(pkgname):
                 print(f"Skipping {pkgname}; no candidate matches platform version {version}")
@@ -474,8 +535,10 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
                 if matches_platform_build_revision(
                     candidate.version, PLATFORM_BUILD_REVISION
                 ):
+                    validate_target_candidate(pkgname, candidate)
                     return candidate
 
+        validate_target_candidate(pkgname, pkg.candidate)
         return pkg.candidate
 
     def collect_rdeps(candidate, recursive):

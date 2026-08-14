@@ -5,11 +5,11 @@
 import contextlib
 import importlib.util
 import io
+import os
 import pathlib
 import sys
 import tempfile
 import types
-
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.modules.setdefault("apt", types.ModuleType("apt"))
@@ -18,6 +18,73 @@ spec = importlib.util.spec_from_file_location(
 )
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+
+
+class FakeOrigin:
+    def __init__(self, origin, site, archive="", label=""):
+        self.origin = origin
+        self.site = site
+        self.archive = archive
+        self.label = label
+
+
+class FakeCandidate:
+    def __init__(self, version, uri, origins):
+        self.version = version
+        self.uri = uri
+        self.origins = origins
+
+
+os.environ["SIMAAI_VALIDATE_TARGET_ORIGIN"] = "1"
+try:
+    module.validate_target_candidate(
+        "libgstreamer1.0-0:arm64",
+        FakeCandidate(
+            "1.22.0-2+deb12u1",
+            "http://deb.debian.org/debian/pool/main/g/gstreamer1.0/package.deb",
+            [FakeOrigin("Debian", "deb.debian.org", "bookworm", "Debian")],
+        ),
+    )
+
+    try:
+        module.validate_target_candidate(
+            "libgstreamer1.0-0:arm64",
+            FakeCandidate(
+                "1.24.2-1ubuntu0.1",
+                "http://ports.ubuntu.com/ubuntu-ports/pool/main/g/gstreamer1.0/package.deb",
+                [FakeOrigin("Ubuntu", "ports.ubuntu.com", "noble-updates", "Ubuntu")],
+            ),
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+        assert "Refusing host-distribution package libgstreamer1.0-0:arm64" in message
+        assert "1.24.2-1ubuntu0.1" in message
+        assert "Ubuntu@ports.ubuntu.com" in message
+    else:
+        raise AssertionError("Ubuntu host package was accepted for the Modalix sysroot")
+
+    # Unknown third-party repositories are not classified as the Ubuntu SDK host.
+    module.validate_target_candidate(
+        "vendor-library:arm64",
+        FakeCandidate(
+            "1.0.0",
+            "https://packages.vendor.example/pool/vendor-library.deb",
+            [FakeOrigin("Vendor", "packages.vendor.example", "stable", "Vendor")],
+        ),
+    )
+finally:
+    del os.environ["SIMAAI_VALIDATE_TARGET_ORIGIN"]
+
+# Stable SDK construction and explicit sysroot installs keep their existing
+# behavior unless the overlay-update entry point enables the origin gate.
+module.validate_target_candidate(
+    "libgstreamer1.0-0:arm64",
+    FakeCandidate(
+        "1.24.2-1ubuntu0.1",
+        "http://ports.ubuntu.com/ubuntu-ports/pool/main/g/gstreamer1.0/package.deb",
+        [FakeOrigin("Ubuntu", "ports.ubuntu.com", "noble-updates", "Ubuntu")],
+    ),
+)
 
 
 output = io.StringIO()

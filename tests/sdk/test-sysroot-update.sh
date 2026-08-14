@@ -59,6 +59,11 @@ printf '%s\t%s\t%s\n' \
   "${revision}" \
   "${SIMAAI_SETUP_DOWNLOAD_ONLY:-0}" \
   "${SIMAAI_PLATFORM_BUILD_REVISION:-}" >> "${SYSROOT_UPDATE_TEST_LOG:?}"
+grep -Fq 'Pin: origin "deb.debian.org"' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
+grep -Fq 'Pin: origin "mirror.elxr.dev"' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
+grep -A1 -F 'Pin: release o=Ubuntu' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}" | \
+  grep -Fq 'Pin-Priority: 100'
+[[ "${SIMAAI_VALIDATE_TARGET_ORIGIN:-}" == "1" ]]
 rm -rf "${download_dir}"
 mkdir -p "${download_dir}"
 package_root="$(mktemp -d)"
@@ -216,7 +221,6 @@ grep -Fxq 'Version: 2.1.3~pre4617' \
   fail "update did not refresh an existing tracked package manifest"
 grep -Fxq $'2.1.3~pre4617\t0\t4617' "${tmpdir}/setup.log" || \
   fail "actual update did not constrain dependencies to the selected build cohort"
-
 mkdir -p "${tmpdir}/bin"
 cat > "${tmpdir}/fake-installer" <<'EOF'
 #!/usr/bin/env bash
