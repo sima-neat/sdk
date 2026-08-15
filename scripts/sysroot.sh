@@ -782,6 +782,7 @@ parse_update_options() {
 
 configure_update_apt() {
   local platform_revision="$1"
+  local target_priority="${2:-990}"
   local source_file preferences_file platform_packages
 
   source_file="${SYSROOT_UPDATE_APT_SOURCE_FILE:-/etc/apt/sources.list.d/00-sima-sdk-sysroot-pre-release.list}"
@@ -812,23 +813,23 @@ Pin-Priority: 1002
 
 Package: *
 Pin: origin "debian.neat.sima.ai"
-Pin-Priority: 990
+Pin-Priority: ${target_priority}
 
 Package: *
 Pin: origin "repo.sima.ai"
-Pin-Priority: 990
+Pin-Priority: ${target_priority}
 
 Package: *
 Pin: origin "mirror.elxr.dev"
-Pin-Priority: 990
+Pin-Priority: ${target_priority}
 
 Package: *
 Pin: origin "deb.debian.org"
-Pin-Priority: 990
+Pin-Priority: ${target_priority}
 
 Package: *
 Pin: origin "security.debian.org"
-Pin-Priority: 990
+Pin-Priority: ${target_priority}
 
 Package: *
 Pin: release o=Ubuntu
@@ -914,7 +915,7 @@ apply_sysroot_update() {
   update_target_revision="${platform_revision}"
   update_overlay_pending=0
   trap cleanup_update_transaction EXIT
-  configure_update_apt "${platform_revision}"
+  configure_update_apt "${platform_revision}" 1001
   if [[ "${dry_run}" != "1" ]]; then
     write_overlay_transition \
       "${sysroot}" "${platform_base}" "${previous_revision}" "${platform_revision}" "updating"
