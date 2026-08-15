@@ -59,11 +59,22 @@ printf '%s\t%s\t%s\n' \
   "${revision}" \
   "${SIMAAI_SETUP_DOWNLOAD_ONLY:-0}" \
   "${SIMAAI_PLATFORM_BUILD_REVISION:-}" >> "${SYSROOT_UPDATE_TEST_LOG:?}"
-grep -Fq 'Pin: origin "deb.debian.org"' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
-grep -Fq 'Pin: origin "mirror.elxr.dev"' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
+for origin in \
+  debian.neat.sima.ai \
+  repo.sima.ai \
+  mirror.elxr.dev \
+  deb.debian.org \
+  security.debian.org; do
+  grep -A1 -F "Pin: origin \"${origin}\"" "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}" | \
+    grep -Fq 'Pin-Priority: 1001'
+done
 grep -A1 -F 'Pin: release o=Ubuntu' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}" | \
   grep -Fq 'Pin-Priority: 100'
 [[ "${SIMAAI_VALIDATE_TARGET_ORIGIN:-}" == "1" ]]
+if [[ -n "${SYSROOT_UPDATE_APT_CANDIDATE_TEST:-}" ]]; then
+  python3 "${SYSROOT_UPDATE_APT_CANDIDATE_TEST}" \
+    "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
+fi
 rm -rf "${download_dir}"
 mkdir -p "${download_dir}"
 package_root="$(mktemp -d)"
@@ -152,7 +163,11 @@ if run_sysroot update 2.1.3~pre9999 >"${tmpdir}/out" 2>"${tmpdir}/err"; then
 fi
 grep -Fq 'is not available' "${tmpdir}/err" || fail "missing revision rejection was unclear"
 
-dry_run="$(run_sysroot update 2.1.3~pre4593 --dry-run)"
+dry_run="$(
+  env "${common_env[@]}" \
+    SYSROOT_UPDATE_APT_CANDIDATE_TEST="${ROOT_DIR}/tests/sdk/test-sysroot-apt-candidate.py" \
+    "${SYSROOT_COMMAND}" update 2.1.3~pre4593 --dry-run
+)"
 grep -Fq 'Dry run complete: 2.1.3~pre4593 resolved and validated' <<< "${dry_run}" || \
   fail "exact dry run did not validate the selected revision"
 [[ ! -e "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay" ]] || \
@@ -263,6 +278,15 @@ fi
 grep -Fq 'deb [arch=arm64 trusted=yes] https://debian.neat.sima.ai/pre-release bookworm non-free' \
   "${source_file}"
 grep -Fq 'Pin: version 2.1.3~pre4617' "${preferences_file}"
+for origin in \
+  debian.neat.sima.ai \
+  repo.sima.ai \
+  mirror.elxr.dev \
+  deb.debian.org \
+  security.debian.org; do
+  grep -A1 -F "Pin: origin \"${origin}\"" "${preferences_file}" | \
+    grep -Fq 'Pin-Priority: 990'
+done
 case "${1:-}" in
   policy)
     printf '%s\n' '  Candidate: (none)'
