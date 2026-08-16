@@ -82,6 +82,8 @@ jobs:
           tests/sdk/test-install-sdk-stub.sh
           tests/sdk/test-neat-deps.sh
           tests/sdk/test-build-script.sh
+          tests/sdk/test-production-sdk-snapshot-workflow.sh
+          python3 tests/sdk/test_update_vulcan_sdk_snapshot.py
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
