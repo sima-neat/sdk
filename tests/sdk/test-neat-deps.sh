@@ -21,7 +21,7 @@ JSON
 [[ "$(neat_dependency_ref core)" == "v0.3.0" ]]
 
 export SDK_DEPS_MANIFEST="${ROOT_DIR}/deps/manifest.json"
-[[ "$(neat_dependency_ref core)" == "v0.3.0" ]]
+[[ "$(neat_dependency_ref core)" == "develop:latest" ]]
 [[ "$(neat_dependency_ref apps)" == "main:latest" ]]
 [[ "$(neat_dependency_ref sima-cli)" == "v2.1.15" ]]
 
