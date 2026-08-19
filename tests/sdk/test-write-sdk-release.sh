@@ -30,12 +30,12 @@ grep -Fxq 'Requested Pre-release Base = 2.1.3' "${tmpdir}/platform-release" || f
 grep -Fxq 'Neat Core = not bundled' "${tmpdir}/platform-release" || fail "Core status missing"
 
 SDK_RELEASE_FILE="${tmpdir}/stable-release" \
-SDK_RELEASE_REF=v2.1.2 \
-BASE_SDK_VERSION=2.1.2 \
+SDK_RELEASE_REF=v2.1.3 \
+BASE_SDK_VERSION=2.1.3 \
 SDK_APT_CHANNEL=release \
   "${WRITER}"
 
 grep -Fxq 'Neat Core = bundled' "${tmpdir}/stable-release" || fail "stable Core status changed"
-grep -Fxq 'SDK Version = 2.1.2_Palette_SDK_neat_v2.1.2' "${tmpdir}/stable-release" || fail "tag release format changed"
+grep -Fxq 'SDK Version = 2.1.3_Palette_SDK_neat_v2.1.3' "${tmpdir}/stable-release" || fail "tag release format changed"
 
 echo "sdk release metadata tests passed"

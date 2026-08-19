@@ -36,11 +36,11 @@ grep -Fq 'Neat Core is not bundled in this platform SDK; skipping DevKit Core sy
 
 cat > "${tmpdir}/full-release" <<'EOF'
 SDK Profile = full
-Platform Version = 2.1.2
+Platform Version = 2.1.3
 Neat Core = bundled
 EOF
 
-[[ "$(sdk_platform_version_from_release_file "${tmpdir}/full-release")" == "2.1.2" ]] || \
+[[ "$(sdk_platform_version_from_release_file "${tmpdir}/full-release")" == "2.1.3" ]] || \
   fail "full profile did not retain Platform Version compatibility"
 
 full_output="$(

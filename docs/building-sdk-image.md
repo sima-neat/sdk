@@ -27,7 +27,7 @@ By default, this builds `sdk:latest`.
 Build with a custom image name and tag:
 
 ```bash
-./build.sh sdk 2.1.2
+./build.sh sdk 2.1.3
 ```
 
 By default, `build.sh` loads the completed native-architecture image into the local Docker
@@ -221,5 +221,5 @@ command prints this trust mode before every update.
 To make an Insight upgrade permanent in the image, rebuild the SDK image with the desired Insight channel and version:
 
 ```bash
-NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 2.1.2
+NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 2.1.3
 ```
