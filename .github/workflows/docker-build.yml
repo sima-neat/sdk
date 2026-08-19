@@ -461,6 +461,31 @@ jobs:
           source .venv/bin/activate
           sima-cli sdk setup -y -n --no-model-sdk
 
+      - name: Summarize generated SDK release metadata
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+          SMOKE_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+
+          container_id="$(docker ps -q --filter "ancestor=${IMAGE_REF}" | head -n 1)"
+          if [[ -z "${container_id}" ]]; then
+            echo "No running SDK container found for image ${IMAGE_REF}." >&2
+            docker ps --format 'table {{.ID}}\t{{.Image}}\t{{.Names}}\t{{.Status}}' >&2
+            exit 1
+          fi
+
+          sdk_release="$(docker exec "${container_id}" cat /etc/sdk-release)"
+          echo "Generated /etc/sdk-release (${SMOKE_ARCH}):"
+          printf '%s\n' "${sdk_release}"
+
+          {
+            printf '## SDK release metadata (%s)\n\n' "${SMOKE_ARCH}"
+            printf "**Image:** \`%s\`\n\n" "${IMAGE_REF}"
+            printf "Contents of \`/etc/sdk-release\`:\n\n"
+            printf "\`\`\`text\n%s\n\`\`\`\n" "${sdk_release}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
       - name: Run SDK smoke test suite
         env:
           IMAGE_REF: ${{ steps.image.outputs.image_ref }}
