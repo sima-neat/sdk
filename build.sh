@@ -22,9 +22,23 @@ NEAT_VERSION="${NEAT_VERSION:-latest}"
 NEAT_CORE_TARGET="${NEAT_CORE_TARGET:-}"
 NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH:-}"
 NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION:-}"
-NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF:-$(
-  neat_resolve_dependency_source_ref core https://github.com/sima-neat/core.git
-)}"
+NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF:-}"
+NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON:-}"
+if [[ -z "${NEAT_CORE_SOURCE_REF}" ]]; then
+  if resolved_core_source_ref="$(
+    neat_resolve_dependency_source_ref core https://github.com/sima-neat/core.git
+  )"; then
+    NEAT_CORE_SOURCE_REF="${resolved_core_source_ref}"
+  else
+    resolve_status=$?
+    if [[ "${resolve_status}" == "3" ]]; then
+      core_manifest_ref="$(neat_dependency_ref core)"
+      NEAT_CORE_SOURCE_REASON="requested Core source ref ${core_manifest_ref} does not exist yet"
+    else
+      exit "${resolve_status}"
+    fi
+  fi
+fi
 NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF:-$(
   neat_resolve_dependency_source_ref apps https://github.com/sima-neat/apps.git
 )}"
@@ -34,6 +48,12 @@ BUILDX_OUTPUT="${BUILDX_OUTPUT:-load}"
 BUILDX_CACHE_FROM="${BUILDX_CACHE_FROM:-}"
 BUILDX_CACHE_TO="${BUILDX_CACHE_TO:-}"
 BUILDX_PROVENANCE="${BUILDX_PROVENANCE:-}"
+NEAT_CORE_RESOLUTION_ATTEMPT="${NEAT_CORE_RESOLUTION_ATTEMPT:-${GITHUB_RUN_ID:-}}"
+if [[ -z "${NEAT_CORE_RESOLUTION_ATTEMPT}" ]]; then
+  NEAT_CORE_RESOLUTION_ATTEMPT="local-$(date -u +%Y%m%d%H%M%S)-$$"
+elif [[ -n "${GITHUB_RUN_ATTEMPT:-}" ]]; then
+  NEAT_CORE_RESOLUTION_ATTEMPT="${NEAT_CORE_RESOLUTION_ATTEMPT}-${GITHUB_RUN_ATTEMPT}"
+fi
 
 usage() {
   cat <<EOF
@@ -58,6 +78,7 @@ Environment overrides:
   NEAT_INSIGHT_BRANCH  Override the Insight branch/release channel from deps/manifest.json
   NEAT_INSIGHT_VERSION  Override the Insight version/tag from deps/manifest.json
   NEAT_CORE_SOURCE_REF  Override the Core source commit resolved from deps/manifest.json
+  NEAT_CORE_SOURCE_REASON  Explain why Core source resolution was skipped
   NEAT_APPS_SOURCE_REF  Override the Apps source commit resolved from deps/manifest.json
   SIMA_CLI_REF  Override the sima-cli release or branch ref from deps/manifest.json
   SIMA_CLI_VERSION  Override the sima-cli branch artifact version (default: manifest spec or latest)
@@ -65,6 +86,7 @@ Environment overrides:
   BUILDX_CACHE_FROM  Optional space-separated Buildx registry cache import references
   BUILDX_CACHE_TO  Optional Buildx registry cache export reference
   BUILDX_PROVENANCE  Optional Buildx provenance setting, e.g. false
+  NEAT_CORE_RESOLUTION_ATTEMPT  Cache key for rechecking optional Core availability
 EOF
 }
 
@@ -211,7 +233,9 @@ echo "NEAT version: ${NEAT_VERSION}"
 echo "NEAT Core target override: ${NEAT_CORE_TARGET:-<deps/manifest.json>}"
 echo "NEAT Insight branch override: ${NEAT_INSIGHT_BRANCH:-<deps/manifest.json>}"
 echo "NEAT Insight version override: ${NEAT_INSIGHT_VERSION:-<deps/manifest.json>}"
-echo "NEAT Core source commit: ${NEAT_CORE_SOURCE_REF}"
+echo "NEAT Core source commit: ${NEAT_CORE_SOURCE_REF:-<not available>}"
+echo "NEAT Core source result: ${NEAT_CORE_SOURCE_REASON:-resolved}"
+echo "NEAT Core resolution attempt: ${NEAT_CORE_RESOLUTION_ATTEMPT}"
 echo "NEAT Apps source commit: ${NEAT_APPS_SOURCE_REF}"
 echo "sima-cli ref: ${SIMA_CLI_REF}"
 echo "sima-cli artifact version: ${SIMA_CLI_VERSION}"
@@ -232,6 +256,8 @@ if docker buildx version >/dev/null 2>&1; then
     --build-arg NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH}"
     --build-arg NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION}"
     --build-arg NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}"
+    --build-arg NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON}"
+    --build-arg NEAT_CORE_RESOLUTION_ATTEMPT="${NEAT_CORE_RESOLUTION_ATTEMPT}"
     --build-arg NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF}"
     --build-arg SIMA_CLI_REF="${SIMA_CLI_REF}"
     --build-arg SIMA_CLI_VERSION="${SIMA_CLI_VERSION}"
@@ -294,6 +320,8 @@ build_cmd=(
   --build-arg NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH}"
   --build-arg NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION}"
   --build-arg NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}"
+  --build-arg NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON}"
+  --build-arg NEAT_CORE_RESOLUTION_ATTEMPT="${NEAT_CORE_RESOLUTION_ATTEMPT}"
   --build-arg NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF}"
   --build-arg SIMA_CLI_REF="${SIMA_CLI_REF}"
   --build-arg SIMA_CLI_VERSION="${SIMA_CLI_VERSION}"

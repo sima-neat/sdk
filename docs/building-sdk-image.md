@@ -82,6 +82,18 @@ in `deps/manifest.json`. Before Buildx starts, `build.sh` resolves release tags 
 build arguments, so moving a branch invalidates the source-installation layer without
 duplicating package and source selections in the manifest.
 
+Core is optional while a new SDK/Core release pair is being bootstrapped. If the requested
+Core Git ref or published artifact does not exist yet, or its artifact metadata is
+incompatible with the selected platform, the SDK build continues without bundled Core
+binaries or source trees. Other installation failures remain fatal. Every build rechecks
+Core availability even when Buildx imports a registry cache, so rebuilding the same SDK
+commit after the Core artifact is published includes it automatically.
+
+The build log prints a `Neat Core bundle result` summary. `/etc/sdk-release` records
+`Neat Core`, `Neat Core Requested`, and `Neat Core Reason`; an image without Core uses the
+`platform-cross` profile so smoke tests and DevKit synchronization do not assume those
+resources exist.
+
 The `sima-cli` dependency is also selected by `deps/manifest.json`. Release refs such as
 `v2.1.15` install that exact PyPI version. A branch ref may use `main:latest`; `build.sh`
 resolves `latest.tag` before invoking Buildx and passes the resulting artifact commit into

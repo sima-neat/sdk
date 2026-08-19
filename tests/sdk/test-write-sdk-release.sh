@@ -38,4 +38,23 @@ SDK_APT_CHANNEL=release \
 grep -Fxq 'Neat Core = bundled' "${tmpdir}/stable-release" || fail "stable Core status changed"
 grep -Fxq 'SDK Version = 2.1.3_Palette_SDK_neat_v2.1.3' "${tmpdir}/stable-release" || fail "tag release format changed"
 
+cat > "${tmpdir}/core-status" <<'EOF'
+Neat Core = not bundled
+Neat Core Requested = core@v0.4.0
+Neat Core Reason = requested Core artifact is not published yet
+EOF
+
+SDK_RELEASE_FILE="${tmpdir}/stable-without-core-release" \
+NEAT_CORE_STATUS_FILE="${tmpdir}/core-status" \
+SDK_RELEASE_REF=develop-abcdef1 \
+BASE_SDK_VERSION=2.1.3 \
+SDK_APT_CHANNEL=release \
+  "${WRITER}"
+
+grep -Fxq 'SDK Profile = platform-cross' "${tmpdir}/stable-without-core-release" || fail "Core-less stable SDK profile was incorrect"
+grep -Fxq 'Platform Channel = release' "${tmpdir}/stable-without-core-release" || fail "Core-less stable SDK lost its release channel"
+grep -Fxq 'Neat Core = not bundled' "${tmpdir}/stable-without-core-release" || fail "Core-less stable SDK status was incorrect"
+grep -Fxq 'Neat Core Requested = core@v0.4.0' "${tmpdir}/stable-without-core-release" || fail "requested Core target missing"
+grep -Fxq 'Neat Core Reason = requested Core artifact is not published yet' "${tmpdir}/stable-without-core-release" || fail "Core skip reason missing"
+
 echo "sdk release metadata tests passed"

@@ -121,7 +121,11 @@ neat_resolve_git_ref() {
       return 1
     fi
     if [[ "${version}" == "latest" ]]; then
-      resolved="$(git ls-remote "${repository}" "refs/heads/${branch}" | awk 'NR == 1 {print $1}')"
+      if ! refs="$(git ls-remote "${repository}" "refs/heads/${branch}")"; then
+        echo "Unable to query ${repository} for branch ${branch}." >&2
+        return 1
+      fi
+      resolved="$(awk 'NR == 1 {print $1}' <<< "${refs}")"
     elif [[ "${version}" =~ ^[0-9a-fA-F]{40}$ ]]; then
       resolved="${version}"
     else
@@ -129,7 +133,10 @@ neat_resolve_git_ref() {
       return 1
     fi
   else
-    refs="$(git ls-remote "${repository}" "refs/tags/${spec}" "refs/tags/${spec}^{}")"
+    if ! refs="$(git ls-remote "${repository}" "refs/tags/${spec}" "refs/tags/${spec}^{}")"; then
+      echo "Unable to query ${repository} for tag ${spec}." >&2
+      return 1
+    fi
     resolved="$(awk '$2 ~ /\^\{\}$/ {print $1; exit}' <<< "${refs}")"
     if [[ -z "${resolved}" ]]; then
       resolved="$(awk 'NR == 1 {print $1}' <<< "${refs}")"
@@ -137,8 +144,8 @@ neat_resolve_git_ref() {
   fi
 
   if [[ ! "${resolved}" =~ ^[0-9a-fA-F]{40}$ ]]; then
-    echo "Unable to resolve ${repository} ref ${spec} to a full Git commit SHA." >&2
-    return 1
+    echo "${repository} ref ${spec} does not exist yet." >&2
+    return 3
   fi
   printf '%s\n' "${resolved}" | tr '[:upper:]' '[:lower:]'
 }

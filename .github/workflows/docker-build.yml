@@ -81,6 +81,7 @@ jobs:
         run: |
           tests/sdk/test-install-sdk-stub.sh
           tests/sdk/test-neat-deps.sh
+          tests/sdk/test-install-neat-resources.sh
           tests/sdk/test-build-script.sh
 
       - name: Set up Docker Buildx

@@ -1,6 +1,6 @@
 {
   "core": {
-    "ref": "develop:latest"
+    "ref": "v0.4.0"
   },
   "apps": {
     "ref": "main:latest"
