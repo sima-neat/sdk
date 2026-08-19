@@ -218,8 +218,9 @@ done < <(
     sed 's/^"//'
 )
 
-if [[ -d "${SYSROOT}/usr/include" ]]; then
-  chmod -R a+rX "${SYSROOT}/usr/include"
-fi
+# Debian payload modes are preserved during extraction. The SDK sysroot is
+# shared by root-owned update commands and non-root builds, so ensure every
+# payload remains readable and every directory remains traversable.
+chmod -R a+rX "${SYSROOT}"
 
 echo "Sysroot overlay complete"

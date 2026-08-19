@@ -93,9 +93,12 @@ if [[ "${SYSROOT_UPDATE_TEST_FAIL:-0}" == "1" ]]; then
   exit 42
 fi
 if [[ "${SIMAAI_SETUP_DOWNLOAD_ONLY:-0}" != "1" ]]; then
-  mkdir -p "${sysroot}/usr/lib/aarch64-linux-gnu"
+  mkdir -p "${sysroot}/usr/lib/aarch64-linux-gnu" "${sysroot}/usr/include/simaai"
   cp "${package_root}/usr/lib/aarch64-linux-gnu/sysroot-update-test.txt" \
     "${sysroot}/usr/lib/aarch64-linux-gnu/sysroot-update-test.txt"
+  printf '#define SIMAAI_TEST 1\n' > "${sysroot}/usr/include/simaai/stdc-predef.h"
+  chmod 0750 "${sysroot}/usr/include/simaai"
+  chmod 0640 "${sysroot}/usr/include/simaai/stdc-predef.h"
   mkdir -p "${sysroot}/var/lib/sima-sdk"
   printf 'simaai-palette-modalix\tarm64\t%s\t/usr/lib/aarch64-linux-gnu\n' "${revision}" > \
     "${sysroot}/var/lib/sima-sdk/sysroot-packages.tsv"
@@ -219,6 +222,10 @@ grep -Fq 'Sysroot overlay is active at 2.1.3~pre4617' <<< "${update_output}" || 
   fail "exact update did not activate the overlay"
 grep -Fxq '2.1.3~pre4617' "${tmpdir}/sysroot/usr/lib/aarch64-linux-gnu/sysroot-update-test.txt" || \
   fail "platform setup did not update the sysroot"
+[[ "$(stat -c '%a' "${tmpdir}/sysroot/usr/include/simaai")" == "755" ]] || \
+  fail "update left an extracted sysroot directory inaccessible to non-root users"
+[[ "$(stat -c '%a' "${tmpdir}/sysroot/usr/include/simaai/stdc-predef.h")" == "644" ]] || \
+  fail "update left an extracted sysroot file unreadable to non-root users"
 grep -Fxq 'Platform Revision = 2.1.3~pre4617' "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay" || \
   fail "overlay revision was not recorded"
 awk -F '\t' '$1 == "simaai-palette-modalix" && $2 == "arm64" && $3 == "2.1.3~pre4617" && $4 == "/usr/lib/aarch64-linux-gnu" { found = 1 } END { exit !found }' \

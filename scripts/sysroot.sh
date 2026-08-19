@@ -946,6 +946,9 @@ apply_sysroot_update() {
   merge_tracked_manifests_into_inventory "${sysroot}"
   refresh_tracked_manifests "${sysroot}" "${arch}" "${download_dir}"
   write_overlay_metadata "${sysroot}" "${platform_base}" "${platform_revision}"
+  # Package extraction preserves archive modes. Updates run as root, but the
+  # resulting SDK sysroot must remain consumable by non-root builds.
+  chmod -R a+rX "${sysroot}"
   update_overlay_pending=0
   echo "Sysroot overlay is active at ${platform_revision}."
   echo "Run '${program_name} status' to inspect it; recreate the SDK container to restore the image-default sysroot."
