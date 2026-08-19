@@ -26,6 +26,7 @@ grep -Fq 'EXPECTED_IMAGE_DIGEST: ${{ steps.image.outputs.digest }}' "${workflow}
 # shellcheck disable=SC2016
 grep -Fq 'builder_digest}" != "${EXPECTED_IMAGE_DIGEST}"' "${workflow}"
 grep -Fq 'timeout-minutes: 150' "${workflow}"
+grep -Fq 'role-duration-seconds: 10800' "${workflow}"
 grep -Fq 'scripts/build-sdk-cache-snapshot.sh build' "${workflow}"
 # shellcheck disable=SC2016
 grep -Fq -- '--base "${VULCAN_BASE_BRANCH}"' "${workflow}"

@@ -153,6 +153,7 @@ jobs:
           role-to-assume: ${{ vars.VULCAN_SNAPSHOT_BUILDER_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: sdk-snapshot-${{ github.run_id }}
+          role-duration-seconds: 10800
 
       - name: Build production SDK cache snapshot
         id: snapshot
