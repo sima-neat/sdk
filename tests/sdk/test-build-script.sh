@@ -62,7 +62,7 @@ assert_arg type=registry,ref=ghcr.io/sima-neat/sdk-buildcache:test-x86_64,mode=m
 assert_arg --provenance=false
 assert_arg NEAT_CORE_SOURCE_REF=1111111111111111111111111111111111111111
 assert_arg NEAT_CORE_SOURCE_REASON=
-grep -Eq '^NEAT_CORE_RESOLUTION_ATTEMPT=local-[0-9]{14}-[0-9]+$' "${TMP_DIR}/docker-args"
+grep -Eq '^NEAT_CORE_RESOLUTION_ATTEMPT=(local-[0-9]{14}-[0-9]+|[0-9]+-[0-9]+)$' "${TMP_DIR}/docker-args"
 assert_arg NEAT_APPS_SOURCE_REF=2222222222222222222222222222222222222222
 assert_arg SIMA_CLI_REF=v2.1.15
 assert_arg SIMA_CLI_VERSION=latest
