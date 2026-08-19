@@ -279,8 +279,17 @@ test_platform_cross_profile() {
 
   test "${profile}" = "platform-cross"
   test "${core_status}" = "not bundled"
-  test "${platform_channel}" = "pre-release"
-  [[ "${platform_version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+~pre[0-9]+$ ]]
+  case "${platform_channel}" in
+    release)
+      [[ "${platform_version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]
+      ;;
+    pre-release)
+      [[ "${platform_version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+~pre[0-9]+$ ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
   test ! -e /neat-resources/core-extra
   test ! -e /neat-resources/core-src
   test ! -e /neat-resources/apps-src
@@ -294,10 +303,10 @@ cp -a "${HELLO_SRC}/." "${HELLO_WORK}/"
 cp -a "${REPRESENTATIVE_SRC}/." "${REPRESENTATIVE_WORK}/"
 
 if [[ -r "${SDK_RELEASE_FILE}" ]] && [[ "$(sdk_release_value "SDK Profile")" == "platform-cross" ]]; then
-  run_test "Platform-only SDK profile" test_platform_cross_profile
+  run_test "Core-less SDK profile" test_platform_cross_profile
   run_test "Modalix cross toolchain" test_modalix_cross_toolchain
   run_test "Representative sysroot overlay install" test_sysroot_overlay_representative
-  printf '\nPlatform-only SDK smoke tests passed.\n'
+  printf '\nCore-less SDK smoke tests passed.\n'
   exit 0
 fi
 
