@@ -27,7 +27,7 @@ By default, this builds `sdk:latest`.
 Build with a custom image name and tag:
 
 ```bash
-./build.sh sdk 2.1.2
+./build.sh sdk 2.1.3
 ```
 
 By default, `build.sh` loads the completed native-architecture image into the local Docker
@@ -81,6 +81,18 @@ in `deps/manifest.json`. Before Buildx starts, `build.sh` resolves release tags 
 `branch:latest` references to full Git commit SHAs. Those resolved commits become Docker
 build arguments, so moving a branch invalidates the source-installation layer without
 duplicating package and source selections in the manifest.
+
+Core is optional while a new SDK/Core release pair is being bootstrapped. If the requested
+Core Git ref or published artifact does not exist yet, or its artifact metadata is
+incompatible with the selected platform, the SDK build continues without bundled Core
+binaries or source trees. Other installation failures remain fatal. Every build rechecks
+Core availability even when Buildx imports a registry cache, so rebuilding the same SDK
+commit after the Core artifact is published includes it automatically.
+
+The build log prints a `Neat Core bundle result` summary. `/etc/sdk-release` records
+`Neat Core`, `Neat Core Requested`, and `Neat Core Reason`; an image without Core uses the
+`platform-cross` profile so smoke tests and DevKit synchronization do not assume those
+resources exist.
 
 The `sima-cli` dependency is also selected by `deps/manifest.json`. Release refs such as
 `v2.1.15` install that exact PyPI version. A branch ref may use `main:latest`; `build.sh`
@@ -221,5 +233,5 @@ command prints this trust mode before every update.
 To make an Insight upgrade permanent in the image, rebuild the SDK image with the desired Insight channel and version:
 
 ```bash
-NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 2.1.2
+NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 2.1.3
 ```

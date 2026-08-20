@@ -16,6 +16,9 @@ container after `sima-cli sdk setup -y -n` starts it.
 - `test-resolve-platform-config.sh`, `test-write-sdk-release.sh`, and
   `test-devkit-platform-profile.sh` cover pre-release selection, image
   provenance, protected release refs, and intentional Core-sync skipping.
+- `test-install-neat-resources.sh` covers bundled Core, unpublished and
+  incompatible Core skips, explicit platform-only builds, and unexpected fatal
+  installer failures.
 - `test-sysroot-update.sh` covers interactive safety, exact and latest
   pre-release resolution, Platform Base enforcement, dry-run validation,
   overlay provenance, idempotence, and the shell prompt overlay marker.

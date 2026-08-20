@@ -27,7 +27,7 @@ Version: 2.1.3~pre4460
 Architecture: arm64
 
 Package: simaai-palette-modalix
-Version: 2.1.2~pre9999
+Version: 2.1.4~pre9999
 Architecture: arm64
 EOF
 
@@ -77,13 +77,13 @@ chmod 755 "${tmpdir}/dpkg"
 run_resolver() {
   PRE_RELEASE_PACKAGES_FILE="${PRE_RELEASE_PACKAGES_FILE-${tmpdir}/Packages}" \
     DPKG_COMMAND="${tmpdir}/dpkg" \
-    STABLE_BASE_SDK_VERSION=2.1.2 \
+    STABLE_BASE_SDK_VERSION=2.1.3 \
     "${RESOLVER}"
 }
 
 stable="$(PRE_RELEASE_BASE= GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop run_resolver)"
 grep -Fxq 'sdk_apt_channel=release' <<< "${stable}" || fail "stable channel was not selected"
-grep -Fxq 'base_sdk_version=2.1.2' <<< "${stable}" || fail "stable version was incorrect"
+grep -Fxq 'base_sdk_version=2.1.3' <<< "${stable}" || fail "stable version was incorrect"
 
 floating="$(PRE_RELEASE_BASE=2.1.3 GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop run_resolver)"
 grep -Fxq 'sdk_apt_channel=pre-release' <<< "${floating}" || fail "pre-release channel was not selected"

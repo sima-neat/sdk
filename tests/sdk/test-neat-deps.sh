@@ -21,7 +21,7 @@ JSON
 [[ "$(neat_dependency_ref core)" == "v0.3.0" ]]
 
 export SDK_DEPS_MANIFEST="${ROOT_DIR}/deps/manifest.json"
-[[ "$(neat_dependency_ref core)" == "v0.3.0" ]]
+[[ "$(neat_dependency_ref core)" == "v0.4.0" ]]
 [[ "$(neat_dependency_ref apps)" == "main:latest" ]]
 [[ "$(neat_dependency_ref sima-cli)" == "v2.1.15" ]]
 
@@ -40,6 +40,13 @@ expected_commit="$(git -C "${git_repo}" rev-parse HEAD)"
 [[ "$(neat_resolve_git_ref "${git_repo}" main:latest)" == "${expected_commit}" ]]
 [[ "$(neat_resolve_git_ref "${git_repo}" "main:${expected_commit}")" == "${expected_commit}" ]]
 [[ "$(neat_resolve_git_ref "${git_repo}" "${expected_commit}")" == "${expected_commit}" ]]
+
+set +e
+neat_resolve_git_ref "${git_repo}" v9.9.9 > "${TMP_DIR}/missing-ref.out" 2> "${TMP_DIR}/missing-ref.err"
+missing_ref_status=$?
+set -e
+[[ "${missing_ref_status}" == "3" ]]
+grep -Fq 'ref v9.9.9 does not exist yet' "${TMP_DIR}/missing-ref.err"
 
 export SDK_DEPS_MANIFEST="${TMP_DIR}/manifest.json"
 cat > "${SDK_DEPS_MANIFEST}" <<JSON

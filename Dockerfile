@@ -13,7 +13,7 @@ RUN chmod 755 /usr/local/bin/install-cross-toolchain.sh && \
 FROM ${SDK_BASE_IMAGE}
 
 ARG SDK_PKG_LIST
-ARG BASE_SDK_VERSION=2.1.2
+ARG BASE_SDK_VERSION=2.1.3
 ARG SDK_APT_CHANNEL=release
 ARG REQUESTED_PRE_RELEASE_BASE=
 ARG MINIMAL_IMAGE=0
@@ -254,11 +254,15 @@ WORKDIR /workspace
 COPY scripts/install-neat-resources.sh /usr/local/bin/install-neat-resources.sh
 RUN chmod 755 /usr/local/bin/install-neat-resources.sh
 ARG NEAT_CORE_SOURCE_REF=
+ARG NEAT_CORE_SOURCE_REASON=
 ARG NEAT_APPS_SOURCE_REF=
-RUN if [ "${SDK_APT_CHANNEL}" = pre-release ]; then \
-      echo "Skipping bundled Neat Core resources for the pre-release platform SDK"; \
+ARG NEAT_CORE_RESOLUTION_ATTEMPT=manual
+RUN echo "Neat Core resolution attempt: ${NEAT_CORE_RESOLUTION_ATTEMPT}" && \
+    if [ "${SDK_APT_CHANNEL}" = pre-release ]; then \
+      install-neat-resources.sh --skip "pre-release platform SDK does not bundle Core"; \
     else \
       NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}" \
+      NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON}" \
       NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF}" \
       install-neat-resources.sh; \
     fi
