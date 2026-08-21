@@ -6,6 +6,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SYSROOT="${1:-/opt/toolchain/aarch64/modalix}"
 LIBDIR="${SYSROOT}/usr/lib/aarch64-linux-gnu"
 LINUX_LIBC_DEV_ARM64_VERSION="${SDK_SYSROOT_LINUX_LIBC_DEV_ARM64_VERSION:-${SDK_SYSROOT_LINUX_LIBC_DEV_VERSION:-}}"
+if [[ "${SDK_APT_CHANNEL:-release}" == "pre-release" ]]; then
+  SDK_APT_ORIGIN="debian.neat.sima.ai"
+else
+  SDK_APT_ORIGIN="repo.sima.ai"
+fi
 
 CONFIG_CANDIDATES=()
 if [[ -n "${SDK_SYSROOT_OVERLAY_CONFIG:-}" ]]; then
@@ -80,9 +85,9 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ -f /etc/apt/sources.list.d/debian-target.list ]]; then
-  cat >"${sysroot_pref}" <<'EOF'
+  cat >"${sysroot_pref}" <<EOF
 Package: *
-Pin: origin "repo.sima.ai/elxr"
+Pin: origin "${SDK_APT_ORIGIN}"
 Pin-Priority: 990
 
 Package: *
@@ -213,8 +218,9 @@ done < <(
     sed 's/^"//'
 )
 
-if [[ -d "${SYSROOT}/usr/include" ]]; then
-  chmod -R a+rX "${SYSROOT}/usr/include"
-fi
+# Debian payload modes are preserved during extraction. The SDK sysroot is
+# shared by root-owned update commands and non-root builds, so ensure every
+# payload remains readable and every directory remains traversable.
+chmod -R a+rX "${SYSROOT}"
 
 echo "Sysroot overlay complete"

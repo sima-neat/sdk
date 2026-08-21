@@ -27,8 +27,29 @@ By default, this builds `sdk:latest`.
 Build with a custom image name and tag:
 
 ```bash
-./build.sh sdk 2.1.2
+./build.sh sdk 2.1.3
 ```
+
+By default, `build.sh` loads the completed native-architecture image into the local Docker
+daemon. It can instead push directly from Buildx, avoiding a second local image load and
+registry upload:
+
+```bash
+BUILDX_OUTPUT=push ./build.sh ghcr.io/sima-neat/sdk test
+```
+
+The helper also supports a registry-backed BuildKit cache:
+
+```bash
+BUILDX_OUTPUT=push \
+BUILDX_CACHE_FROM=ghcr.io/sima-neat/sdk-buildcache:develop-x86_64 \
+BUILDX_CACHE_TO=ghcr.io/sima-neat/sdk-buildcache:my-branch-x86_64 \
+./build.sh ghcr.io/sima-neat/sdk-my-branch test-x86_64
+```
+
+`BUILDX_CACHE_FROM` and `BUILDX_CACHE_TO` are cache references, not runnable SDK image
+tags. Do not pass credentials, tokens, or other secrets through Docker build arguments or
+write them into cached layers.
 
 The build helper supports both `aarch64` and `x86_64` hosts and automatically selects the matching Docker platform for the current machine.
 
@@ -39,6 +60,75 @@ Building sdk:latest
 Host architecture: arm64
 Docker platform: linux/arm64
 ```
+
+## CI Build Cache
+
+The Docker build workflow publishes each native-architecture image directly from Buildx.
+Branch builds import both their independent GHCR cache tag and the `develop` fallback,
+then update only their own tag in the `sdk-buildcache` package. The architecture suffix
+prevents x86_64 and aarch64 writers from colliding.
+Pull requests import the target branch cache but do not update it, so untrusted or
+speculative changes cannot poison a shared cache. Release tags reuse the matching
+`release-X.Y` cache without modifying it.
+
+The cleanup workflow removes cache versions belonging only to deleted branches and prunes
+untagged cache versions after seven days. The package is an implementation detail of CI;
+SDK consumers should continue pulling images from the normal `sdk` or branch-specific SDK
+packages.
+
+Neat Core and Neat Apps source trees embedded in the image are selected by the `ref` values
+in `deps/manifest.json`. Before Buildx starts, `build.sh` resolves release tags and
+`branch:latest` references to full Git commit SHAs. Those resolved commits become Docker
+build arguments, so moving a branch invalidates the source-installation layer without
+duplicating package and source selections in the manifest.
+
+Core is optional while a new SDK/Core release pair is being bootstrapped. If the requested
+Core Git ref or published artifact does not exist yet, or its artifact metadata is
+incompatible with the selected platform, the SDK build continues without bundled Core
+binaries or source trees. Other installation failures remain fatal. Every build rechecks
+Core availability even when Buildx imports a registry cache, so rebuilding the same SDK
+commit after the Core artifact is published includes it automatically.
+
+The build log prints a `Neat Core bundle result` summary. `/etc/sdk-release` records
+`Neat Core`, `Neat Core Requested`, and `Neat Core Reason`; an image without Core uses the
+`platform-cross` profile so smoke tests and DevKit synchronization do not assume those
+resources exist.
+
+The `sima-cli` dependency is also selected by `deps/manifest.json`. Release refs such as
+`v2.1.15` install that exact PyPI version. A branch ref may use `main:latest`; `build.sh`
+resolves `latest.tag` before invoking Buildx and passes the resulting artifact commit into
+the Docker build, so a new branch artifact invalidates the cached installation layer.
+
+## Build Against Pre-release Platform Packages
+
+CI reads the repository variable `PRE_RELEASE_BASE`. A value such as `2.1.3`
+selects the highest Debian version matching `2.1.3~pre*`; a value such as
+`2.1.3~pre4460` pins that exact build. The workflow resolves the value once and
+passes the same immutable version to both architecture builds.
+
+For a manual workflow run, the optional **Platform selector** input overrides
+the repository variable. Leave it empty to use `PRE_RELEASE_BASE`, enter
+`X.Y.Z` to select the latest matching pre-release, or enter `X.Y.Z~preN` to pin
+that exact platform build.
+
+Floating selectors follow the mirror's `Release` metadata to its current
+Acquire-By-Hash package index. Exact `X.Y.Z~preN` values bypass latest-version
+selection but are still checked against that current index before the build.
+
+Pre-release images use the `platform-cross` profile. They contain the cross
+compiler and exact target sysroot but do not bundle Neat Core binaries or source
+checkouts. `/etc/sdk-release` records the requested selector, resolved platform
+version, repository, profile, and `Neat Core = not bundled`.
+
+The pre-release mirror is configured as an overlay on the official release
+repository. Exact platform-version pins select the requested pre-release
+packages, while SDK-pinned dependencies that are not duplicated in the
+pre-release mirror remain available from the release repository.
+
+Floating selectors are rejected on `main`, `release-*` branches, and tags.
+Those refs use the stable channel when `PRE_RELEASE_BASE` is unset and accept
+pre-release packages only when an exact `X.Y.Z~preN` version is explicitly
+pinned.
 
 ## Add Sysroot Packages
 
@@ -60,17 +150,88 @@ For OpenCV CMake component names, `sysroot` can resolve names such as `opencv_dn
 sudo sysroot install opencv_dnn
 ```
 
-Packages installed through `sysroot install` are tracked in lightweight manifests, so they can be listed or removed later:
+Packages installed through `sysroot install` are tracked in lightweight
+manifests so they can be removed later. `sysroot list` reports the complete
+image or overlay inventory:
 
 ```bash
 sysroot list
 sudo sysroot remove libzix-dev
 ```
 
+### Test a Pre-release Platform Sysroot Overlay
+
+To test a newer pre-release platform revision without rebuilding the SDK
+image, use `sysroot update` inside the SDK container. With no revision, the
+command queries the public pre-release mirror and offers only revisions that
+match the immutable image's `Platform Base` from `/etc/sdk-release`:
+
+```bash
+sudo sysroot update
+```
+
+Providing an exact revision is noninteractive and is suitable for automation:
+
+```bash
+sudo sysroot update 2.1.3~pre4617
+```
+
+Following the newest eligible revision requires explicit confirmation in
+noninteractive environments. A dry run downloads and validates the dependency
+cohort without extracting it into the sysroot:
+
+```bash
+sudo sysroot update --latest --yes
+sudo sysroot update 2.1.3~pre4617 --dry-run
+```
+
+This command is deliberately restricted to pre-release development and
+testing. It refuses stable versions and revisions outside the SDK's Platform
+Base. For example, an SDK with `Platform Base = 2.1.3` cannot update its
+sysroot to `2.2.0~preN`.
+
+An update creates a visible **sysroot overlay** rather than changing the
+immutable SDK image identity. Inspect both states with:
+
+```bash
+sysroot status
+```
+
+List the complete package inventory for either the image-default sysroot or
+the active overlay with:
+
+```bash
+sysroot list
+```
+
+The table includes package name, architecture, exact version, and summarized
+payload locations relative to the displayed sysroot. A package may show
+multiple locations because Debian packages commonly contain both headers and
+libraries. Manual `sysroot install` and `sysroot remove` operations update the
+same inventory.
+
+New interactive shells include the active overlay revision in the SDK prompt.
+The overlay descriptor and exact package inventory are stored under
+`/opt/toolchain/aarch64/modalix/var/lib/sima-sdk/`. Recreate the SDK container
+to discard the overlay and restore the image-default sysroot. Because this is
+an in-place overlay, recreating the container is also the way to guarantee that
+files removed between platform revisions are absent from the sysroot.
+
+Package downloads use eight workers by default and validated downloads are
+cached per platform revision under `/tmp`. Override the concurrency when
+needed, for example `SIMAAI_DOWNLOAD_WORKERS=16 sudo -E sysroot update ...`.
+Retries of the same revision reuse valid cached packages. Interactive terminals
+show animated download and extraction progress; CI logs receive periodic
+plain-text progress updates.
+
+The pre-release repository currently uses HTTPS transport with APT
+`trusted=yes`; this is not equivalent to signed APT repository metadata. The
+command prints this trust mode before every update.
+
 ## NEAT Insight Version
 
 To make an Insight upgrade permanent in the image, rebuild the SDK image with the desired Insight channel and version:
 
 ```bash
-NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 2.1.2
+NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 2.1.3
 ```

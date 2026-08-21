@@ -10,7 +10,22 @@ container after `sima-cli sdk setup -y -n` starts it.
   invokes `run-in-container.sh`. It also runs host-side tests that need to
   validate Docker-published ports.
 - `run-in-container.sh` runs inside the SDK container and acts as the index for
-  individual SDK smoke tests.
+  individual SDK smoke tests. For a `platform-cross` image it validates release
+  metadata, absence of bundled Core resources, the Modalix cross toolchain, and
+  the sysroot overlay without running Core-dependent examples.
+- `test-resolve-platform-config.sh`, `test-write-sdk-release.sh`, and
+  `test-devkit-platform-profile.sh` cover pre-release selection, image
+  provenance, protected release refs, and intentional Core-sync skipping.
+- `test-install-neat-resources.sh` covers bundled Core, unpublished and
+  incompatible Core skips, explicit platform-only builds, and unexpected fatal
+  installer failures.
+- `test-sysroot-update.sh` covers interactive safety, exact and latest
+  pre-release resolution, Platform Base enforcement, dry-run validation,
+  overlay provenance, idempotence, and the shell prompt overlay marker.
+- `test-sysroot-unprivileged-dry-run.sh` verifies that an ordinary user can
+  resolve overlay package aliases without writing under the system APT paths.
+- `test-sysroot-progress.py` verifies package download/cache and extraction
+  progress summaries used by `sysroot update`.
 - `neat-status/` validates the `neat --json` assembly/status contract.
 - `insight-video-routing/` downloads a small H.264 video, streams it from the
   runner into the SDK container's published Insight video UDP port with

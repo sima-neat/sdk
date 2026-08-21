@@ -8,7 +8,7 @@ This is an operational mirror-transfer workflow only. It does not build or
 modify the SDK container, SDK packages, or SDK installation behavior; the SDK
 repository is only the home for the workflow and its synchronization utility.
 
-The workflow runs daily at 09:27 UTC and can also be started manually. Scheduled
+The workflow runs every 30 minutes at 17 and 47 minutes past the hour and can also be started manually. Scheduled
 runs publish after validation; manual runs expose an explicit `publish` switch
 so the first production validation can download and verify without changing S3.
 Package downloads use `apt-mirror2` with 16 asynchronous workers by default.
@@ -75,6 +75,45 @@ added to the indexes, package files removed from the indexes, and correlated
 version changes by package and architecture. It shows up to 50 entries in each
 category and records the complete machine-readable inventory and change report
 under digest-addressed `.mirror/inventories/` and `.mirror/changes/` S3 keys.
+Each run also uploads a three-day, machine-readable GitHub Actions artifact
+containing its complete change report, platform version, and publication
+provenance. This is the input to the daily reporting workflow.
+
+## Daily change digest
+
+The `Daily pre-release mirror summary` workflow runs once per day on the agent
+summary runner using these labels:
+
+```text
+self-hosted, Linux, X64, issue-triage
+```
+
+It uses read-only GitHub Actions permission to enumerate successful mirror-sync
+runs from the previous 24 hours and download their short-lived result artifacts.
+It does not assume a Vulcan or AWS role. Scheduled runs post a concise digest to
+`neat-sync-mirror-notification`; manual runs default to preview-only and can
+replay a bounded window with an explicit UTC `as_of` timestamp.
+Manual replay windows are limited to 72 hours to match the repository's maximum
+GitHub Actions artifact retention. An historical `as_of` is accepted only when
+the entire requested window remains inside that retention period.
+Digest windows use `(since, as_of]` boundaries. A publication is assigned by
+the later of its mirror publication time and workflow completion time, so a
+publication whose result artifact becomes visible just after a cutoff is
+reported once in the next window rather than dropped.
+
+Configure the following GitHub settings:
+
+- organization secret `SLACK_BOT_TOKEN`;
+- variable `SLACK_MIRROR_NOTIFICATION_CHANNEL_ID` containing the Slack channel
+  ID (not its display name).
+
+Package counts, Debian version ordering, grouping, and report rendering use
+deterministic Python logic. The workflow does not pass upstream package metadata
+to an agent CLI because that would expose persistent-runner read tools and
+credentials to prompt injection. The normalized context and rendered digest are
+retained as short-lived workflow artifacts for auditing. A future model-assisted
+wording step must use a tool-free API boundary. Jenkins correlation is not part
+of this initial implementation.
 
 "Removed" means no longer referenced by the published APT indexes. Old package
 objects remain in the S3 pool during the initial rollout for safe rollback.
@@ -85,6 +124,10 @@ including the nested `binary-*/Release` files. The suite-level `Release` is
 replaced last and contains `Acquire-By-Hash: yes`, making that single S3 object
 the publication boundary. Later runs retain the previous ordinary index paths
 so clients holding an older `Release` continue to see a consistent generation.
+The suite `Release` object also records the source digest and immutable inventory
+key as S3 metadata. The next run uses that metadata as its authoritative change
+baseline, so a failure while updating the later convenience manifest cannot
+cause the following publication to compare against stale package state.
 
 apt-mirror2 may retrieve only compressed `Packages.gz` indexes. Before
 publication, the workflow reconstructs each logical `Packages` index and
