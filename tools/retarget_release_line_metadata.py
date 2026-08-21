@@ -63,11 +63,14 @@ def write_json(path: Path, data: dict, indent: int) -> None:
     path.write_text(json.dumps(data, indent=indent) + "\n", encoding="utf-8")
 
 
-def retarget_metadata_resource(metadata_path: Path, image_resource: str) -> None:
+def retarget_metadata_resource(
+    metadata_path: Path, image_resource: str, release_line_ref: str
+) -> None:
     """Replace only the SDK container resource in metadata.json.
 
     The install stub itself remains in the same package. Only the GHCR SDK image
     resource changes from a release-line tag, such as `ghcr:sima-neat/sdk:release-2.1`,
+    or a release-line repository, such as `ghcr:sima-neat/sdk-release-2.1:latest`,
     to a version tag, such as `ghcr:sima-neat/sdk:v2.1.3.3`.
     """
     metadata = load_json(metadata_path)
@@ -75,17 +78,24 @@ def retarget_metadata_resource(metadata_path: Path, image_resource: str) -> None
     if not isinstance(resources, list):
         raise SystemExit("metadata.json does not contain a resources list")
 
+    release_line_repo = clean_path_part(release_line_ref.lower(), "release-line")
+    accepted_patterns = (
+        r"ghcr:sima-neat/sdk:[^\s]+",
+        rf"ghcr:sima-neat/sdk-{re.escape(release_line_repo)}:[^\s]+",
+    )
     replaced = False
     updated_resources = []
     for resource in resources:
-        if isinstance(resource, str) and re.fullmatch(r"ghcr:sima-neat/sdk:[^\s]+", resource):
+        if isinstance(resource, str) and any(
+            re.fullmatch(pattern, resource) for pattern in accepted_patterns
+        ):
             updated_resources.append(image_resource)
             replaced = True
         else:
             updated_resources.append(resource)
 
     if not replaced:
-        raise SystemExit("metadata.json does not contain a ghcr:sima-neat/sdk:* resource")
+        raise SystemExit("metadata.json does not contain a release-line SDK image resource")
 
     metadata["resources"] = updated_resources
     write_json(metadata_path, metadata, indent=4)
@@ -175,7 +185,7 @@ def main() -> None:
 
         # Edit locally first, then upload metadata and its manifest together.
         # latest.tag is intentionally not changed.
-        retarget_metadata_resource(metadata_path, args.image_resource)
+        retarget_metadata_resource(metadata_path, args.image_resource, args.release_line_ref)
         update_manifest_metadata_entry(manifest_path, metadata_path)
 
         upload_args = s3_cp_args(args.sse_kms_key_id)
