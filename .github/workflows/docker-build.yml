@@ -8,6 +8,11 @@ on:
       - 'v*'
   pull_request:
   workflow_dispatch:
+    inputs:
+      pre_release_base:
+        description: Optional platform selector (for example, 2.1.3 or 2.1.3~pre4593)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -20,8 +25,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  resolve-platform-config:
+    name: Resolve platform package configuration
+    runs-on: ubuntu-24.04
+    outputs:
+      sdk_apt_channel: ${{ steps.resolve.outputs.sdk_apt_channel }}
+      requested_pre_release_base: ${{ steps.resolve.outputs.requested_pre_release_base }}
+      base_sdk_version: ${{ steps.resolve.outputs.base_sdk_version }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Resolve stable or pre-release platform version
+        id: resolve
+        env:
+          PRE_RELEASE_BASE: ${{ inputs.pre_release_base || vars.PRE_RELEASE_BASE }}
+        run: |
+          set -euo pipefail
+          scripts/resolve-platform-config.sh | tee "${RUNNER_TEMP}/platform-config.env"
+          cat "${RUNNER_TEMP}/platform-config.env" >> "${GITHUB_OUTPUT}"
+
+      - name: Run platform profile tests
+        run: |
+          tests/sdk/test-resolve-platform-config.sh
+          tests/sdk/test-write-sdk-release.sh
+          tests/sdk/test-devkit-platform-profile.sh
+          tests/sdk/test-sysroot-unprivileged-dry-run.sh
+          tests/sdk/test-sysroot-update.sh
+          tests/sdk/test-sysroot-package-version-validator.sh
+          python3 tests/sdk/test-sysroot-progress.py
+
   build:
     name: Build on ${{ matrix.arch }}
+    needs: resolve-platform-config
     runs-on: ${{ matrix.runs_on }}
     strategy:
       fail-fast: false
@@ -40,15 +77,24 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Run SDK package installer tests
-        run: tests/sdk/test-install-sdk-stub.sh
+      - name: Run SDK build and package tests
+        run: |
+          tests/sdk/test-install-sdk-stub.sh
+          tests/sdk/test-neat-deps.sh
+          tests/sdk/test-install-neat-resources.sh
+          tests/sdk/test-build-script.sh
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
       - name: Compute image name
         id: image
+        env:
+          IMAGE_SUFFIX: ${{ matrix.image_suffix }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
+          set -euo pipefail
+
           owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           if [[ "${GITHUB_REF}" == refs/heads/main || "${GITHUB_REF}" == refs/tags/v* ]]; then
             repo="sdk"
@@ -62,27 +108,67 @@ jobs:
           fi
           echo "name=ghcr.io/${owner}/${repo}" >> "${GITHUB_OUTPUT}"
 
-      - name: Build Docker image
-        run: ./build.sh sdk "${IMAGE_TAG}"
-        env:
-          IMAGE_TAG: ci-${{ matrix.image_suffix }}
+          cache_ref_name="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            # Fork PRs can consume only the trusted develop cache. Same-repository
+            # PRs may additionally consume the cache previously written by their
+            # source branch, while remaining read-only below.
+            cache_ref_name="develop"
+            if [[ "${PR_HEAD_REPOSITORY:-}" == "${GITHUB_REPOSITORY}" &&
+                  -n "${GITHUB_HEAD_REF:-}" ]]; then
+              cache_ref_name="${GITHUB_HEAD_REF}"
+            fi
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]] &&
+               [[ "${GITHUB_REF_NAME}" =~ ^v([0-9]+)[.]([0-9]+)[.] ]]; then
+            cache_ref_name="release-${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+          fi
+          cache_scope="$(echo "${cache_ref_name}" | tr '[:upper:]' '[:lower:]')"
+          cache_scope="$(echo "${cache_scope}" | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
+          if [[ -z "${cache_scope}" ]]; then
+            cache_scope="branch"
+          fi
+          cache_ref="ghcr.io/${owner}/sdk-buildcache:${cache_scope}-${IMAGE_SUFFIX}"
+          base_cache_ref="ghcr.io/${owner}/sdk-buildcache:develop-${IMAGE_SUFFIX}"
+          echo "cache_ref=${cache_ref}" >> "${GITHUB_OUTPUT}"
+          if [[ "${cache_ref}" == "${base_cache_ref}" ]]; then
+            echo "cache_from=${cache_ref}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "cache_from=${cache_ref} ${base_cache_ref}" >> "${GITHUB_OUTPUT}"
+          fi
 
       - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish architecture image
-        if: github.event_name != 'pull_request'
+      - name: Build Docker image
         run: |
-          docker tag "sdk:ci-${IMAGE_SUFFIX}" "${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
-          docker push "${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
+          set -euo pipefail
+
+          export BUILDX_CACHE_FROM="${CACHE_FROM}"
+          export BUILDX_PROVENANCE=false
+
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            export BUILDX_OUTPUT=load
+            ./build.sh sdk "ci-${IMAGE_SUFFIX}"
+          else
+            export BUILDX_OUTPUT=push
+            if [[ "${GITHUB_REF_TYPE}" == "branch" ]]; then
+              export BUILDX_CACHE_TO="${CACHE_REF}"
+            fi
+            ./build.sh "${IMAGE_NAME}" "${GITHUB_SHA}-${IMAGE_SUFFIX}"
+          fi
         env:
           IMAGE_NAME: ${{ steps.image.outputs.name }}
           IMAGE_SUFFIX: ${{ matrix.image_suffix }}
+          CACHE_REF: ${{ steps.image.outputs.cache_ref }}
+          CACHE_FROM: ${{ steps.image.outputs.cache_from }}
+          DOCKER_PLATFORM: ${{ matrix.platform }}
+          SDK_APT_CHANNEL: ${{ needs.resolve-platform-config.outputs.sdk_apt_channel }}
+          REQUESTED_PRE_RELEASE_BASE: ${{ needs.resolve-platform-config.outputs.requested_pre_release_base }}
+          BASE_SDK_VERSION: ${{ needs.resolve-platform-config.outputs.base_sdk_version }}
 
   publish-manifest:
     name: Publish multi-arch manifest
@@ -374,6 +460,31 @@ jobs:
 
           source .venv/bin/activate
           sima-cli sdk setup -y -n --no-model-sdk
+
+      - name: Summarize generated SDK release metadata
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+          SMOKE_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+
+          container_id="$(docker ps -q --filter "ancestor=${IMAGE_REF}" | head -n 1)"
+          if [[ -z "${container_id}" ]]; then
+            echo "No running SDK container found for image ${IMAGE_REF}." >&2
+            docker ps --format 'table {{.ID}}\t{{.Image}}\t{{.Names}}\t{{.Status}}' >&2
+            exit 1
+          fi
+
+          sdk_release="$(docker exec "${container_id}" cat /etc/sdk-release)"
+          echo "Generated /etc/sdk-release (${SMOKE_ARCH}):"
+          printf '%s\n' "${sdk_release}"
+
+          {
+            printf '## SDK release metadata (%s)\n\n' "${SMOKE_ARCH}"
+            printf "**Image:** \`%s\`\n\n" "${IMAGE_REF}"
+            printf "Contents of \`/etc/sdk-release\`:\n\n"
+            printf "\`\`\`text\n%s\n\`\`\`\n" "${sdk_release}"
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Run SDK smoke test suite
         env:

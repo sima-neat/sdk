@@ -3,6 +3,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/scripts/neat-deps.sh"
+
 DOCKERFILE="${DOCKERFILE:-${SCRIPT_DIR}/Dockerfile}"
 CONTEXT_DIR="${CONTEXT_DIR:-${SCRIPT_DIR}}"
 IMAGE_NAME="${IMAGE_NAME:-sdk}"
@@ -11,12 +14,46 @@ MINIMAL_IMAGE="${MINIMAL_IMAGE:-0}"
 SDK_BASE_IMAGE="${SDK_BASE_IMAGE:-ubuntu:24.04}"
 SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE:-debian:bookworm}"
 DOCKER_PLATFORM="${DOCKER_PLATFORM:-}"
-BASE_SDK_VERSION="${BASE_SDK_VERSION:-2.1.2}"
+BASE_SDK_VERSION="${BASE_SDK_VERSION:-2.1.3}"
+SDK_APT_CHANNEL="${SDK_APT_CHANNEL:-release}"
+REQUESTED_PRE_RELEASE_BASE="${REQUESTED_PRE_RELEASE_BASE:-}"
 NEAT_BRANCH="${NEAT_BRANCH:-main}"
 NEAT_VERSION="${NEAT_VERSION:-latest}"
 NEAT_CORE_TARGET="${NEAT_CORE_TARGET:-}"
 NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH:-}"
 NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION:-}"
+NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF:-}"
+NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON:-}"
+if [[ -z "${NEAT_CORE_SOURCE_REF}" ]]; then
+  if resolved_core_source_ref="$(
+    neat_resolve_dependency_source_ref core https://github.com/sima-neat/core.git
+  )"; then
+    NEAT_CORE_SOURCE_REF="${resolved_core_source_ref}"
+  else
+    resolve_status=$?
+    if [[ "${resolve_status}" == "3" ]]; then
+      core_manifest_ref="$(neat_dependency_ref core)"
+      NEAT_CORE_SOURCE_REASON="requested Core source ref ${core_manifest_ref} does not exist yet"
+    else
+      exit "${resolve_status}"
+    fi
+  fi
+fi
+NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF:-$(
+  neat_resolve_dependency_source_ref apps https://github.com/sima-neat/apps.git
+)}"
+SIMA_CLI_REF="${SIMA_CLI_REF:-$(neat_dependency_ref sima-cli)}"
+SIMA_CLI_VERSION="${SIMA_CLI_VERSION:-}"
+BUILDX_OUTPUT="${BUILDX_OUTPUT:-load}"
+BUILDX_CACHE_FROM="${BUILDX_CACHE_FROM:-}"
+BUILDX_CACHE_TO="${BUILDX_CACHE_TO:-}"
+BUILDX_PROVENANCE="${BUILDX_PROVENANCE:-}"
+NEAT_CORE_RESOLUTION_ATTEMPT="${NEAT_CORE_RESOLUTION_ATTEMPT:-${GITHUB_RUN_ID:-}}"
+if [[ -z "${NEAT_CORE_RESOLUTION_ATTEMPT}" ]]; then
+  NEAT_CORE_RESOLUTION_ATTEMPT="local-$(date -u +%Y%m%d%H%M%S)-$$"
+elif [[ -n "${GITHUB_RUN_ATTEMPT:-}" ]]; then
+  NEAT_CORE_RESOLUTION_ATTEMPT="${NEAT_CORE_RESOLUTION_ATTEMPT}-${GITHUB_RUN_ATTEMPT}"
+fi
 
 usage() {
   cat <<EOF
@@ -34,11 +71,22 @@ Environment overrides:
   SDK_BASE_IMAGE  Base Docker image for the SDK host/container userspace (default: ${SDK_BASE_IMAGE})
   SDK_CROSS_TOOLCHAIN_IMAGE  Base image used only to source the pinned aarch64 cross compiler (default: ${SDK_CROSS_TOOLCHAIN_IMAGE})
   BASE_SDK_VERSION  Base eLxr/SiMa SDK package version to install (default: ${BASE_SDK_VERSION})
+  SDK_APT_CHANNEL  Platform package channel: release or pre-release (default: ${SDK_APT_CHANNEL})
   NEAT_BRANCH  NEAT Framework branch to bake into /neat-resources (default: ${NEAT_BRANCH})
   NEAT_VERSION  NEAT Framework version/tag to bake into /neat-resources (default: ${NEAT_VERSION})
   NEAT_CORE_TARGET  Override the Neat Core Vulcan package target from deps/manifest.json
   NEAT_INSIGHT_BRANCH  Override the Insight branch/release channel from deps/manifest.json
   NEAT_INSIGHT_VERSION  Override the Insight version/tag from deps/manifest.json
+  NEAT_CORE_SOURCE_REF  Override the Core source commit resolved from deps/manifest.json
+  NEAT_CORE_SOURCE_REASON  Explain why Core source resolution was skipped
+  NEAT_APPS_SOURCE_REF  Override the Apps source commit resolved from deps/manifest.json
+  SIMA_CLI_REF  Override the sima-cli release or branch ref from deps/manifest.json
+  SIMA_CLI_VERSION  Override the sima-cli branch artifact version (default: manifest spec or latest)
+  BUILDX_OUTPUT  Buildx output mode: load, push, or cache-only (default: ${BUILDX_OUTPUT})
+  BUILDX_CACHE_FROM  Optional space-separated Buildx registry cache import references
+  BUILDX_CACHE_TO  Optional Buildx registry cache export reference
+  BUILDX_PROVENANCE  Optional Buildx provenance setting, e.g. false
+  NEAT_CORE_RESOLUTION_ATTEMPT  Cache key for rechecking optional Core availability
 EOF
 }
 
@@ -74,6 +122,45 @@ fi
 if [[ ! -f "${DOCKERFILE}" ]]; then
   echo "Dockerfile not found: ${DOCKERFILE}" >&2
   exit 1
+fi
+
+if [[ "${SIMA_CLI_REF}" == *:* ]]; then
+  sima_cli_ref_spec="${SIMA_CLI_REF#*:}"
+  SIMA_CLI_REF="${SIMA_CLI_REF%%:*}"
+  SIMA_CLI_VERSION="${SIMA_CLI_VERSION:-${sima_cli_ref_spec}}"
+else
+  SIMA_CLI_VERSION="${SIMA_CLI_VERSION:-latest}"
+fi
+
+if [[ "${SIMA_CLI_REF}" =~ ^v[0-9]+[.][0-9]+[.][0-9]+([A-Za-z0-9_.-]+)?$ ]]; then
+  if [[ "${SIMA_CLI_VERSION}" != "latest" ]]; then
+    echo "A sima-cli PyPI release ref such as ${SIMA_CLI_REF} must not specify an artifact version." >&2
+    exit 1
+  fi
+else
+  if [[ ! "${SIMA_CLI_REF}" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+    echo "Unsupported sima-cli branch ref: ${SIMA_CLI_REF}" >&2
+    exit 1
+  fi
+  if [[ "${SIMA_CLI_VERSION}" == "latest" ]]; then
+    sima_cli_ref_key="$(python3 - "${SIMA_CLI_REF}" <<'PY'
+import sys
+import urllib.parse
+
+print(urllib.parse.quote(sys.argv[1], safe=""))
+PY
+)"
+    SIMA_CLI_VERSION="$(
+      curl --fail --silent --show-error --location --retry 3 \
+        "https://artifacts.neat.sima.ai/sima-cli/${sima_cli_ref_key}/latest.tag"
+    )"
+    SIMA_CLI_VERSION="${SIMA_CLI_VERSION//$'\r'/}"
+    SIMA_CLI_VERSION="${SIMA_CLI_VERSION//$'\n'/}"
+  fi
+  if [[ ! "${SIMA_CLI_VERSION}" =~ ^[A-Fa-f0-9]+$ ]]; then
+    echo "Resolved sima-cli artifact version must be a hexadecimal commit identifier: ${SIMA_CLI_VERSION}" >&2
+    exit 1
+  fi
 fi
 
 git_branch="$(git -C "${SCRIPT_DIR}" branch --show-current 2>/dev/null || true)"
@@ -133,6 +220,8 @@ echo "Git branch: ${git_branch}"
 echo "Git hash: ${git_hash}"
 echo "SDK release ref: ${sdk_release_ref}"
 echo "Base SDK version: ${BASE_SDK_VERSION}"
+echo "SDK apt channel: ${SDK_APT_CHANNEL}"
+echo "Requested pre-release base: ${REQUESTED_PRE_RELEASE_BASE:-<none>}"
 echo "SDK base image: ${SDK_BASE_IMAGE}"
 echo "SDK cross toolchain image: ${SDK_CROSS_TOOLCHAIN_IMAGE}"
 echo "Minimal image mode: ${MINIMAL_IMAGE}"
@@ -144,29 +233,76 @@ echo "NEAT version: ${NEAT_VERSION}"
 echo "NEAT Core target override: ${NEAT_CORE_TARGET:-<deps/manifest.json>}"
 echo "NEAT Insight branch override: ${NEAT_INSIGHT_BRANCH:-<deps/manifest.json>}"
 echo "NEAT Insight version override: ${NEAT_INSIGHT_VERSION:-<deps/manifest.json>}"
+echo "NEAT Core source commit: ${NEAT_CORE_SOURCE_REF:-<not available>}"
+echo "NEAT Core source result: ${NEAT_CORE_SOURCE_REASON:-resolved}"
+echo "NEAT Core resolution attempt: ${NEAT_CORE_RESOLUTION_ATTEMPT}"
+echo "NEAT Apps source commit: ${NEAT_APPS_SOURCE_REF}"
+echo "sima-cli ref: ${SIMA_CLI_REF}"
+echo "sima-cli artifact version: ${SIMA_CLI_VERSION}"
 
 if docker buildx version >/dev/null 2>&1; then
   buildx_cmd=(
     docker buildx build
-    --load
     --platform "${docker_platform}"
     --build-arg MINIMAL_IMAGE="${MINIMAL_IMAGE}"
     --build-arg SDK_BASE_IMAGE="${SDK_BASE_IMAGE}"
     --build-arg SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE}"
     --build-arg BASE_SDK_VERSION="${BASE_SDK_VERSION}"
+    --build-arg SDK_APT_CHANNEL="${SDK_APT_CHANNEL}"
+    --build-arg REQUESTED_PRE_RELEASE_BASE="${REQUESTED_PRE_RELEASE_BASE}"
     --build-arg NEAT_BRANCH="${NEAT_BRANCH}"
     --build-arg NEAT_VERSION="${NEAT_VERSION}"
     --build-arg NEAT_CORE_TARGET="${NEAT_CORE_TARGET}"
     --build-arg NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH}"
     --build-arg NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION}"
+    --build-arg NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}"
+    --build-arg NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON}"
+    --build-arg NEAT_CORE_RESOLUTION_ATTEMPT="${NEAT_CORE_RESOLUTION_ATTEMPT}"
+    --build-arg NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF}"
+    --build-arg SIMA_CLI_REF="${SIMA_CLI_REF}"
+    --build-arg SIMA_CLI_VERSION="${SIMA_CLI_VERSION}"
     --build-arg SDK_GIT_BRANCH="${git_branch}"
     --build-arg SDK_GIT_HASH="${git_hash}"
     --build-arg SDK_RELEASE_REF="${sdk_release_ref}"
     -f "${DOCKERFILE}"
     -t "${image_ref}"
   )
+
+  case "${BUILDX_OUTPUT}" in
+    load)
+      buildx_cmd+=(--load)
+      ;;
+    push)
+      buildx_cmd+=(--push)
+      ;;
+    cache-only)
+      ;;
+    *)
+      echo "Unsupported BUILDX_OUTPUT: ${BUILDX_OUTPUT} (expected load, push, or cache-only)" >&2
+      exit 1
+      ;;
+  esac
+
+  if [[ -n "${BUILDX_CACHE_FROM}" ]]; then
+    read -r -a cache_from_refs <<< "${BUILDX_CACHE_FROM}"
+    for cache_from_ref in "${cache_from_refs[@]}"; do
+      buildx_cmd+=(--cache-from "type=registry,ref=${cache_from_ref}")
+    done
+  fi
+  if [[ -n "${BUILDX_CACHE_TO}" ]]; then
+    buildx_cmd+=(--cache-to "type=registry,ref=${BUILDX_CACHE_TO},mode=max,oci-mediatypes=true,image-manifest=true")
+  fi
+  if [[ -n "${BUILDX_PROVENANCE}" ]]; then
+    buildx_cmd+=(--provenance="${BUILDX_PROVENANCE}")
+  fi
+
   buildx_cmd+=("${CONTEXT_DIR}")
   exec "${buildx_cmd[@]}"
+fi
+
+if [[ "${BUILDX_OUTPUT}" != "load" || -n "${BUILDX_CACHE_FROM}${BUILDX_CACHE_TO}" ]]; then
+  echo "Buildx is required for output mode '${BUILDX_OUTPUT}' and registry cache support." >&2
+  exit 1
 fi
 
 build_cmd=(
@@ -176,11 +312,19 @@ build_cmd=(
   --build-arg SDK_BASE_IMAGE="${SDK_BASE_IMAGE}"
   --build-arg SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE}"
   --build-arg BASE_SDK_VERSION="${BASE_SDK_VERSION}"
+  --build-arg SDK_APT_CHANNEL="${SDK_APT_CHANNEL}"
+  --build-arg REQUESTED_PRE_RELEASE_BASE="${REQUESTED_PRE_RELEASE_BASE}"
   --build-arg NEAT_BRANCH="${NEAT_BRANCH}"
   --build-arg NEAT_VERSION="${NEAT_VERSION}"
   --build-arg NEAT_CORE_TARGET="${NEAT_CORE_TARGET}"
   --build-arg NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH}"
   --build-arg NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION}"
+  --build-arg NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}"
+  --build-arg NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON}"
+  --build-arg NEAT_CORE_RESOLUTION_ATTEMPT="${NEAT_CORE_RESOLUTION_ATTEMPT}"
+  --build-arg NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF}"
+  --build-arg SIMA_CLI_REF="${SIMA_CLI_REF}"
+  --build-arg SIMA_CLI_VERSION="${SIMA_CLI_VERSION}"
   --build-arg SDK_GIT_BRANCH="${git_branch}"
   --build-arg SDK_GIT_HASH="${git_hash}"
   --build-arg SDK_RELEASE_REF="${sdk_release_ref}"
