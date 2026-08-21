@@ -6,7 +6,7 @@
     "ref": "main:latest"
   },
   "sima-cli": {
-    "ref": "v2.1.15"
+    "ref": "v2.1.16"
   },
   "insight": {
     "ref": "v0.0.7"
