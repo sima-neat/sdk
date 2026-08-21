@@ -26,6 +26,8 @@ container after `sima-cli sdk setup -y -n` starts it.
   resolve overlay package aliases without writing under the system APT paths.
 - `test-sysroot-progress.py` verifies package download/cache and extraction
   progress summaries used by `sysroot update`.
+- `test-retarget-release-line-metadata.py` verifies that tagged SDK releases
+  retarget both canonical and offline-bundle release-line image resources.
 - `neat-status/` validates the `neat --json` assembly/status contract.
 - `insight-video-routing/` downloads a small H.264 video, streams it from the
   runner into the SDK container's published Insight video UDP port with
