@@ -23,7 +23,7 @@ JSON
 export SDK_DEPS_MANIFEST="${ROOT_DIR}/deps/manifest.json"
 [[ "$(neat_dependency_ref core)" == "v0.4.0" ]]
 [[ "$(neat_dependency_ref apps)" == "main:latest" ]]
-[[ "$(neat_dependency_ref sima-cli)" == "v2.1.15" ]]
+[[ "$(neat_dependency_ref sima-cli)" == "v2.1.16" ]]
 
 git_repo="${TMP_DIR}/git-source"
 git init --quiet "${git_repo}"
