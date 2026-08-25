@@ -102,11 +102,16 @@ workflow="${ROOT_DIR}/.github/workflows/docker-build.yml"
 grep -Fq -- '--mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,sharing=locked' "${dockerfile}"
 grep -Fq 'SYSROOT_UPDATE_DOWNLOAD_DIR=/var/cache/sima-sdk-debs' "${dockerfile}"
 grep -Fq 'path: .buildkit-cache/sima-sdk-debs' "${workflow}"
-grep -Fq "key: sdk-debs-v1-\${{ runner.os }}-\${{ needs.resolve-platform-config.outputs.base_sdk_version }}-\${{ hashFiles('Dockerfile', 'scripts/setup-sdk-sysroot.sh', 'scripts/simaai_setup_sdk.py') }}" "${workflow}"
+grep -Fq "key: sdk-debs-v1-\${{ runner.os }}-\${{ needs.resolve-platform-config.outputs.base_sdk_version }}-\${{ hashFiles('Dockerfile', 'scripts/setup-sdk-sysroot.sh', 'scripts/simaai_setup_sdk.py') }}-\${{ github.run_id }}-\${{ github.run_attempt }}" "${workflow}"
+grep -Fq "sdk-debs-v1-\${{ runner.os }}-\${{ needs.resolve-platform-config.outputs.base_sdk_version }}-\${{ hashFiles('Dockerfile', 'scripts/setup-sdk-sysroot.sh', 'scripts/simaai_setup_sdk.py') }}-" "${workflow}"
 grep -Fq 'reproducible-containers/buildkit-cache-dance@5de31fc1534ed8789e63d41ea933c5df9944a261' "${workflow}"
 grep -Fq '"target": "/var/cache/sima-sdk-debs"' "${workflow}"
 grep -Fq '"id": "sima-sdk-debs-v1"' "${workflow}"
-grep -Fq 'skip-extraction: ${{ steps.sdk-deb-cache.outputs.cache-hit }}' "${workflow}"
+grep -Fq 'skip-extraction: false' "${workflow}"
+if grep -Fq 'skip-extraction: ${{ steps.sdk-deb-cache.outputs.cache-hit }}' "${workflow}"; then
+  echo "An exact cache hit must not suppress persistence of repaired packages." >&2
+  exit 1
+fi
 if grep -Fq 'shutil.rmtree(dldir' "${ROOT_DIR}/scripts/simaai_setup_sdk.py"; then
   echo "The persistent package cache must not be deleted before each SDK build." >&2
   exit 1

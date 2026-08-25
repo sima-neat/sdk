@@ -82,10 +82,12 @@ it with `actions/cache` and injects/extracts it with the BuildKit cache-dance ac
 registry-backed BuildKit layer caches do not export cache-mount contents. Both native image
 architectures share the cache: they build the same ARM64 target sysroot.
 
-The cache key includes the resolved immutable platform version and a hash of the sysroot
-download inputs. A new platform revision or package-list change restores the most recent
-package cohort as a seed, downloads only changed packages, and saves a new immutable cache
-entry. Before reuse, every package is checked against cached source URI metadata and its
+The cache key includes the resolved immutable platform version, a hash of the sysroot
+download inputs, and a unique workflow-run suffix. Each run restores the newest compatible
+package cohort as a seed, downloads only changed packages, and saves its final state under
+a new immutable key. The rolling key is required because GitHub cache entries cannot be
+overwritten: without it, a repaired package or dependency update would be lost after the
+build. Before reuse, every package is checked against cached source URI metadata and its
 Debian package name, architecture, exact version, and repository SHA-256; invalid entries
 are replaced through a temporary file and atomic rename. The cache mount is outside the
 image filesystem and is never copied into the published SDK image.

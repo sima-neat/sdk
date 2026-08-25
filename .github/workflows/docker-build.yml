@@ -92,12 +92,17 @@ jobs:
       # the validated package downloads separately, then let the cache-dance
       # post step extract the updated mount before actions/cache saves it.
       - name: Restore SDK Debian package cache
-        id: sdk-deb-cache
         uses: actions/cache@v4
         with:
           path: .buildkit-cache/sima-sdk-debs
-          key: sdk-debs-v1-${{ runner.os }}-${{ needs.resolve-platform-config.outputs.base_sdk_version }}-${{ hashFiles('Dockerfile', 'scripts/setup-sdk-sysroot.sh', 'scripts/simaai_setup_sdk.py') }}
+          # GitHub cache entries are immutable. A per-run suffix lets a repaired
+          # or updated mount be saved instead of restoring the same stale entry
+          # forever. Both matrix jobs intentionally race on the same key because
+          # they produce the same ARM64 target package cohort; one complete save
+          # is sufficient.
+          key: sdk-debs-v1-${{ runner.os }}-${{ needs.resolve-platform-config.outputs.base_sdk_version }}-${{ hashFiles('Dockerfile', 'scripts/setup-sdk-sysroot.sh', 'scripts/simaai_setup_sdk.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
+            sdk-debs-v1-${{ runner.os }}-${{ needs.resolve-platform-config.outputs.base_sdk_version }}-${{ hashFiles('Dockerfile', 'scripts/setup-sdk-sysroot.sh', 'scripts/simaai_setup_sdk.py') }}-
             sdk-debs-v1-${{ runner.os }}-${{ needs.resolve-platform-config.outputs.base_sdk_version }}-
             sdk-debs-v1-${{ runner.os }}-
 
@@ -112,7 +117,9 @@ jobs:
                 "sharing": "locked"
               }
             }
-          skip-extraction: ${{ steps.sdk-deb-cache.outputs.cache-hit }}
+          # Always persist the post-build state. Validation may have repaired a
+          # corrupt archive or repository metadata may have changed dependencies.
+          skip-extraction: false
 
       - name: Compute image name
         id: image
