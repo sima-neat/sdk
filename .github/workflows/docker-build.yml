@@ -85,7 +85,34 @@ jobs:
           tests/sdk/test-build-script.sh
 
       - name: Set up Docker Buildx
+        id: buildx
         uses: docker/setup-buildx-action@v4
+
+      # BuildKit's registry exporter does not include RUN cache mounts. Restore
+      # the validated package downloads separately, then let the cache-dance
+      # post step extract the updated mount before actions/cache saves it.
+      - name: Restore SDK Debian package cache
+        id: sdk-deb-cache
+        uses: actions/cache@v4
+        with:
+          path: .buildkit-cache/sima-sdk-debs
+          key: sdk-debs-v1-${{ runner.os }}-${{ needs.resolve-platform-config.outputs.base_sdk_version }}-${{ hashFiles('Dockerfile', 'scripts/setup-sdk-sysroot.sh', 'scripts/simaai_setup_sdk.py') }}
+          restore-keys: |
+            sdk-debs-v1-${{ runner.os }}-${{ needs.resolve-platform-config.outputs.base_sdk_version }}-
+            sdk-debs-v1-${{ runner.os }}-
+
+      - name: Inject SDK Debian package cache into BuildKit
+        uses: reproducible-containers/buildkit-cache-dance@5de31fc1534ed8789e63d41ea933c5df9944a261 # v3.1.0
+        with:
+          cache-map: |
+            {
+              ".buildkit-cache/sima-sdk-debs": {
+                "target": "/var/cache/sima-sdk-debs",
+                "id": "sima-sdk-debs-v1",
+                "sharing": "locked"
+              }
+            }
+          skip-extraction: ${{ steps.sdk-deb-cache.outputs.cache-hit }}
 
       - name: Compute image name
         id: image

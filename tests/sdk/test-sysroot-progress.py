@@ -91,8 +91,8 @@ output = io.StringIO()
 with contextlib.redirect_stdout(output):
     downloads = module.DownloadProgress()
     downloads.begin_batch(["downloaded", "cached"])
-    downloads.complete("downloaded", False)
-    downloads.complete("cached", True)
+    downloads.complete("downloaded", False, 2 * 1024 * 1024)
+    downloads.complete("cached", True, 6 * 1024 * 1024)
     downloads.end_batch()
     downloads.finish()
 
@@ -105,7 +105,7 @@ with contextlib.redirect_stdout(output):
     extraction.finish(True)
 
 text = output.getvalue()
-assert "2/2 ready (1 downloaded, 1 cached)" in text
+assert "2/2 ready (1 downloaded/2.0 MiB, 1 cached/6.0 MiB)" in text
 assert "Package extraction complete: 2/2" in text
 
 sysroot_usr = "/opt/toolchain/aarch64/modalix/usr"
@@ -167,5 +167,19 @@ with tempfile.TemporaryDirectory() as temporary:
         "alpha\tarm64\t1.2.3\t/usr/include,/usr/lib/aarch64-linux-gnu\n"
         "beta\tall\t4.5.6\t/usr/share\n"
     )
+
+    cached_deb = downloads / "alpha.deb"
+    cache_metadata = {
+        "architecture": "arm64",
+        "package": "alpha",
+        "sha256": "abc123",
+        "uri": "https://debian.example/alpha.deb",
+        "version": "1.2.3",
+    }
+    module.write_download_cache_metadata(cached_deb, cache_metadata)
+    assert module.read_download_cache_metadata(cached_deb) == cache_metadata
+    metadata_path = pathlib.Path(module.download_cache_metadata_path(cached_deb))
+    metadata_path.write_text("not-json", encoding="utf-8")
+    assert module.read_download_cache_metadata(cached_deb) is None
 
 print("sysroot progress tests passed")
