@@ -13,6 +13,11 @@ runs publish after validation; manual runs expose an explicit `publish` switch
 so the first production validation can download and verify without changing S3.
 Package downloads use `apt-mirror2` with 16 asynchronous workers by default.
 Manual runs can override `download_workers`; use a value from 1 through 64.
+The dependency setup supports Ubuntu 22.04, 24.04, and 26.04 runners. It uses
+Ubuntu's native `apt-mirror2` package when available and otherwise configures
+the upstream signed Packagecloud repository after verifying its signing-key
+fingerprint. The installer also normalizes Packagecloud's historical
+`apt-mirror` executable name to `apt-mirror2` for the synchronization script.
 
 ## Private runner
 

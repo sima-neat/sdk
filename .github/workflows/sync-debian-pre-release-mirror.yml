@@ -59,11 +59,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             awscli \
+            ca-certificates \
             curl \
-            apt-mirror2 \
+            gnupg \
             jq \
             python3 \
             util-linux
+          scripts/install-apt-mirror2.sh
 
       - name: Prepare persistent mirror workspace
         run: |
