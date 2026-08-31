@@ -185,7 +185,9 @@ RUN getent group docker >/dev/null || groupadd --system docker
 
 RUN install-rustup.sh
 
-RUN setup-sdk-sysroot.sh "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}" && \
+RUN --mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,sharing=locked \
+    SYSROOT_UPDATE_DOWNLOAD_DIR=/var/cache/sima-sdk-debs \
+    setup-sdk-sysroot.sh "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}" && \
     cp -a /opt/bookworm-cross-toolchain/. / && \
     pin-cross-toolchain.sh && \
     aarch64-linux-gnu-gcc --version && \

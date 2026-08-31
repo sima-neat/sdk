@@ -85,7 +85,41 @@ jobs:
           tests/sdk/test-build-script.sh
 
       - name: Set up Docker Buildx
+        id: buildx
         uses: docker/setup-buildx-action@v4
+
+      # BuildKit's registry exporter does not include RUN cache mounts. Restore
+      # the validated package downloads separately, then let the cache-dance
+      # post step extract the updated mount before actions/cache saves it.
+      - name: Restore SDK Debian package cache
+        uses: actions/cache@v4
+        with:
+          path: .buildkit-cache/sima-sdk-debs
+          # GitHub cache entries are immutable. A per-run suffix lets a repaired
+          # or updated mount be saved instead of restoring the same stale entry
+          # forever. Both matrix jobs intentionally race on the same key because
+          # they produce the same ARM64 target package cohort; one complete save
+          # is sufficient.
+          key: sdk-debs-v1-${{ runner.os }}-${{ needs.resolve-platform-config.outputs.base_sdk_version }}-${{ hashFiles('Dockerfile', 'scripts/setup-sdk-sysroot.sh', 'scripts/simaai_setup_sdk.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            sdk-debs-v1-${{ runner.os }}-${{ needs.resolve-platform-config.outputs.base_sdk_version }}-${{ hashFiles('Dockerfile', 'scripts/setup-sdk-sysroot.sh', 'scripts/simaai_setup_sdk.py') }}-
+            sdk-debs-v1-${{ runner.os }}-${{ needs.resolve-platform-config.outputs.base_sdk_version }}-
+            sdk-debs-v1-${{ runner.os }}-
+
+      - name: Inject SDK Debian package cache into BuildKit
+        uses: reproducible-containers/buildkit-cache-dance@5de31fc1534ed8789e63d41ea933c5df9944a261 # v3.1.0
+        with:
+          cache-map: |
+            {
+              ".buildkit-cache/sima-sdk-debs": {
+                "target": "/var/cache/sima-sdk-debs",
+                "id": "sima-sdk-debs-v1",
+                "sharing": "locked"
+              }
+            }
+          # Always persist the post-build state. Validation may have repaired a
+          # corrupt archive or repository metadata may have changed dependencies.
+          skip-extraction: false
 
       - name: Compute image name
         id: image
