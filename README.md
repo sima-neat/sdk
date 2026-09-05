@@ -77,7 +77,9 @@ neat
 
 The SDK workspace is mounted at `/workspace` inside the container.
 
-The SDK image also preinstalls the OpenAI Codex CLI. From the SDK shell, run:
+The SDK image also preinstalls the OpenAI Codex CLI. Image builds follow npm's
+`latest` tag by default; pass an exact `CODEX_CLI_VERSION` build argument when a
+pinned version is required. From the SDK shell, run:
 
 ```bash
 codex

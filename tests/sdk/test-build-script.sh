@@ -99,6 +99,8 @@ fi
 
 dockerfile="${ROOT_DIR}/Dockerfile"
 workflow="${ROOT_DIR}/.github/workflows/docker-build.yml"
+grep -Fq 'ARG CODEX_CLI_VERSION=latest' "${dockerfile}"
+grep -Fq 'npm install -g "@openai/codex@${CODEX_CLI_VERSION}"' "${dockerfile}"
 grep -Fq -- '--mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,sharing=locked' "${dockerfile}"
 grep -Fq 'SYSROOT_UPDATE_DOWNLOAD_DIR=/var/cache/sima-sdk-debs' "${dockerfile}"
 grep -Fq 'path: .buildkit-cache/sima-sdk-debs' "${workflow}"
