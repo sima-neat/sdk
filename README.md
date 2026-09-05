@@ -77,13 +77,21 @@ neat
 
 The SDK workspace is mounted at `/workspace` inside the container.
 
-The SDK image also preinstalls the OpenAI Codex CLI. Image builds follow npm's
-`latest` tag by default; pass an exact `CODEX_CLI_VERSION` build argument when a
-pinned version is required. From the SDK shell, run:
+The SDK image also preinstalls a tested, pinned version of the OpenAI Codex CLI.
+From the SDK shell, run:
 
 ```bash
 codex
 ```
+
+To opt into the latest Codex CLI within the current SDK container, run:
+
+```bash
+sudo codex update
+```
+
+The update remains in the current container. Recreating the container restores
+the version bundled with the SDK image.
 
 An experimental VS Code extension scaffold lives in `vscode-extension/`. It adds a SiMa Neat activity bar panel and light/dark themes for SDK workspace experiments.
 

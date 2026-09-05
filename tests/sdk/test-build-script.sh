@@ -99,8 +99,15 @@ fi
 
 dockerfile="${ROOT_DIR}/Dockerfile"
 workflow="${ROOT_DIR}/.github/workflows/docker-build.yml"
-grep -Fq 'ARG CODEX_CLI_VERSION=latest' "${dockerfile}"
+readme="${ROOT_DIR}/README.md"
+grep -Eq '^ARG CODEX_CLI_VERSION=[0-9]+[.][0-9]+[.][0-9]+$' "${dockerfile}"
 grep -Fq 'npm install -g "@openai/codex@${CODEX_CLI_VERSION}"' "${dockerfile}"
+grep -Fq 'test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}"' "${dockerfile}"
+if grep -Fq 'apt-get purge -y npm' "${dockerfile}"; then
+  echo "The SDK must retain npm so sudo codex update can update the global Codex installation." >&2
+  exit 1
+fi
+grep -Fq 'sudo codex update' "${readme}"
 grep -Fq -- '--mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,sharing=locked' "${dockerfile}"
 grep -Fq 'SYSROOT_UPDATE_DOWNLOAD_DIR=/var/cache/sima-sdk-debs' "${dockerfile}"
 grep -Fq 'path: .buildkit-cache/sima-sdk-debs' "${workflow}"
