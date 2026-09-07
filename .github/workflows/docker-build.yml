@@ -55,6 +55,7 @@ jobs:
           tests/sdk/test-sysroot-update.sh
           tests/sdk/test-sysroot-package-version-validator.sh
           python3 tests/sdk/test-sysroot-progress.py
+          python3 tests/sdk/test-retarget-release-line-metadata.py
 
   build:
     name: Build on ${{ matrix.arch }}
