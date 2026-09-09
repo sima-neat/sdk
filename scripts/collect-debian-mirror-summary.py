@@ -21,7 +21,9 @@ ARTIFACT_PREFIX = "debian-pre-release-mirror-result-"
 RESULT_FILENAME = "mirror-sync-result.json"
 ANCHOR_PACKAGE = "simaai-palette-modalix"
 ANCHOR_ARCHITECTURE = "arm64"
-PLATFORM_VERSION_RE = re.compile(r"^[0-9]+(?:[.][0-9]+){2}~pre[0-9]+$")
+PLATFORM_VERSION_RE = re.compile(
+    r"^[0-9]+(?:[.][0-9]+){2}~(?:pre[0-9]+|git[0-9]{12}[.][0-9a-f]+-[0-9]+)$"
+)
 DISCOVERY_MARGIN = dt.timedelta(hours=13)
 ARTIFACT_RETENTION = dt.timedelta(hours=72)
 
@@ -344,7 +346,7 @@ def platform_summary(publications: list[dict[str, Any]]) -> dict[str, Any]:
     baseline_found = False
     for index, publication in enumerate(publications):
         for item in publication.get("changes", {}).get("version_changes", []):
-            if item.get("package") == ANCHOR_PACKAGE and item.get("architecture") == ANCHOR_ARCHITECTURE:
+            if item.get("package") == ANCHOR_PACKAGE and item.get("architecture") in (ANCHOR_ARCHITECTURE, "all"):
                 previous = sorted_versions([str(value) for value in item.get("previous_versions", []) if PLATFORM_VERSION_RE.fullmatch(str(value))])
                 if previous:
                     previous_version = previous[-1]
@@ -356,7 +358,7 @@ def platform_summary(publications: list[dict[str, Any]]) -> dict[str, Any]:
                     str(item.get("version"))
                     for item in publication.get("changes", {}).get("removed", [])
                     if item.get("package") == ANCHOR_PACKAGE
-                    and item.get("architecture") == ANCHOR_ARCHITECTURE
+                    and item.get("architecture") in (ANCHOR_ARCHITECTURE, "all")
                     and PLATFORM_VERSION_RE.fullmatch(str(item.get("version")))
                 ]
             )
@@ -365,7 +367,7 @@ def platform_summary(publications: list[dict[str, Any]]) -> dict[str, Any]:
                 baseline_found = True
             elif any(
                 item.get("package") == ANCHOR_PACKAGE
-                and item.get("architecture") == ANCHOR_ARCHITECTURE
+                and item.get("architecture") in (ANCHOR_ARCHITECTURE, "all")
                 for item in publication.get("changes", {}).get("added", [])
             ):
                 # The first publication introduced the anchor, so its state at
