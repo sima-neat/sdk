@@ -34,6 +34,9 @@ longer synchronized by this workflow. Local downloads use
 `daily/.mirror/agate/`, so the first Agate publication seeds its indexes
 independently of the previous Bookworm publication. The daily report includes
 architecture-independent Palette packages when reporting platform versions.
+The digest consumer accepts both legacy `~preN` and Agate `~git` versions,
+uses Debian version ordering, and tracks additions, removals, and version
+changes for both ARM64 and architecture-independent Palette packages.
 
 SDK image consumers must separately select Agate and support the upstream
 `~git` version format; changing this mirror does not update their APT settings
