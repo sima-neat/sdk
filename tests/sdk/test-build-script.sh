@@ -136,3 +136,11 @@ if grep -Fq 'artifacts.neat.sima.ai/sima-cli/install.py' "${installer_script}"; 
 fi
 
 echo "SDK build helper tests passed."
+
+SDK_APT_CHANNEL=daily BASE_SDK_VERSION=3.0.0~git202609090513.9e68a68-1218 \
+  run_build "${ROOT_DIR}/build.sh" example/sdk agate
+assert_arg SDK_APT_CHANNEL=daily
+assert_arg BASE_SDK_VERSION=3.0.0~git202609090513.9e68a68-1218
+assert_arg NEAT_CORE_SOURCE_REF=
+assert_arg 'NEAT_CORE_SOURCE_REASON=platform-only SDK does not bundle Core'
+assert_arg NEAT_APPS_SOURCE_REF=

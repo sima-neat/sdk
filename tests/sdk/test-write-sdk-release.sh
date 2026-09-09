@@ -57,4 +57,14 @@ grep -Fxq 'Neat Core = not bundled' "${tmpdir}/stable-without-core-release" || f
 grep -Fxq 'Neat Core Requested = core@v0.4.0' "${tmpdir}/stable-without-core-release" || fail "requested Core target missing"
 grep -Fxq 'Neat Core Reason = requested Core artifact is not published yet' "${tmpdir}/stable-without-core-release" || fail "Core skip reason missing"
 
+SDK_RELEASE_FILE="${tmpdir}/daily-release" \
+NEAT_CORE_STATUS_FILE="${tmpdir}/missing" \
+SDK_APT_CHANNEL=daily \
+BASE_SDK_VERSION=3.0.0~git202609090513.9e68a68-1218 \
+  "${WRITER}"
+grep -Fxq 'Platform Base = 3.0.0' "${tmpdir}/daily-release" || fail "daily base missing"
+grep -Fxq 'Platform Repository = https://debian.neat.sima.ai/daily' "${tmpdir}/daily-release" || fail "daily repository missing"
+grep -Fxq 'SDK Profile = platform-cross' "${tmpdir}/daily-release" || fail "daily profile incorrect"
+grep -Fxq 'Neat Core = not bundled' "${tmpdir}/daily-release" || fail "daily unexpectedly bundles Core"
+
 echo "sdk release metadata tests passed"

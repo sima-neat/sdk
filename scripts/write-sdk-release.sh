@@ -5,7 +5,7 @@ set -euo pipefail
 output="${SDK_RELEASE_FILE:-/etc/sdk-release}"
 sdk_release_ref="${SDK_RELEASE_REF:-unknown-nogit}"
 platform_version="${BASE_SDK_VERSION:-2.1.3}"
-platform_base="${platform_version%%~pre*}"
+platform_base="${platform_version%%~*}"
 platform_channel="${SDK_APT_CHANNEL:-release}"
 requested_pre_release_base="${REQUESTED_PRE_RELEASE_BASE:-none}"
 sdk_git_branch="${SDK_GIT_BRANCH:-unknown}"
@@ -20,6 +20,10 @@ case "${platform_channel}" in
   release)
     platform_repository="https://repo.sima.ai/elxr/deb/release"
     default_core_status="bundled"
+    ;;
+  daily)
+    platform_repository="https://debian.neat.sima.ai/daily"
+    default_core_status="not bundled"
     ;;
   pre-release)
     platform_repository="https://debian.neat.sima.ai/pre-release"

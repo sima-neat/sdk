@@ -8,7 +8,7 @@ manifest_path="${SDK_DEPS_MANIFEST:-${script_dir}/../deps/manifest.json}"
 stable_base_sdk_version="${STABLE_BASE_SDK_VERSION:-}"
 github_ref_type="${GITHUB_REF_TYPE:-branch}"
 github_ref_name="${GITHUB_REF_NAME:-local}"
-release_url="${PRE_RELEASE_RELEASE_URL:-https://debian.neat.sima.ai/pre-release/dists/bookworm/Release}"
+release_url="${PRE_RELEASE_RELEASE_URL:-}"
 packages_url="${PRE_RELEASE_PACKAGES_URL:-}"
 packages_path="${PRE_RELEASE_PACKAGES_PATH:-non-free/binary-arm64/Packages.gz}"
 anchor_package="${PRE_RELEASE_ANCHOR_PACKAGE:-simaai-palette-modalix}"
@@ -69,15 +69,25 @@ esac
 if [[ "${pre_release_base}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   selector_type="floating"
   platform_base="${pre_release_base}"
-elif [[ "${pre_release_base}" =~ ^([0-9]+\.[0-9]+\.[0-9]+)~pre[0-9]+$ ]]; then
+elif [[ "${pre_release_base}" =~ ^([0-9]+\.[0-9]+\.[0-9]+)~(pre[0-9]+|git[0-9]{12}\.[0-9a-f]+-[0-9]+)$ ]]; then
   selector_type="pinned"
   platform_base="${BASH_REMATCH[1]}"
 else
-  die "PRE_RELEASE_BASE must be X.Y.Z or X.Y.Z~preN: ${pre_release_base}"
+  die "PRE_RELEASE_BASE must be X.Y.Z, X.Y.Z~preN, or X.Y.Z~gitTIMESTAMP.COMMIT-BUILD: ${pre_release_base}"
 fi
 
 if [[ "${selector_type}" == "floating" ]] && is_protected_ref; then
   die "floating PRE_RELEASE_BASE=${pre_release_base} is not allowed for ${github_ref_type} ${github_ref_name}; use the stable channel or pin X.Y.Z~preN"
+fi
+
+channel=pre-release
+version_suffix=pre
+if [[ "${platform_base}" == 3.* ]]; then
+  channel=daily
+  version_suffix=git
+  release_url="${release_url:-https://debian.neat.sima.ai/daily/dists/agate/Release}"
+else
+  release_url="${release_url:-https://debian.neat.sima.ai/pre-release/dists/bookworm/Release}"
 fi
 
 tmpdir="$(mktemp -d)"
@@ -120,7 +130,7 @@ while IFS= read -r candidate; do
       resolved="${candidate}"
     fi
   else
-    [[ "${candidate}" == "${platform_base}"~pre* ]] || continue
+    [[ "${candidate}" == "${platform_base}"~"${version_suffix}"* ]] || continue
     candidate_is_newer=0
     if [[ -z "${resolved}" ]]; then
       candidate_is_newer=1
@@ -128,6 +138,8 @@ while IFS= read -r candidate; do
       if "${dpkg_command}" --compare-versions "${candidate}" gt "${resolved}"; then
         candidate_is_newer=1
       fi
+    elif [[ "${version_suffix}" == git ]]; then
+      die "dpkg is required to compare daily Debian versions"
     elif (( 10#${candidate##*~pre} > 10#${resolved##*~pre} )); then
       # All accepted floating candidates share X.Y.Z~preN. Numeric N ordering
       # is equivalent to Debian ordering for this deliberately narrow format.
@@ -149,7 +161,7 @@ done < <(
 if [[ "${selector_type}" == "pinned" ]]; then
   [[ -n "${resolved}" ]] || die "pinned version ${pre_release_base} is not present for ${anchor_package}"
 else
-  [[ -n "${resolved}" ]] || die "no ${platform_base}~pre* version found for ${anchor_package}"
+  [[ -n "${resolved}" ]] || die "no ${platform_base}~${version_suffix}* version found for ${anchor_package}"
 fi
 
-emit pre-release "${pre_release_base}" "${resolved}"
+emit "${channel}" "${pre_release_base}" "${resolved}"

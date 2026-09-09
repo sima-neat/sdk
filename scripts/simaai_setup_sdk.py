@@ -25,6 +25,7 @@ import glob
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -496,7 +497,35 @@ def write_sysroot_package_inventory(download_dir, sysroot):
     print(f"Recorded {len(entries)} package inventory entries.", flush=True)
 
 
+def daily_candidate(candidates, platform_version, requested_version="", relation="="):
+    """Select a target package without imposing Palette's version on components.
+
+    APT orders versions newest first. Prefer daily packages no newer than the
+    selected Palette build, then Debian 13 packages. Exact dependency versions
+    and inequalities remain constraints on both sources.
+    """
+    import apt_pkg
+
+    build = int(platform_version.rsplit("-", 1)[1])
+    daily = []
+    debian = []
+    for candidate in candidates:
+        if requested_version and not apt_pkg.check_dep(candidate.version, relation, requested_version):
+            continue
+        origins = candidate.origins
+        if any(origin.site == "debian.neat.sima.ai" and origin.codename == "agate" for origin in origins):
+            revision = re.search(r"-([0-9]+)$", candidate.version)
+            if revision and int(revision[1]) <= build:
+                daily.append(candidate)
+        elif any(origin.site in {"deb.debian.org", "security.debian.org"}
+                 and origin.codename in {"trixie", "trixie-updates", "trixie-security"}
+                 for origin in origins):
+            debian.append(candidate)
+    return next(iter(daily or debian), None)
+
+
 def main(pkg_name, version, libc_ver, dldir, installdir):
+    daily_channel = os.environ.get("SDK_APT_CHANNEL") == "daily"
     # packages that are to be ignored
     blacklist = {
         "m4-mla-modalix:armhf": "",
@@ -554,7 +583,23 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
             print(f"Skipping {pkgname}; SDK-owned package provides the required files")
             return None
 
-        if pkgname not in cache:
+        if not daily_channel and pkgname not in cache:
+            return None
+
+        if daily_channel:
+            relation = "="
+            if requested_version.startswith((">= ", "<= ", ">> ", "<< ", "> ", "< ")):
+                relation, requested_version = requested_version.split(" ", 1)
+            candidates = list(cache[pkgname].versions) if pkgname in cache else []
+            selected = daily_candidate(candidates, version, requested_version, relation)
+            if selected is not None:
+                return selected
+            # Debian 13 t64 packages provide legacy dependency names used by
+            # platform binaries (for example liblttng-ust1 -> liblttng-ust1t64).
+            for provider in cache.get_providing_packages(pkgname):
+                selected = daily_candidate(provider.versions, version, requested_version, relation)
+                if selected is not None:
+                    return selected
             return None
 
         if is_platform_package(pkgname) and not requested_version:
@@ -589,6 +634,32 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
             return
 
         for dep_list in candidate.get_dependencies("Depends"):
+            if daily_channel:
+                # A dependency group is a list of alternatives, not a list of
+                # packages that all have to be installed.
+                for dep in dep_list:
+                    name = normalize_arm64_name(dep.name)
+                    if name in blacklist or base_package_name(name) in SKIP_PACKAGES:
+                        break
+                    requested = dep.version or ""
+                    if requested and dep.relation != "=":
+                        requested = f"{dep.relation} {requested}"
+                    selected = get_candidate(name, requested)
+                    if selected is None:
+                        continue
+                    name = normalize_arm64_name(selected.package.name)
+                    if graph.get(name) and dep.version:
+                        import apt_pkg
+                        if not apt_pkg.check_dep(graph[name], dep.relation, dep.version):
+                            raise RuntimeError(f"Conflicting dependency for {name}: {graph[name]} does not satisfy {dep}")
+                    if not graph.get(name):
+                        graph[name] = selected.version
+                        if recursive:
+                            collect_rdeps(selected, recursive)
+                    break
+                else:
+                    raise RuntimeError(f"No Agate/Trixie candidate satisfies {dep_list} for {candidate.package.name}")
+                continue
             for dep in dep_list:
                 name = normalize_arm64_name(dep.name)
 
@@ -793,6 +864,7 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
         tar = subprocess.run(
             [
                 "tar",
+                *(["--keep-directory-symlink"] if daily_channel else []),
                 "-x",
                 "-C",
                 installdir,
@@ -848,6 +920,10 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
 
             graph[item] = ""
             c = get_candidate(item, "")
+            if daily_channel:
+                if c is None:
+                    raise RuntimeError(f"Requested sysroot package has no Agate/Trixie candidate: {item}")
+                graph[item] = c.version
             if c is not None:
                 collect_rdeps(c, True)
 
@@ -892,7 +968,7 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
         raise RuntimeError(f"No {pkg_name} candidate matches platform version {version}")
     print(f"Using {pkg_name} = {c_palette.version}")
 
-    graph = {}
+    graph = {pkg_name: version} if daily_channel else {}
     # first get all rdeps of palette only
     collect_rdeps(c_palette, False)
 
@@ -951,6 +1027,16 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
         return
 
     os.makedirs(installdir, exist_ok=True)
+
+    if daily_channel:
+        # Debian 13 packages use merged /usr. Linker scripts still reference
+        # /lib, so a freshly extracted sysroot needs the filesystem aliases
+        # normally provided by the base-files package on an installed system.
+        for directory in ("lib", "bin", "sbin"):
+            path = os.path.join(installdir, directory)
+            if not os.path.lexists(path):
+                os.makedirs(os.path.join(installdir, "usr", directory), exist_ok=True)
+                os.symlink(f"usr/{directory}", path)
 
     print("Setting up sysroot...")
     deb_files = [

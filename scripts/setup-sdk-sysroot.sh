@@ -8,7 +8,7 @@ sysroot="${SYSROOT:-/opt/toolchain/aarch64/modalix}"
 download_dir="${SYSROOT_UPDATE_DOWNLOAD_DIR:-/tmp/modalix}"
 python_command="${SDK_SYSROOT_PYTHON:-/usr/bin/python3}"
 sysroot_pref=/etc/apt/preferences.d/00-sima-sdk-sysroot-target.pref
-if [[ "${SDK_APT_CHANNEL:-release}" == "pre-release" ]]; then
+if [[ "${SDK_APT_CHANNEL:-release}" != "release" ]]; then
   sdk_apt_origin="debian.neat.sima.ai"
 else
   sdk_apt_origin="repo.sima.ai"
@@ -49,7 +49,11 @@ EOF
   trap cleanup_sysroot_pref EXIT
 fi
 
+if [[ "${SDK_APT_CHANNEL:-release}" == daily ]]; then
+  sdk_pkg_list="${sdk_pkg_list},libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev,libgstrtspserver-1.0-dev,python3-dev,libspdlog-dev,libssl-dev"
+fi
+
 SIMAAI_SYSROOT="${sysroot}" \
 SIMAAI_DOWNLOAD_DIR="${download_dir}" \
-"${python_command}" /opt/bin/simaai_setup_sdk.py modalix "${base_sdk_version}" "${sdk_pkg_list}"
+"${python_command}" /opt/bin/simaai_setup_sdk.py modalix "${base_sdk_version}" "${SDK_LINUX_LIBC_VERSION:-}" "${sdk_pkg_list}"
 validate-sysroot-package-versions.sh "${base_sdk_version}" "${download_dir}" "${sysroot}"

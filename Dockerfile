@@ -198,6 +198,15 @@ RUN --mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,shari
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /tmp/*
 
+# Exercise the target libc/linker layout, not only the compiler's own sysroot.
+RUN if [ "${SDK_APT_CHANNEL}" = daily ] && [ "${MINIMAL_IMAGE}" != 1 ]; then \
+      printf '#include <gst/gst.h>\nint main() { gst_init(nullptr, nullptr); return 0; }\n' > /tmp/agate-smoke.cpp; \
+      flags="$(PKG_CONFIG_LIBDIR=/opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu/pkgconfig:/opt/toolchain/aarch64/modalix/usr/share/pkgconfig pkg-config --cflags --libs gstreamer-1.0)" && \
+      aarch64-linux-gnu-g++ --sysroot=/opt/toolchain/aarch64/modalix /tmp/agate-smoke.cpp $flags -o /tmp/agate-smoke && \
+      aarch64-linux-gnu-readelf -h /tmp/agate-smoke | grep -q AArch64 && \
+      rm -f /tmp/agate-smoke.cpp /tmp/agate-smoke; \
+    fi
+
 # sima-cli uses /etc/sdk-release to distinguish a Palette SDK from a generic
 # Linux host. Keep this build-time marker stable so dependency layers are not
 # invalidated by the branch/commit identity written into the final image.
@@ -259,8 +268,8 @@ ARG NEAT_CORE_SOURCE_REASON=
 ARG NEAT_APPS_SOURCE_REF=
 ARG NEAT_CORE_RESOLUTION_ATTEMPT=manual
 RUN echo "Neat Core resolution attempt: ${NEAT_CORE_RESOLUTION_ATTEMPT}" && \
-    if [ "${SDK_APT_CHANNEL}" = pre-release ]; then \
-      install-neat-resources.sh --skip "pre-release platform SDK does not bundle Core"; \
+    if [ "${SDK_APT_CHANNEL}" != release ]; then \
+      install-neat-resources.sh --skip "platform-only SDK does not bundle Core"; \
     else \
       NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}" \
       NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON}" \

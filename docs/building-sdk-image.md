@@ -253,3 +253,41 @@ To make an Insight upgrade permanent in the image, rebuild the SDK image with th
 ```bash
 NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 2.1.3
 ```
+
+## Platform 3.0 preparation branch
+
+Pushes to `3.0.0-prep` default to the floating `3.0.0` platform selector.
+The workflow resolves it once to an exact mirrored Palette `~git` version and
+passes the same version to both host-architecture builds. A manual Platform
+selector overrides this default and can pin a full `3.0.0~gitTIMESTAMP.COMMIT-BUILD`.
+
+The `daily` channel uses `https://debian.neat.sima.ai/daily`, suite `agate`,
+plus Debian 13 `trixie` target dependencies. It does not add the legacy
+Aria/Bookworm platform fallback. Agate components have independent versions;
+resolution honors dependency constraints, prefers the newest mirrored component
+version whose build number is no later than the selected Palette build, and
+uses Debian 13 for general dependencies. Actual package versions and hashes are
+validated and recorded in the sysroot inventory. Debian virtual-package
+providers (including `t64` replacements) and merged-`/usr` aliases are handled
+when assembling the target filesystem. A GStreamer C++ link check runs against
+the extracted sysroot during image construction. This is not a complete archive
+snapshot of Debian: general Debian dependencies follow current Trixie updates.
+
+These images use `platform-cross`: no matching Core artifact or Core/Apps source
+checkout is required or bundled. The existing Ubuntu SDK host and GCC 12 cross
+compiler are retained while the target sysroot moves to Debian 13. Test Core
+builds against the new sysroot before promoting these experimental images.
+
+For a local build with a known mirrored version:
+
+```bash
+SDK_APT_CHANNEL=daily \
+BASE_SDK_VERSION=3.0.0~git202609090513.9e68a68-1218 \
+REQUESTED_PRE_RELEASE_BASE=3.0.0 \
+./build.sh sdk-3.0.0-prep local
+```
+
+`/etc/sdk-release` records the daily repository, exact platform version, base
+`3.0.0`, and `Neat Core = not bundled`. In-container `sysroot update` still
+supports the legacy `~preN` overlay flow; rebuild the experimental image to
+change its daily platform revision.

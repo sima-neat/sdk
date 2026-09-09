@@ -24,7 +24,11 @@ NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH:-}"
 NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION:-}"
 NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF:-}"
 NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON:-}"
-if [[ -z "${NEAT_CORE_SOURCE_REF}" ]]; then
+if [[ "${SDK_APT_CHANNEL}" != release ]]; then
+  NEAT_CORE_SOURCE_REF=""
+  NEAT_CORE_SOURCE_REASON="platform-only SDK does not bundle Core"
+  NEAT_APPS_SOURCE_REF=""
+elif [[ -z "${NEAT_CORE_SOURCE_REF}" ]]; then
   if resolved_core_source_ref="$(
     neat_resolve_dependency_source_ref core https://github.com/sima-neat/core.git
   )"; then
@@ -39,9 +43,11 @@ if [[ -z "${NEAT_CORE_SOURCE_REF}" ]]; then
     fi
   fi
 fi
-NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF:-$(
-  neat_resolve_dependency_source_ref apps https://github.com/sima-neat/apps.git
-)}"
+if [[ "${SDK_APT_CHANNEL}" == release ]]; then
+  NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF:-$(
+    neat_resolve_dependency_source_ref apps https://github.com/sima-neat/apps.git
+  )}"
+fi
 SIMA_CLI_REF="${SIMA_CLI_REF:-$(neat_dependency_ref sima-cli)}"
 SIMA_CLI_VERSION="${SIMA_CLI_VERSION:-}"
 BUILDX_OUTPUT="${BUILDX_OUTPUT:-load}"
@@ -71,7 +77,7 @@ Environment overrides:
   SDK_BASE_IMAGE  Base Docker image for the SDK host/container userspace (default: ${SDK_BASE_IMAGE})
   SDK_CROSS_TOOLCHAIN_IMAGE  Base image used only to source the pinned aarch64 cross compiler (default: ${SDK_CROSS_TOOLCHAIN_IMAGE})
   BASE_SDK_VERSION  Base eLxr/SiMa SDK package version to install (default: ${BASE_SDK_VERSION})
-  SDK_APT_CHANNEL  Platform package channel: release or pre-release (default: ${SDK_APT_CHANNEL})
+  SDK_APT_CHANNEL  Platform package channel: release, pre-release, or daily (default: ${SDK_APT_CHANNEL})
   NEAT_BRANCH  NEAT Framework branch to bake into /neat-resources (default: ${NEAT_BRANCH})
   NEAT_VERSION  NEAT Framework version/tag to bake into /neat-resources (default: ${NEAT_VERSION})
   NEAT_CORE_TARGET  Override the Neat Core Vulcan package target from deps/manifest.json

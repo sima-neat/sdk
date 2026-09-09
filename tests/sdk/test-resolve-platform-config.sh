@@ -168,7 +168,16 @@ done
 docker_workflow="${ROOT_DIR}/.github/workflows/docker-build.yml"
 grep -Fq 'pre_release_base:' "${docker_workflow}" || \
   fail "manual workflow dispatch does not expose a pre-release selector"
-grep -Fq 'PRE_RELEASE_BASE: ${{ inputs.pre_release_base || vars.PRE_RELEASE_BASE }}' "${docker_workflow}" || \
+grep -Fq "github.ref_name == '3.0.0-prep' && '3.0.0'" "${docker_workflow}" || \
   fail "manual pre-release selector does not override the repository variable"
+
+cat > "${tmpdir}/DailyPackages" <<'EOF'
+Package: simaai-palette-modalix
+Version: 3.0.0~git202609090513.9e68a68-1218
+Architecture: all
+EOF
+pinned_daily="$(PRE_RELEASE_BASE=3.0.0~git202609090513.9e68a68-1218 PRE_RELEASE_PACKAGES_FILE="${tmpdir}/DailyPackages" GITHUB_REF_TYPE=branch GITHUB_REF_NAME=3.0.0-prep run_resolver)"
+grep -Fxq 'sdk_apt_channel=daily' <<< "${pinned_daily}" || fail "daily channel not selected"
+grep -Fxq 'base_sdk_version=3.0.0~git202609090513.9e68a68-1218' <<< "${pinned_daily}" || fail "daily version changed"
 
 echo "platform config resolver tests passed"

@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       pre_release_base:
-        description: Optional platform selector (for example, 2.1.3 or 2.1.3~pre4593)
+        description: Optional platform selector (for example, 3.0.0 or an exact 3.0.0~git timestamp/commit/build version)
         required: false
         type: string
 
@@ -40,7 +40,7 @@ jobs:
       - name: Resolve stable or pre-release platform version
         id: resolve
         env:
-          PRE_RELEASE_BASE: ${{ inputs.pre_release_base || vars.PRE_RELEASE_BASE }}
+          PRE_RELEASE_BASE: ${{ inputs.pre_release_base || (github.ref_name == '3.0.0-prep' && '3.0.0') || vars.PRE_RELEASE_BASE }}
         run: |
           set -euo pipefail
           scripts/resolve-platform-config.sh | tee "${RUNNER_TEMP}/platform-config.env"
@@ -55,6 +55,7 @@ jobs:
           tests/sdk/test-sysroot-update.sh
           tests/sdk/test-sysroot-package-version-validator.sh
           python3 tests/sdk/test-sysroot-progress.py
+          /usr/bin/python3 tests/sdk/test-daily-sysroot.py
 
   build:
     name: Build on ${{ matrix.arch }}
