@@ -4,11 +4,11 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 UPSTREAM_HOST="sw-web.eng.sima.ai"
-UPSTREAM_ROOT="deb/pre-release"
+UPSTREAM_ROOT="deb/daily"
 UPSTREAM_BASE_URL="http://${UPSTREAM_HOST}/${UPSTREAM_ROOT}"
-SUITE="bookworm"
+SUITE="agate"
 COMPONENT="non-free"
-ARCHITECTURES="arm64,arc,armhf,i386,amd64"
+ARCHITECTURES="arm64"
 APT_MIRROR2_THREADS="${APT_MIRROR2_THREADS:-16}"
 
 PUBLISH=false
@@ -76,7 +76,8 @@ if ! flock -n 9; then
   exit 1
 fi
 
-REPOSITORY="${WORK_ROOT}/repository"
+# Keep Agate downloads separate from the earlier Bookworm mirror cache.
+REPOSITORY="${WORK_ROOT}/${SUITE}/repository"
 mkdir -p "${REPOSITORY}"
 TEMP_DIR="$(mktemp -d "${WORK_ROOT}/run.XXXXXX")"
 trap 'rm -rf -- "${TEMP_DIR}"' EXIT
@@ -114,15 +115,11 @@ source_architectures="$(sed -n 's/^Architectures: //p' "${INRELEASE}" | head -n 
 source_components="$(sed -n 's/^Components: //p' "${INRELEASE}" | head -n 1)"
 
 [[ " ${source_architectures} " == *" arm64 "* ]]
-[[ " ${source_architectures} " == *" arc "* ]]
-[[ " ${source_architectures} " == *" armhf "* ]]
-[[ " ${source_architectures} " == *" i386 "* ]]
-[[ " ${source_architectures} " == *" amd64 "* ]]
 [[ " ${source_components} " == *" ${COMPONENT} "* ]]
 
 previous_digest=""
 previous_inventory_key=""
-if aws s3 cp "s3://${BUCKET}/pre-release/.mirror/publication.json" \
+if aws s3 cp "s3://${BUCKET}/daily/.mirror/agate/publication.json" \
   "${PREVIOUS_PUBLICATION_JSON}" --region "${AWS_REGION}" --only-show-errors 2>/dev/null; then
   previous_digest="$(jq -r '.source.inrelease_sha256 // empty' "${PREVIOUS_PUBLICATION_JSON}")"
   previous_inventory_key="$(jq -r '.publication.inventory_key // empty' "${PREVIOUS_PUBLICATION_JSON}")"
@@ -135,13 +132,13 @@ fi
 # only for Release objects created before this metadata was introduced.
 if aws s3api head-object \
   --bucket "${BUCKET}" \
-  --key "pre-release/dists/${SUITE}/Release" \
+  --key "daily/dists/${SUITE}/Release" \
   --region "${AWS_REGION}" \
   --output json >"${PUBLISHED_RELEASE_HEAD_JSON}" 2>/dev/null; then
   release_source_digest="$(jq -r '.Metadata["source-inrelease-sha256"] // empty' "${PUBLISHED_RELEASE_HEAD_JSON}")"
   release_inventory_key="$(jq -r '.Metadata["inventory-key"] // empty' "${PUBLISHED_RELEASE_HEAD_JSON}")"
   if [[ "${release_source_digest}" =~ ^[0-9a-f]{64}$ && \
-    "${release_inventory_key}" == pre-release/.mirror/inventories/*.json ]]; then
+    "${release_inventory_key}" == daily/.mirror/agate/inventories/*.json ]]; then
     if [[ -n "${previous_digest}" && "${previous_digest}" != "${release_source_digest}" ]]; then
       echo "Recovering publication baseline from authoritative Release metadata (${release_source_digest})" >&2
     fi
@@ -175,10 +172,10 @@ if ((available_kib < required_kib)); then
 fi
 
 cat >"${APT_MIRROR2_CONFIG}" <<EOF
-set base_path ${WORK_ROOT}/apt-mirror2
-set mirror_path ${WORK_ROOT}
-set skel_path ${WORK_ROOT}/apt-mirror2/skel
-set var_path ${WORK_ROOT}/apt-mirror2/var
+set base_path ${WORK_ROOT}/${SUITE}/apt-mirror2
+set mirror_path ${WORK_ROOT}/${SUITE}
+set skel_path ${WORK_ROOT}/${SUITE}/apt-mirror2/skel
+set var_path ${WORK_ROOT}/${SUITE}/apt-mirror2/var
 set nthreads ${APT_MIRROR2_THREADS}
 set gpg_verify off
 set write_file_lists off
@@ -216,7 +213,7 @@ python3 "${SCRIPT_DIR}/prepare-debian-by-hash.py" \
 jq '{schema_version: 1, packages: .packages}' \
   "${VALIDATION_JSON}" >"${CURRENT_INVENTORY_JSON}"
 previous_inventory_arguments=()
-if [[ "${previous_inventory_key}" == pre-release/.mirror/inventories/*.json ]] && \
+if [[ "${previous_inventory_key}" == daily/.mirror/agate/inventories/*.json ]] && \
   aws s3 cp "s3://${BUCKET}/${previous_inventory_key}" "${PREVIOUS_INVENTORY_JSON}" \
     --region "${AWS_REGION}" --only-show-errors 2>/dev/null; then
   previous_inventory_arguments=(--previous "${PREVIOUS_INVENTORY_JSON}")
@@ -243,13 +240,14 @@ if [[ "${PUBLISH}" == true && "${reused_file_content_count}" -gt 0 ]]; then
     "${CHANGES_JSON}" >&2
   exit 1
 fi
-inventory_key="pre-release/.mirror/inventories/${source_digest}.json"
-changes_key="pre-release/.mirror/changes/${source_digest}.json"
+inventory_key="daily/.mirror/agate/inventories/${source_digest}.json"
+changes_key="daily/.mirror/agate/changes/${source_digest}.json"
 
 write_publication_manifest() {
   local published_at="$1"
   jq -n \
     --arg source_url "${UPSTREAM_BASE_URL}" \
+    --arg source_suite "${SUITE}" \
     --arg source_date "${source_date}" \
     --arg source_digest "${source_digest}" \
     --arg published_at "${published_at}" \
@@ -261,7 +259,7 @@ write_publication_manifest() {
     --argjson package_count "${package_count}" \
     --argjson total_bytes "${total_bytes}" \
     --slurpfile changes "${CHANGES_JSON}" \
-    '{schema_version: 1, source: {url: $source_url, date: $source_date, inrelease_sha256: $source_digest}, validation: {package_count: $package_count, total_bytes: $total_bytes}, changes: $changes[0].counts, publication: {published_at: $published_at, repository: $repository, workflow_run: $workflow_run, commit: $commit, inventory_key: $inventory_key, changes_key: $changes_key, apt_release_mode: "unsigned-by-hash"}}' \
+    '{schema_version: 1, source: {url: $source_url, suite: $source_suite, date: $source_date, inrelease_sha256: $source_digest}, validation: {package_count: $package_count, total_bytes: $total_bytes}, changes: $changes[0].counts, publication: {published_at: $published_at, repository: $repository, workflow_run: $workflow_run, commit: $commit, inventory_key: $inventory_key, changes_key: $changes_key, apt_release_mode: "unsigned-by-hash"}}' \
     >"${PUBLICATION_JSON}"
 }
 
@@ -271,7 +269,7 @@ write_change_report() {
   mkdir -p "${REPORT_DIR}"
   local platform_versions
   platform_versions="$(jq -c \
-    '[.packages[] | select(.package == "simaai-palette-modalix" and .architecture == "arm64") | .version] | unique' \
+    '[.packages[] | select(.package == "simaai-palette-modalix" and (.architecture == "arm64" or .architecture == "all")) | .version] | unique' \
     "${CURRENT_INVENTORY_JSON}")"
   jq -n \
     --arg result "${result}" \
@@ -297,14 +295,14 @@ if [[ "${PUBLISH}" == true ]]; then
 
   # Package objects are immutable and must be available before any metadata
   # that references them becomes visible to APT clients.
-  aws s3 sync "${REPOSITORY}/pool/" "s3://${BUCKET}/pre-release/pool/" \
+  aws s3 sync "${REPOSITORY}/pool/" "s3://${BUCKET}/daily/pool/" \
     "${s3_common[@]}" --cache-control 'public,max-age=31536000,immutable'
 
   # Upload immutable index objects before the Release file that advertises
   # them. APT fetches these digest-addressed paths after reading the new
   # Acquire-By-Hash Release, so an interrupted upload cannot create a mixed
   # generation of mutable Packages files.
-  aws s3 sync "${PUBLISH_DISTS}/" "s3://${BUCKET}/pre-release/dists/" \
+  aws s3 sync "${PUBLISH_DISTS}/" "s3://${BUCKET}/daily/dists/" \
     "${s3_common[@]}" --cache-control 'public,max-age=31536000,immutable' \
     --exclude '*' --include '*/by-hash/*/*'
 
@@ -312,7 +310,7 @@ if [[ "${PUBLISH}" == true ]]; then
   # publication. Keep these paths unchanged on later runs so a client holding
   # the previous Release can still fetch a consistent generation.
   if [[ -z "${previous_digest}" ]]; then
-    aws s3 sync "${PUBLISH_DISTS}/" "s3://${BUCKET}/pre-release/dists/" \
+    aws s3 sync "${PUBLISH_DISTS}/" "s3://${BUCKET}/daily/dists/" \
       "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate' \
       --exclude '*/by-hash/*/*' \
       --exclude "${SUITE}/Release"
@@ -322,7 +320,7 @@ if [[ "${PUBLISH}" == true ]]; then
   # missing nested Release files without replacing a previous generation.
   while IFS= read -r -d '' nested_release; do
     relative_path="${nested_release#"${PUBLISH_DISTS}/"}"
-    object_key="pre-release/dists/${relative_path}"
+    object_key="daily/dists/${relative_path}"
     if ! aws s3api head-object --bucket "${BUCKET}" --key "${object_key}" \
       --region "${AWS_REGION}" >/dev/null 2>&1; then
       aws s3 cp "${nested_release}" "s3://${BUCKET}/${object_key}" \
@@ -334,13 +332,13 @@ if [[ "${PUBLISH}" == true ]]; then
   # The transformed Release is intentionally unsigned. Remove any previously
   # published source signatures before switching the suite Release.
   for signature_name in InRelease Release.gpg; do
-    aws s3 rm "s3://${BUCKET}/pre-release/dists/${SUITE}/${signature_name}" \
+    aws s3 rm "s3://${BUCKET}/daily/dists/${SUITE}/${signature_name}" \
       --region "${AWS_REGION}" --only-show-errors
   done
 
   # This single S3 object replacement is the publication boundary.
   aws s3 cp "${PUBLISH_DISTS}/${SUITE}/Release" \
-    "s3://${BUCKET}/pre-release/dists/${SUITE}/Release" \
+    "s3://${BUCKET}/daily/dists/${SUITE}/Release" \
     "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate' \
     --metadata "source-inrelease-sha256=${source_digest},inventory-key=${inventory_key}"
 
@@ -356,14 +354,14 @@ if [[ "${PUBLISH}" == true ]]; then
   write_change_report "${result}"
 
   aws s3 cp "${PUBLICATION_JSON}" \
-    "s3://${BUCKET}/pre-release/.mirror/publication.json" \
+    "s3://${BUCKET}/daily/.mirror/agate/publication.json" \
     "${s3_common[@]}" --cache-control 'no-cache,no-store,must-revalidate' \
     --content-type application/json
 
   aws cloudfront create-invalidation \
     --region "${AWS_REGION}" \
     --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID}" \
-    --paths '/pre-release/dists/*' '/pre-release/.mirror/publication.json' \
+    --paths '/daily/dists/*' '/daily/.mirror/agate/publication.json' \
     >/dev/null
 else
   result="Validated only"

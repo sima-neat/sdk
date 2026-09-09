@@ -76,6 +76,24 @@ untagged cache versions after seven days. The package is an implementation detai
 SDK consumers should continue pulling images from the normal `sdk` or branch-specific SDK
 packages.
 
+The ARM64 sysroot's downloaded Debian packages use a separate BuildKit cache mount. Local
+BuildKit builders retain this mount automatically. In GitHub Actions, the workflow restores
+it with `actions/cache` and injects/extracts it with the BuildKit cache-dance action because
+registry-backed BuildKit layer caches do not export cache-mount contents. Both native image
+architectures share the cache: they build the same ARM64 target sysroot.
+
+The cache key includes the resolved immutable platform version, a hash of the sysroot
+download inputs, and a unique workflow-run suffix. Each run restores the newest compatible
+package cohort as a seed, downloads only changed packages, and saves its final state under
+a new immutable key. The rolling key is required because GitHub cache entries cannot be
+overwritten: without it, a repaired package or dependency update would be lost after the
+build. Before reuse, every package is checked against cached source URI metadata and its
+Debian package name, architecture, exact version, and repository SHA-256; invalid entries
+are replaced through a temporary file and atomic rename. The cache mount is outside the
+image filesystem and is never copied into the published SDK image.
+Each build log reports downloaded and cached package counts and byte totals so cache savings
+can be monitored directly.
+
 Neat Core and Neat Apps source trees embedded in the image are selected by the `ref` values
 in `deps/manifest.json`. Before Buildx starts, `build.sh` resolves release tags and
 `branch:latest` references to full Git commit SHAs. Those resolved commits become Docker

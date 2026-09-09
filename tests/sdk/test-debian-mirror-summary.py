@@ -110,6 +110,55 @@ def test_version_ordering() -> None:
     assert collector.sorted_versions(values) == ["2.1.3~pre9", "2.1.3~pre10", "2.1.3~rc1", "2.1.3", "1:1.0"]
 
 
+def test_agate_platform_summary_and_rendering() -> None:
+    previous = "3.0.0~git202609090513.9e68a68-9"
+    current = "3.0.0~git202609090513.9e68a68-10"
+    # Exercise Debian revision ordering, not lexicographic string ordering.
+    assert collector.sorted_versions([current, previous]) == [previous, current]
+    for architecture in ("arm64", "all"):
+        for before, after in ((previous, current), (None, current), (previous, None), (current, previous)):
+            changes = {"added": [], "removed": [], "version_changes": []}
+            if before and after:
+                changes["version_changes"] = [{
+                    "package": "simaai-palette-modalix",
+                    "architecture": architecture,
+                    "previous_versions": [before],
+                    "current_versions": [after],
+                }]
+            elif before:
+                changes["removed"] = [package("simaai-palette-modalix", before, architecture)]
+            else:
+                changes["added"] = [package("simaai-palette-modalix", after, architecture)]
+            publication = result("a" * 64, "2026-09-09T06:45:35Z", after or "", changes)
+            publication["platform"]["versions"] = [after] if after else []
+            if before == previous and after == current:
+                publication["platform"]["versions"] = [current, previous, "invalid-version"]
+            publication["_run"] = {"id": 1, "html_url": "https://github.com/sima-neat/sdk/actions/runs/1"}
+            context = collector.build_context(
+                [publication],
+                collector.parse_utc("2026-09-09T00:00:00Z"),
+                collector.parse_utc("2026-09-10T00:00:00Z"),
+            )
+            summary = context["platform"]
+            assert summary["previous_version"] == before, (architecture, before, after, summary)
+            assert summary["current_version"] == after
+            assert summary["changed"] is True
+            report = generator.fallback_report(context, 2000)
+            if before and after:
+                assert f"Platform: `{before}` → `{after}`" in report
+            elif before:
+                assert f"Platform: `{before}` → removed" in report
+            else:
+                assert f"Platform: added `{after}`" in report
+
+
+def test_platform_version_validation() -> None:
+    for value in ("2.1.3~pre4766", "3.0.0~git202609090513.9e68a68-1218"):
+        assert collector.PLATFORM_VERSION_RE.fullmatch(value)
+    for value in ("3.0.0~git", "3.0.0~git202609090513.9e68a68", "3.0.0~git202609090513.bad!-1218", "3.0.0~prex"):
+        assert not collector.PLATFORM_VERSION_RE.fullmatch(value)
+
+
 def test_collection_and_fallback() -> None:
     with tempfile.TemporaryDirectory() as directory:
         build_fixture(Path(directory))
@@ -576,6 +625,8 @@ def test_slack_validation_and_dry_run() -> None:
 
 def main() -> int:
     test_version_ordering()
+    test_agate_platform_summary_and_rendering()
+    test_platform_version_validation()
     test_collection_and_fallback()
     test_platform_summary_preserves_earliest_baseline()
     test_collection_preserves_digest_rollback()

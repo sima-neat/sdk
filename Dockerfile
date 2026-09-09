@@ -23,7 +23,7 @@ ARG NEAT_CORE_TARGET=
 ARG NEAT_INSIGHT_BRANCH=
 ARG NEAT_INSIGHT_VERSION=
 ARG OPENVSCODE_SERVER_VERSION=openvscode-server-v1.109.5
-ARG CODEX_CLI_VERSION=0.142.5
+ARG CODEX_CLI_VERSION=0.153.4
 ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libblkid-dev libbsd0 libcharls2 libcpp-httplib-dev libelf1 libexpat1 libffi-dev libffi8 libgdal32 libgfortran5 libglib2.0-0 libgomp1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev libjpeg62-turbo libjson-glib-dev liblapack-dev liblapack3 liblzma5 libmount-dev libopenblas-pthread-dev libopenblas0-pthread libopenjp2-7 libpng16-16 libpython3.11-dev libqt5gui5 libsepol-dev libspdlog-dev libssl3 libstdc++6 libsuperlu-dev libsuperlu5 libtiff6 liburcu-dev libwebp7 python3-dev python3.11-dev zlib1g"
 ENV SDK_PKG_LIST="\
 	libgrpc-dev,\
@@ -111,9 +111,8 @@ RUN apt-get update --allow-releaseinfo-change && \
       mkcert && \
     npm install -g "@openai/codex@${CODEX_CLI_VERSION}" && \
     npm cache clean --force && \
-    codex --version && \
-    apt-get purge -y npm && \
-    apt-get autoremove -y && \
+    test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}" && \
+    npm --version && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -185,7 +184,9 @@ RUN getent group docker >/dev/null || groupadd --system docker
 
 RUN install-rustup.sh
 
-RUN setup-sdk-sysroot.sh "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}" && \
+RUN --mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,sharing=locked \
+    SYSROOT_UPDATE_DOWNLOAD_DIR=/var/cache/sima-sdk-debs \
+    setup-sdk-sysroot.sh "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}" && \
     cp -a /opt/bookworm-cross-toolchain/. / && \
     pin-cross-toolchain.sh && \
     aarch64-linux-gnu-gcc --version && \
