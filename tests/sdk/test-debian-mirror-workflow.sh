@@ -16,6 +16,7 @@ python3 -m py_compile "${repo_root}/scripts/prepare-debian-by-hash.py"
 python3 -m py_compile "${repo_root}/scripts/collect-debian-mirror-summary.py"
 python3 -m py_compile "${repo_root}/scripts/generate-debian-mirror-summary.py"
 python3 -m py_compile "${repo_root}/scripts/post-debian-mirror-summary.py"
+python3 "${repo_root}/tests/sdk/test-debian-mirror-sync.py"
 python3 "${repo_root}/tests/sdk/test-debian-by-hash.py"
 python3 "${repo_root}/tests/sdk/test-debian-mirror-summary.py"
 
@@ -63,7 +64,7 @@ grep -Fq 'by-hash=no' "${sync_script}"
 grep -Fq 'Acquire-By-Hash' "${repo_root}/scripts/prepare-debian-by-hash.py"
 grep -Fq -- "--include '*/by-hash/*/*'" "${sync_script}"
 grep -Fq -- '-name Release -print0' "${sync_script}"
-grep -Fq 'deb [trusted=yes] https://debian.neat.sima.ai/pre-release bookworm non-free' "${documentation}"
+grep -Fq 'deb [trusted=yes] https://debian.neat.sima.ai/daily agate non-free' "${documentation}"
 if grep -Eq 'gpgv|SIGNING_KEY|PINNED_KEY' "${sync_script}" "${workflow}"; then
   echo "The internal pre-release mirror must not require an APT signing key" >&2
   exit 1
@@ -73,9 +74,9 @@ grep -Fq 'Removed from package indexes:' "${sync_script}"
 grep -Fq 'Package version changes:' "${sync_script}"
 grep -Fq 'pool filename(s) with different content; refusing publication' "${sync_script}"
 # shellcheck disable=SC2016
-grep -Fq '.mirror/inventories/${source_digest}.json' "${sync_script}"
+grep -Fq '.mirror/agate/inventories/${source_digest}.json' "${sync_script}"
 # shellcheck disable=SC2016
-grep -Fq '.mirror/changes/${source_digest}.json' "${sync_script}"
+grep -Fq '.mirror/agate/changes/${source_digest}.json' "${sync_script}"
 grep -Fq '.Metadata["source-inrelease-sha256"]' "${sync_script}"
 grep -Fq '.Metadata["inventory-key"]' "${sync_script}"
 grep -Fq -- '--metadata "source-inrelease-sha256=${source_digest},inventory-key=${inventory_key}"' "${sync_script}"
@@ -92,7 +93,7 @@ pool_upload_line="$(grep -nF 's3 sync "${REPOSITORY}/pool/' "${sync_script}" | c
 by_hash_upload_line="$(grep -nF 's3 sync "${PUBLISH_DISTS}/' "${sync_script}" | head -n 1 | cut -d: -f1)"
 # shellcheck disable=SC2016
 release_upload_line="$(grep -nF 'aws s3 cp "${PUBLISH_DISTS}/${SUITE}/Release"' "${sync_script}" | cut -d: -f1)"
-manifest_upload_line="$(grep -n 'pre-release/.mirror/publication.json' "${sync_script}" | tail -n 1 | cut -d: -f1)"
+manifest_upload_line="$(grep -n 'daily/.mirror/agate/publication.json' "${sync_script}" | tail -n 1 | cut -d: -f1)"
 publication_upload_line="$(grep -nF 'aws s3 cp "${PUBLICATION_JSON}"' "${sync_script}" | cut -d: -f1)"
 publication_time_line="$(grep -nF 'publication_time="$(date -u' "${sync_script}" | head -n 1 | cut -d: -f1)"
 report_write_line="$(grep -nF 'write_change_report "${result}"' "${sync_script}" | head -n 1 | cut -d: -f1)"
