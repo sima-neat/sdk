@@ -118,6 +118,19 @@ EOF
   file "${smoke_bin}" | grep -Eq 'aarch64|ARM aarch64|ARM64'
 }
 
+test_initialized_compiler_flags() {
+  local source="${WORK_DIR}/initialized-flags.c"
+  printf 'int square(int x) { return x * x; }\n' > "${source}"
+  # Exercise the exported flags used by interactive SDK builds. Explicit flag
+  # expansion matches make's handling of these SDK-generated argument lists.
+  # shellcheck disable=SC2086
+  "${CC:-aarch64-linux-gnu-gcc}" ${CPPFLAGS:-} ${CFLAGS:-} \
+    -Werror -c "${source}" -o "${WORK_DIR}/initialized-c.o"
+  # shellcheck disable=SC2086
+  "${CXX:-aarch64-linux-gnu-g++}" ${CPPFLAGS:-} ${CXXFLAGS:-} \
+    -Werror -x c++ -c "${source}" -o "${WORK_DIR}/initialized-cxx.o"
+}
+
 test_sysroot_overlay_representative() {
   local overlay_script="/usr/local/bin/install-sysroot-overlay.sh"
   local overlay_sysroot="${WORK_DIR}/overlay-sysroot"
@@ -344,6 +357,8 @@ rm -rf "${WORK_DIR}"
 mkdir -p "${HELLO_WORK}" "${REPRESENTATIVE_WORK}" "$(dirname "${STATUS_JSON}")"
 cp -a "${HELLO_SRC}/." "${HELLO_WORK}/"
 cp -a "${REPRESENTATIVE_SRC}/." "${REPRESENTATIVE_WORK}/"
+
+run_test "Initialized SDK compiler flags" test_initialized_compiler_flags
 
 if [[ -r "${SDK_RELEASE_FILE}" ]] && [[ "$(sdk_release_value "SDK Profile")" == "platform-cross" ]]; then
   run_test "Core-less SDK profile" test_platform_cross_profile

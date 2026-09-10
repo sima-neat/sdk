@@ -198,3 +198,9 @@ REQUESTED_PRE_RELEASE_BASE=3.0.0 \
 `3.0.0`, and `Neat Core = not bundled`. In-container `sysroot update` still
 supports the legacy `~preN` overlay flow; rebuild the experimental image to
 change its daily platform revision.
+
+The SDK build environment exports `-march=armv8.2-a+crypto -mtune=cortex-a65`:
+the architecture flag controls permitted instructions, while the tuning flag
+optimizes scheduling for Cortex-A65 without selecting additional ISA features.
+The smoke suite compiles C and C++ with the exported flags and `-Werror` to catch
+conflicting target options in initialized interactive environments.

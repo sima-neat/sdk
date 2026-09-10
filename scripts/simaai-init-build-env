@@ -6,20 +6,22 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+# Select the instruction set explicitly and tune scheduling for Cortex-A65.
+# -mcpu also selects ISA features, which conflicts with this -march on GCC 14.
 BOARD=$1
 
     if [ "${BOARD}" = "davinci" ]; then
 	echo "Setting up build environment for davinci..."
 
-	export CFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/davinci"
-	export CXXFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/davinci"
-	export CPPFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/davinci"
+	export CFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/davinci"
+	export CXXFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/davinci"
+	export CPPFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/davinci"
 	export SYSROOT="/opt/toolchain/aarch64/davinci"
 elif [ "${BOARD}" = "modalix" ]; then
 	echo "Setting up build environment for modalix..."
-	export CFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/modalix"
-	export CXXFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/modalix"
-	export CPPFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/modalix"
+	export CFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/modalix"
+	export CXXFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/modalix"
+	export CPPFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/modalix"
 	export SYSROOT="/opt/toolchain/aarch64/modalix"
 else
 	echo "Usage: source simaai-init-build-env <modalix|davinci>"
