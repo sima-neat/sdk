@@ -28,7 +28,7 @@ The main user workflow is:
 Install the latest published SDK and run setup:
 
 ```bash
-sima-cli neat install sdk@developer
+sima-cli neat install sdk@develop
 ```
 
 Install a released SDK version:
@@ -45,10 +45,10 @@ To install the SDK with Edgematic Studio enabled, select the alternative
 `metadata-edgematic-studio.json` package metadata:
 
 ```bash
-sima-cli neat install sdk@developer --type edgematic-studio
+sima-cli neat install sdk@develop --type edgematic-studio
 ```
 
-Replace `developer` with a published version or branch as needed. This variant
+Replace `develop` with a published version or branch as needed. This variant
 runs `sima-cli sdk setup --edgematic-studio`, which installs Studio and publishes
 its port. DevKit pairing remains optional. Use a sima-cli version that supports
 `--edgematic-studio`; default SDK installation leaves Studio disabled.
