@@ -102,7 +102,7 @@ SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli packages build "${artifacts_dir}" \
   --name "${PACKAGE_NAME}" \
   --version "${PACKAGE_VERSION}" \
   --description "SiMa.ai Neat SDK install stub" \
-  --install-script "${INSTALL_SCRIPT_NAME}" \
+  --install-script "bash ./${INSTALL_SCRIPT_NAME}" \
   --host-platform "ubuntu@22.04,ubuntu@24.04" \
   --host-platform "windows" \
   --host-platform "mac"
