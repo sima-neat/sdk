@@ -133,7 +133,7 @@ RUN set -eux; \
     chmod -R a+rX "${OPENVSCODE_SERVER_DIR}"
 
 COPY --from=cross-toolchain /opt/cross-toolchain/ /
-COPY --from=cross-toolchain /opt/cross-toolchain/ /opt/bookworm-cross-toolchain/
+COPY --from=cross-toolchain /opt/cross-toolchain/ /opt/sdk-cross-toolchain/
 COPY scripts/pin-cross-toolchain.sh /usr/local/bin/pin-cross-toolchain.sh
 
 RUN chmod 755 /usr/local/bin/pin-cross-toolchain.sh && \
@@ -187,7 +187,7 @@ RUN install-rustup.sh
 RUN --mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,sharing=locked \
     SYSROOT_UPDATE_DOWNLOAD_DIR=/var/cache/sima-sdk-debs \
     setup-sdk-sysroot.sh "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}" && \
-    cp -a /opt/bookworm-cross-toolchain/. / && \
+    cp -a /opt/sdk-cross-toolchain/. / && \
     pin-cross-toolchain.sh && \
     aarch64-linux-gnu-gcc --version && \
     aarch64-linux-gnu-g++ --version && \
@@ -202,7 +202,9 @@ RUN --mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,shari
 RUN if [ "${SDK_APT_CHANNEL}" = daily ] && [ "${MINIMAL_IMAGE}" != 1 ]; then \
       printf '#include <gst/gst.h>\nint main() { gst_init(nullptr, nullptr); return 0; }\n' > /tmp/agate-smoke.cpp; \
       flags="$(PKG_CONFIG_LIBDIR=/opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu/pkgconfig:/opt/toolchain/aarch64/modalix/usr/share/pkgconfig pkg-config --cflags --libs gstreamer-1.0)" && \
-      aarch64-linux-gnu-g++ --sysroot=/opt/toolchain/aarch64/modalix /tmp/agate-smoke.cpp $flags -o /tmp/agate-smoke && \
+      aarch64-linux-gnu-g++ --sysroot=/opt/toolchain/aarch64/modalix /tmp/agate-smoke.cpp $flags \
+        -L/opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu \
+        -Wl,--no-as-needed -lMLArt -Wl,--as-needed -o /tmp/agate-smoke && \
       aarch64-linux-gnu-readelf -h /tmp/agate-smoke | grep -q AArch64 && \
       rm -f /tmp/agate-smoke.cpp /tmp/agate-smoke; \
     fi

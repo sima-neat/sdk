@@ -279,9 +279,10 @@ the extracted sysroot during image construction. This is not a complete archive
 snapshot of Debian: general Debian dependencies follow current Trixie updates.
 
 These images use `platform-cross`: no matching Core artifact or Core/Apps source
-checkout is required or bundled. The existing Ubuntu SDK host and GCC 12 cross
-compiler are retained while the target sysroot moves to Debian 13. Test Core
-builds against the new sysroot before promoting these experimental images.
+checkout is required or bundled. Daily builds keep the Ubuntu host and source
+GCC 14 from Debian 13, matching the compiler generation in the upstream eLxr
+SDK. Stable and legacy pre-release builds retain the Bookworm GCC 12 toolchain.
+Test Core builds against the new sysroot before promoting these experimental images.
 
 For a local build with a known mirrored version:
 

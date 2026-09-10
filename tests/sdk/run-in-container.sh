@@ -79,7 +79,12 @@ test_modalix_cross_toolchain() {
   local smoke_bin="${WORK_DIR}/modalix-cross-smoke"
   local compiler="${CXX:-aarch64-linux-gnu-g++}"
   local sysroot_libdir="${SYSROOT}/usr/lib/aarch64-linux-gnu"
-  local sysroot_gcc_libdir="${SYSROOT}/usr/lib/gcc/aarch64-linux-gnu/12"
+  local compiler_major
+  compiler_major="$("${compiler}" -dumpversion)"
+  if [[ "$(sdk_release_value "Platform Channel")" == daily ]]; then
+    test "${compiler_major}" -ge 14
+  fi
+  local sysroot_gcc_libdir="${SYSROOT}/usr/lib/gcc/aarch64-linux-gnu/${compiler_major}"
 
   test "${SYSROOT}" = "/opt/toolchain/aarch64/modalix"
   command -v "${compiler}"

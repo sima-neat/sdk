@@ -72,6 +72,7 @@ SIMA_CLI_REF=main:latest BUILDX_OUTPUT=load \
   run_build "${ROOT_DIR}/build.sh" example/sdk branch-cli
 assert_arg SIMA_CLI_REF=main
 assert_arg SIMA_CLI_VERSION=abcdef123456
+assert_arg SDK_CROSS_TOOLCHAIN_IMAGE=debian:bookworm
 assert_arg example/sdk:branch-cli
 
 BUILDX_OUTPUT=load run_build "${ROOT_DIR}/build.sh" example/sdk local
@@ -140,6 +141,7 @@ echo "SDK build helper tests passed."
 SDK_APT_CHANNEL=daily BASE_SDK_VERSION=3.0.0~git202609090513.9e68a68-1218 \
   run_build "${ROOT_DIR}/build.sh" example/sdk agate
 assert_arg SDK_APT_CHANNEL=daily
+assert_arg SDK_CROSS_TOOLCHAIN_IMAGE=debian:trixie
 assert_arg BASE_SDK_VERSION=3.0.0~git202609090513.9e68a68-1218
 assert_arg NEAT_CORE_SOURCE_REF=
 assert_arg 'NEAT_CORE_SOURCE_REASON=platform-only SDK does not bundle Core'
