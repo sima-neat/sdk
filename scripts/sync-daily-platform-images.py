@@ -21,7 +21,7 @@ BUCKET = 'sima-neat-artifacts-production'
 PREFIX = 'daily-platform-images/'
 BUILD = re.compile(r'3\.0\.0_daily_[A-Za-z0-9_-]+_B([0-9]+)\Z')
 IMAGES = ('.wic', '.wic.gz', '.wic.xz', '.wic.zst', '.img', '.img.gz', '.img.xz', '.img.zst', '.iso')
-KEEP = 20
+KEEP = 7
 
 
 def rank(name):

@@ -67,19 +67,19 @@ def s3():
         yield client
 
 
-def test_latest_twenty_numeric_order_and_noop(s3):
+def test_latest_seven_numeric_order_and_noop(s3):
     source = Source(range(990, 1015))
     result = mirror(source, s3, True)
-    assert [b['name'] for b in result['builds']] == [name(n) for n in range(1014, 994, -1)]
-    assert len(source.downloads) == 20
+    assert [b['name'] for b in result['builds']] == [name(n) for n in range(1014, 1007, -1)]
+    assert len(source.downloads) == 7
     version = s3.head_object(Bucket=m.BUCKET, Key=m.PREFIX + 'index.json')['VersionId']
     mirror(source, s3, True)
-    assert len(source.downloads) == 20
+    assert len(source.downloads) == 7
     assert s3.head_object(Bucket=m.BUCKET, Key=m.PREFIX + 'index.json')['VersionId'] == version
 
 
 def test_retention_deletes_versions_markers_and_partial_builds_only(s3):
-    mirror(Source(range(1, 21)), s3, True)
+    mirror(Source(range(1, 8)), s3, True)
     old_key = m.PREFIX + name(1) + '/image.wic.gz'
     s3.put_object(Bucket=m.BUCKET, Key=old_key, Body=b'obsolete')
     s3.delete_object(Bucket=m.BUCKET, Key=old_key)
@@ -88,8 +88,8 @@ def test_retention_deletes_versions_markers_and_partial_builds_only(s3):
     protected = [m.PREFIX + '2.0.0_daily_develop_B1/image.wic', 'sdk/keep', m.PREFIX + 'notes.txt']
     for key in protected:
         s3.put_object(Bucket=m.BUCKET, Key=key, Body=b'keep')
-    result = mirror(Source(range(2, 22)), s3, True)
-    assert len(result['builds']) == 20
+    result = mirror(Source(range(2, 9)), s3, True)
+    assert len(result['builds']) == 7
     versions = s3.list_object_versions(Bucket=m.BUCKET)
     keys = {o['Key'] for o in versions.get('Versions', []) + versions.get('DeleteMarkers', [])}
     assert old_key not in keys and partial not in keys
@@ -97,9 +97,9 @@ def test_retention_deletes_versions_markers_and_partial_builds_only(s3):
 
 
 def test_failed_upload_preserves_index_and_old_builds(s3):
-    mirror(Source(range(1, 21)), s3, True)
+    mirror(Source(range(1, 8)), s3, True)
     before = m.read_json(s3, m.PREFIX + 'index.json')
-    source = Source(range(2, 22))
+    source = Source(range(2, 9))
     source.fail = True
     with pytest.raises(ValueError, match='Interrupted'):
         mirror(source, s3, True)
@@ -168,7 +168,7 @@ def test_retention_reports_partial_delete_errors():
 
 
 def test_failed_index_publication_never_prunes(s3, monkeypatch):
-    mirror(Source(range(1, 21)), s3, True)
+    mirror(Source(range(1, 8)), s3, True)
     original = m.put_json
     def put(client, key, data):
         if key.endswith('/index.json'):
@@ -176,9 +176,9 @@ def test_failed_index_publication_never_prunes(s3, monkeypatch):
         original(client, key, data)
     monkeypatch.setattr(m, 'put_json', put)
     with pytest.raises(RuntimeError, match='Index write failed'):
-        mirror(Source(range(2, 22)), s3, True)
+        mirror(Source(range(2, 9)), s3, True)
     assert name(1) in m.existing_builds(s3)
-    assert len(m.read_json(s3, m.PREFIX + 'index.json')['builds']) == 20
+    assert len(m.read_json(s3, m.PREFIX + 'index.json')['builds']) == 7
 
 
 def test_workflow_runs_image_phase_on_same_runner_and_publish_gate():
@@ -246,11 +246,11 @@ def test_partial_inventory_must_stabilize_across_runs(s3, tmp_path):
 
 
 def test_pending_new_build_does_not_evict_completed_builds(s3, tmp_path):
-    mirror(Source(range(1, 21)), s3, True)
-    result = mirror(Source(range(1, 22)), s3, True, readiness=m.BuildReadiness(tmp_path))
-    assert [b['name'] for b in result['builds']] == [name(n) for n in range(20, 0, -1)]
+    mirror(Source(range(1, 8)), s3, True)
+    result = mirror(Source(range(1, 9)), s3, True, readiness=m.BuildReadiness(tmp_path))
+    assert [b['name'] for b in result['builds']] == [name(n) for n in range(7, 0, -1)]
     assert name(1) in m.existing_builds(s3)
-    assert name(21) not in m.existing_builds(s3)
+    assert name(8) not in m.existing_builds(s3)
 
 
 def test_listing_changed_during_transfer_does_not_publish_manifest_or_index(s3, tmp_path):
@@ -431,3 +431,20 @@ def test_unknown_timestamp_cannot_bypass_another_files_future_timestamp(tmp_path
     assert not readiness.observe(name(1), files)
     now[0] = 3600
     assert not readiness.observe(name(1), files)
+
+
+def test_reducing_retention_reuses_latest_seven_and_removes_old_versions(s3, monkeypatch):
+    source = Source(range(1, 21))
+    with monkeypatch.context() as previous_policy:
+        previous_policy.setattr(m, 'KEEP', 20)
+        mirror(source, s3, True)
+    source.downloads.clear()
+    result = mirror(source, s3, True)
+    assert result['retention_count'] == 7
+    assert [build['name'] for build in result['builds']] == [name(n) for n in range(20, 13, -1)]
+    assert source.downloads == []
+    versions = s3.list_object_versions(Bucket=m.BUCKET, Prefix=m.PREFIX)
+    for obj in versions.get('Versions', []) + versions.get('DeleteMarkers', []):
+        build = obj['Key'][len(m.PREFIX):].split('/')[0]
+        if m.BUILD.fullmatch(build):
+            assert m.rank(build)[0] >= 14
