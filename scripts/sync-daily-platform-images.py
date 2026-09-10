@@ -315,8 +315,8 @@ def main():
     parser.add_argument('--work-root', required=True, help='Persistent inventory observations and download workspace')
     parser.add_argument('--report', type=Path, help='Published image versions for notifications')
     args = parser.parse_args()
-    import boto3
-    mirror(Artifactory(), boto3.client('s3'), args.publish, args.work_root, args.report)
+    from mirror_aws import s3_client
+    mirror(Artifactory(), s3_client(), args.publish, args.work_root, args.report)
 
 
 if __name__ == '__main__':

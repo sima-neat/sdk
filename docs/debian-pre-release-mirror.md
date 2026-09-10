@@ -260,9 +260,15 @@ Downloads use disk space for one artifact at a time beneath
 `DEBIAN_MIRROR_WORK_ROOT`, with a 1 GiB reserve. Each download must match the
 source size and SHA256 before upload. Verified S3 objects are reused on retries;
 completed builds have a `manifest.json`. Published build contents are immutable.
-The workflow refreshes its AWS session before the image phase; a transfer that
-outlasts the role session fails and resumes from completed objects on the next
-run. The initial 7-build backfill may require multiple runs.
+The image client uses refreshable GitHub OIDC credentials for the entire phase.
+Before its one-hour STS session expires, Botocore requests a fresh GitHub identity
+token and assumes the same publisher role again, including between multipart
+upload requests. Static credentials exported by the workflow are not used by the
+image client. The existing role duration and IAM permissions remain unchanged.
+OIDC renewal requires the job's existing `id-token: write` permission. Outside
+GitHub Actions, the script uses the normal Boto3 credential provider chain.
+If renewal fails, the job reports an error; completed S3 files remain reusable
+on the next run. The job's 720-minute timeout still bounds the whole workflow.
 
 Without `publish`, the image step previews source metadata and selected builds;
 it does not download image bodies, write S3, or delete objects. With `publish`,
