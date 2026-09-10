@@ -574,11 +574,41 @@ def test_github_run_query_is_time_bounded() -> None:
     assert calls == [
         [
             "--paginate",
-            "--slurp",
             "repos/sima-neat/sdk/actions/workflows/sync.yml/runs?"
             "status=completed&created=%3E%3D2026-08-09T02%3A10%3A00Z&per_page=100",
         ]
     ]
+
+
+def test_github_pagination_supports_legacy_cli() -> None:
+    source = collector.GithubSource("sima-neat/sdk", "sync.yml")
+    original_run = collector.subprocess.run
+
+    def fake_run(arguments, **kwargs):
+        assert "--paginate" in arguments
+        assert "--slurp" not in arguments
+        return collector.subprocess.CompletedProcess(
+            arguments, 0,
+            ' {"workflow_runs": [{"id": 1}]}\n\n'
+            '{"workflow_runs": [{"id": 2}]}  \n', "",
+        )
+
+    try:
+        collector.subprocess.run = fake_run
+        assert source.list_runs(collector.parse_utc("2026-08-09T02:10:00Z")) == [
+            {"id": 1}, {"id": 2},
+        ]
+        collector.subprocess.run = lambda *a, **kw: collector.subprocess.CompletedProcess(
+            a[0], 0, '{"workflow_runs": []}\ninvalid', "",
+        )
+        try:
+            source.list_runs(collector.parse_utc("2026-08-09T02:10:00Z"))
+        except json.JSONDecodeError:
+            pass
+        else:
+            raise AssertionError("malformed pagination output was silently accepted")
+    finally:
+        collector.subprocess.run = original_run
 
 
 class FakeResponse:
@@ -640,6 +670,7 @@ def main() -> int:
     test_failed_run_after_publication_is_included()
     test_expired_replay_is_rejected()
     test_github_run_query_is_time_bounded()
+    test_github_pagination_supports_legacy_cli()
     test_slack_validation_and_dry_run()
     print("Debian mirror summary tests passed")
     return 0
