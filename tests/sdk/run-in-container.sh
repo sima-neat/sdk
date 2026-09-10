@@ -134,6 +134,31 @@ test_sysroot_overlay_representative() {
   test -e "${overlay_sysroot}/usr/include/asm-generic/errno.h"
 }
 
+test_daily_development_sysroot() {
+  local source="${WORK_DIR}/daily-development.cpp"
+  local binary="${WORK_DIR}/daily-development"
+  local flags
+  test -e "${SYSROOT}/usr/include/python3.13/Python.h"
+  test -e "${SYSROOT}/usr/include/httplib.h"
+  test -e "${SYSROOT}/usr/include/asm-generic/errno.h"
+  cat > "${source}" <<'EOF'
+#include <gst/gst.h>
+#include <fmt/format.h>
+#include <spdlog/spdlog.h>
+int main(int argc, char **argv) {
+  gst_init(&argc, &argv);
+  spdlog::info("{}", fmt::format("Debian {} sysroot", 13));
+  return 0;
+}
+EOF
+  flags="$(pkg-config --cflags --libs gstreamer-1.0 fmt spdlog)"
+  # pkg-config emits a shell-separated compiler argument list.
+  # shellcheck disable=SC2086
+  "${CXX:-aarch64-linux-gnu-g++}" --sysroot="${SYSROOT}" \
+    "${source}" $flags -o "${binary}"
+  file "${binary}" | grep -Eq 'aarch64|ARM aarch64|ARM64'
+}
+
 test_internals_representative() {
   local work="${REPRESENTATIVE_WORK}/internals"
 
@@ -283,6 +308,9 @@ test_platform_cross_profile() {
     release)
       [[ "${platform_version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]
       ;;
+    daily)
+      [[ "${platform_version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+~git[0-9]{12}[.][0-9a-f]+-[0-9]+$ ]]
+      ;;
     pre-release)
       [[ "${platform_version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+~pre[0-9]+$ ]]
       ;;
@@ -305,7 +333,11 @@ cp -a "${REPRESENTATIVE_SRC}/." "${REPRESENTATIVE_WORK}/"
 if [[ -r "${SDK_RELEASE_FILE}" ]] && [[ "$(sdk_release_value "SDK Profile")" == "platform-cross" ]]; then
   run_test "Core-less SDK profile" test_platform_cross_profile
   run_test "Modalix cross toolchain" test_modalix_cross_toolchain
-  run_test "Representative sysroot overlay install" test_sysroot_overlay_representative
+  if [[ "$(sdk_release_value "Platform Channel")" == daily ]]; then
+    run_test "Debian 13 development sysroot" test_daily_development_sysroot
+  else
+    run_test "Representative sysroot overlay install" test_sysroot_overlay_representative
+  fi
   printf '\nCore-less SDK smoke tests passed.\n'
   exit 0
 fi
