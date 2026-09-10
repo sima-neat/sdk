@@ -11,15 +11,12 @@ CONTEXT_DIR="${CONTEXT_DIR:-${SCRIPT_DIR}}"
 IMAGE_NAME="${IMAGE_NAME:-sdk}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 MINIMAL_IMAGE="${MINIMAL_IMAGE:-0}"
+SDK_PKG_LIST="${SDK_PKG_LIST:-}"
 SDK_BASE_IMAGE="${SDK_BASE_IMAGE:-ubuntu:24.04}"
 DOCKER_PLATFORM="${DOCKER_PLATFORM:-}"
-BASE_SDK_VERSION="${BASE_SDK_VERSION:-2.1.3}"
-SDK_APT_CHANNEL="${SDK_APT_CHANNEL:-release}"
-if [[ "${SDK_APT_CHANNEL}" == daily ]]; then
-  SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE:-debian:trixie}"
-else
-  SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE:-debian:bookworm}"
-fi
+BASE_SDK_VERSION="${BASE_SDK_VERSION:-3.0.0}"
+SDK_APT_CHANNEL="${SDK_APT_CHANNEL:-daily}"
+SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE:-debian:trixie}"
 REQUESTED_PRE_RELEASE_BASE="${REQUESTED_PRE_RELEASE_BASE:-}"
 NEAT_BRANCH="${NEAT_BRANCH:-main}"
 NEAT_VERSION="${NEAT_VERSION:-latest}"
@@ -132,6 +129,15 @@ fi
 if [[ ! -f "${DOCKERFILE}" ]]; then
   echo "Dockerfile not found: ${DOCKERFILE}" >&2
   exit 1
+fi
+
+if [[ "${SDK_APT_CHANNEL}" == daily && "${BASE_SDK_VERSION}" != *~git* ]]; then
+  platform_config="$(PRE_RELEASE_BASE="${BASE_SDK_VERSION}" \
+    STABLE_BASE_SDK_VERSION="${BASE_SDK_VERSION}" \
+    "${SCRIPT_DIR}/scripts/resolve-platform-config.sh")"
+  REQUESTED_PRE_RELEASE_BASE="${BASE_SDK_VERSION}"
+  BASE_SDK_VERSION="$(printf '%s\n' "${platform_config}" | sed -n 's/^base_sdk_version=//p')"
+  [[ -n "${BASE_SDK_VERSION}" ]] || { echo "Platform version resolution failed" >&2; exit 1; }
 fi
 
 if [[ "${SIMA_CLI_REF}" == *:* ]]; then
@@ -254,6 +260,7 @@ if docker buildx version >/dev/null 2>&1; then
   buildx_cmd=(
     docker buildx build
     --platform "${docker_platform}"
+    --build-arg SDK_PKG_LIST="${SDK_PKG_LIST}"
     --build-arg MINIMAL_IMAGE="${MINIMAL_IMAGE}"
     --build-arg SDK_BASE_IMAGE="${SDK_BASE_IMAGE}"
     --build-arg SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE}"
@@ -318,6 +325,7 @@ fi
 build_cmd=(
   docker build
   --platform "${docker_platform}"
+  --build-arg SDK_PKG_LIST="${SDK_PKG_LIST}"
   --build-arg MINIMAL_IMAGE="${MINIMAL_IMAGE}"
   --build-arg SDK_BASE_IMAGE="${SDK_BASE_IMAGE}"
   --build-arg SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE}"

@@ -40,7 +40,7 @@ jobs:
       - name: Resolve stable or pre-release platform version
         id: resolve
         env:
-          PRE_RELEASE_BASE: ${{ inputs.pre_release_base || (github.ref_name == '3.0.0-prep' && '3.0.0') || vars.PRE_RELEASE_BASE }}
+          PRE_RELEASE_BASE: ${{ inputs.pre_release_base || '3.0.0' }}
         run: |
           set -euo pipefail
           scripts/resolve-platform-config.sh | tee "${RUNNER_TEMP}/platform-config.env"

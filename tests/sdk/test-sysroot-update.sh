@@ -20,15 +20,15 @@ trap 'rm -rf "${tmpdir}"' EXIT
 cat > "${tmpdir}/sdk-release" <<'EOF'
 SDK Release = develop-test
 SDK Profile = platform-cross
-Platform Version = 2.1.3~pre4460
-Platform Base = 2.1.3
+Platform Version = 3.0.0~pre4460
+Platform Base = 3.0.0
 Platform Channel = pre-release
 Platform Repository = https://debian.neat.sima.ai/pre-release
 EOF
 
 cat > "${tmpdir}/Packages" <<'EOF'
 Package: simaai-palette-modalix
-Version: 2.1.3~pre4593
+Version: 3.0.0~pre4593
 Architecture: arm64
 
 Package: simaai-palette-modalix
@@ -36,15 +36,15 @@ Version: 2.2.0~pre9000
 Architecture: arm64
 
 Package: simaai-palette-modalix
-Version: 2.1.3~pre4617
+Version: 3.0.0~pre4617
 Architecture: arm64
 
 Package: simaai-palette-modalix
-Version: 2.1.3
+Version: 3.0.0
 Architecture: arm64
 
 Package: simaai-palette-modalix
-Version: 2.1.3~pre4617
+Version: 3.0.0~pre4617
 Architecture: arm64
 EOF
 
@@ -129,7 +129,7 @@ mkdir -p "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-packages"
 cat > "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-packages/simaai-palette-modalix_arm64.manifest" <<'EOF'
 Package: simaai-palette-modalix
 Architecture: arm64
-Version: 2.1.3~pre4460
+Version: 3.0.0~pre4460
 
 usr/lib/aarch64-linux-gnu/old-file.txt
 EOF
@@ -158,10 +158,10 @@ grep -Fq 'interactive revision selection requires a TTY' "${tmpdir}/err" || \
 if run_sysroot update 2.2.0~pre9000 >"${tmpdir}/out" 2>"${tmpdir}/err"; then
   fail "cross-base update succeeded"
 fi
-grep -Fq 'SDK Platform Base is 2.1.3' "${tmpdir}/err" || \
+grep -Fq 'SDK Platform Base is 3.0.0' "${tmpdir}/err" || \
   fail "cross-base rejection was unclear"
 
-if run_sysroot update 2.1.3~pre9999 >"${tmpdir}/out" 2>"${tmpdir}/err"; then
+if run_sysroot update 3.0.0~pre9999 >"${tmpdir}/out" 2>"${tmpdir}/err"; then
   fail "missing pre-release revision succeeded"
 fi
 grep -Fq 'is not available' "${tmpdir}/err" || fail "missing revision rejection was unclear"
@@ -169,19 +169,19 @@ grep -Fq 'is not available' "${tmpdir}/err" || fail "missing revision rejection 
 dry_run="$(
   env "${common_env[@]}" \
     SYSROOT_UPDATE_APT_CANDIDATE_TEST="${ROOT_DIR}/tests/sdk/test-sysroot-apt-candidate.py" \
-    "${SYSROOT_COMMAND}" update 2.1.3~pre4593 --dry-run
+    "${SYSROOT_COMMAND}" update 3.0.0~pre4593 --dry-run
 )"
-grep -Fq 'Dry run complete: 2.1.3~pre4593 resolved and validated' <<< "${dry_run}" || \
+grep -Fq 'Dry run complete: 3.0.0~pre4593 resolved and validated' <<< "${dry_run}" || \
   fail "exact dry run did not validate the selected revision"
 [[ ! -e "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay" ]] || \
   fail "dry run created overlay metadata"
-grep -Fxq $'2.1.3~pre4593\t1\t4593' "${tmpdir}/setup.log" || \
+grep -Fxq $'3.0.0~pre4593\t1\t4593' "${tmpdir}/setup.log" || \
   fail "exact dry run did not constrain dependencies to the selected build cohort"
 
 latest_dry_run="$(run_sysroot update --latest --yes --dry-run)"
-grep -Fq 'Dry run complete: 2.1.3~pre4617 resolved and validated' <<< "${latest_dry_run}" || \
+grep -Fq 'Dry run complete: 3.0.0~pre4617 resolved and validated' <<< "${latest_dry_run}" || \
   fail "latest resolution did not select the newest eligible revision"
-grep -Fxq $'2.1.3~pre4617\t1\t4617' "${tmpdir}/setup.log" || \
+grep -Fxq $'3.0.0~pre4617\t1\t4617' "${tmpdir}/setup.log" || \
   fail "latest dry run did not constrain dependencies to the selected build cohort"
 
 # A fresh SDK image has an image inventory but no manifests created by
@@ -193,16 +193,16 @@ printf 'base-sdk-package\tarm64\t1.0.0\t/usr/lib\n' > \
   "${fresh_sysroot}/var/lib/sima-sdk/sysroot-packages.tsv"
 fresh_update_output="$(
   env "${common_env[@]}" SYSROOT="${fresh_sysroot}" \
-    "${SYSROOT_COMMAND}" update 2.1.3~pre4593
+    "${SYSROOT_COMMAND}" update 3.0.0~pre4593
 )"
-grep -Fq 'Sysroot overlay is active at 2.1.3~pre4593' <<< "${fresh_update_output}" || \
+grep -Fq 'Sysroot overlay is active at 3.0.0~pre4593' <<< "${fresh_update_output}" || \
   fail "fresh SDK update without tracked manifests did not activate the overlay"
 grep -Fxq 'Overlay State = active' \
   "${fresh_sysroot}/var/lib/sima-sdk/sysroot-overlay" || \
   fail "fresh SDK update was left incomplete"
 
 if env "${common_env[@]}" SYSROOT_UPDATE_TEST_FAIL=1 \
-  "${SYSROOT_COMMAND}" update 2.1.3~pre4593 >"${tmpdir}/out" 2>"${tmpdir}/err"; then
+  "${SYSROOT_COMMAND}" update 3.0.0~pre4593 >"${tmpdir}/out" 2>"${tmpdir}/err"; then
   fail "failed platform setup was reported as successful"
 fi
 failed_status="$(run_sysroot status)"
@@ -217,38 +217,38 @@ fi
 grep -Fq 'sysroot overlay state is incomplete' "${tmpdir}/err" || \
   fail "package install did not explain the incomplete overlay rejection"
 
-update_output="$(run_sysroot update 2.1.3~pre4617)"
-grep -Fq 'Sysroot overlay is active at 2.1.3~pre4617' <<< "${update_output}" || \
+update_output="$(run_sysroot update 3.0.0~pre4617)"
+grep -Fq 'Sysroot overlay is active at 3.0.0~pre4617' <<< "${update_output}" || \
   fail "exact update did not activate the overlay"
-grep -Fxq '2.1.3~pre4617' "${tmpdir}/sysroot/usr/lib/aarch64-linux-gnu/sysroot-update-test.txt" || \
+grep -Fxq '3.0.0~pre4617' "${tmpdir}/sysroot/usr/lib/aarch64-linux-gnu/sysroot-update-test.txt" || \
   fail "platform setup did not update the sysroot"
 [[ "$(stat -c '%a' "${tmpdir}/sysroot/usr/include/simaai")" == "755" ]] || \
   fail "update left an extracted sysroot directory inaccessible to non-root users"
 [[ "$(stat -c '%a' "${tmpdir}/sysroot/usr/include/simaai/stdc-predef.h")" == "644" ]] || \
   fail "update left an extracted sysroot file unreadable to non-root users"
-grep -Fxq 'Platform Revision = 2.1.3~pre4617' "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay" || \
+grep -Fxq 'Platform Revision = 3.0.0~pre4617' "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay" || \
   fail "overlay revision was not recorded"
-awk -F '\t' '$1 == "simaai-palette-modalix" && $2 == "arm64" && $3 == "2.1.3~pre4617" && $4 == "/usr/lib/aarch64-linux-gnu" { found = 1 } END { exit !found }' \
+awk -F '\t' '$1 == "simaai-palette-modalix" && $2 == "arm64" && $3 == "3.0.0~pre4617" && $4 == "/usr/lib/aarch64-linux-gnu" { found = 1 } END { exit !found }' \
   "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-packages.tsv" || \
   fail "package inventory was not recorded"
 updated_list="$(run_sysroot list)"
-grep -Eq '^simaai-palette-modalix[[:space:]]+arm64[[:space:]]+2\.1\.3~pre4617[[:space:]]+/usr/lib/aarch64-linux-gnu$' \
+grep -Eq '^simaai-palette-modalix[[:space:]]+arm64[[:space:]]+3\.0\.0~pre4617[[:space:]]+/usr/lib/aarch64-linux-gnu$' \
   <<< "${updated_list}" || \
   fail "list did not report the updated full package inventory"
 grep -Eq '^manual-package[[:space:]]+arm64[[:space:]]+9\.8\.7[[:space:]]+/opt/manual-package$' \
   <<< "${updated_list}" || \
   fail "platform update dropped a manually installed package from the inventory"
-grep -Fxq 'Version: 2.1.3~pre4617' \
+grep -Fxq 'Version: 3.0.0~pre4617' \
   "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-packages/simaai-palette-modalix_arm64.manifest" || \
   fail "update did not refresh an existing tracked package manifest"
-grep -Fxq $'2.1.3~pre4617\t0\t4617' "${tmpdir}/setup.log" || \
+grep -Fxq $'3.0.0~pre4617\t0\t4617' "${tmpdir}/setup.log" || \
   fail "actual update did not constrain dependencies to the selected build cohort"
 mkdir -p "${tmpdir}/bin"
 cat > "${tmpdir}/fake-installer" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 [[ "${SDK_APT_CHANNEL:-}" == "pre-release" ]]
-grep -Fq 'Pin: version 2.1.3~pre4617' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
+grep -Fq 'Pin: version 3.0.0~pre4617' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
 [[ "${2:-}" == "libopencv-dnn4:arm64" ]]
 printf 'overlay-selection-ok\n' > "${SYSROOT_UPDATE_INSTALL_TEST_LOG:?}"
 EOF
@@ -284,7 +284,7 @@ if [[ "${SIMA_EXPECT_UNPRIVILEGED_DRY_RUN:-0}" == "1" ]]; then
 fi
 grep -Fq 'deb [arch=arm64 trusted=yes] https://debian.neat.sima.ai/pre-release bookworm non-free' \
   "${source_file}"
-grep -Fq 'Pin: version 2.1.3~pre4617' "${preferences_file}"
+grep -Fq 'Pin: version 3.0.0~pre4617' "${preferences_file}"
 for origin in \
   debian.neat.sima.ai \
   repo.sima.ai \
@@ -339,11 +339,11 @@ incomplete_prompt_output="$(
     2>/dev/null
 )"
 mv "${tmpdir}/active-overlay" "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay"
-grep -Fq 'neat-sdk-test-overlay-incomplete-2-1-3-pre4617' <<< "${incomplete_prompt_output}" || \
+grep -Fq 'neat-sdk-test-overlay-incomplete-3-0-0-pre4617' <<< "${incomplete_prompt_output}" || \
   fail "interactive prompt mislabeled an incomplete overlay as active"
 
 setup_count_before="$(wc -l < "${tmpdir}/setup.log" | tr -d ' ')"
-idempotent_output="$(run_sysroot update 2.1.3~pre4617)"
+idempotent_output="$(run_sysroot update 3.0.0~pre4617)"
 setup_count_after="$(wc -l < "${tmpdir}/setup.log" | tr -d ' ')"
 grep -Fq 'no changes are required' <<< "${idempotent_output}" || \
   fail "same-revision update was not reported as idempotent"
@@ -353,7 +353,7 @@ grep -Fq 'no changes are required' <<< "${idempotent_output}" || \
 overlay_status="$(run_sysroot status)"
 grep -Fq 'Sysroot overlay state:    active' <<< "${overlay_status}" || \
   fail "active overlay state was not reported"
-grep -Fq 'Sysroot overlay revision: 2.1.3~pre4617' <<< "${overlay_status}" || \
+grep -Fq 'Sysroot overlay revision: 3.0.0~pre4617' <<< "${overlay_status}" || \
   fail "active overlay revision was not reported"
 
 prompt_output="$(
@@ -363,7 +363,7 @@ prompt_output="$(
     "source '${ROOT_DIR}/config/profile.d/neat-sdk-prompt.sh'; printf '%s\\n' \"\${SDK_PROMPT_HOSTNAME}\"" \
     2>/dev/null
 )"
-grep -Fq 'neat-sdk-test-overlay-2-1-3-pre4617' <<< "${prompt_output}" || \
+grep -Fq 'neat-sdk-test-overlay-3-0-0-pre4617' <<< "${prompt_output}" || \
   fail "interactive prompt did not expose the active overlay"
 
 [[ ! -e "${tmpdir}/apt/sources/pre-release.list" ]] || fail "temporary APT source was not cleaned up"

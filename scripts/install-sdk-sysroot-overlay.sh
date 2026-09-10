@@ -7,7 +7,7 @@ if [[ "${MINIMAL_IMAGE:-0}" == "1" ]]; then
   exit 0
 fi
 
-if [[ "${SDK_APT_CHANNEL:-release}" == daily ]]; then
+if [[ "${SDK_APT_CHANNEL:-daily}" == daily ]]; then
   # setup-sdk-sysroot.sh already resolved all development dependencies against
   # Agate/Trixie. Do not overwrite them with the Bookworm overlay or UAPI pin.
   /usr/local/bin/install-sysroot-overlay.sh /opt/toolchain/aarch64/modalix --finalize-only

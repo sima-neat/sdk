@@ -15,28 +15,28 @@ trap 'rm -rf "${tmpdir}"' EXIT
 
 SDK_RELEASE_FILE="${tmpdir}/platform-release" \
 SDK_RELEASE_REF=develop-abcdef1 \
-BASE_SDK_VERSION=2.1.3~pre4460 \
+BASE_SDK_VERSION=3.0.0~pre4460 \
 SDK_APT_CHANNEL=pre-release \
-REQUESTED_PRE_RELEASE_BASE=2.1.3 \
+REQUESTED_PRE_RELEASE_BASE=3.0.0 \
 SDK_GIT_BRANCH=develop \
 SDK_GIT_HASH=abcdef1 \
   "${WRITER}"
 
 grep -Fxq 'SDK Profile = platform-cross' "${tmpdir}/platform-release" || fail "profile missing"
-grep -Fxq 'Platform Version = 2.1.3~pre4460' "${tmpdir}/platform-release" || fail "exact platform version missing"
-grep -Fxq 'Platform Base = 2.1.3' "${tmpdir}/platform-release" || fail "platform base missing"
+grep -Fxq 'Platform Version = 3.0.0~pre4460' "${tmpdir}/platform-release" || fail "exact platform version missing"
+grep -Fxq 'Platform Base = 3.0.0' "${tmpdir}/platform-release" || fail "platform base missing"
 grep -Fxq 'Platform Channel = pre-release' "${tmpdir}/platform-release" || fail "channel missing"
-grep -Fxq 'Requested Pre-release Base = 2.1.3' "${tmpdir}/platform-release" || fail "requested selector missing"
+grep -Fxq 'Requested Pre-release Base = 3.0.0' "${tmpdir}/platform-release" || fail "requested selector missing"
 grep -Fxq 'Neat Core = not bundled' "${tmpdir}/platform-release" || fail "Core status missing"
 
 SDK_RELEASE_FILE="${tmpdir}/stable-release" \
-SDK_RELEASE_REF=v2.1.3 \
-BASE_SDK_VERSION=2.1.3 \
+SDK_RELEASE_REF=v3.0.0 \
+BASE_SDK_VERSION=3.0.0 \
 SDK_APT_CHANNEL=release \
   "${WRITER}"
 
 grep -Fxq 'Neat Core = bundled' "${tmpdir}/stable-release" || fail "stable Core status changed"
-grep -Fxq 'SDK Version = 2.1.3_Palette_SDK_neat_v2.1.3' "${tmpdir}/stable-release" || fail "tag release format changed"
+grep -Fxq 'SDK Version = 3.0.0_Palette_SDK_neat_v3.0.0' "${tmpdir}/stable-release" || fail "tag release format changed"
 
 cat > "${tmpdir}/core-status" <<'EOF'
 Neat Core = not bundled
@@ -47,7 +47,7 @@ EOF
 SDK_RELEASE_FILE="${tmpdir}/stable-without-core-release" \
 NEAT_CORE_STATUS_FILE="${tmpdir}/core-status" \
 SDK_RELEASE_REF=develop-abcdef1 \
-BASE_SDK_VERSION=2.1.3 \
+BASE_SDK_VERSION=3.0.0 \
 SDK_APT_CHANNEL=release \
   "${WRITER}"
 
@@ -68,3 +68,9 @@ grep -Fxq 'SDK Profile = platform-cross' "${tmpdir}/daily-release" || fail "dail
 grep -Fxq 'Neat Core = not bundled' "${tmpdir}/daily-release" || fail "daily unexpectedly bundles Core"
 
 echo "sdk release metadata tests passed"
+
+SDK_RELEASE_FILE="${tmpdir}/defaults" NEAT_CORE_STATUS_FILE="${tmpdir}/missing" \
+  env -u BASE_SDK_VERSION -u SDK_APT_CHANNEL "${WRITER}"
+grep -Fxq 'Platform Base = 3.0.0' "${tmpdir}/defaults"
+grep -Fxq 'Platform Channel = daily' "${tmpdir}/defaults"
+grep -Fxq 'Neat Core = not bundled' "${tmpdir}/defaults"

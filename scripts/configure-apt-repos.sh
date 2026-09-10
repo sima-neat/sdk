@@ -4,7 +4,7 @@ set -euo pipefail
 
 base_sdk_version="${1:?Usage: configure-apt-repos.sh BASE_SDK_VERSION [PATTERNS_FILE]}"
 patterns_file="${2:-/usr/local/share/sima-sdk/platform-package-patterns.txt}"
-sdk_apt_channel="${SDK_APT_CHANNEL:-release}"
+sdk_apt_channel="${SDK_APT_CHANNEL:-daily}"
 sdk_platform_repository="${SDK_PLATFORM_REPOSITORY:-}"
 sdk_apt_origin="${SDK_APT_ORIGIN:-}"
 sdk_fallback_repository=""

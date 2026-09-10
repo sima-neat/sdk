@@ -87,6 +87,17 @@ class DailySelectionTest(unittest.TestCase):
             for name in ("libblas.so", "liblapack.so", "libopenblas.so"):
                 self.assertEqual((libdir / name).read_text(), "target library")
 
+    def test_daily_sdk_rejects_legacy_mutations_before_apt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            metadata = Path(directory) / "sdk-release"
+            metadata.write_text("Platform Base = 3.0.0\nPlatform Channel = daily\n")
+            for command in (["update", "--latest", "--yes"], ["install", "libpgm-dev"]):
+                result = subprocess.run(["bash", str(ROOT / "scripts/sysroot.sh"), *command],
+                                        env={**os.environ, "SDK_RELEASE_FILE": str(metadata)},
+                                        capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("rebuild with BASE_SDK_VERSION and SDK_PKG_LIST", result.stderr)
+
     def test_wrapper_keeps_kernel_version_and_extra_packages_separate(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

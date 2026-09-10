@@ -7,7 +7,7 @@ if [[ ! "${toolchain_version}" =~ ^[0-9]+$ ]]; then
   echo "Invalid cross compiler major version: ${toolchain_version}" >&2
   exit 1
 fi
-if [[ "${SDK_APT_CHANNEL:-release}" == daily && "${toolchain_version}" -lt 14 ]]; then
+if [[ "${SDK_APT_CHANNEL:-daily}" == daily && "${toolchain_version}" -lt 14 ]]; then
   echo "The daily SDK requires GCC 14 or newer; use SDK_CROSS_TOOLCHAIN_IMAGE=debian:trixie." >&2
   exit 1
 fi

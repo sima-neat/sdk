@@ -14,7 +14,7 @@ FROM ${SDK_BASE_IMAGE}
 
 ARG SDK_PKG_LIST
 ARG BASE_SDK_VERSION=3.0.0
-ARG SDK_APT_CHANNEL=release
+ARG SDK_APT_CHANNEL=daily
 ARG REQUESTED_PRE_RELEASE_BASE=
 ARG MINIMAL_IMAGE=0
 ARG NEAT_BRANCH=main
@@ -24,7 +24,6 @@ ARG NEAT_INSIGHT_BRANCH=
 ARG NEAT_INSIGHT_VERSION=
 ARG OPENVSCODE_SERVER_VERSION=openvscode-server-v1.109.5
 ARG CODEX_CLI_VERSION=0.153.4
-ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libblkid-dev libbsd0 libcharls2 libcpp-httplib-dev libelf1 libexpat1 libffi-dev libffi8 libgdal32 libgfortran5 libglib2.0-0 libgomp1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev libjpeg62-turbo libjson-glib-dev liblapack-dev liblapack3 liblzma5 libmount-dev libopenblas-pthread-dev libopenblas0-pthread libopenjp2-7 libpng16-16 libpython3.11-dev libqt5gui5 libsepol-dev libspdlog-dev libssl3 libstdc++6 libsuperlu-dev libsuperlu5 libtiff6 liburcu-dev libwebp7 python3-dev python3.11-dev zlib1g"
 ENV SDK_PKG_LIST="\
 	libgrpc-dev,\
 	protobuf-compiler-grpc,\
@@ -148,10 +147,18 @@ RUN chmod 755 /usr/local/bin/pin-cross-toolchain.sh && \
     rm -f /tmp/cross-smoke.o /tmp/cross-smoke.c /tmp/cross-smoke.cpp /tmp/cross-smoke-cxx
 
 COPY config/platform-package-patterns.txt /usr/local/share/sima-sdk/platform-package-patterns.txt
+COPY scripts/resolve-platform-config.sh /usr/local/bin/resolve-platform-config.sh
 COPY scripts/configure-apt-repos.sh /usr/local/bin/configure-apt-repos.sh
 
-RUN chmod 755 /usr/local/bin/configure-apt-repos.sh && \
-    configure-apt-repos.sh "${BASE_SDK_VERSION}"
+ENV SDK_PLATFORM_VERSION_FILE=/usr/local/share/sima-sdk/platform-version
+RUN if [ "${SDK_APT_CHANNEL}" = daily ]; then \
+      PRE_RELEASE_BASE="${BASE_SDK_VERSION}" STABLE_BASE_SDK_VERSION="${BASE_SDK_VERSION}" \
+        bash /usr/local/bin/resolve-platform-config.sh > /tmp/platform-config && \
+      sed -n 's/^base_sdk_version=//p' /tmp/platform-config > "${SDK_PLATFORM_VERSION_FILE}"; \
+    else printf '%s\n' "${BASE_SDK_VERSION}" > "${SDK_PLATFORM_VERSION_FILE}"; fi && \
+    test -s "${SDK_PLATFORM_VERSION_FILE}" && \
+    chmod 755 /usr/local/bin/configure-apt-repos.sh && \
+    configure-apt-repos.sh "$(cat "${SDK_PLATFORM_VERSION_FILE}")"
 
 RUN mkdir -p /tmp/supervisor /var/log/supervisor && \
     mkdir -p /etc/supervisor/conf.available && \
@@ -186,7 +193,7 @@ RUN install-rustup.sh
 
 RUN --mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,sharing=locked \
     SYSROOT_UPDATE_DOWNLOAD_DIR=/var/cache/sima-sdk-debs \
-    setup-sdk-sysroot.sh "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}" && \
+    setup-sdk-sysroot.sh "$(cat "${SDK_PLATFORM_VERSION_FILE}")" "${SDK_PKG_LIST}" && \
     cp -a /opt/sdk-cross-toolchain/. / && \
     pin-cross-toolchain.sh && \
     aarch64-linux-gnu-gcc --version && \
@@ -213,7 +220,7 @@ RUN if [ "${SDK_APT_CHANNEL}" = daily ] && [ "${MINIMAL_IMAGE}" != 1 ]; then \
 # Linux host. Keep this build-time marker stable so dependency layers are not
 # invalidated by the branch/commit identity written into the final image.
 RUN printf 'Platform Version = %s\nSDK Version = %s_Palette_SDK\n' \
-      "${BASE_SDK_VERSION}" "${BASE_SDK_VERSION}" > /etc/sdk-release
+      "$(cat "${SDK_PLATFORM_VERSION_FILE}")" "$(cat "${SDK_PLATFORM_VERSION_FILE}")" > /etc/sdk-release
 
 ARG SIMA_CLI_REF
 ARG SIMA_CLI_VERSION
@@ -294,7 +301,8 @@ LABEL org.opencontainers.image.source="https://github.com/sima-neat/sdk" \
       org.opencontainers.image.version="${SDK_RELEASE_REF}"
 
 COPY scripts/write-sdk-release.sh /usr/local/bin/write-sdk-release.sh
-RUN chmod 755 /usr/local/bin/write-sdk-release.sh && write-sdk-release.sh
+RUN chmod 755 /usr/local/bin/write-sdk-release.sh && \
+    BASE_SDK_VERSION="$(cat "${SDK_PLATFORM_VERSION_FILE}")" write-sdk-release.sh
 
 # Expose required ports
 EXPOSE 9900 9999 10000 9000-9079 9100-9179 8081 8554

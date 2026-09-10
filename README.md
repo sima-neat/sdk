@@ -8,12 +8,13 @@
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-supported-E95420?logo=ubuntu&logoColor=white)
 ![Windows 11](https://img.shields.io/badge/Windows%2011-supported-0078D4?logo=windows&logoColor=white)
 ![macOS](https://img.shields.io/badge/macOS-supported-000000?logo=apple&logoColor=white)
-![eLxr Platform 2.1.3](https://img.shields.io/badge/eLxr%20Platform-2.1.3%20compatible-2E7D32)
+![eLxr Platform 3.0.0](https://img.shields.io/badge/eLxr%20Platform-3.0.0%20compatible-2E7D32)
 ![Modalix](https://img.shields.io/badge/Modalix-supported-4B5563)
 
 This repository packages the SiMa.ai Neat SDK as a Docker image for `x86_64` and `arm64` Linux hosts.
 
-The current Neat SDK image is compatible with the eLxr platform `2.1.3` release.
+This branch builds the platform-only SDK for eLxr 3.0.0 daily builds, with an
+Agate/Trixie ARM64 sysroot and GCC 14. Matching Neat Core packages are not yet bundled.
 
 The main user workflow is:
 

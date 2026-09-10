@@ -77,7 +77,7 @@ else
 fi
 
 if [[ "${selector_type}" == "floating" ]] && is_protected_ref; then
-  die "floating PRE_RELEASE_BASE=${pre_release_base} is not allowed for ${github_ref_type} ${github_ref_name}; use the stable channel or pin X.Y.Z~preN"
+  die "floating PRE_RELEASE_BASE=${pre_release_base} is not allowed for ${github_ref_type} ${github_ref_name}; pin an exact platform revision"
 fi
 
 channel=pre-release

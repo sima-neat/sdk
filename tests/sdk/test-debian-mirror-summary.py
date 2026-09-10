@@ -77,22 +77,22 @@ def build_fixture(root: Path) -> None:
     }
     second_changes = {
         "counts": {"added_files": 3, "removed_files": 1, "version_changes": 3},
-        "added": [package("foo", "1.1", "amd64"), package("simaai-palette-modalix", "2.1.3~pre4617", "arm64"), package("simaai-palette-modalix", "2.1.3~pre4617", "amd64")],
+        "added": [package("foo", "1.1", "amd64"), package("simaai-palette-modalix", "3.0.0~pre4617", "arm64"), package("simaai-palette-modalix", "3.0.0~pre4617", "amd64")],
         "removed": [package("obsolete", "0.9", "arm64")],
         "version_changes": [
             {"package": "foo", "architecture": "amd64", "previous_versions": ["1.0"], "current_versions": ["1.1"]},
-            {"package": "simaai-palette-modalix", "architecture": "arm64", "previous_versions": ["2.1.3~pre4593"], "current_versions": ["2.1.3~pre4617"]},
-            {"package": "simaai-palette-modalix", "architecture": "amd64", "previous_versions": ["2.1.3~pre4593"], "current_versions": ["2.1.3~pre4617"]},
+            {"package": "simaai-palette-modalix", "architecture": "arm64", "previous_versions": ["3.0.0~pre4593"], "current_versions": ["3.0.0~pre4617"]},
+            {"package": "simaai-palette-modalix", "architecture": "amd64", "previous_versions": ["3.0.0~pre4593"], "current_versions": ["3.0.0~pre4617"]},
         ],
     }
-    (root / "101.json").write_text(json.dumps(result(first, "2026-08-10T12:05:00Z", "2.1.3~pre4593", first_changes)), encoding="utf-8")
-    (root / "102.json").write_text(json.dumps(result(second, "2026-08-10T22:05:00Z", "2.1.3~pre4617", second_changes)), encoding="utf-8")
+    (root / "101.json").write_text(json.dumps(result(first, "2026-08-10T12:05:00Z", "3.0.0~pre4593", first_changes)), encoding="utf-8")
+    (root / "102.json").write_text(json.dumps(result(second, "2026-08-10T22:05:00Z", "3.0.0~pre4617", second_changes)), encoding="utf-8")
     (root / "105.json").write_text(
         json.dumps(
             result(
                 second,
                 "2026-08-10T22:15:00Z",
-                "2.1.3~pre4617",
+                "3.0.0~pre4617",
                 {
                     "counts": {"added_files": 0, "removed_files": 0, "version_changes": 0},
                     "added": [],
@@ -106,8 +106,8 @@ def build_fixture(root: Path) -> None:
 
 
 def test_version_ordering() -> None:
-    values = ["2.1.3~pre10", "2.1.3", "2.1.3~pre9", "1:1.0", "2.1.3~rc1"]
-    assert collector.sorted_versions(values) == ["2.1.3~pre9", "2.1.3~pre10", "2.1.3~rc1", "2.1.3", "1:1.0"]
+    values = ["3.0.0~pre10", "3.0.0", "3.0.0~pre9", "1:1.0", "3.0.0~rc1"]
+    assert collector.sorted_versions(values) == ["3.0.0~pre9", "3.0.0~pre10", "3.0.0~rc1", "3.0.0", "1:1.0"]
 
 
 def test_collection_and_fallback() -> None:
@@ -120,13 +120,13 @@ def test_collection_and_fallback() -> None:
         assert len(publications) == 2
         assert publications[-1]["_run"]["id"] == 102
         context = collector.build_context(publications, since, as_of)
-        assert context["platform"]["previous_version"] == "2.1.3~pre4593"
-        assert context["platform"]["current_version"] == "2.1.3~pre4617"
+        assert context["platform"]["previous_version"] == "3.0.0~pre4593"
+        assert context["platform"]["current_version"] == "3.0.0~pre4617"
         assert context["counts"] == {"package_transitions": 2, "added_package_groups": 2, "removed_package_groups": 1, "added_files": 4, "removed_files": 1}
         foo = next(item for item in context["package_transitions"] if item["package"] == "foo")
         assert foo["architectures"] == ["amd64", "arm64"]
         report = generator.fallback_report(context, 1000)
-        assert "2.1.3~pre4593" in report and "2.1.3~pre4617" in report
+        assert "3.0.0~pre4593" in report and "3.0.0~pre4617" in report
         assert "`foo`" in report and len(report) <= 1000
         empty_report = generator.fallback_report(collector.build_context([], since, as_of), 1000)
         assert "No mirror publications were found" in empty_report
@@ -135,7 +135,7 @@ def test_collection_and_fallback() -> None:
 def test_platform_summary_preserves_earliest_baseline() -> None:
     publications = []
     for index, (previous, current) in enumerate(
-        [(None, "2.1.3~pre4593"), ("2.1.3~pre4593", "2.1.3~pre4617"), ("2.1.3~pre4617", "2.1.3~pre4625")],
+        [(None, "3.0.0~pre4593"), ("3.0.0~pre4593", "3.0.0~pre4617"), ("3.0.0~pre4617", "3.0.0~pre4625")],
         start=1,
     ):
         changes = {"version_changes": []}
@@ -162,17 +162,17 @@ def test_platform_summary_preserves_earliest_baseline() -> None:
         publications.append(publication)
 
     summary = collector.platform_summary(publications)
-    assert summary["previous_version"] == "2.1.3~pre4593"
-    assert summary["current_version"] == "2.1.3~pre4625"
+    assert summary["previous_version"] == "3.0.0~pre4593"
+    assert summary["current_version"] == "3.0.0~pre4625"
 
 
 def test_collection_preserves_digest_rollback() -> None:
-    versions = ["2.1.3~pre4593", "2.1.3~pre4617", "2.1.3~pre4593"]
+    versions = ["3.0.0~pre4593", "3.0.0~pre4617", "3.0.0~pre4593"]
     digests = ["a" * 64, "b" * 64, "a" * 64]
     results = []
     runs = []
     for index, (digest, version) in enumerate(zip(digests, versions), start=1):
-        previous = versions[index - 2] if index > 1 else "2.1.3~pre4500"
+        previous = versions[index - 2] if index > 1 else "3.0.0~pre4500"
         timestamp = f"2026-08-10T0{index}:00:00Z"
         results.append(
             result(
@@ -218,10 +218,10 @@ def test_collection_preserves_digest_rollback() -> None:
         publications, as_of - collector.dt.timedelta(hours=24), as_of
     )
     assert context["publication_count"] == 3
-    assert context["platform"]["timeline"][-1]["version"] == "2.1.3~pre4593"
+    assert context["platform"]["timeline"][-1]["version"] == "3.0.0~pre4593"
     assert any(
-        item["previous_versions"] == ["2.1.3~pre4617"]
-        and item["current_versions"] == ["2.1.3~pre4593"]
+        item["previous_versions"] == ["3.0.0~pre4617"]
+        and item["current_versions"] == ["3.0.0~pre4593"]
         for item in context["package_transitions"]
     )
 
@@ -235,8 +235,8 @@ def test_collection_collapses_adjacent_changed_retry() -> None:
         "version_changes": [],
     }
     publications_by_run = {
-        401: result(digest, "2026-08-10T05:00:00Z", "2.1.3~pre4617", changes),
-        402: result(digest, "2026-08-10T05:10:00Z", "2.1.3~pre4617", changes),
+        401: result(digest, "2026-08-10T05:00:00Z", "3.0.0~pre4617", changes),
+        402: result(digest, "2026-08-10T05:10:00Z", "3.0.0~pre4617", changes),
     }
 
     class RetrySource:
@@ -274,7 +274,7 @@ def test_platform_summary_reports_anchor_removal() -> None:
         {
             "counts": {"removed_files": 1, "version_changes": 0},
             "added": [],
-            "removed": [package("simaai-palette-modalix", "2.1.3~pre4617", "arm64")],
+            "removed": [package("simaai-palette-modalix", "3.0.0~pre4617", "arm64")],
             "version_changes": [],
         },
     )
@@ -286,7 +286,7 @@ def test_platform_summary_reports_anchor_removal() -> None:
     }
 
     summary = collector.platform_summary([publication])
-    assert summary["previous_version"] == "2.1.3~pre4617"
+    assert summary["previous_version"] == "3.0.0~pre4617"
     assert summary["current_version"] is None
     assert summary["changed"] is True
     assert summary["timeline"][-1]["version"] is None
@@ -295,17 +295,17 @@ def test_platform_summary_reports_anchor_removal() -> None:
         collector.parse_utc("2026-08-10T00:00:00Z"),
         collector.parse_utc("2026-08-11T00:00:00Z"),
     )
-    assert "`2.1.3~pre4617` → removed" in generator.fallback_report(context, 1000)
+    assert "`3.0.0~pre4617` → removed" in generator.fallback_report(context, 1000)
 
 
 def test_platform_summary_reports_anchor_addition() -> None:
     publication = result(
         "e" * 64,
         "2026-08-10T04:00:00Z",
-        "2.1.3~pre4617",
+        "3.0.0~pre4617",
         {
             "counts": {"added_files": 1, "version_changes": 0},
-            "added": [package("simaai-palette-modalix", "2.1.3~pre4617", "arm64")],
+            "added": [package("simaai-palette-modalix", "3.0.0~pre4617", "arm64")],
             "removed": [],
             "version_changes": [],
         },
@@ -318,14 +318,14 @@ def test_platform_summary_reports_anchor_addition() -> None:
 
     summary = collector.platform_summary([publication])
     assert summary["previous_version"] is None
-    assert summary["current_version"] == "2.1.3~pre4617"
+    assert summary["current_version"] == "3.0.0~pre4617"
     assert summary["changed"] is True
     context = collector.build_context(
         [publication],
         collector.parse_utc("2026-08-10T00:00:00Z"),
         collector.parse_utc("2026-08-11T00:00:00Z"),
     )
-    assert "Platform: added `2.1.3~pre4617`" in generator.fallback_report(
+    assert "Platform: added `3.0.0~pre4617`" in generator.fallback_report(
         context, 1000
     )
 
@@ -346,8 +346,8 @@ def test_collection_uses_half_open_windows() -> None:
     lower = "2026-08-10T15:10:00Z"
     upper = "2026-08-11T15:10:00Z"
     publications_by_run = {
-        501: result("5" * 64, lower, "2.1.3~pre4617", {"counts": {}}),
-        502: result("6" * 64, upper, "2.1.3~pre4625", {"counts": {}}),
+        501: result("5" * 64, lower, "3.0.0~pre4617", {"counts": {}}),
+        502: result("6" * 64, upper, "3.0.0~pre4625", {"counts": {}}),
     }
 
     class BoundarySource:
@@ -375,7 +375,7 @@ def test_late_artifact_moves_publication_to_next_window() -> None:
     publication = result(
         "7" * 64,
         "2026-08-10T15:09:00Z",
-        "2.1.3~pre4617",
+        "3.0.0~pre4617",
         {"counts": {}, "added": [], "removed": [], "version_changes": []},
     )
 
@@ -417,8 +417,8 @@ def test_retry_is_deduplicated_across_window_boundary() -> None:
         "version_changes": [],
     }
     publications_by_run = {
-        701: result(digest, "2026-08-10T15:00:00Z", "2.1.3~pre4617", changes),
-        702: result(digest, "2026-08-10T15:15:00Z", "2.1.3~pre4617", changes),
+        701: result(digest, "2026-08-10T15:00:00Z", "3.0.0~pre4617", changes),
+        702: result(digest, "2026-08-10T15:15:00Z", "3.0.0~pre4617", changes),
     }
     completion_by_run = {
         701: "2026-08-10T15:09:00Z",
@@ -457,7 +457,7 @@ def test_failed_run_after_publication_is_included() -> None:
     published = result(
         "4" * 64,
         "2026-08-10T12:05:00Z",
-        "2.1.3~pre4617",
+        "3.0.0~pre4617",
         {"counts": {}, "added": [], "removed": [], "version_changes": []},
     )
 

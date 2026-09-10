@@ -42,7 +42,7 @@ Examples:
   ${program_name} list
   sudo ${program_name} remove libpgm-dev
   sudo ${program_name} update
-  sudo ${program_name} update 2.1.3~pre4617
+  ${program_name} status
   sudo ${program_name} update --latest --yes
   ${program_name} status
 EOF
@@ -990,6 +990,9 @@ cmd_status() {
 }
 
 cmd_update() {
+  if [[ "$(read_release_field "${SDK_RELEASE_FILE}" "Platform Channel" || true)" == daily ]]; then
+    die "For the 3.0 daily SDK, rebuild with BASE_SDK_VERSION and SDK_PKG_LIST to change the sysroot."
+  fi
   local platform_base image_revision current_revision current_state target_revision selection answer
   local explicit_revision=0 candidate_found=0 candidate
   local -a available_versions
@@ -1082,6 +1085,9 @@ EOF
 }
 
 cmd_install() {
+  if [[ "$(read_release_field "${SDK_RELEASE_FILE}" "Platform Channel" || true)" == daily ]]; then
+    die "For the 3.0 daily SDK, rebuild with BASE_SDK_VERSION and SDK_PKG_LIST to change the sysroot."
+  fi
   local -a resolved normalized
   local pkg resolved_pkg workdir i
 

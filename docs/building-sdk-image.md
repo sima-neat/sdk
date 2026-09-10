@@ -27,7 +27,7 @@ By default, this builds `sdk:latest`.
 Build with a custom image name and tag:
 
 ```bash
-./build.sh sdk 2.1.3
+./build.sh sdk 3.0.0
 ```
 
 By default, `build.sh` loads the completed native-architecture image into the local Docker
@@ -117,141 +117,38 @@ The `sima-cli` dependency is also selected by `deps/manifest.json`. Release refs
 resolves `latest.tag` before invoking Buildx and passes the resulting artifact commit into
 the Docker build, so a new branch artifact invalidates the cached installation layer.
 
-## Build Against Pre-release Platform Packages
+## Platform 3.0 package selection
 
-CI reads the repository variable `PRE_RELEASE_BASE`. A value such as `2.1.3`
-selects the highest Debian version matching `2.1.3~pre*`; a value such as
-`2.1.3~pre4460` pins that exact build. The workflow resolves the value once and
-passes the same immutable version to both architecture builds.
+`build.sh` defaults to platform `3.0.0`, the `daily` APT channel, and the
+`debian:trixie` GCC 14 toolchain. It resolves the floating platform base to an
+exact mirrored `3.0.0~gitTIMESTAMP.COMMIT-BUILD` revision before building.
+Dockerfile-only builds perform the same resolution and record the exact version.
+Local resolution requires `curl`, `gzip`, Python 3, and `dpkg`.
 
-For a manual workflow run, the optional **Platform selector** input overrides
-the repository variable. Leave it empty to use `PRE_RELEASE_BASE`, enter
-`X.Y.Z` to select the latest matching pre-release, or enter `X.Y.Z~preN` to pin
-that exact platform build.
+CI resolves the version once for both architectures. Use the workflow's platform
+selector to pin a specific daily revision. Floating selectors are rejected on
+`main`, `release-*`, and tags; use an exact revision for those refs.
 
-Floating selectors follow the mirror's `Release` metadata to its current
-Acquire-By-Hash package index. Exact `X.Y.Z~preN` values bypass latest-version
-selection but are still checked against that current index before the build.
+## Add packages or change the platform revision
 
-Pre-release images use the `platform-cross` profile. They contain the cross
-compiler and exact target sysroot but do not bundle Neat Core binaries or source
-checkouts. `/etc/sdk-release` records the requested selector, resolved platform
-version, repository, profile, and `Neat Core = not bundled`.
-
-The pre-release mirror is configured as an overlay on the official release
-repository. Exact platform-version pins select the requested pre-release
-packages, while SDK-pinned dependencies that are not duplicated in the
-pre-release mirror remain available from the release repository.
-
-Floating selectors are rejected on `main`, `release-*` branches, and tags.
-Those refs use the stable channel when `PRE_RELEASE_BASE` is unset and accept
-pre-release packages only when an exact `X.Y.Z~preN` version is explicitly
-pinned.
-
-## Add Sysroot Packages
-
-Inside a running SDK container, install additional ARM64 Debian packages into the sysroot with `sysroot`:
+For the 3.0 SDK, rebuild the image to change the platform revision or add target
+packages. For example:
 
 ```bash
-sudo sysroot install libzix-dev vxi-dev
+SDK_PKG_LIST=libpgm-dev ./build.sh sdk 3.0.0
 ```
 
-The command installs into `/opt/toolchain/aarch64/modalix` by default and appends `:arm64` to unqualified package names. You can also pass explicit package qualifiers:
-
-```bash
-sudo sysroot install libopencv-dnn406:arm64 libfoo-dev=1.2.3
-```
-
-For OpenCV CMake component names, `sysroot` can resolve names such as `opencv_dnn` to the matching Debian package when apt metadata contains a single match:
-
-```bash
-sudo sysroot install opencv_dnn
-```
-
-Packages installed through `sysroot install` are tracked in lightweight
-manifests so they can be removed later. `sysroot list` reports the complete
-image or overlay inventory:
-
-```bash
-sysroot list
-sudo sysroot remove libzix-dev
-```
-
-### Test a Pre-release Platform Sysroot Overlay
-
-To test a newer pre-release platform revision without rebuilding the SDK
-image, use `sysroot update` inside the SDK container. With no revision, the
-command queries the public pre-release mirror and offers only revisions that
-match the immutable image's `Platform Base` from `/etc/sdk-release`:
-
-```bash
-sudo sysroot update
-```
-
-Providing an exact revision is noninteractive and is suitable for automation:
-
-```bash
-sudo sysroot update 2.1.3~pre4617
-```
-
-Following the newest eligible revision requires explicit confirmation in
-noninteractive environments. A dry run downloads and validates the dependency
-cohort without extracting it into the sysroot:
-
-```bash
-sudo sysroot update --latest --yes
-sudo sysroot update 2.1.3~pre4617 --dry-run
-```
-
-This command is deliberately restricted to pre-release development and
-testing. It refuses stable versions and revisions outside the SDK's Platform
-Base. For example, an SDK with `Platform Base = 2.1.3` cannot update its
-sysroot to `2.2.0~preN`.
-
-An update creates a visible **sysroot overlay** rather than changing the
-immutable SDK image identity. Inspect both states with:
-
-```bash
-sysroot status
-```
-
-List the complete package inventory for either the image-default sysroot or
-the active overlay with:
-
-```bash
-sysroot list
-```
-
-The table includes package name, architecture, exact version, and summarized
-payload locations relative to the displayed sysroot. A package may show
-multiple locations because Debian packages commonly contain both headers and
-libraries. Manual `sysroot install` and `sysroot remove` operations update the
-same inventory.
-
-New interactive shells include the active overlay revision in the SDK prompt.
-The overlay descriptor and exact package inventory are stored under
-`/opt/toolchain/aarch64/modalix/var/lib/sima-sdk/`. Recreate the SDK container
-to discard the overlay and restore the image-default sysroot. Because this is
-an in-place overlay, recreating the container is also the way to guarantee that
-files removed between platform revisions are absent from the sysroot.
-
-Package downloads use eight workers by default and validated downloads are
-cached per platform revision under `/tmp`. Override the concurrency when
-needed, for example `SIMAAI_DOWNLOAD_WORKERS=16 sudo -E sysroot update ...`.
-Retries of the same revision reuse valid cached packages. Interactive terminals
-show animated download and extraction progress; CI logs receive periodic
-plain-text progress updates.
-
-The pre-release repository currently uses HTTPS transport with APT
-`trusted=yes`; this is not equivalent to signed APT repository metadata. The
-command prints this trust mode before every update.
+Use `BASE_SDK_VERSION=3.0.0~gitTIMESTAMP.COMMIT-BUILD` to select a particular
+mirrored revision. `sysroot list` and `sysroot status` inspect the installed
+inventory. The legacy in-place updater and package installer are unavailable
+for daily images because they apply older repository and kernel-header pins.
 
 ## NEAT Insight Version
 
 To make an Insight upgrade permanent in the image, rebuild the SDK image with the desired Insight channel and version:
 
 ```bash
-NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 2.1.3
+NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 3.0.0
 ```
 
 ## Platform 3.0 preparation branch
@@ -281,7 +178,7 @@ snapshot of Debian: general Debian dependencies follow current Trixie updates.
 These images use `platform-cross`: no matching Core artifact or Core/Apps source
 checkout is required or bundled. Daily builds keep the Ubuntu host and source
 GCC 14 from Debian 13, matching the compiler generation in the upstream eLxr
-SDK. Stable and legacy pre-release builds retain the Bookworm GCC 12 toolchain.
+SDK. Trixie is the default toolchain source throughout this branch.
 Test Core builds against the new sysroot before promoting these experimental images.
 
 For a local build with a known mirrored version:
