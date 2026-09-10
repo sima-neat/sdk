@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # Generated Dockerfile for modalix.
 ARG SDK_BASE_IMAGE=ubuntu:24.04
-ARG SDK_CROSS_TOOLCHAIN_IMAGE=debian:bookworm
+ARG SDK_CROSS_TOOLCHAIN_IMAGE=debian:trixie
 FROM ${SDK_CROSS_TOOLCHAIN_IMAGE} AS cross-toolchain
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -13,7 +13,7 @@ RUN chmod 755 /usr/local/bin/install-cross-toolchain.sh && \
 FROM ${SDK_BASE_IMAGE}
 
 ARG SDK_PKG_LIST
-ARG BASE_SDK_VERSION=2.1.3
+ARG BASE_SDK_VERSION=3.0.0
 ARG SDK_APT_CHANNEL=release
 ARG REQUESTED_PRE_RELEASE_BASE=
 ARG MINIMAL_IMAGE=0
