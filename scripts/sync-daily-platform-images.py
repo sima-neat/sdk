@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Mirror verified Artifactory daily builds; index publication precedes retention."""
 import argparse
+import base64
+import netrc
 import hashlib
 import json
 import os
@@ -10,7 +12,7 @@ import shutil
 import tempfile
 import time
 from datetime import datetime, timezone
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 SOURCE = 'https://artifacts.eng.sima.ai/artifactory'
@@ -74,15 +76,22 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 class Artifactory:
-    def __init__(self, token):
-        if not token:
-            raise ValueError('ARTIFACTORY_READ_TOKEN is required')
-        self.token = token
+    def __init__(self, netrc_path=None):
+        host = urlparse(SOURCE).hostname
+        try:
+            credentials = netrc.netrc(netrc_path).authenticators(host)
+        except (OSError, netrc.NetrcParseError):
+            raise ValueError('Cannot read runner .netrc credentials for Artifactory') from None
+        if not credentials or not credentials[0] or not credentials[2]:
+            raise ValueError(f'Runner .netrc requires login and password for {host}')
+        login, _, password = credentials
+        encoded = base64.b64encode(f'{login}:{password}'.encode()).decode('ascii')
+        self.authorization = f'Basic {encoded}'
         self.opener = build_opener(NoRedirect())
 
     def open(self, path):
         return self.opener.open(Request(
-            f'{SOURCE}/{path}', headers={'Authorization': f'Bearer {self.token}'}
+            f'{SOURCE}/{path}', headers={'Authorization': self.authorization}
         ), timeout=120)
 
     def info(self, path):
@@ -275,7 +284,7 @@ def main():
     parser.add_argument('--report', type=Path, help='Published image versions for notifications')
     args = parser.parse_args()
     import boto3
-    mirror(Artifactory(os.environ.get('ARTIFACTORY_READ_TOKEN')), boto3.client('s3'), args.publish, args.work_root, args.report)
+    mirror(Artifactory(), boto3.client('s3'), args.publish, args.work_root, args.report)
 
 
 if __name__ == '__main__':

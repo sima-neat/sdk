@@ -209,9 +209,11 @@ This step runs every 30 minutes even when the Debian repository is unchanged,
 and can run after a Debian sync failure. It uses the same `apt-mirror` runner,
 production environment, OIDC role, and manual `publish` switch.
 
-Set the SDK **production environment secret `ARTIFACTORY_READ_TOKEN`** to a
-read-only Artifactory bearer token that can list and download `soc-images`.
-The runner must reach `artifacts.eng.sima.ai` over trusted HTTPS. The script
+The runner’s provisioned `~/.netrc` supplies the login and password for
+`artifacts.eng.sima.ai`, with read access to list and download `soc-images`.
+No Artifactory GitHub secret is required. The file must be readable by the runner
+service account and have owner-only permissions. Both Storage API requests and
+image downloads use these credentials over trusted HTTPS. The script
 uses the Artifactory Storage API, requires SHA256 metadata, and refuses
 redirects. Missing authentication, an empty source listing, checksum errors, or altered
 previously published builds fail the step without

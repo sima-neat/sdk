@@ -123,8 +123,6 @@ jobs:
 
       - name: Mirror daily platform images and retain the latest 20 builds
         if: ${{ !cancelled() && steps.daily_credentials.outcome == 'success' }}
-        env:
-          ARTIFACTORY_READ_TOKEN: ${{ secrets.ARTIFACTORY_READ_TOKEN }}
         run: |
           set -euo pipefail
           arguments=(--work-root "${DEBIAN_MIRROR_WORK_ROOT}" --report "out/daily-platform-images/result.json")

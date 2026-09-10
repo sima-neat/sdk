@@ -4,7 +4,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import boto3
 from moto import mock_aws
@@ -13,6 +13,12 @@ import pytest
 spec = importlib.util.spec_from_file_location('daily_images', Path(__file__).parents[2] / 'scripts/sync-daily-platform-images.py')
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
+
+
+def artifactory():
+    with patch.object(m.netrc, 'netrc') as credentials:
+        credentials.return_value.authenticators.return_value = ('test-user', '', 'test-password')
+        return m.Artifactory()
 
 
 class Ready:
@@ -128,14 +134,14 @@ def test_unsafe_source_paths(path):
 
 
 def test_checksum_mismatch(tmp_path):
-    source = m.Artifactory('test-token')
+    source = artifactory()
     source.open = lambda path: io.BytesIO(b'bad image')
     with pytest.raises(ValueError, match='Checksum/size mismatch'):
         source.download(name(1), Source([1]).files(name(1))[0], tmp_path / 'image')
 
 
 def test_listing_filters_other_release_lines():
-    source = m.Artifactory('test-token')
+    source = artifactory()
     source.info = lambda path: {'children': [
         {'uri': '/' + name(1168), 'folder': True},
         {'uri': '/3.1.0_daily_develop_B1169', 'folder': True},
@@ -146,7 +152,7 @@ def test_listing_filters_other_release_lines():
 
 
 def test_missing_image_fails_closed():
-    source = m.Artifactory('test-token')
+    source = artifactory()
     source.info = lambda path: {'children': []}
     with pytest.raises(ValueError, match='No platform image'):
         source.files(name(1))
@@ -184,7 +190,7 @@ def test_workflow_runs_image_phase_on_same_runner_and_publish_gate():
     step = next(s for s in job['steps'] if 'sync-daily-platform-images.py' in s.get('run', ''))
     assert 'daily_credentials.outcome' in step['if']
     assert 'github.event_name' in step['run'] and 'inputs.publish' in step['run']
-    assert step['env']['ARTIFACTORY_READ_TOKEN'] == '${{ secrets.ARTIFACTORY_READ_TOKEN }}'
+    assert 'ARTIFACTORY_READ_TOKEN' not in str(step)
 
 
 def test_retention_spans_version_pages_and_delete_batches():
@@ -288,3 +294,49 @@ def test_checksum_change_restarts_stability_timer(tmp_path):
     assert not readiness.observe(name(1), changed)
     now[0] = 3600
     assert readiness.observe(name(1), changed)
+
+
+def test_artifactory_uses_netrc_for_metadata_and_downloads(tmp_path):
+    credentials = tmp_path / '.netrc'
+    credentials.write_text('machine artifacts.eng.sima.ai login reader password secret\n')
+    credentials.chmod(0o600)
+    source = m.Artifactory(str(credentials))
+    requests = []
+    def open_request(request, **kwargs):
+        requests.append(request)
+        if '/api/storage/' in request.full_url:
+            return io.BytesIO(b'{"children": []}')
+        return io.BytesIO(b'image')
+    source.opener.open = open_request
+    assert source.info(m.ROOT) == {'children': []}
+    source.download(name(1), Source([1]).files(name(1))[0], tmp_path / 'image')
+    for request in requests:
+        assert request.get_header('Authorization') == 'Basic ' + m.base64.b64encode(b'reader:secret').decode()
+        assert request.full_url.startswith(m.SOURCE + '/')
+
+
+def test_artifactory_reads_default_runner_netrc():
+    with patch.object(m.netrc, 'netrc') as credentials:
+        credentials.return_value.authenticators.return_value = ('reader', '', 'password')
+        m.Artifactory()
+        credentials.assert_called_once_with(None)
+        credentials.return_value.authenticators.assert_called_once_with('artifacts.eng.sima.ai')
+
+
+def test_netrc_errors_do_not_leak_credentials(tmp_path):
+    credentials = tmp_path / '.netrc'
+    credentials.write_text('machine artifacts.eng.sima.ai login reader password secret invalid-secret-field')
+    with pytest.raises(ValueError, match='Cannot read runner .netrc') as error:
+        m.Artifactory(str(credentials))
+    assert 'secret' not in str(error.value)
+    with pytest.raises(ValueError, match='Cannot read runner .netrc'):
+        m.Artifactory(str(tmp_path / 'missing'))
+    credentials.write_text('machine unrelated.example login reader password secret\n')
+    with pytest.raises(ValueError, match='requires login and password'):
+        m.Artifactory(str(credentials))
+
+
+def test_netrc_credentials_are_not_forwarded_on_redirect():
+    source = artifactory()
+    with pytest.raises(ValueError, match='redirects are not allowed'):
+        m.NoRedirect().redirect_request(None, None, 302, 'Found', {}, 'https://other.example/image')
