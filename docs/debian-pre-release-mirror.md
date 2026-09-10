@@ -213,18 +213,37 @@ Set the SDK **production environment secret `ARTIFACTORY_READ_TOKEN`** to a
 read-only Artifactory bearer token that can list and download `soc-images`.
 The runner must reach `artifacts.eng.sima.ai` over trusted HTTPS. The script
 uses the Artifactory Storage API, requires SHA256 metadata, and refuses
-redirects. Missing authentication, an empty source listing, missing images,
-checksum errors, or altered previously published builds fail the step without
+redirects. Missing authentication, an empty source listing, checksum errors, or altered
+previously published builds fail the step without
 replacing the index or pruning old builds.
 
 Only directory names matching `3.0.0_daily_<channel>_B<number>` are eligible.
-Builds are ordered by numeric build number, newest first (with directory name
-as a deterministic tie breaker). The latest 20 are kept across channels.
+Completed builds are ordered by numeric build number, newest first (with directory
+name as a deterministic tie breaker). The latest 20 completed builds are kept
+across channels; pending uploads do not evict them.
 Successfully mirrored builds remain eligible if Artifactory removes them.
 Each directory must contain a `.wic`, `.img`, or `.iso` image; WIC/IMG gzip,
 xz, and zstd variants are supported. All files in an eligible build directory,
 including checksums and supporting assets, are mirrored preserving their paths.
-An unsupported image layout fails closed and requires an explicit format update.
+Directories without a supported image or complete checksum metadata remain pending
+and require a completed upload or an explicit format update before publication.
+
+A newly discovered build must have an identical recursive inventory (paths,
+byte sizes, and SHA256 values) at observations at least 30 minutes apart before
+it is eligible. Observations persist under
+`$DEBIAN_MIRROR_WORK_ROOT/daily-image-readiness/`; changing the inventory resets
+the timer, and a missing image/checksum resets readiness. Preview runs may
+record local observations but never publish. The first observation performs no
+image download. All selected upstream inventories are checked again after
+transfer and before any completion manifests or the index are written. A changed
+listing defers publication and restarts observation, leaving the previous index
+intact. Newer pending build objects are excluded from old-build retention.
+
+This is a stability heuristic, not an upstream completion marker: an upload that
+pauses more than 30 minutes can appear stable. If Artifactory gains an authoritative
+completion signal, use it in place of the observation interval. Published builds
+remain immutable, so later changes to a previously published build still fail
+closed instead of silently changing consumer-visible contents.
 
 Downloads use disk space for one artifact at a time beneath
 `DEBIAN_MIRROR_WORK_ROOT`, with a 1 GiB reserve. Each download must match the

@@ -15,6 +15,20 @@ m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 
 
+class Ready:
+    def observe(self, build, files):
+        return True
+
+    def reset(self, build):
+        pass
+
+
+def mirror(*args, **kwargs):
+    # Existing transfer/retention cases start with an already stable inventory.
+    kwargs.setdefault('readiness', Ready())
+    return m.mirror(*args, **kwargs)
+
+
 def name(number):
     return f'3.0.0_daily_develop_B{number}'
 
@@ -49,17 +63,17 @@ def s3():
 
 def test_latest_twenty_numeric_order_and_noop(s3):
     source = Source(range(990, 1015))
-    result = m.mirror(source, s3, True)
+    result = mirror(source, s3, True)
     assert [b['name'] for b in result['builds']] == [name(n) for n in range(1014, 994, -1)]
     assert len(source.downloads) == 20
     version = s3.head_object(Bucket=m.BUCKET, Key=m.PREFIX + 'index.json')['VersionId']
-    m.mirror(source, s3, True)
+    mirror(source, s3, True)
     assert len(source.downloads) == 20
     assert s3.head_object(Bucket=m.BUCKET, Key=m.PREFIX + 'index.json')['VersionId'] == version
 
 
 def test_retention_deletes_versions_markers_and_partial_builds_only(s3):
-    m.mirror(Source(range(1, 21)), s3, True)
+    mirror(Source(range(1, 21)), s3, True)
     old_key = m.PREFIX + name(1) + '/image.wic.gz'
     s3.put_object(Bucket=m.BUCKET, Key=old_key, Body=b'obsolete')
     s3.delete_object(Bucket=m.BUCKET, Key=old_key)
@@ -68,7 +82,7 @@ def test_retention_deletes_versions_markers_and_partial_builds_only(s3):
     protected = [m.PREFIX + '2.0.0_daily_develop_B1/image.wic', 'sdk/keep', m.PREFIX + 'notes.txt']
     for key in protected:
         s3.put_object(Bucket=m.BUCKET, Key=key, Body=b'keep')
-    result = m.mirror(Source(range(2, 22)), s3, True)
+    result = mirror(Source(range(2, 22)), s3, True)
     assert len(result['builds']) == 20
     versions = s3.list_object_versions(Bucket=m.BUCKET)
     keys = {o['Key'] for o in versions.get('Versions', []) + versions.get('DeleteMarkers', [])}
@@ -77,34 +91,34 @@ def test_retention_deletes_versions_markers_and_partial_builds_only(s3):
 
 
 def test_failed_upload_preserves_index_and_old_builds(s3):
-    m.mirror(Source(range(1, 21)), s3, True)
+    mirror(Source(range(1, 21)), s3, True)
     before = m.read_json(s3, m.PREFIX + 'index.json')
     source = Source(range(2, 22))
     source.fail = True
     with pytest.raises(ValueError, match='Interrupted'):
-        m.mirror(source, s3, True)
+        mirror(source, s3, True)
     assert m.read_json(s3, m.PREFIX + 'index.json') == before
     assert name(1) in m.existing_builds(s3)
 
 
 def test_preview_and_empty_source_never_write(s3):
-    assert len(m.mirror(Source([1]), s3)['builds']) == 1
+    assert len(mirror(Source([1]), s3)['builds']) == 1
     assert s3.list_objects_v2(Bucket=m.BUCKET)['KeyCount'] == 0
     with pytest.raises(ValueError, match='No 3.0.0'):
-        m.mirror(Source([]), s3, True)
+        mirror(Source([]), s3, True)
 
 
 def test_upstream_removal_keeps_recent_successful_builds(s3):
-    m.mirror(Source([1, 2]), s3, True)
-    assert len(m.mirror(Source([3]), s3, True)['builds']) == 3
+    mirror(Source([1, 2]), s3, True)
+    assert len(mirror(Source([3]), s3, True)['builds']) == 3
 
 
 def test_changed_published_build_is_not_overwritten(s3):
     source = Source([1])
-    m.mirror(source, s3, True)
+    mirror(source, s3, True)
     source.files = lambda build: [{'path': 'image.wic.gz', 'size': 7, 'sha256': '0' * 64}]
     with pytest.raises(ValueError, match='changed upstream'):
-        m.mirror(source, s3, True)
+        mirror(source, s3, True)
 
 
 @pytest.mark.parametrize('path', ['../evil', '/tmp/evil', 'x/../evil', 'x//evil', 'x\\evil'])
@@ -148,7 +162,7 @@ def test_retention_reports_partial_delete_errors():
 
 
 def test_failed_index_publication_never_prunes(s3, monkeypatch):
-    m.mirror(Source(range(1, 21)), s3, True)
+    mirror(Source(range(1, 21)), s3, True)
     original = m.put_json
     def put(client, key, data):
         if key.endswith('/index.json'):
@@ -156,7 +170,7 @@ def test_failed_index_publication_never_prunes(s3, monkeypatch):
         original(client, key, data)
     monkeypatch.setattr(m, 'put_json', put)
     with pytest.raises(RuntimeError, match='Index write failed'):
-        m.mirror(Source(range(2, 22)), s3, True)
+        mirror(Source(range(2, 22)), s3, True)
     assert name(1) in m.existing_builds(s3)
     assert len(m.read_json(s3, m.PREFIX + 'index.json')['builds']) == 20
 
@@ -187,7 +201,7 @@ def test_image_report_survives_retention_failure(s3, tmp_path, monkeypatch):
     report = tmp_path / 'result.json'
     monkeypatch.setattr(m, 'prune', Mock(side_effect=RuntimeError('Retention failed')))
     with pytest.raises(RuntimeError, match='Retention failed'):
-        m.mirror(Source([1]), s3, True, report_path=report)
+        mirror(Source([1]), s3, True, report_path=report)
     assert json.loads(report.read_text())['versions'] == [name(1)]
     assert m.read_json(s3, m.PREFIX + 'index.json') is not None
 
@@ -195,9 +209,82 @@ def test_image_report_survives_retention_failure(s3, tmp_path, monkeypatch):
 def test_failed_download_and_preview_do_not_report_published_images(s3, tmp_path):
     report = tmp_path / 'result.json'
     source = Source([1])
-    m.mirror(source, s3, report_path=report)
+    mirror(source, s3, report_path=report)
     assert not report.exists()
     source.fail = True
     with pytest.raises(ValueError, match='Interrupted'):
-        m.mirror(source, s3, True, report_path=report)
+        mirror(source, s3, True, report_path=report)
     assert not report.exists()
+
+
+def test_partial_inventory_must_stabilize_across_runs(s3, tmp_path):
+    now = [0]
+    readiness = m.BuildReadiness(tmp_path, clock=lambda: now[0])
+    source = Source([1])
+    assert mirror(source, s3, True, readiness=readiness) is None
+    assert source.downloads == []
+    # The image appeared first; a supporting file arrives before the next run.
+    files = source.files(name(1))
+    files.append(dict(files[0], path='support.txt'))
+    source.files = lambda build: files
+    now[0] = 1800
+    assert mirror(source, s3, True, readiness=readiness) is None
+    assert m.read_json(s3, m.PREFIX + 'index.json') is None
+    # A fresh process loads the persisted observation and still waits 30 min.
+    readiness = m.BuildReadiness(tmp_path, clock=lambda: now[0])
+    now[0] = 3599
+    assert mirror(source, s3, True, readiness=readiness) is None
+    now[0] = 3600
+    result = mirror(source, s3, True, readiness=readiness)
+    assert len(result['builds'][0]['files']) == 2
+
+
+def test_pending_new_build_does_not_evict_completed_builds(s3, tmp_path):
+    mirror(Source(range(1, 21)), s3, True)
+    result = mirror(Source(range(1, 22)), s3, True, readiness=m.BuildReadiness(tmp_path))
+    assert [b['name'] for b in result['builds']] == [name(n) for n in range(20, 0, -1)]
+    assert name(1) in m.existing_builds(s3)
+    assert name(21) not in m.existing_builds(s3)
+
+
+def test_listing_changed_during_transfer_does_not_publish_manifest_or_index(s3, tmp_path):
+    mirror(Source([1]), s3, True)
+    previous = m.read_json(s3, m.PREFIX + 'index.json')
+    source = Source([2])
+    original_files = source.files
+    def download(build, artifact, target):
+        Path(target).write_bytes(b'image')
+        source.files = lambda build: original_files(build) + [dict(original_files(build)[0], path='late.txt')]
+    source.download = download
+    with pytest.raises(ValueError, match='Build changed during transfer'):
+        mirror(source, s3, True, readiness=Ready())
+    assert m.read_json(s3, m.PREFIX + name(2) + '/manifest.json') is None
+    assert m.read_json(s3, m.PREFIX + 'index.json') == previous
+    assert name(1) in m.existing_builds(s3)
+
+
+def test_no_image_resets_stability_and_does_not_block_other_builds(s3, tmp_path):
+    readiness = m.BuildReadiness(tmp_path, clock=lambda: 0)
+    source = Source([1, 2])
+    files = source.files(name(2))
+    readiness.observe(name(2), files)
+    def listing(build):
+        if build == name(2):
+            raise m.IncompleteBuild('Image still uploading')
+        return files
+    source.files = listing
+    assert mirror(source, s3, True, readiness=readiness) is None
+    assert not (readiness.root / f'{name(2)}.json').exists()
+    assert (readiness.root / f'{name(1)}.json').exists()
+
+
+def test_checksum_change_restarts_stability_timer(tmp_path):
+    now = [0]
+    readiness = m.BuildReadiness(tmp_path, clock=lambda: now[0])
+    files = Source([1]).files(name(1))
+    assert not readiness.observe(name(1), files)
+    now[0] = 1800
+    changed = [dict(files[0], sha256='0' * 64)]
+    assert not readiness.observe(name(1), changed)
+    now[0] = 3600
+    assert readiness.observe(name(1), changed)

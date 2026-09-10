@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
+import time
 from datetime import datetime, timezone
 from urllib.parse import quote
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -34,6 +35,37 @@ def safe_path(value):
     ):
         raise ValueError(f'Unsafe artifact path: {value!r}')
     return value
+
+
+class IncompleteBuild(ValueError):
+    """A visible build is not yet a complete image inventory."""
+
+
+class BuildReadiness:
+    """Require the same complete inventory across runs at least 30 minutes apart."""
+    def __init__(self, root, clock=time.time):
+        self.root = Path(root) / 'daily-image-readiness'
+        self.clock = clock
+
+    def observe(self, build, files):
+        rank(build)
+        self.root.mkdir(parents=True, exist_ok=True)
+        path = self.root / f'{build}.json'
+        fingerprint = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
+        now = self.clock()
+        previous = json.loads(path.read_text()) if path.exists() else None
+        if (previous and previous['fingerprint'] == fingerprint
+                and now >= previous['first_seen']):
+            return now - previous['first_seen'] >= 30 * 60
+        with tempfile.NamedTemporaryFile(mode='w', dir=self.root, delete=False) as output:
+            json.dump({'fingerprint': fingerprint, 'first_seen': now}, output)
+            temporary = output.name
+        os.replace(temporary, path)
+        return False
+
+    def reset(self, build):
+        rank(build)
+        (self.root / f'{build}.json').unlink(missing_ok=True)
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -75,11 +107,11 @@ class Artifactory:
                     sha = data.get('checksums', {}).get('sha256', '')
                     size = int(data['size'])
                     if not re.fullmatch('[a-fA-F0-9]{64}', sha) or size <= 0:
-                        raise ValueError(f'Missing SHA256 or empty artifact: {build}/{path}')
+                        raise IncompleteBuild(f'Missing SHA256 or empty artifact: {build}/{path}')
                     files.append({'path': path, 'size': size, 'sha256': sha.lower()})
         walk()
         if not any(f['path'].endswith(IMAGES) for f in files):
-            raise ValueError(f'No platform image found in {build}; publication stopped')
+            raise IncompleteBuild(f'No platform image found in {build}; waiting for upload')
         if any(f['path'] == 'manifest.json' for f in files):
             raise ValueError('Source uses reserved manifest.json name')
         return sorted(files, key=lambda f: f['path'])
@@ -137,17 +169,43 @@ def prune(s3, retained):
     return len(doomed)
 
 
-def mirror(source, s3, publish=False, work_root=None, report_path=None):
+def mirror(source, s3, publish=False, work_root=None, report_path=None, readiness=None):
+    if readiness is None:
+        if work_root is None:
+            raise ValueError("A persistent work root is required for build readiness")
+        readiness = BuildReadiness(work_root)
     upstream = source.builds()
     if not upstream:
         raise ValueError('No 3.0.0 daily builds found; refusing publication and deletion')
     stored = existing_builds(s3)
     # Keep successful builds even if Artifactory has already removed them.
     manifests = {name: read_json(s3, f'{PREFIX}{name}/manifest.json') for name in stored}
-    names = sorted(upstream | {name for name, manifest in manifests.items() if manifest}, key=rank, reverse=True)[:KEEP]
+    candidates = sorted(upstream | {name for name, manifest in manifests.items() if manifest}, key=rank, reverse=True)
+    snapshots = {}
+    names = []
+    for name in candidates:
+        if name in upstream:
+            try:
+                files = source.files(name)
+            except IncompleteBuild as exc:
+                readiness.reset(name)
+                if manifests.get(name):
+                    raise ValueError(f'Published build became incomplete: {name}') from exc
+                print(f'{name}: pending ({exc})', flush=True)
+                continue
+            if not manifests.get(name) and not readiness.observe(name, files):
+                print(f'{name}: waiting for a stable inventory for 30 minutes', flush=True)
+                continue
+            snapshots[name] = files
+        names.append(name)
+        if len(names) == KEEP:
+            break
+    if not names:
+        print('No stable completed builds; leaving S3 and index unchanged', flush=True)
+        return None
     builds = []
     for name in names:
-        files = source.files(name) if name in upstream else manifests[name]['files']
+        files = snapshots[name] if name in snapshots else manifests[name]['files']
         files = [dict(f, key=f'{PREFIX}{name}/{safe_path(f["path"])}',
                       s3_uri=f's3://{BUCKET}/{PREFIX}{name}/{safe_path(f["path"])}') for f in files]
         manifest = {'name': name, 'build_number': rank(name)[0], 'source_url': f'{SOURCE}/{ROOT}/{name}/', 'files': files}
@@ -177,12 +235,26 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None):
                     'ServerSideEncryption': 'aws:kms', 'SSEKMSKeyId': 'alias/sima-neat-artifacts-production',
                     'Metadata': {'sha256': artifact['sha256']},
                 })
-        if manifests.get(name) != manifest:
-            put_json(s3, f'{PREFIX}{name}/manifest.json', manifest)
         builds.append(manifest)
     index = {'schema_version': 1, 'platform': 'modalix', 'version_prefix': '3.0.0_daily_',
              'bucket': BUCKET, 'prefix': PREFIX, 'retention_count': KEEP, 'builds': builds}
     if publish:
+        # A directory can gain supporting files during a long transfer. Recheck
+        # every selected upstream inventory before writing any completion marker.
+        for name, snapshot in snapshots.items():
+            try:
+                current = source.files(name)
+            except IncompleteBuild:
+                readiness.reset(name)
+                raise
+            if current != snapshot:
+                readiness.reset(name)
+                readiness.observe(name, current)
+                raise ValueError(f'Build changed during transfer: {name}; publication deferred')
+        for manifest in builds:
+            name = manifest['name']
+            if manifests.get(name) != manifest:
+                put_json(s3, f'{PREFIX}{name}/manifest.json', manifest)
         old = read_json(s3, PREFIX + 'index.json')
         if old is None or {k: v for k, v in old.items() if k != 'generated_at'} != index:
             put_json(s3, PREFIX + 'index.json', dict(index, generated_at=datetime.now(timezone.utc).isoformat()))
@@ -191,14 +263,15 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None):
             report_path.write_text(json.dumps({
                 'schema_version': 1, 'result': 'Published', 'versions': names,
             }, indent=2) + '\n')
-        print(f'Removed {prune(s3, set(names))} expired object versions')
+        protected = set(names) | {name for name in upstream if rank(name) > rank(names[-1])}
+        print(f'Removed {prune(s3, protected)} expired object versions')
     return index
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--publish', action='store_true', help='Upload, publish index, and permanently prune older builds')
-    parser.add_argument('--work-root', default=None)
+    parser.add_argument('--work-root', required=True, help='Persistent inventory observations and download workspace')
     parser.add_argument('--report', type=Path, help='Published image versions for notifications')
     args = parser.parse_args()
     import boto3
