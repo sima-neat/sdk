@@ -55,6 +55,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Install mirror dependencies
+        id: mirror_dependencies
         run: |
           set -euo pipefail
           sudo apt-get update
@@ -65,10 +66,12 @@ jobs:
             gnupg \
             jq \
             python3 \
+            python3-boto3 \
             util-linux
           scripts/install-apt-mirror2.sh
 
       - name: Prepare persistent mirror workspace
+        id: mirror_workspace
         run: |
           set -euo pipefail
           sudo install -d \
@@ -108,3 +111,24 @@ jobs:
           path: out/debian-mirror-sync/mirror-sync-result.json
           if-no-files-found: ignore
           retention-days: 3
+
+      - name: Refresh production AWS credentials for daily platform images
+        id: daily_credentials
+        if: ${{ !cancelled() && steps.mirror_dependencies.outcome == 'success' && steps.mirror_workspace.outcome == 'success' }}
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.VULCAN_DEBIAN_MIRROR_PUBLISHER_ROLE_ARN }}
+          role-session-name: sdk-daily-images-${{ github.run_id }}
+
+      - name: Mirror daily platform images and retain the latest 20 builds
+        if: ${{ !cancelled() && steps.daily_credentials.outcome == 'success' }}
+        env:
+          ARTIFACTORY_READ_TOKEN: ${{ secrets.ARTIFACTORY_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          arguments=(--work-root "${DEBIAN_MIRROR_WORK_ROOT}")
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ inputs.publish }}" == "true" ]]; then
+            arguments+=(--publish)
+          fi
+          python3 scripts/sync-daily-platform-images.py "${arguments[@]}"

@@ -198,3 +198,78 @@ The digest-addressed indexes and package-pool objects are immutable and must not
 be deleted. Invalidate `/daily/dists/*` after restoration, then verify the
 restored index and all referenced package checksums before reopening client
 access.
+
+## Daily platform images
+
+The same synchronization job also mirrors Modalix platform images from
+`https://artifacts.eng.sima.ai/artifactory/soc-images/elxr/bsp/modalix/` to
+`s3://sima-neat-artifacts-production/daily-platform-images/`. For example,
+`3.0.0_daily_develop_B1168/` becomes an identically named build directory.
+This step runs every 30 minutes even when the Debian repository is unchanged,
+and can run after a Debian sync failure. It uses the same `apt-mirror` runner,
+production environment, OIDC role, and manual `publish` switch.
+
+Set the SDK **production environment secret `ARTIFACTORY_READ_TOKEN`** to a
+read-only Artifactory bearer token that can list and download `soc-images`.
+The runner must reach `artifacts.eng.sima.ai` over trusted HTTPS. The script
+uses the Artifactory Storage API, requires SHA256 metadata, and refuses
+redirects. Missing authentication, an empty source listing, missing images,
+checksum errors, or altered previously published builds fail the step without
+replacing the index or pruning old builds.
+
+Only directory names matching `3.0.0_daily_<channel>_B<number>` are eligible.
+Builds are ordered by numeric build number, newest first (with directory name
+as a deterministic tie breaker). The latest 20 are kept across channels.
+Successfully mirrored builds remain eligible if Artifactory removes them.
+Each directory must contain a `.wic`, `.img`, or `.iso` image; WIC/IMG gzip,
+xz, and zstd variants are supported. All files in an eligible build directory,
+including checksums and supporting assets, are mirrored preserving their paths.
+An unsupported image layout fails closed and requires an explicit format update.
+
+Downloads use disk space for one artifact at a time beneath
+`DEBIAN_MIRROR_WORK_ROOT`, with a 1 GiB reserve. Each download must match the
+source size and SHA256 before upload. Verified S3 objects are reused on retries;
+completed builds have a `manifest.json`. Published build contents are immutable.
+The workflow refreshes its AWS session before the image phase; a transfer that
+outlasts the role session fails and resumes from completed objects on the next
+run. The initial 20-build backfill may require multiple runs.
+
+Without `publish`, the image step previews source metadata and selected builds;
+it does not download image bodies, write S3, or delete objects. With `publish`,
+it verifies/downloads/uploads files, publishes the index only after all selected
+builds succeed, then permanently deletes **all object versions and delete markers**
+for older matching build directories. It also removes abandoned partial uploads
+that exist as completed S3 objects under older build directories. Other release
+lines and bucket prefixes are untouched. Multipart uploads are aborted by the SDK
+on ordinary transfer failures. Count retention is owned by this workflow, not
+Vulcan's generic branch artifact cleanup.
+
+A failed run can temporarily leave more than 20 directories in S3. The previous
+index remains usable until the new index is published; a failure during pruning
+leaves the new index usable and the next successful run retries cleanup.
+Consumers should refresh the index when an old selection is no longer available.
+
+### CLI index contract (schema version 1)
+
+Read `s3://sima-neat-artifacts-production/daily-platform-images/index.json`.
+The object is published with JSON content type and `no-cache, max-age=0`.
+The index is unchanged on a no-op run and contains:
+
+- `schema_version`: `1`.
+- `generated_at`: UTC ISO 8601 publication timestamp.
+- `platform`: `modalix`; `version_prefix`: `3.0.0_daily_`.
+- `bucket`, `prefix`, and `retention_count` (`20`).
+- `builds`: newest-first array, with at most 20 entries.
+- Each build: `name`, numeric `build_number`, `source_url`, and `files`.
+- Each file: relative `path`, S3 `key`, `s3_uri`, byte `size`, and `sha256`.
+
+The same per-build entry is stored at `<build>/manifest.json`. A future sima-cli
+selector can display build names and download the selected image via its S3 URI,
+then verify its SHA256. No sima-cli behavior is changed by this workflow update.
+
+Run the isolated S3/versioning regression tests with:
+
+```bash
+python -m pip install boto3 'moto[s3]' pytest PyYAML
+python -m pytest -q tests/sdk/test-daily-platform-images.py
+```

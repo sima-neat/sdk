@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""Mirror verified Artifactory daily builds; index publication precedes retention."""
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import tempfile
+from datetime import datetime, timezone
+from urllib.parse import quote
+from urllib.request import HTTPRedirectHandler, Request, build_opener
+
+SOURCE = 'https://artifacts.eng.sima.ai/artifactory'
+ROOT = 'soc-images/elxr/bsp/modalix'
+BUCKET = 'sima-neat-artifacts-production'
+PREFIX = 'daily-platform-images/'
+BUILD = re.compile(r'3\.0\.0_daily_[A-Za-z0-9_-]+_B([0-9]+)\Z')
+IMAGES = ('.wic', '.wic.gz', '.wic.xz', '.wic.zst', '.img', '.img.gz', '.img.xz', '.img.zst', '.iso')
+KEEP = 20
+
+
+def rank(name):
+    match = BUILD.fullmatch(name)
+    if not match:
+        raise ValueError(f'Invalid daily build name: {name}')
+    return int(match[1]), name
+
+
+def safe_path(value):
+    if not value or value.startswith('/') or '\\' in value or any(
+        part in ('', '.', '..') for part in value.split('/')
+    ):
+        raise ValueError(f'Unsafe artifact path: {value!r}')
+    return value
+
+
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError('Artifactory redirects are not allowed')
+
+
+class Artifactory:
+    def __init__(self, token):
+        if not token:
+            raise ValueError('ARTIFACTORY_READ_TOKEN is required')
+        self.token = token
+        self.opener = build_opener(NoRedirect())
+
+    def open(self, path):
+        return self.opener.open(Request(
+            f'{SOURCE}/{path}', headers={'Authorization': f'Bearer {self.token}'}
+        ), timeout=120)
+
+    def info(self, path):
+        with self.open('api/storage/' + quote(path, safe='/')) as response:
+            return json.load(response)
+
+    def builds(self):
+        return {child['uri'].removeprefix('/') for child in self.info(ROOT)['children']
+                if child['folder'] and BUILD.fullmatch(child['uri'].removeprefix('/'))}
+
+    def files(self, build):
+        files = []
+        def walk(relative=''):
+            folder = f'{ROOT}/{build}' + (f'/{relative}' if relative else '')
+            for child in self.info(folder)['children']:
+                name = safe_path(child['uri'].removeprefix('/'))
+                path = safe_path(f'{relative}/{name}' if relative else name)
+                if child['folder']:
+                    walk(path)
+                else:
+                    data = self.info(f'{ROOT}/{build}/{path}')
+                    sha = data.get('checksums', {}).get('sha256', '')
+                    size = int(data['size'])
+                    if not re.fullmatch('[a-fA-F0-9]{64}', sha) or size <= 0:
+                        raise ValueError(f'Missing SHA256 or empty artifact: {build}/{path}')
+                    files.append({'path': path, 'size': size, 'sha256': sha.lower()})
+        walk()
+        if not any(f['path'].endswith(IMAGES) for f in files):
+            raise ValueError(f'No platform image found in {build}; publication stopped')
+        if any(f['path'] == 'manifest.json' for f in files):
+            raise ValueError('Source uses reserved manifest.json name')
+        return sorted(files, key=lambda f: f['path'])
+
+    def download(self, build, artifact, target):
+        digest = hashlib.sha256()
+        size = 0
+        with self.open(quote(f'{ROOT}/{build}/{artifact["path"]}', safe='/')) as response, open(target, 'wb') as output:
+            while chunk := response.read(8 * 1024 * 1024):
+                digest.update(chunk)
+                size += len(chunk)
+                output.write(chunk)
+        if size != artifact['size'] or digest.hexdigest() != artifact['sha256']:
+            raise ValueError(f'Checksum/size mismatch: {build}/{artifact["path"]}')
+
+
+def read_json(s3, key):
+    from botocore.exceptions import ClientError
+    try:
+        return json.loads(s3.get_object(Bucket=BUCKET, Key=key)['Body'].read())
+    except ClientError as exc:
+        if exc.response['Error']['Code'] in ('NoSuchKey', '404'):
+            return None
+        raise
+
+
+def put_json(s3, key, data):
+    s3.put_object(Bucket=BUCKET, Key=key, Body=(json.dumps(data, indent=2) + '\n').encode(),
+                  ContentType='application/json', CacheControl='no-cache, max-age=0',
+                  ServerSideEncryption='aws:kms', SSEKMSKeyId='alias/sima-neat-artifacts-production')
+
+
+def existing_builds(s3):
+    names = set()
+    for page in s3.get_paginator('list_objects_v2').paginate(Bucket=BUCKET, Prefix=PREFIX, Delimiter='/'):
+        for entry in page.get('CommonPrefixes', []):
+            name = entry['Prefix'][len(PREFIX):].rstrip('/')
+            if BUILD.fullmatch(name):
+                names.add(name)
+    return names
+
+
+def prune(s3, retained):
+    # Materialize before deleting so version pagination cannot skip objects.
+    doomed = []
+    for page in s3.get_paginator('list_object_versions').paginate(Bucket=BUCKET, Prefix=PREFIX + '3.0.0_daily_'):
+        for obj in page.get('Versions', []) + page.get('DeleteMarkers', []):
+            name = obj['Key'][len(PREFIX):].split('/')[0]
+            if BUILD.fullmatch(name) and name not in retained:
+                doomed.append({'Key': obj['Key'], 'VersionId': obj['VersionId']})
+    for offset in range(0, len(doomed), 1000):
+        result = s3.delete_objects(Bucket=BUCKET, Delete={'Objects': doomed[offset:offset + 1000], 'Quiet': True})
+        if result.get('Errors'):
+            raise RuntimeError(f'Retention failed: {result["Errors"]}')
+    return len(doomed)
+
+
+def mirror(source, s3, publish=False, work_root=None):
+    upstream = source.builds()
+    if not upstream:
+        raise ValueError('No 3.0.0 daily builds found; refusing publication and deletion')
+    stored = existing_builds(s3)
+    # Keep successful builds even if Artifactory has already removed them.
+    manifests = {name: read_json(s3, f'{PREFIX}{name}/manifest.json') for name in stored}
+    names = sorted(upstream | {name for name, manifest in manifests.items() if manifest}, key=rank, reverse=True)[:KEEP]
+    builds = []
+    for name in names:
+        files = source.files(name) if name in upstream else manifests[name]['files']
+        files = [dict(f, key=f'{PREFIX}{name}/{safe_path(f["path"])}',
+                      s3_uri=f's3://{BUCKET}/{PREFIX}{name}/{safe_path(f["path"])}') for f in files]
+        manifest = {'name': name, 'build_number': rank(name)[0], 'source_url': f'{SOURCE}/{ROOT}/{name}/', 'files': files}
+        if manifests.get(name) and manifests[name] != manifest:
+            raise ValueError(f'Published build changed upstream: {name}; refusing to overwrite')
+        print(f'{name}: {len(files)} artifacts', flush=True)
+        if not publish:
+            builds.append(manifest)
+            continue
+        from botocore.exceptions import ClientError
+        for artifact in files:
+            try:
+                head = s3.head_object(Bucket=BUCKET, Key=artifact['key'])
+                if head['ContentLength'] == artifact['size'] and head.get('Metadata', {}).get('sha256') == artifact['sha256']:
+                    continue
+            except ClientError as exc:
+                if exc.response['Error']['Code'] not in ('404', 'NoSuchKey'):
+                    raise
+            if name not in upstream:
+                raise ValueError(f'Stored image missing or corrupt and unavailable upstream: {name}')
+            with tempfile.TemporaryDirectory(dir=work_root) as tmp:
+                if shutil.disk_usage(tmp).free < artifact['size'] + 1024**3:
+                    raise ValueError(f'Insufficient disk space for {name}/{artifact["path"]}')
+                target = os.path.join(tmp, 'artifact')
+                source.download(name, artifact, target)
+                s3.upload_file(target, BUCKET, artifact['key'], ExtraArgs={
+                    'ServerSideEncryption': 'aws:kms', 'SSEKMSKeyId': 'alias/sima-neat-artifacts-production',
+                    'Metadata': {'sha256': artifact['sha256']},
+                })
+        if manifests.get(name) != manifest:
+            put_json(s3, f'{PREFIX}{name}/manifest.json', manifest)
+        builds.append(manifest)
+    index = {'schema_version': 1, 'platform': 'modalix', 'version_prefix': '3.0.0_daily_',
+             'bucket': BUCKET, 'prefix': PREFIX, 'retention_count': KEEP, 'builds': builds}
+    if publish:
+        old = read_json(s3, PREFIX + 'index.json')
+        if old is None or {k: v for k, v in old.items() if k != 'generated_at'} != index:
+            put_json(s3, PREFIX + 'index.json', dict(index, generated_at=datetime.now(timezone.utc).isoformat()))
+        print(f'Removed {prune(s3, set(names))} expired object versions')
+    return index
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--publish', action='store_true', help='Upload, publish index, and permanently prune older builds')
+    parser.add_argument('--work-root', default=None)
+    args = parser.parse_args()
+    import boto3
+    mirror(Artifactory(os.environ.get('ARTIFACTORY_READ_TOKEN')), boto3.client('s3'), args.publish, args.work_root)
+
+
+if __name__ == '__main__':
+    main()
