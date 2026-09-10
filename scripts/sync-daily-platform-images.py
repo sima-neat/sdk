@@ -43,18 +43,46 @@ class IncompleteBuild(ValueError):
     """A visible build is not yet a complete image inventory."""
 
 
+def latest_file_timestamp(metadata):
+    """Return the newest creation/modification/update time, or require observation."""
+    fields = ['created', 'lastModified']
+    if 'lastUpdated' in metadata:
+        fields.append('lastUpdated')
+    timestamps = []
+    for field in fields:
+        value = metadata.get(field)
+        if not isinstance(value, str):
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            if parsed.tzinfo is None:
+                return None
+            timestamps.append(parsed.timestamp())
+        except (ValueError, OverflowError):
+            return None
+    return max(timestamps)
+
+
 class BuildReadiness:
-    """Require the same complete inventory across runs at least 30 minutes apart."""
+    """Use upstream file age, falling back to observations when timestamps are absent."""
     def __init__(self, root, clock=time.time):
         self.root = Path(root) / 'daily-image-readiness'
         self.clock = clock
 
     def observe(self, build, files):
         rank(build)
+        now = self.clock()
+        timestamps = [artifact.get('source_updated_at') for artifact in files]
+        known = [value for value in timestamps if value is not None]
+        # Missing metadata must not let local observations bypass a known
+        # recent or future timestamp on another file.
+        if known and now - max(known) < 30 * 60:
+            return False
+        if timestamps and len(known) == len(timestamps):
+            return True
         self.root.mkdir(parents=True, exist_ok=True)
         path = self.root / f'{build}.json'
         fingerprint = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
-        now = self.clock()
         previous = json.loads(path.read_text()) if path.exists() else None
         if (previous and previous['fingerprint'] == fingerprint
                 and now >= previous['first_seen']):
@@ -117,7 +145,8 @@ class Artifactory:
                     size = int(data['size'])
                     if not re.fullmatch('[a-fA-F0-9]{64}', sha) or size <= 0:
                         raise IncompleteBuild(f'Missing SHA256 or empty artifact: {build}/{path}')
-                    files.append({'path': path, 'size': size, 'sha256': sha.lower()})
+                    files.append({'path': path, 'size': size, 'sha256': sha.lower(),
+                                  'source_updated_at': latest_file_timestamp(data)})
         walk()
         if not any(f['path'].endswith(IMAGES) for f in files):
             raise IncompleteBuild(f'No platform image found in {build}; waiting for upload')
@@ -203,7 +232,7 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
                 print(f'{name}: pending ({exc})', flush=True)
                 continue
             if not manifests.get(name) and not readiness.observe(name, files):
-                print(f'{name}: waiting for a stable inventory for 30 minutes', flush=True)
+                print(f'{name}: pending until all files are 30 minutes old (or an unchanged inventory is observed for 30 minutes if timestamps are unavailable)', flush=True)
                 continue
             snapshots[name] = files
         names.append(name)
@@ -215,6 +244,9 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
     builds = []
     for name in names:
         files = snapshots[name] if name in snapshots else manifests[name]['files']
+        # Source timestamps are readiness evidence, not part of the immutable
+        # published manifest contract. Keep existing manifests compatible.
+        files = [{field: f[field] for field in ('path', 'size', 'sha256')} for f in files]
         files = [dict(f, key=f'{PREFIX}{name}/{safe_path(f["path"])}',
                       s3_uri=f's3://{BUCKET}/{PREFIX}{name}/{safe_path(f["path"])}') for f in files]
         manifest = {'name': name, 'build_number': rank(name)[0], 'source_url': f'{SOURCE}/{ROOT}/{name}/', 'files': files}

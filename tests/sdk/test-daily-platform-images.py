@@ -340,3 +340,94 @@ def test_netrc_credentials_are_not_forwarded_on_redirect():
     source = artifactory()
     with pytest.raises(ValueError, match='redirects are not allowed'):
         m.NoRedirect().redirect_request(None, None, 302, 'Found', {}, 'https://other.example/image')
+
+
+def test_old_build_publishes_on_first_observation(s3, tmp_path):
+    source = Source([1])
+    original = source.files(name(1))
+    source.files = lambda build: [dict(f, source_updated_at=0) for f in original]
+    result = mirror(source, s3, True, readiness=m.BuildReadiness(tmp_path, clock=lambda: 1800))
+    assert result['builds'][0]['name'] == name(1)
+    assert len(source.downloads) == 1
+    assert 'source_updated_at' not in result['builds'][0]['files'][0]
+    # Adding readiness metadata does not invalidate an existing manifest.
+    mirror(source, s3, True, readiness=m.BuildReadiness(tmp_path, clock=lambda: 1801))
+    assert len(source.downloads) == 1
+
+
+def test_newest_supporting_file_controls_age(s3, tmp_path):
+    now = [1800]
+    readiness = m.BuildReadiness(tmp_path, clock=lambda: now[0])
+    source = Source([1])
+    image = dict(source.files(name(1))[0], source_updated_at=0)
+    support = dict(image, path='support.txt', source_updated_at=1700)
+    source.files = lambda build: [image, support]
+    assert mirror(source, s3, True, readiness=readiness) is None
+    assert source.downloads == []
+    now[0] = 3499
+    assert mirror(source, s3, True, readiness=readiness) is None
+    now[0] = 3500
+    assert len(mirror(source, s3, True, readiness=readiness)['builds'][0]['files']) == 2
+
+
+def test_future_file_time_cannot_be_bypassed_by_local_observations(tmp_path):
+    now = [0]
+    readiness = m.BuildReadiness(tmp_path, clock=lambda: now[0])
+    files = [dict(Source([1]).files(name(1))[0], source_updated_at=7200)]
+    assert not readiness.observe(name(1), files)
+    now[0] = 3600
+    assert not readiness.observe(name(1), files)
+    now[0] = 9000
+    assert readiness.observe(name(1), files)
+
+
+def test_latest_file_timestamp_includes_creation_modification_and_update():
+    assert m.latest_file_timestamp({
+        'created': '2026-09-10T01:00:00Z',
+        'lastModified': '2026-09-09T23:00:00Z',
+    }) == m.datetime(2026, 9, 10, 1, tzinfo=m.timezone.utc).timestamp()
+    assert m.latest_file_timestamp({
+        'created': '2026-09-09T23:00:00Z',
+        'lastModified': '2026-09-10T02:00:00+01:00',
+        'lastUpdated': '2026-09-10T02:00:00Z',
+    }) == m.datetime(2026, 9, 10, 2, tzinfo=m.timezone.utc).timestamp()
+
+
+@pytest.mark.parametrize('metadata', [
+    {}, {'created': '2026-09-10T01:00:00Z'},
+    {'created': 'bad', 'lastModified': '2026-09-10T01:00:00Z'},
+    {'created': '2026-09-10T01:00:00', 'lastModified': '2026-09-10T01:00:00Z'},
+    {'created': '2026-09-10T01:00:00Z', 'lastModified': '2026-09-10T01:00:00Z', 'lastUpdated': 'bad'},
+])
+def test_missing_or_invalid_timestamps_require_stable_observations(metadata, tmp_path):
+    timestamp = m.latest_file_timestamp(metadata)
+    assert timestamp is None
+    now = [0]
+    readiness = m.BuildReadiness(tmp_path, clock=lambda: now[0])
+    files = [dict(Source([1]).files(name(1))[0], source_updated_at=timestamp)]
+    assert not readiness.observe(name(1), files)
+    now[0] = 1800
+    assert readiness.observe(name(1), files)
+
+
+def test_artifactory_keeps_file_timestamps_from_recursive_inventory():
+    source = artifactory()
+    source.info = Mock(side_effect=[
+        {'children': [{'uri': '/images', 'folder': True}]},
+        {'children': [{'uri': '/image.wic', 'folder': False}]},
+        {'size': 5, 'checksums': {'sha256': 'a' * 64},
+         'created': '2026-09-10T01:00:00Z', 'lastModified': '2026-09-10T02:00:00Z'},
+    ])
+    files = source.files(name(1))
+    assert files[0]['path'] == 'images/image.wic'
+    assert files[0]['source_updated_at'] == m.datetime(2026, 9, 10, 2, tzinfo=m.timezone.utc).timestamp()
+
+
+def test_unknown_timestamp_cannot_bypass_another_files_future_timestamp(tmp_path):
+    now = [0]
+    readiness = m.BuildReadiness(tmp_path, clock=lambda: now[0])
+    files = Source([1]).files(name(1))
+    files.append(dict(files[0], path='support.txt', source_updated_at=7200))
+    assert not readiness.observe(name(1), files)
+    now[0] = 3600
+    assert not readiness.observe(name(1), files)

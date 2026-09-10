@@ -230,22 +230,31 @@ including checksums and supporting assets, are mirrored preserving their paths.
 Directories without a supported image or complete checksum metadata remain pending
 and require a completed upload or an explicit format update before publication.
 
-A newly discovered build must have an identical recursive inventory (paths,
-byte sizes, and SHA256 values) at observations at least 30 minutes apart before
-it is eligible. Observations persist under
-`$DEBIAN_MIRROR_WORK_ROOT/daily-image-readiness/`; changing the inventory resets
-the timer, and a missing image/checksum resets readiness. Preview runs may
-record local observations but never publish. The first observation performs no
-image download. All selected upstream inventories are checked again after
-transfer and before any completion manifests or the index are written. A changed
-listing defers publication and restarts observation, leaving the previous index
-intact. Newer pending build objects are excluded from old-build retention.
+A newly discovered build is eligible immediately when every file is at least
+30 minutes old according to Artifactory. The mirror uses the newest `created`,
+`lastModified`, and (when present) `lastUpdated` timestamp across every image and
+supporting file in the recursive inventory, rather than the build directory's
+creation time. Recent files wait until that age threshold; future timestamps
+also remain pending. This allows old daily builds to sync on the first run.
 
-This is a stability heuristic, not an upstream completion marker: an upload that
-pauses more than 30 minutes can appear stable. If Artifactory gains an authoritative
-completion signal, use it in place of the observation interval. Published builds
-remain immutable, so later changes to a previously published build still fail
-closed instead of silently changing consumer-visible contents.
+If a file lacks valid, timezone-aware creation/modification metadata, the mirror
+falls back to observing an identical inventory (paths, byte sizes, SHA256 values,
+and available file times) at least 30 minutes apart. Observations persist under
+`$DEBIAN_MIRROR_WORK_ROOT/daily-image-readiness/`. Changes reset that timer; known
+recent/future timestamps still block readiness even when another file's metadata
+is unavailable. Preview runs may record observations but never publish.
+
+All selected upstream inventories are checked again after transfer and before
+any completion manifests or the index are written. A changed listing defers
+publication, leaving the previous index intact. Newer pending build objects are
+excluded from old-build retention. Source timestamps are used only for readiness
+and verification; the published manifest/index schema remains unchanged.
+
+File age is a quiet-period heuristic, not an upstream completion marker: an upload
+that pauses more than 30 minutes can appear complete. If Artifactory gains an
+authoritative completion signal, use it in place of this heuristic. Published
+builds remain immutable, so later changes fail closed instead of silently
+changing consumer-visible contents.
 
 Downloads use disk space for one artifact at a time beneath
 `DEBIAN_MIRROR_WORK_ROOT`, with a 1 GiB reserve. Each download must match the
