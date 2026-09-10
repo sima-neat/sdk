@@ -195,7 +195,8 @@ python3 -m json.tool "${artifacts_dir}/${metadata_name}" >/dev/null
   --image-resource "${image_resource}" \
   --version "${PACKAGE_VERSION}" \
   --release "${PACKAGE_RELEASE}"
-cp -f "${tmp_dir}/online-package/install_sdk_stub.sh" "${tmp_dir}/online-package/metadata.json" "${artifacts_dir}/"
+cp -f "${tmp_dir}/online-package/install_sdk_stub.sh" "${tmp_dir}/online-package/metadata.json" \
+  "${tmp_dir}/online-package/metadata-edgematic-studio.json" "${artifacts_dir}/"
 
 rm -rf "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}"
