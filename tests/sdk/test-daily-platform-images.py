@@ -181,3 +181,23 @@ def test_retention_spans_version_pages_and_delete_batches():
     s3.delete_objects.return_value = {}
     assert m.prune(s3, {name(2)}) == 1001
     assert [len(call.kwargs['Delete']['Objects']) for call in s3.delete_objects.call_args_list] == [1000, 1]
+
+
+def test_image_report_survives_retention_failure(s3, tmp_path, monkeypatch):
+    report = tmp_path / 'result.json'
+    monkeypatch.setattr(m, 'prune', Mock(side_effect=RuntimeError('Retention failed')))
+    with pytest.raises(RuntimeError, match='Retention failed'):
+        m.mirror(Source([1]), s3, True, report_path=report)
+    assert json.loads(report.read_text())['versions'] == [name(1)]
+    assert m.read_json(s3, m.PREFIX + 'index.json') is not None
+
+
+def test_failed_download_and_preview_do_not_report_published_images(s3, tmp_path):
+    report = tmp_path / 'result.json'
+    source = Source([1])
+    m.mirror(source, s3, report_path=report)
+    assert not report.exists()
+    source.fail = True
+    with pytest.raises(ValueError, match='Interrupted'):
+        m.mirror(source, s3, True, report_path=report)
+    assert not report.exists()

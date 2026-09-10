@@ -127,8 +127,19 @@ jobs:
           ARTIFACTORY_READ_TOKEN: ${{ secrets.ARTIFACTORY_READ_TOKEN }}
         run: |
           set -euo pipefail
-          arguments=(--work-root "${DEBIAN_MIRROR_WORK_ROOT}")
+          arguments=(--work-root "${DEBIAN_MIRROR_WORK_ROOT}" --report "out/daily-platform-images/result.json")
           if [[ "${{ github.event_name }}" == "schedule" || "${{ inputs.publish }}" == "true" ]]; then
             arguments+=(--publish)
           fi
           python3 scripts/sync-daily-platform-images.py "${arguments[@]}"
+
+      - name: Notify Slack of new APT and device image versions
+        if: ${{ always() && steps.mirror_workspace.outcome == 'success' && (github.event_name == 'schedule' || inputs.publish == true) }}
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_VULCAN_EVENT_CHANNEL_ID: ${{ vars.SLACK_VULCAN_EVENT_CHANNEL_ID }}
+        run: |
+          python3 scripts/notify-mirror-versions.py \
+            --apt-report out/debian-mirror-sync/mirror-sync-result.json \
+            --image-report out/daily-platform-images/result.json \
+            --state "${DEBIAN_MIRROR_WORK_ROOT}/version-notifications/state.json"

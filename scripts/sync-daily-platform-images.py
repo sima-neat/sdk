@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+from pathlib import Path
 import re
 import shutil
 import tempfile
@@ -136,7 +137,7 @@ def prune(s3, retained):
     return len(doomed)
 
 
-def mirror(source, s3, publish=False, work_root=None):
+def mirror(source, s3, publish=False, work_root=None, report_path=None):
     upstream = source.builds()
     if not upstream:
         raise ValueError('No 3.0.0 daily builds found; refusing publication and deletion')
@@ -185,6 +186,11 @@ def mirror(source, s3, publish=False, work_root=None):
         old = read_json(s3, PREFIX + 'index.json')
         if old is None or {k: v for k, v in old.items() if k != 'generated_at'} != index:
             put_json(s3, PREFIX + 'index.json', dict(index, generated_at=datetime.now(timezone.utc).isoformat()))
+        if report_path is not None:
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(json.dumps({
+                'schema_version': 1, 'result': 'Published', 'versions': names,
+            }, indent=2) + '\n')
         print(f'Removed {prune(s3, set(names))} expired object versions')
     return index
 
@@ -193,9 +199,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--publish', action='store_true', help='Upload, publish index, and permanently prune older builds')
     parser.add_argument('--work-root', default=None)
+    parser.add_argument('--report', type=Path, help='Published image versions for notifications')
     args = parser.parse_args()
     import boto3
-    mirror(Artifactory(os.environ.get('ARTIFACTORY_READ_TOKEN')), boto3.client('s3'), args.publish, args.work_root)
+    mirror(Artifactory(os.environ.get('ARTIFACTORY_READ_TOKEN')), boto3.client('s3'), args.publish, args.work_root, args.report)
 
 
 if __name__ == '__main__':

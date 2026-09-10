@@ -273,3 +273,51 @@ Run the isolated S3/versioning regression tests with:
 python -m pip install boto3 'moto[s3]' pytest PyYAML
 python -m pytest -q tests/sdk/test-daily-platform-images.py
 ```
+
+## New-version Slack notifications
+
+Each publishing mirror run sends a compact event to the channel configured by
+`SLACK_VULCAN_EVENT_CHANNEL_ID`, using the organization `SLACK_BOT_TOKEN` secret.
+Make the secret available to the SDK repository and invite the bot to the event
+channel. GitHub resolves the channel ID from the organization/repository or
+production environment variable. This event is separate from the existing daily
+APT package digest and does not use its channel setting.
+
+The message contains only the newly observed APT platform versions (from the
+`simaai-palette-modalix` anchor package), device image build names, and a link to
+the GitHub Actions run that detected them. It is sent after publication, so
+preview-only runs do not announce images or packages as available. The first
+publishing run with notification state initialized announces the versions it
+observes; later runs announce each version once per category. Unchanged platform
+versions remain quiet even when other APT packages change.
+
+Example:
+
+```text
+New mirror versions detected
+APT: 3.0.0-1168
+Device images: 3.0.0_daily_develop_B1168
+GitHub workflow run
+```
+
+Notification state and pending events live at
+`$DEBIAN_MIRROR_WORK_ROOT/version-notifications/state.json` on the same persistent
+runner volume as the mirror cache. Preserve that file across runs; replacing the
+runner or clearing the volume resets deduplication. The existing workflow
+concurrency group serializes access. A single run normally sends one combined
+message; retries spanning multiple detecting runs send one message per original
+run so links retain their provenance.
+
+The final notification step runs even if one mirror phase fails. Only published
+versions are eligible, including images whose index was published before a
+retention failure. Slack errors fail the notification step but leave publication
+intact and retain pending events for the next publishing run, including a no-change
+run. Events are persisted before sending and acknowledged locally after Slack
+success. An ambiguous network failure or a crash after Slack accepts a message
+can cause a duplicate on retry; delivery is at least once rather than exactly once.
+
+Regression coverage:
+
+```bash
+python -m pytest -q tests/sdk/test-daily-platform-images.py tests/sdk/test-mirror-version-notifications.py
+```
