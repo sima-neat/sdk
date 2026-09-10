@@ -51,7 +51,21 @@ fi
 
 if [[ "${SDK_APT_CHANNEL:-daily}" == daily ]]; then
   # Resolve development packages and their Debian 13 runtime dependencies together.
-  sdk_pkg_list="${sdk_pkg_list},libarpack2-dev,libblas-dev,libblkid-dev,libbsd-dev,libcharls-dev,libcpp-httplib-dev,libelf-dev,libexpat1-dev,libffi-dev,libgdal-dev,libglib2.0-dev,libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev,libgstrtspserver-1.0-dev,libjpeg62-turbo-dev,libjson-glib-dev,liblapack-dev,liblzma-dev,libmount-dev,libopenblas-pthread-dev,libopenjp2-7-dev,libpng-dev,qtbase5-dev,libsepol-dev,libspdlog-dev,libssl-dev,libsuperlu-dev,libtiff-dev,liburcu-dev,libwebp-dev,python3-dev,zlib1g-dev"
+  daily_packages=(
+    a65apps-dev appcomplex-dev simaai-gst-plugins-dev simaai-heap-dev
+    simaai-mlart-modalix-dev simaai-pcie-ep-dev simaai-socpipeline-dev swsoc-video-codec-modalix-dev
+    simaai-memory-lib-dev simaai-log-dev simaai-trace-dev liblttng-ust-dev
+    libopencv-dev libjsoncpp-dev cppzmq-dev libarpack2-dev libblas-dev
+    libblkid-dev libbsd-dev libcharls-dev libcpp-httplib-dev
+    libelf-dev libexpat1-dev libffi-dev libgdal-dev
+    libglib2.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-dev
+    libjpeg62-turbo-dev libjson-glib-dev liblapack-dev liblzma-dev
+    libmount-dev libopenblas-pthread-dev libopenjp2-7-dev libpng-dev
+    qtbase5-dev libsepol-dev libspdlog-dev libssl-dev
+    libsuperlu-dev libtiff-dev liburcu-dev libwebp-dev
+    python3-dev zlib1g-dev
+  )
+  sdk_pkg_list="${sdk_pkg_list},$(IFS=,; printf '%s' "${daily_packages[*]}")"
 fi
 
 SIMAAI_SYSROOT="${sysroot}" \

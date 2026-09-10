@@ -207,11 +207,11 @@ RUN --mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,shari
 
 # Exercise the target libc/linker layout, not only the compiler's own sysroot.
 RUN if [ "${SDK_APT_CHANNEL}" = daily ] && [ "${MINIMAL_IMAGE}" != 1 ]; then \
-      printf '#include <gst/gst.h>\nint main() { gst_init(nullptr, nullptr); return 0; }\n' > /tmp/agate-smoke.cpp; \
+      printf '#include <gst/gst.h>\n#include <simaai/simaai_memory.h>\nint main() { gst_init(nullptr, nullptr); return 0; }\n' > /tmp/agate-smoke.cpp; \
       flags="$(PKG_CONFIG_LIBDIR=/opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu/pkgconfig:/opt/toolchain/aarch64/modalix/usr/share/pkgconfig pkg-config --cflags --libs gstreamer-1.0)" && \
       aarch64-linux-gnu-g++ --sysroot=/opt/toolchain/aarch64/modalix /tmp/agate-smoke.cpp $flags \
         -L/opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu \
-        -Wl,--no-as-needed -lMLArt -Wl,--as-needed -o /tmp/agate-smoke && \
+        -Wl,--no-as-needed -lMLArt -lsimaaimem -Wl,--as-needed -o /tmp/agate-smoke && \
       aarch64-linux-gnu-readelf -h /tmp/agate-smoke | grep -q AArch64 && \
       rm -f /tmp/agate-smoke.cpp /tmp/agate-smoke; \
     fi

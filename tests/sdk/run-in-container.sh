@@ -145,22 +145,32 @@ test_daily_development_sysroot() {
   local flags
   test -e "${SYSROOT}/usr/include/python3.13/Python.h"
   test -e "${SYSROOT}/usr/include/httplib.h"
+  test -e "${SYSROOT}/usr/include/simaai/simaai_memory.h"
+  test -e "${SYSROOT}/usr/include/simaai/argminmax.h"
   test -e "${SYSROOT}/usr/include/asm-generic/errno.h"
   cat > "${source}" <<'EOF'
 #include <gst/gst.h>
+#include <simaai/simaai_memory.h>
+#include <simaai/sgp_transport.h>
+#include <simaai/simaailog.h>
+#include <opencv2/core.hpp>
+#include <lttng/tracepoint.h>
+#include <json/json.h>
+#include <zmq.hpp>
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 int main(int argc, char **argv) {
   gst_init(&argc, &argv);
-  spdlog::info("{}", fmt::format("Debian {} sysroot", 13));
+  Json::Value value(13);
+  spdlog::info("{}", fmt::format("Debian {} sysroot, OpenCV {}", value.asInt(), cv::getVersionMajor()));
   return 0;
 }
 EOF
-  flags="$(pkg-config --cflags --libs gstreamer-1.0 fmt spdlog)"
+  flags="$(pkg-config --cflags --libs gstreamer-1.0 fmt spdlog opencv4 lttng-ust jsoncpp simaai-memory-lib)"
   # pkg-config emits a shell-separated compiler argument list.
   # shellcheck disable=SC2086
   "${CXX:-aarch64-linux-gnu-g++}" --sysroot="${SYSROOT}" \
-    "${source}" $flags -o "${binary}"
+    "${source}" $flags -Wl,--no-as-needed -lsimaaimem -Wl,--as-needed -o "${binary}"
   file "${binary}" | grep -Eq 'aarch64|ARM aarch64|ARM64'
 }
 
