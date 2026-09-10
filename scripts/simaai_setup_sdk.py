@@ -333,6 +333,18 @@ def normalize_arm64_name(pkgname):
     return f"{pkgname}:arm64"
 
 
+def daily_package_versions(cache, pkgname):
+    """Look up ARM64 packages and native-keyed Architecture: all packages."""
+    versions = []
+    target = normalize_arm64_name(pkgname)
+    if target in cache:
+        versions.extend(v for v in cache[target].versions if v.architecture in ("arm64", "all"))
+    base = base_package_name(pkgname)
+    if base in cache:
+        versions.extend(v for v in cache[base].versions if v.architecture == "all")
+    return versions
+
+
 def package_field(deb_path, field):
     return subprocess.check_output(["dpkg-deb", "-f", deb_path, field], text=True).strip()
 
@@ -590,14 +602,17 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
             relation = "="
             if requested_version.startswith((">= ", "<= ", ">> ", "<< ", "> ", "< ")):
                 relation, requested_version = requested_version.split(" ", 1)
-            candidates = list(cache[pkgname].versions) if pkgname in cache else []
+            candidates = daily_package_versions(cache, pkgname)
             selected = daily_candidate(candidates, version, requested_version, relation)
             if selected is not None:
                 return selected
             # Debian 13 t64 packages provide legacy dependency names used by
             # platform binaries (for example liblttng-ust1 -> liblttng-ust1t64).
             for provider in cache.get_providing_packages(pkgname):
-                selected = daily_candidate(provider.versions, version, requested_version, relation)
+                selected = daily_candidate(
+                    [v for v in provider.versions if v.architecture in ("arm64", "all")],
+                    version, requested_version, relation
+                )
                 if selected is not None:
                     return selected
             return None
@@ -958,10 +973,6 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
     cache = apt.Cache()
     update_apt_cache(cache)
     cache.open(None)
-
-    if pkg_name not in cache:
-        print(f"Package {pkg_name} not found!")
-        return
 
     c_palette = get_candidate(pkg_name, version)
     if c_palette is None:

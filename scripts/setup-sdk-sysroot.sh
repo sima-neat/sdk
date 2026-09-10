@@ -50,7 +50,8 @@ EOF
 fi
 
 if [[ "${SDK_APT_CHANNEL:-release}" == daily ]]; then
-  sdk_pkg_list="${sdk_pkg_list},libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev,libgstrtspserver-1.0-dev,python3-dev,libspdlog-dev,libssl-dev"
+  # Resolve development packages and their Debian 13 runtime dependencies together.
+  sdk_pkg_list="${sdk_pkg_list},libarpack2-dev,libblas-dev,libblkid-dev,libbsd-dev,libcharls-dev,libcpp-httplib-dev,libelf-dev,libexpat1-dev,libffi-dev,libgdal-dev,libglib2.0-dev,libgstreamer1.0-dev,libgstreamer-plugins-base1.0-dev,libgstrtspserver-1.0-dev,libjpeg62-turbo-dev,libjson-glib-dev,liblapack-dev,liblzma-dev,libmount-dev,libopenblas-pthread-dev,libopenjp2-7-dev,libpng-dev,qtbase5-dev,libsepol-dev,libspdlog-dev,libssl-dev,libsuperlu-dev,libtiff-dev,liburcu-dev,libwebp-dev,python3-dev,zlib1g-dev"
 fi
 
 SIMAAI_SYSROOT="${sysroot}" \

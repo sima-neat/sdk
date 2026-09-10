@@ -261,6 +261,11 @@ The workflow resolves it once to an exact mirrored Palette `~git` version and
 passes the same version to both host-architecture builds. A manual Platform
 selector overrides this default and can pin a full `3.0.0~gitTIMESTAMP.COMMIT-BUILD`.
 
+Daily builds resolve development packages together with the platform sysroot,
+using Debian 13 package names and Python 3.13. The later overlay step only
+repairs linker paths; it does not install the legacy Bookworm packages or kernel
+header pin.
+
 The `daily` channel uses `https://debian.neat.sima.ai/daily`, suite `agate`,
 plus Debian 13 `trixie` target dependencies. It does not add the legacy
 Aria/Bookworm platform fallback. Agate components have independent versions;

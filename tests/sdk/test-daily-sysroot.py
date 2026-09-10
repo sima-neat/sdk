@@ -29,6 +29,19 @@ class DailySelectionTest(unittest.TestCase):
         self.assertIs(module.daily_candidate([future, older], PLATFORM), older)
         self.assertIsNone(module.daily_candidate([future], PLATFORM))
 
+    def test_all_package_native_cache_key_without_host_arch_fallback(self):
+        all_package = SimpleNamespace(architecture="all")
+        host_package = SimpleNamespace(architecture="amd64")
+        target_package = SimpleNamespace(architecture="arm64")
+        cache = {"palette": SimpleNamespace(versions=[all_package]),
+                 "library": SimpleNamespace(versions=[host_package]),
+                 "library:arm64": SimpleNamespace(versions=[target_package])}
+        self.assertEqual(module.daily_package_versions(cache, "palette:arm64"), [all_package])
+        self.assertEqual(module.daily_package_versions(cache, "library:arm64"), [target_package])
+        self.assertEqual(module.daily_package_versions(cache, "library"), [target_package])
+        del cache["library:arm64"]
+        self.assertEqual(module.daily_package_versions(cache, "library:arm64"), [])
+
     def test_exact_and_minimum_dependency_constraints(self):
         versions = [candidate('3.0.0~git202609090513.abc1234-1218'), candidate('3.0.0~git202609080513.abc1234-1211')]
         self.assertIs(module.daily_candidate(versions, PLATFORM, versions[1].version), versions[1])
@@ -53,6 +66,26 @@ class DailySelectionTest(unittest.TestCase):
             output = subprocess.check_output(["bash", str(ROOT / "scripts/resolve-platform-config.sh")], env=env, text=True)
             self.assertIn("sdk_apt_channel=daily\n", output)
             self.assertIn(f"base_sdk_version={versions[1]}\n", output)
+
+    def test_finalize_overlay_preserves_headers_without_downloading_packages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            libdir = root / "usr/lib/aarch64-linux-gnu"
+            (libdir / "openblas-pthread").mkdir(parents=True)
+            for name in ("libblas.so.3", "liblapack.so.3", "libopenblas.so.0"):
+                (libdir / "openblas-pthread" / name).write_text("target library")
+            header = root / "usr/include/linux/version.h"
+            header.parent.mkdir(parents=True)
+            header.write_text("Agate UAPI headers")
+            apt = root / "apt-get"
+            apt.write_text("#!/bin/sh\nexit 87\n")
+            apt.chmod(0o755)
+            subprocess.run(["bash", str(ROOT / "scripts/install-sysroot-overlay.sh"),
+                            str(root), "--finalize-only"],
+                           env={**os.environ, "PATH": f"{root}:" + os.environ["PATH"]}, check=True)
+            self.assertEqual(header.read_text(), "Agate UAPI headers")
+            for name in ("libblas.so", "liblapack.so", "libopenblas.so"):
+                self.assertEqual((libdir / name).read_text(), "target library")
 
     def test_wrapper_keeps_kernel_version_and_extra_packages_separate(self):
         with tempfile.TemporaryDirectory() as directory:
