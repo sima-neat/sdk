@@ -221,7 +221,7 @@ replacing the index or pruning old builds.
 
 Only directory names matching `3.0.0_daily_<channel>_B<number>` are eligible.
 Completed builds are ordered by numeric build number, newest first (with directory
-name as a deterministic tie breaker). The latest 20 completed builds are kept
+name as a deterministic tie breaker). The latest 7 completed builds are kept
 across channels; pending uploads do not evict them.
 Successfully mirrored builds remain eligible if Artifactory removes them.
 Each directory must contain a `.wic`, `.img`, or `.iso` image; WIC/IMG gzip,
@@ -262,7 +262,7 @@ source size and SHA256 before upload. Verified S3 objects are reused on retries;
 completed builds have a `manifest.json`. Published build contents are immutable.
 The workflow refreshes its AWS session before the image phase; a transfer that
 outlasts the role session fails and resumes from completed objects on the next
-run. The initial 20-build backfill may require multiple runs.
+run. The initial 7-build backfill may require multiple runs.
 
 Without `publish`, the image step previews source metadata and selected builds;
 it does not download image bodies, write S3, or delete objects. With `publish`,
@@ -274,7 +274,7 @@ lines and bucket prefixes are untouched. Multipart uploads are aborted by the SD
 on ordinary transfer failures. Count retention is owned by this workflow, not
 Vulcan's generic branch artifact cleanup.
 
-A failed run can temporarily leave more than 20 directories in S3. The previous
+A failed run can temporarily leave more than 7 directories in S3. The previous
 index remains usable until the new index is published; a failure during pruning
 leaves the new index usable and the next successful run retries cleanup.
 Consumers should refresh the index when an old selection is no longer available.
@@ -288,8 +288,8 @@ The index is unchanged on a no-op run and contains:
 - `schema_version`: `1`.
 - `generated_at`: UTC ISO 8601 publication timestamp.
 - `platform`: `modalix`; `version_prefix`: `3.0.0_daily_`.
-- `bucket`, `prefix`, and `retention_count` (`20`).
-- `builds`: newest-first array, with at most 20 entries.
+- `bucket`, `prefix`, and `retention_count` (`7`).
+- `builds`: newest-first array, with at most 7 entries.
 - Each build: `name`, numeric `build_number`, `source_url`, and `files`.
 - Each file: relative `path`, S3 `key`, `s3_uri`, byte `size`, and `sha256`.
 

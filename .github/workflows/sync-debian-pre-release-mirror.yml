@@ -121,7 +121,7 @@ jobs:
           role-to-assume: ${{ env.VULCAN_DEBIAN_MIRROR_PUBLISHER_ROLE_ARN }}
           role-session-name: sdk-daily-images-${{ github.run_id }}
 
-      - name: Mirror daily platform images and retain the latest 20 builds
+      - name: Mirror daily platform images and retain the latest 7 builds
         if: ${{ !cancelled() && steps.daily_credentials.outcome == 'success' }}
         run: |
           set -euo pipefail
