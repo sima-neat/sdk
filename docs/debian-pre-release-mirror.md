@@ -198,3 +198,145 @@ The digest-addressed indexes and package-pool objects are immutable and must not
 be deleted. Invalidate `/daily/dists/*` after restoration, then verify the
 restored index and all referenced package checksums before reopening client
 access.
+
+## Daily platform images
+
+The same synchronization job also mirrors Modalix platform images from
+`https://artifacts.eng.sima.ai/artifactory/soc-images/elxr/bsp/modalix/` to
+`s3://sima-neat-artifacts-production/daily-platform-images/`. For example,
+`3.0.0_daily_develop_B1168/` becomes an identically named build directory.
+This step runs every 30 minutes even when the Debian repository is unchanged,
+and can run after a Debian sync failure. It uses the same `apt-mirror` runner,
+production environment, OIDC role, and manual `publish` switch.
+
+Set the SDK **production environment secret `ARTIFACTORY_READ_TOKEN`** to a
+read-only Artifactory bearer token that can list and download `soc-images`.
+The runner must reach `artifacts.eng.sima.ai` over trusted HTTPS. The script
+uses the Artifactory Storage API, requires SHA256 metadata, and refuses
+redirects. Missing authentication, an empty source listing, checksum errors, or altered
+previously published builds fail the step without
+replacing the index or pruning old builds.
+
+Only directory names matching `3.0.0_daily_<channel>_B<number>` are eligible.
+Completed builds are ordered by numeric build number, newest first (with directory
+name as a deterministic tie breaker). The latest 20 completed builds are kept
+across channels; pending uploads do not evict them.
+Successfully mirrored builds remain eligible if Artifactory removes them.
+Each directory must contain a `.wic`, `.img`, or `.iso` image; WIC/IMG gzip,
+xz, and zstd variants are supported. All files in an eligible build directory,
+including checksums and supporting assets, are mirrored preserving their paths.
+Directories without a supported image or complete checksum metadata remain pending
+and require a completed upload or an explicit format update before publication.
+
+A newly discovered build must have an identical recursive inventory (paths,
+byte sizes, and SHA256 values) at observations at least 30 minutes apart before
+it is eligible. Observations persist under
+`$DEBIAN_MIRROR_WORK_ROOT/daily-image-readiness/`; changing the inventory resets
+the timer, and a missing image/checksum resets readiness. Preview runs may
+record local observations but never publish. The first observation performs no
+image download. All selected upstream inventories are checked again after
+transfer and before any completion manifests or the index are written. A changed
+listing defers publication and restarts observation, leaving the previous index
+intact. Newer pending build objects are excluded from old-build retention.
+
+This is a stability heuristic, not an upstream completion marker: an upload that
+pauses more than 30 minutes can appear stable. If Artifactory gains an authoritative
+completion signal, use it in place of the observation interval. Published builds
+remain immutable, so later changes to a previously published build still fail
+closed instead of silently changing consumer-visible contents.
+
+Downloads use disk space for one artifact at a time beneath
+`DEBIAN_MIRROR_WORK_ROOT`, with a 1 GiB reserve. Each download must match the
+source size and SHA256 before upload. Verified S3 objects are reused on retries;
+completed builds have a `manifest.json`. Published build contents are immutable.
+The workflow refreshes its AWS session before the image phase; a transfer that
+outlasts the role session fails and resumes from completed objects on the next
+run. The initial 20-build backfill may require multiple runs.
+
+Without `publish`, the image step previews source metadata and selected builds;
+it does not download image bodies, write S3, or delete objects. With `publish`,
+it verifies/downloads/uploads files, publishes the index only after all selected
+builds succeed, then permanently deletes **all object versions and delete markers**
+for older matching build directories. It also removes abandoned partial uploads
+that exist as completed S3 objects under older build directories. Other release
+lines and bucket prefixes are untouched. Multipart uploads are aborted by the SDK
+on ordinary transfer failures. Count retention is owned by this workflow, not
+Vulcan's generic branch artifact cleanup.
+
+A failed run can temporarily leave more than 20 directories in S3. The previous
+index remains usable until the new index is published; a failure during pruning
+leaves the new index usable and the next successful run retries cleanup.
+Consumers should refresh the index when an old selection is no longer available.
+
+### CLI index contract (schema version 1)
+
+Read `s3://sima-neat-artifacts-production/daily-platform-images/index.json`.
+The object is published with JSON content type and `no-cache, max-age=0`.
+The index is unchanged on a no-op run and contains:
+
+- `schema_version`: `1`.
+- `generated_at`: UTC ISO 8601 publication timestamp.
+- `platform`: `modalix`; `version_prefix`: `3.0.0_daily_`.
+- `bucket`, `prefix`, and `retention_count` (`20`).
+- `builds`: newest-first array, with at most 20 entries.
+- Each build: `name`, numeric `build_number`, `source_url`, and `files`.
+- Each file: relative `path`, S3 `key`, `s3_uri`, byte `size`, and `sha256`.
+
+The same per-build entry is stored at `<build>/manifest.json`. A future sima-cli
+selector can display build names and download the selected image via its S3 URI,
+then verify its SHA256. No sima-cli behavior is changed by this workflow update.
+
+Run the isolated S3/versioning regression tests with:
+
+```bash
+python -m pip install boto3 'moto[s3]' pytest PyYAML
+python -m pytest -q tests/sdk/test-daily-platform-images.py
+```
+
+## New-version Slack notifications
+
+Each publishing mirror run sends a compact event to the channel configured by
+`SLACK_VULCAN_EVENT_CHANNEL_ID`, using the organization `SLACK_BOT_TOKEN` secret.
+Make the secret available to the SDK repository and invite the bot to the event
+channel. GitHub resolves the channel ID from the organization/repository or
+production environment variable. This event is separate from the existing daily
+APT package digest and does not use its channel setting.
+
+The message contains only the newly observed APT platform versions (from the
+`simaai-palette-modalix` anchor package), device image build names, and a link to
+the GitHub Actions run that detected them. It is sent after publication, so
+preview-only runs do not announce images or packages as available. The first
+publishing run with notification state initialized announces the versions it
+observes; later runs announce each version once per category. Unchanged platform
+versions remain quiet even when other APT packages change.
+
+Example:
+
+```text
+New mirror versions detected
+APT: 3.0.0-1168
+Device images: 3.0.0_daily_develop_B1168
+GitHub workflow run
+```
+
+Notification state and pending events live at
+`$DEBIAN_MIRROR_WORK_ROOT/version-notifications/state.json` on the same persistent
+runner volume as the mirror cache. Preserve that file across runs; replacing the
+runner or clearing the volume resets deduplication. The existing workflow
+concurrency group serializes access. A single run normally sends one combined
+message; retries spanning multiple detecting runs send one message per original
+run so links retain their provenance.
+
+The final notification step runs even if one mirror phase fails. Only published
+versions are eligible, including images whose index was published before a
+retention failure. Slack errors fail the notification step but leave publication
+intact and retain pending events for the next publishing run, including a no-change
+run. Events are persisted before sending and acknowledged locally after Slack
+success. An ambiguous network failure or a crash after Slack accepts a message
+can cause a duplicate on retry; delivery is at least once rather than exactly once.
+
+Regression coverage:
+
+```bash
+python -m pytest -q tests/sdk/test-daily-platform-images.py tests/sdk/test-mirror-version-notifications.py
+```
