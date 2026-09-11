@@ -65,6 +65,7 @@ jobs:
             curl \
             gnupg \
             jq \
+            openssl \
             python3 \
             python3-boto3 \
             util-linux
@@ -81,13 +82,25 @@ jobs:
             "${DEBIAN_MIRROR_WORK_ROOT}"
 
       - name: Configure production AWS credentials
+        id: mirror_credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.VULCAN_DEBIAN_MIRROR_PUBLISHER_ROLE_ARN }}
           role-session-name: sdk-debian-mirror-${{ github.run_id }}
 
+      - name: Synchronize SWUpdate verification certificate
+        if: ${{ !cancelled() && steps.mirror_credentials.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          arguments=()
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ inputs.publish }}" == "true" ]]; then
+            arguments+=(--publish)
+          fi
+          python3 scripts/sync-swupdate-certificate.py "${arguments[@]}"
+
       - name: Synchronize and validate mirror
+        if: ${{ !cancelled() && steps.mirror_credentials.outcome == 'success' }}
         env:
           APT_MIRROR2_THREADS: ${{ inputs.download_workers || '16' }}
           DEBIAN_MIRROR_REPORT_DIR: ${{ github.workspace }}/out/debian-mirror-sync

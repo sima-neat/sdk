@@ -319,18 +319,21 @@ channel. GitHub resolves the channel ID from the organization/repository or
 production environment variable. This event is separate from the existing daily
 APT package digest and does not use its channel setting.
 
-The message contains only the newly observed APT platform versions (from the
-`simaai-palette-modalix` anchor package), device image build names, and a link to
-the GitHub Actions run that detected them. It is sent after publication, so
+The message summarizes actual APT package changes between the previous and current
+validated inventories, device image build names, and a link to the GitHub Actions
+run. It shows the change count and up to five package changes, prioritizing entries
+with added versions over removal-only entries and sorting each group alphabetically; unchanged retained
+versions are omitted. The workflow table lists removed and added versions instead
+of repeating both full histories. Without a previous APT inventory, no package
+change notification is sent because no reliable comparison is available. It is sent after publication, so
 preview-only runs do not announce images or packages as available. Device image
 notifications include only builds with artifacts successfully copied from
 Artifactory to Vulcan during that run, after index publication. This also includes
 builds copied by an earlier attempt that failed before publishing the index;
 they are announced when a retry first publishes them. Existing builds
 remain quiet even when notification history is missing or a different branch
-runs the workflow. APT notifications retain their existing first-observation
-behavior. Later runs announce each version once per category; unchanged platform
-versions remain quiet even when other APT packages change.
+runs the workflow. Package changes retain their originating run for retry and
+deduplication. Device image versions are announced once per category.
 
 Each daily device image version links to its Jenkins console, using the numeric
 `B` suffix (for example, `3.0.0_daily_develop_B1295` links to
@@ -340,8 +343,10 @@ The GitHub workflow link is also retained.
 Example:
 
 ```text
-New mirror versions detected
-APT: 3.0.0-1168
+Mirror changes published
+APT package changes: 16
+• example (arm64): added 2.0; removed 1.0
+…additional changes are summarized; see the workflow report.
 Device images: 3.0.0_daily_develop_B1168
 GitHub workflow run
 ```
@@ -367,3 +372,37 @@ Regression coverage:
 ```bash
 python -m pytest -q tests/sdk/test-daily-platform-images.py tests/sdk/test-mirror-version-notifications.py
 ```
+
+## SWUpdate verification certificate
+
+Every scheduled run also fetches the public build-signing certificate from
+`http://sw-web.eng.sima.ai/deb/swupdate-signing-cert.pem` and mirrors it at
+`https://debian.neat.sima.ai/daily/swupdate-signing-cert.pem` (S3 key
+`daily/swupdate-signing-cert.pem`). This uses the existing publisher's `daily/*`
+permissions and the distribution's caching-disabled default behavior.
+
+The certificate step runs independently of the APT InRelease change check, so a
+signing-key rotation is synchronized even when no packages changed. It validates
+that the download contains exactly one parseable PEM certificate, compares its
+bytes with S3, and replaces the object only when changed. Downloads or validation
+failures preserve the published certificate and fail the step. The existing APT
+and image phases can still run. Manual runs without `publish` validate the source
+certificate without reading or writing S3. The job summary records the subject,
+validity dates, SHA256 certificate fingerprint, and file digest.
+
+On a board with `/data` mounted, fetch the mirrored certificate with:
+
+```bash
+curl -fsSL -o /data/swupdate-cert.pem \
+  https://debian.neat.sima.ai/daily/swupdate-signing-cert.pem
+openssl x509 -in /data/swupdate-cert.pem -noout -subject -fingerprint -sha256
+```
+
+Use `/data/swupdate-cert.pem` with SWUpdate's `-k` option. Gate device updates on
+time synchronization: without an RTC, a certificate can appear not yet valid
+until the device clock is stepped. The mirror validates certificate format but
+does not enforce its validity dates, so it can distribute a future-dated rotated
+certificate. This is the SiMa build-signing certificate, obtained over the same
+corporate HTTP trust boundary as the internal package mirror. A production fleet
+must distribute its own trusted verification certificate. No private key is
+copied, and this workflow does not install the certificate onto boards.

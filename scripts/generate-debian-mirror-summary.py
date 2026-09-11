@@ -59,8 +59,8 @@ def fallback_report(context: dict[str, Any], max_characters: int) -> str:
         architectures = ", ".join(slack_text(value) for value in transition.get("architectures", []))
         details.append(
             f"• `{slack_text(transition.get('package', 'unknown'))}`: "
-            f"`{version_list(transition.get('previous_versions', []))}` → "
-            f"`{version_list(transition.get('current_versions', []))}` ({architectures})"
+            f"`{version_list(sorted(set(transition.get('previous_versions', [])) - set(transition.get('current_versions', []))))}` → "
+            f"`{version_list(sorted(set(transition.get('current_versions', [])) - set(transition.get('previous_versions', []))))}` ({architectures})"
         )
     if not details:
         for item in added[:5]:

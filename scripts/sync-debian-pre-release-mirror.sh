@@ -389,9 +389,9 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     echo
     echo '### Version changes (up to 50)'
     echo
-    echo '| Package | Architecture | Previous | Current |'
+    echo '| Package | Architecture | Removed versions | Added versions |'
     echo '|---|---|---|---|'
-    jq -r '.version_changes[:50][] | "| `\(.package)` | `\(.architecture)` | `\(.previous_versions | join(", "))` | `\(.current_versions | join(", "))` |"' "${CHANGES_JSON}"
+    jq -r '.version_changes[:50][] | "| `\(.package)` | `\(.architecture)` | `\((.previous_versions - .current_versions) | if length == 0 then "—" else join(", ") end)` | `\((.current_versions - .previous_versions) | if length == 0 then "—" else join(", ") end)` |"' "${CHANGES_JSON}"
     echo
     echo '### Added package files (up to 50)'
     echo
