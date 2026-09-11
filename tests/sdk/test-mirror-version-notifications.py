@@ -22,7 +22,7 @@ def test_combines_versions_with_run_link_and_deduplicates(tmp_path):
     m.notify(state, versions, RUN, send)
     assert send.call_args.args[0] == (
         'New mirror versions detected\nAPT: 3.0.0-1168\n'
-        'Device images: 3.0.0_daily_develop_B1168\n'
+        'Device images: <https://jenkins.eng.sima.ai/job/soc-jobs/job/elxr-builder/1168/console|3.0.0_daily_develop_B1168>\n'
         f'<{RUN}|GitHub workflow run>'
     )
     m.notify(state, versions, NEXT_RUN, send)
@@ -65,10 +65,10 @@ def test_pending_and_new_events_keep_separate_original_run_links(tmp_path):
 
 def test_reports_only_successful_publications():
     assert m.collect({'result': 'Published', 'platform': {'versions': ['v1']}},
-                     {'result': 'Published', 'versions': ['image1']}) == {'apt': ['v1'], 'images': ['image1']}
+                     {'result': 'Published', 'versions': ['old', 'image1'], 'copied_versions': ['image1']}) == {'apt': ['v1'], 'images': ['image1']}
     for result in ('Validated only', 'No change', 'Failed'):
         assert m.collect({'result': result, 'platform': {'versions': ['v1']}}, {}) == {'apt': [], 'images': []}
-    assert m.collect({}, {'result': 'Published', 'versions': ['image1']}) == {'apt': [], 'images': ['image1']}
+    assert m.collect({}, {'result': 'Published', 'versions': ['old', 'image1'], 'copied_versions': ['image1']}) == {'apt': [], 'images': ['image1']}
 
 
 def test_empty_run_never_needs_slack_credentials(tmp_path):
@@ -108,3 +108,31 @@ def test_shared_slack_sender_rejects_api_failure(monkeypatch):
     monkeypatch.setattr('urllib.request.urlopen', lambda *a, **kw: io.BytesIO(b'{"ok": false, "error": "not_in_channel"}'))
     with pytest.raises(RuntimeError, match='not_in_channel'):
         sender('test-token', 'C123', 'test')
+
+
+def test_fresh_notification_state_only_announces_copied_images(tmp_path):
+    send = Mock()
+    versions = m.collect({}, {'result': 'Published', 'versions': ['old', 'new'], 'copied_versions': ['new']})
+    m.notify(tmp_path / 'state.json', versions, RUN, send)
+    assert 'Device images: new\n' in send.call_args.args[0]
+    assert 'old' not in send.call_args.args[0]
+    assert m.collect({}, {'result': 'Published', 'versions': ['old']})['images'] == []
+
+
+def test_each_daily_image_links_to_its_jenkins_build(tmp_path):
+    send = Mock()
+    m.notify(tmp_path / 'state.json', {'images': ['3.0.0_daily_develop_B1295', '3.0.0_daily_develop_B1296']}, RUN, send)
+    message = send.call_args.args[0]
+    for number in (1295, 1296):
+        assert f'<https://jenkins.eng.sima.ai/job/soc-jobs/job/elxr-builder/{number}/console|3.0.0_daily_develop_B{number}>' in message
+    assert f'<{RUN}|GitHub workflow run>' in message
+
+
+@pytest.mark.parametrize('version', ['unknown', '3.0.0_daily_release_B1295', '3.0.0_daily_develop_B1295/evil', '3.0.0_daily_develop_B1295\n', '<!channel>'])
+def test_unrecognized_images_do_not_generate_jenkins_links(version):
+    assert 'https://jenkins' not in m.format_version('images', version)
+    assert '<!channel>' not in m.format_version('images', version)
+
+
+def test_apt_versions_are_not_linked_to_jenkins():
+    assert m.format_version('apt', '3.0.0_daily_develop_B1295') == '3.0.0_daily_develop_B1295'
