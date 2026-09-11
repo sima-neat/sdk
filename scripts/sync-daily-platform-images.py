@@ -301,6 +301,10 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
             if manifests.get(name) != manifest:
                 put_json(s3, f'{PREFIX}{name}/manifest.json', manifest)
         old = read_json(s3, PREFIX + 'index.json')
+        # Uploads can finish in an earlier attempt whose index publication failed.
+        # Announce those builds when they first become available in the index.
+        indexed_versions = {build['name'] for build in (old or {}).get('builds', [])}
+        copied_versions.update(set(names) - indexed_versions)
         if old is None or {k: v for k, v in old.items() if k != 'generated_at'} != index:
             put_json(s3, PREFIX + 'index.json', dict(index, generated_at=datetime.now(timezone.utc).isoformat()))
         if report_path is not None:

@@ -128,7 +128,7 @@ def test_each_daily_image_links_to_its_jenkins_build(tmp_path):
     assert f'<{RUN}|GitHub workflow run>' in message
 
 
-@pytest.mark.parametrize('version', ['unknown', '3.0.0_daily_develop_B1295/evil', '3.0.0_daily_develop_B1295\n', '<!channel>'])
+@pytest.mark.parametrize('version', ['unknown', '3.0.0_daily_release_B1295', '3.0.0_daily_develop_B1295/evil', '3.0.0_daily_develop_B1295\n', '<!channel>'])
 def test_unrecognized_images_do_not_generate_jenkins_links(version):
     assert 'https://jenkins' not in m.format_version('images', version)
     assert '<!channel>' not in m.format_version('images', version)

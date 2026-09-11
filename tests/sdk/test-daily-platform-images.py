@@ -469,3 +469,25 @@ def test_failed_run_removes_stale_report(s3, tmp_path):
     with pytest.raises(ValueError, match='Interrupted'):
         mirror(source, s3, True, report_path=report)
     assert not report.exists()
+
+
+def test_index_publication_retry_reports_new_build_without_reupload(s3, tmp_path, monkeypatch):
+    report = tmp_path / 'result.json'
+    mirror(Source([1]), s3, True)
+    source = Source([1, 2])
+    original_put = m.put_json
+    def fail_index(client, key, value):
+        if key == m.PREFIX + 'index.json':
+            raise RuntimeError('Index publication failed')
+        return original_put(client, key, value)
+    monkeypatch.setattr(m, 'put_json', fail_index)
+    with pytest.raises(RuntimeError, match='Index publication failed'):
+        mirror(source, s3, True, report_path=report)
+    assert source.downloads == [name(2)]
+    assert not report.exists()
+    monkeypatch.setattr(m, 'put_json', original_put)
+    mirror(source, s3, True, report_path=report)
+    assert source.downloads == [name(2)]
+    assert json.loads(report.read_text())['copied_versions'] == [name(2)]
+    mirror(source, s3, True, report_path=report)
+    assert json.loads(report.read_text())['copied_versions'] == []

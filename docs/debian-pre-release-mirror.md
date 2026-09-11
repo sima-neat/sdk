@@ -324,7 +324,9 @@ The message contains only the newly observed APT platform versions (from the
 the GitHub Actions run that detected them. It is sent after publication, so
 preview-only runs do not announce images or packages as available. Device image
 notifications include only builds with artifacts successfully copied from
-Artifactory to Vulcan during that run, after index publication. Existing builds
+Artifactory to Vulcan during that run, after index publication. This also includes
+builds copied by an earlier attempt that failed before publishing the index;
+they are announced when a retry first publishes them. Existing builds
 remain quiet even when notification history is missing or a different branch
 runs the workflow. APT notifications retain their existing first-observation
 behavior. Later runs announce each version once per category; unchanged platform
