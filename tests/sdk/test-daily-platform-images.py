@@ -448,3 +448,24 @@ def test_reducing_retention_reuses_latest_seven_and_removes_old_versions(s3, mon
         build = obj['Key'][len(m.PREFIX):].split('/')[0]
         if m.BUILD.fullmatch(build):
             assert m.rank(build)[0] >= 14
+
+
+def test_report_only_lists_builds_with_copied_artifacts(s3, tmp_path):
+    report = tmp_path / 'result.json'
+    mirror(Source(range(1, 8)), s3, True)
+    mirror(Source(range(2, 9)), s3, True, report_path=report)
+    data = json.loads(report.read_text())
+    assert len(data['versions']) == 7
+    assert data['copied_versions'] == [name(8)]
+    mirror(Source(range(2, 9)), s3, True, report_path=report)
+    assert json.loads(report.read_text())['copied_versions'] == []
+
+
+def test_failed_run_removes_stale_report(s3, tmp_path):
+    report = tmp_path / 'result.json'
+    report.write_text('{"result":"Published","copied_versions":["old"]}')
+    source = Source([1])
+    source.fail = True
+    with pytest.raises(ValueError, match='Interrupted'):
+        mirror(source, s3, True, report_path=report)
+    assert not report.exists()

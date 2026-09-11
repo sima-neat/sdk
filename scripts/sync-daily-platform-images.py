@@ -208,6 +208,8 @@ def prune(s3, retained):
 
 
 def mirror(source, s3, publish=False, work_root=None, report_path=None, readiness=None):
+    if report_path is not None:
+        report_path.unlink(missing_ok=True)
     if readiness is None:
         if work_root is None:
             raise ValueError("A persistent work root is required for build readiness")
@@ -242,6 +244,7 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
         print('No stable completed builds; leaving S3 and index unchanged', flush=True)
         return None
     builds = []
+    copied_versions = set()
     for name in names:
         files = snapshots[name] if name in snapshots else manifests[name]['files']
         # Source timestamps are readiness evidence, not part of the immutable
@@ -276,6 +279,7 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
                     'ServerSideEncryption': 'aws:kms', 'SSEKMSKeyId': 'alias/sima-neat-artifacts-production',
                     'Metadata': {'sha256': artifact['sha256']},
                 })
+                copied_versions.add(name)
         builds.append(manifest)
     index = {'schema_version': 1, 'platform': 'modalix', 'version_prefix': '3.0.0_daily_',
              'bucket': BUCKET, 'prefix': PREFIX, 'retention_count': KEEP, 'builds': builds}
@@ -303,6 +307,7 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
             report_path.parent.mkdir(parents=True, exist_ok=True)
             report_path.write_text(json.dumps({
                 'schema_version': 1, 'result': 'Published', 'versions': names,
+                'copied_versions': [name for name in names if name in copied_versions],
             }, indent=2) + '\n')
         protected = set(names) | {name for name in upstream if rank(name) > rank(names[-1])}
         print(f'Removed {prune(s3, protected)} expired object versions')

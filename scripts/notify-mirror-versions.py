@@ -4,6 +4,7 @@ import argparse
 import html
 import json
 import os
+import re
 from pathlib import Path
 import runpy
 import tempfile
@@ -36,8 +37,17 @@ def collect(apt, images):
     # Preview-only runs must never announce versions as available.
     return {
         'apt': apt.get('platform', {}).get('versions', []) if apt.get('result') == 'Published' else [],
-        'images': images.get('versions', []) if images.get('result') == 'Published' else [],
+        'images': images.get('copied_versions', []) if images.get('result') == 'Published' else [],
     }
+
+
+def format_version(kind, version):
+    label = html.escape(version, quote=False)
+    match = re.fullmatch(r'3\.0\.0_daily_develop_B([0-9]+)', version)
+    if kind == 'images' and match:
+        url = f'https://jenkins.eng.sima.ai/job/soc-jobs/job/elxr-builder/{match.group(1)}/console'
+        return f'<{url}|{label}>'
+    return label
 
 
 def validate_run_url(url):
@@ -72,7 +82,7 @@ def notify(state_path, versions, run_url, send):
         validate_run_url(original_run)
         lines = ['New mirror versions detected']
         for kind, label in KINDS.items():
-            values = [html.escape(item['version'], quote=False) for item in items if item['kind'] == kind]
+            values = [format_version(kind, item['version']) for item in items if item['kind'] == kind]
             if values:
                 lines.append(f'{label}: ' + ', '.join(values))
         lines.append(f'<{original_run}|GitHub workflow run>')
