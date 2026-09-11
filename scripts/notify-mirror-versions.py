@@ -11,7 +11,7 @@ import tempfile
 from urllib.parse import urlparse
 
 
-KINDS = {'apt': 'APT', 'images': 'Device images'}
+KINDS = {'apt': 'APT', 'packages': 'APT package changes', 'images': 'Device images'}
 
 
 def save_state(path, state):
@@ -35,10 +35,33 @@ def load_report(path):
 
 def collect(apt, images):
     # Preview-only runs must never announce versions as available.
-    return {
-        'apt': apt.get('platform', {}).get('versions', []) if apt.get('result') == 'Published' else [],
+    result = {
+        'apt': [],
         'images': images.get('copied_versions', []) if images.get('result') == 'Published' else [],
     }
+    changes = apt.get('changes', {})
+    if apt.get('result') == 'Published' and changes.get('baseline_available') is True:
+        events = []
+        covered = set()
+        for item in changes.get('version_changes', []):
+            before, after = set(item['previous_versions']), set(item['current_versions'])
+            details = []
+            if after - before:
+                details.append('added ' + ', '.join(sorted(after - before)))
+            if before - after:
+                details.append('removed ' + ', '.join(sorted(before - after)))
+            if details:
+                events.append(f"{item['package']} ({item['architecture']}): " + '; '.join(details))
+                covered.add((item['package'], item['architecture']))
+        # Entirely new or removed packages have no version_changes entry.
+        for field, action in (('added', 'added'), ('removed', 'removed')):
+            opposite = {(v['package'], v['architecture'], v['version']) for v in changes.get('removed' if field == 'added' else 'added', [])}
+            for item in changes.get(field, []):
+                if (item['package'], item['architecture']) not in covered and (item['package'], item['architecture'], item['version']) not in opposite:
+                    events.append(f"{item['package']} ({item['architecture']}): {action} {item['version']}")
+        if events:
+            result['packages'] = sorted(set(events))
+    return result
 
 
 def format_version(kind, version):
@@ -66,7 +89,10 @@ def notify(state_path, versions, run_url, send):
     for kind in KINDS:
         seen = set(state['seen'].get(kind, []))
         pending = {item['version'] for item in state['pending'] if item['kind'] == kind}
-        for version in sorted(set(versions.get(kind, [])) - seen - pending):
+        for version in sorted(set(versions.get(kind, [])) - pending):
+            identity = run_url + '\n' + version if kind == 'packages' else version
+            if identity in seen:
+                continue
             state['pending'].append({'kind': kind, 'version': version, 'run_url': run_url})
     # Record the original detecting run before contacting Slack. A failed send
     # is retried even if the next mirror run reports no upstream changes.
@@ -80,15 +106,22 @@ def notify(state_path, versions, run_url, send):
         groups.setdefault(item['run_url'], []).append(item)
     for original_run, items in groups.items():
         validate_run_url(original_run)
-        lines = ['New mirror versions detected']
+        lines = ['Mirror changes published']
         for kind, label in KINDS.items():
             values = [format_version(kind, item['version']) for item in items if item['kind'] == kind]
             if values:
-                lines.append(f'{label}: ' + ', '.join(values))
+                if kind == 'packages':
+                    lines.append(f'{label}: {len(values)}')
+                    lines.extend('• ' + value[:500] for value in values[:5])
+                    if len(values) > 5:
+                        lines.append(f'…and {len(values) - 5} more; see the workflow report.')
+                else:
+                    lines.append(f'{label}: ' + ', '.join(values))
         lines.append(f'<{original_run}|GitHub workflow run>')
         send('\n'.join(lines))
         for item in items:
-            state['seen'].setdefault(item['kind'], []).append(item['version'])
+            identity = item['run_url'] + '\n' + item['version'] if item['kind'] == 'packages' else item['version']
+            state['seen'].setdefault(item['kind'], []).append(identity)
             state['pending'].remove(item)
         save_state(state_path, state)
 

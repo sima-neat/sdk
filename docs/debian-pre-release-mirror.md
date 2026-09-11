@@ -319,18 +319,20 @@ channel. GitHub resolves the channel ID from the organization/repository or
 production environment variable. This event is separate from the existing daily
 APT package digest and does not use its channel setting.
 
-The message contains only the newly observed APT platform versions (from the
-`simaai-palette-modalix` anchor package), device image build names, and a link to
-the GitHub Actions run that detected them. It is sent after publication, so
+The message summarizes actual APT package changes between the previous and current
+validated inventories, device image build names, and a link to the GitHub Actions
+run. It shows the change count and up to five package changes; unchanged retained
+versions are omitted. The workflow table lists removed and added versions instead
+of repeating both full histories. Without a previous APT inventory, no package
+change notification is sent because no reliable comparison is available. It is sent after publication, so
 preview-only runs do not announce images or packages as available. Device image
 notifications include only builds with artifacts successfully copied from
 Artifactory to Vulcan during that run, after index publication. This also includes
 builds copied by an earlier attempt that failed before publishing the index;
 they are announced when a retry first publishes them. Existing builds
 remain quiet even when notification history is missing or a different branch
-runs the workflow. APT notifications retain their existing first-observation
-behavior. Later runs announce each version once per category; unchanged platform
-versions remain quiet even when other APT packages change.
+runs the workflow. Package changes retain their originating run for retry and
+deduplication. Device image versions are announced once per category.
 
 Each daily device image version links to its Jenkins console, using the numeric
 `B` suffix (for example, `3.0.0_daily_develop_B1295` links to
@@ -340,8 +342,10 @@ The GitHub workflow link is also retained.
 Example:
 
 ```text
-New mirror versions detected
-APT: 3.0.0-1168
+Mirror changes published
+APT package changes: 16
+• example (arm64): added 2.0; removed 1.0
+…additional changes are summarized; see the workflow report.
 Device images: 3.0.0_daily_develop_B1168
 GitHub workflow run
 ```

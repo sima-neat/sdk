@@ -21,7 +21,7 @@ def test_combines_versions_with_run_link_and_deduplicates(tmp_path):
     versions = {'apt': ['3.0.0-1168', '3.0.0-1168'], 'images': ['3.0.0_daily_develop_B1168']}
     m.notify(state, versions, RUN, send)
     assert send.call_args.args[0] == (
-        'New mirror versions detected\nAPT: 3.0.0-1168\n'
+        'Mirror changes published\nAPT: 3.0.0-1168\n'
         'Device images: <https://jenkins.eng.sima.ai/job/soc-jobs/job/elxr-builder/1168/console|3.0.0_daily_develop_B1168>\n'
         f'<{RUN}|GitHub workflow run>'
     )
@@ -65,7 +65,7 @@ def test_pending_and_new_events_keep_separate_original_run_links(tmp_path):
 
 def test_reports_only_successful_publications():
     assert m.collect({'result': 'Published', 'platform': {'versions': ['v1']}},
-                     {'result': 'Published', 'versions': ['old', 'image1'], 'copied_versions': ['image1']}) == {'apt': ['v1'], 'images': ['image1']}
+                     {'result': 'Published', 'versions': ['old', 'image1'], 'copied_versions': ['image1']}) == {'apt': [], 'images': ['image1']}
     for result in ('Validated only', 'No change', 'Failed'):
         assert m.collect({'result': result, 'platform': {'versions': ['v1']}}, {}) == {'apt': [], 'images': []}
     assert m.collect({}, {'result': 'Published', 'versions': ['old', 'image1'], 'copied_versions': ['image1']}) == {'apt': [], 'images': ['image1']}
@@ -136,3 +136,26 @@ def test_unrecognized_images_do_not_generate_jenkins_links(version):
 
 def test_apt_versions_are_not_linked_to_jenkins():
     assert m.format_version('apt', '3.0.0_daily_develop_B1295') == '3.0.0_daily_develop_B1295'
+
+
+def test_only_changed_versions_in_package_notification(tmp_path):
+    report = {'result': 'Published', 'platform': {'versions': ['old', 'new']},
+              'changes': {'baseline_available': True, 'version_changes': [
+                  {'package': 'example', 'architecture': 'arm64', 'previous_versions': ['retained', 'old'], 'current_versions': ['retained', 'new']}]}}
+    versions = m.collect(report, {})
+    assert versions['packages'] == ['example (arm64): added new; removed old']
+    send = Mock()
+    m.notify(tmp_path / 'state.json', versions, RUN, send)
+    assert 'APT package changes: 1' in send.call_args.args[0]
+    assert 'retained' not in send.call_args.args[0]
+    report['changes']['baseline_available'] = False
+    assert m.collect(report, {}) == {'apt': [], 'images': []}
+
+
+def test_package_preview_is_bounded(tmp_path):
+    send = Mock()
+    m.notify(tmp_path / 'state.json', {'packages': [f'pkg{i}: added v2' for i in range(16)]}, RUN, send)
+    message = send.call_args.args[0]
+    assert 'APT package changes: 16' in message
+    assert message.count('• ') == 5
+    assert '11 more' in message
