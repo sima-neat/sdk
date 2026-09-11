@@ -22,7 +22,7 @@ def test_combines_versions_with_run_link_and_deduplicates(tmp_path):
     m.notify(state, versions, RUN, send)
     assert send.call_args.args[0] == (
         'New mirror versions detected\nAPT: 3.0.0-1168\n'
-        'Device images: 3.0.0_daily_develop_B1168\n'
+        'Device images: <https://jenkins.eng.sima.ai/job/soc-jobs/job/elxr-builder/1168/console|3.0.0_daily_develop_B1168>\n'
         f'<{RUN}|GitHub workflow run>'
     )
     m.notify(state, versions, NEXT_RUN, send)
@@ -117,3 +117,22 @@ def test_fresh_notification_state_only_announces_copied_images(tmp_path):
     assert 'Device images: new\n' in send.call_args.args[0]
     assert 'old' not in send.call_args.args[0]
     assert m.collect({}, {'result': 'Published', 'versions': ['old']})['images'] == []
+
+
+def test_each_daily_image_links_to_its_jenkins_build(tmp_path):
+    send = Mock()
+    m.notify(tmp_path / 'state.json', {'images': ['3.0.0_daily_develop_B1295', '3.0.0_daily_develop_B1296']}, RUN, send)
+    message = send.call_args.args[0]
+    for number in (1295, 1296):
+        assert f'<https://jenkins.eng.sima.ai/job/soc-jobs/job/elxr-builder/{number}/console|3.0.0_daily_develop_B{number}>' in message
+    assert f'<{RUN}|GitHub workflow run>' in message
+
+
+@pytest.mark.parametrize('version', ['unknown', '3.0.0_daily_develop_B1295/evil', '3.0.0_daily_develop_B1295\n', '<!channel>'])
+def test_unrecognized_images_do_not_generate_jenkins_links(version):
+    assert 'https://jenkins' not in m.format_version('images', version)
+    assert '<!channel>' not in m.format_version('images', version)
+
+
+def test_apt_versions_are_not_linked_to_jenkins():
+    assert m.format_version('apt', '3.0.0_daily_develop_B1295') == '3.0.0_daily_develop_B1295'

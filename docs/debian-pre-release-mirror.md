@@ -330,6 +330,11 @@ runs the workflow. APT notifications retain their existing first-observation
 behavior. Later runs announce each version once per category; unchanged platform
 versions remain quiet even when other APT packages change.
 
+Each daily device image version links to its Jenkins console, using the numeric
+`B` suffix (for example, `3.0.0_daily_develop_B1295` links to
+`https://jenkins.eng.sima.ai/job/soc-jobs/job/elxr-builder/1295/console`).
+The GitHub workflow link is also retained.
+
 Example:
 
 ```text
