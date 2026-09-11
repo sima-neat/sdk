@@ -81,6 +81,50 @@ def validate_run_url(url):
     return url
 
 
+def message_blocks(items, run_url):
+    """Render persisted events without changing their outbox identities."""
+    blocks = [{'type': 'header', 'text': {'type': 'plain_text', 'text': 'Mirror changes published'}}]
+    packages = sorted(
+        (item['version'] for item in items if item['kind'] == 'packages'),
+        key=lambda value: (': added ' not in value, value),
+    )
+    if packages:
+        blocks.append({'type': 'section', 'text': {
+            'type': 'mrkdwn', 'text': f'*APT package changes: {len(packages)}*',
+        }})
+        rows = [[{'type': 'raw_text', 'text': label} for label in
+                 ('Package', 'Architecture', 'Removed versions', 'Added versions')]]
+        # Slack allows 100 rows including the header, and one table per message.
+        for event in packages[:99]:
+            match = re.fullmatch(r'(.+?) \(([^()]+)\): (.+)', event)
+            if match:
+                package, architecture, details = match.groups()
+                changes = dict(part.split(' ', 1) for part in details.split('; '))
+                cells = (package, architecture, changes.get('removed', '—'), changes.get('added', '—'))
+            else:
+                # Preserve unfamiliar pending events from older producers verbatim.
+                cells = (event, '—', '—', '—')
+            rows.append([{'type': 'raw_text', 'text': value} for value in cells])
+        blocks.append({'type': 'table', 'rows': rows,
+                       'column_settings': [{'is_wrapped': True} for _ in range(4)]})
+        if len(packages) > 99:
+            blocks.append({'type': 'context', 'elements': [{
+                'type': 'mrkdwn',
+                'text': f'{len(packages) - 99} more changes; see the workflow report.',
+            }]})
+    for kind in ('apt', 'images'):
+        for item in items:
+            if item['kind'] == kind:
+                blocks.append({'type': 'section', 'text': {
+                    'type': 'mrkdwn',
+                    'text': f'*{KINDS[kind]}:* {format_version(kind, item["version"])}',
+                }})
+    blocks.append({'type': 'section', 'text': {
+        'type': 'mrkdwn', 'text': f'<{run_url}|View full changes → GitHub workflow run>',
+    }})
+    return blocks
+
+
 def notify(state_path, versions, run_url, send):
     validate_run_url(run_url)
     state = load_report(state_path) or {'schema_version': 1, 'seen': {}, 'pending': []}
@@ -120,7 +164,7 @@ def notify(state_path, versions, run_url, send):
                 else:
                     lines.append(f'{label}: ' + ', '.join(values))
         lines.append(f'<{original_run}|GitHub workflow run>')
-        send('\n'.join(lines))
+        send('\n'.join(lines), blocks=message_blocks(items, original_run))
         for item in items:
             identity = item['run_url'] + '\n' + item['version'] if item['kind'] == 'packages' else item['version']
             state['seen'].setdefault(item['kind'], []).append(identity)
@@ -137,12 +181,12 @@ def main():
     versions = collect(load_report(args.apt_report), load_report(args.image_report))
     post = runpy.run_path(str(Path(__file__).with_name('post-debian-mirror-summary.py')))['post_message']
 
-    def send(text):
+    def send(text, *, blocks):
         token = os.environ.get('SLACK_BOT_TOKEN', '')
         channel = os.environ.get('SLACK_VULCAN_EVENT_CHANNEL_ID', '')
         if not token or not channel:
             raise ValueError('SLACK_BOT_TOKEN and SLACK_VULCAN_EVENT_CHANNEL_ID are required')
-        post(token, channel, text)
+        post(token, channel, text, blocks=blocks)
         print('Posted new mirror versions to Slack.')
 
     run_url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"

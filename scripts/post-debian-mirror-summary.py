@@ -15,13 +15,14 @@ import urllib.request
 SLACK_API_URL = "https://slack.com/api/chat.postMessage"
 
 
-def post_message(token: str, channel: str, text: str) -> dict[str, object]:
+def post_message(token: str, channel: str, text: str, *, blocks: list[dict] | None = None) -> dict[str, object]:
     payload = json.dumps(
         {
             "channel": channel,
             "text": text,
             "unfurl_links": False,
             "unfurl_media": False,
+            **({"blocks": blocks} if blocks is not None else {}),
         }
     ).encode("utf-8")
     request = urllib.request.Request(
