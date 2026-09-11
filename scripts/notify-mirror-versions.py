@@ -36,7 +36,7 @@ def collect(apt, images):
     # Preview-only runs must never announce versions as available.
     return {
         'apt': apt.get('platform', {}).get('versions', []) if apt.get('result') == 'Published' else [],
-        'images': images.get('versions', []) if images.get('result') == 'Published' else [],
+        'images': images.get('copied_versions', []) if images.get('result') == 'Published' else [],
     }
 
 

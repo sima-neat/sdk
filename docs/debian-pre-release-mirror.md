@@ -322,9 +322,12 @@ APT package digest and does not use its channel setting.
 The message contains only the newly observed APT platform versions (from the
 `simaai-palette-modalix` anchor package), device image build names, and a link to
 the GitHub Actions run that detected them. It is sent after publication, so
-preview-only runs do not announce images or packages as available. The first
-publishing run with notification state initialized announces the versions it
-observes; later runs announce each version once per category. Unchanged platform
+preview-only runs do not announce images or packages as available. Device image
+notifications include only builds with artifacts successfully copied from
+Artifactory to Vulcan during that run, after index publication. Existing builds
+remain quiet even when notification history is missing or a different branch
+runs the workflow. APT notifications retain their existing first-observation
+behavior. Later runs announce each version once per category; unchanged platform
 versions remain quiet even when other APT packages change.
 
 Example:

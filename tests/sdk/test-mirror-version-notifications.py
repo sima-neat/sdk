@@ -65,10 +65,10 @@ def test_pending_and_new_events_keep_separate_original_run_links(tmp_path):
 
 def test_reports_only_successful_publications():
     assert m.collect({'result': 'Published', 'platform': {'versions': ['v1']}},
-                     {'result': 'Published', 'versions': ['image1']}) == {'apt': ['v1'], 'images': ['image1']}
+                     {'result': 'Published', 'versions': ['old', 'image1'], 'copied_versions': ['image1']}) == {'apt': ['v1'], 'images': ['image1']}
     for result in ('Validated only', 'No change', 'Failed'):
         assert m.collect({'result': result, 'platform': {'versions': ['v1']}}, {}) == {'apt': [], 'images': []}
-    assert m.collect({}, {'result': 'Published', 'versions': ['image1']}) == {'apt': [], 'images': ['image1']}
+    assert m.collect({}, {'result': 'Published', 'versions': ['old', 'image1'], 'copied_versions': ['image1']}) == {'apt': [], 'images': ['image1']}
 
 
 def test_empty_run_never_needs_slack_credentials(tmp_path):
@@ -108,3 +108,12 @@ def test_shared_slack_sender_rejects_api_failure(monkeypatch):
     monkeypatch.setattr('urllib.request.urlopen', lambda *a, **kw: io.BytesIO(b'{"ok": false, "error": "not_in_channel"}'))
     with pytest.raises(RuntimeError, match='not_in_channel'):
         sender('test-token', 'C123', 'test')
+
+
+def test_fresh_notification_state_only_announces_copied_images(tmp_path):
+    send = Mock()
+    versions = m.collect({}, {'result': 'Published', 'versions': ['old', 'new'], 'copied_versions': ['new']})
+    m.notify(tmp_path / 'state.json', versions, RUN, send)
+    assert 'Device images: new\n' in send.call_args.args[0]
+    assert 'old' not in send.call_args.args[0]
+    assert m.collect({}, {'result': 'Published', 'versions': ['old']})['images'] == []
