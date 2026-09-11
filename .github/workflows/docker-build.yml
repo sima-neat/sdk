@@ -83,6 +83,8 @@ jobs:
           tests/sdk/test-neat-deps.sh
           tests/sdk/test-install-neat-resources.sh
           tests/sdk/test-build-script.sh
+          tests/sdk/test-production-sdk-snapshot-workflow.sh
+          python3 tests/sdk/test_update_vulcan_sdk_snapshot.py
 
       - name: Set up Docker Buildx
         id: buildx
