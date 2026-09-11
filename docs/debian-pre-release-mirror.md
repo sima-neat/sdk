@@ -367,3 +367,37 @@ Regression coverage:
 ```bash
 python -m pytest -q tests/sdk/test-daily-platform-images.py tests/sdk/test-mirror-version-notifications.py
 ```
+
+## SWUpdate verification certificate
+
+Every scheduled run also fetches the public build-signing certificate from
+`http://sw-web.eng.sima.ai/deb/swupdate-signing-cert.pem` and mirrors it at
+`https://debian.neat.sima.ai/daily/swupdate-signing-cert.pem` (S3 key
+`daily/swupdate-signing-cert.pem`). This uses the existing publisher's `daily/*`
+permissions and the distribution's caching-disabled default behavior.
+
+The certificate step runs independently of the APT InRelease change check, so a
+signing-key rotation is synchronized even when no packages changed. It validates
+that the download contains exactly one parseable PEM certificate, compares its
+bytes with S3, and replaces the object only when changed. Downloads or validation
+failures preserve the published certificate and fail the step. The existing APT
+and image phases can still run. Manual runs without `publish` validate the source
+certificate without reading or writing S3. The job summary records the subject,
+validity dates, SHA256 certificate fingerprint, and file digest.
+
+On a board with `/data` mounted, fetch the mirrored certificate with:
+
+```bash
+curl -fsSL -o /data/swupdate-cert.pem \
+  https://debian.neat.sima.ai/daily/swupdate-signing-cert.pem
+openssl x509 -in /data/swupdate-cert.pem -noout -subject -fingerprint -sha256
+```
+
+Use `/data/swupdate-cert.pem` with SWUpdate's `-k` option. Gate device updates on
+time synchronization: without an RTC, a certificate can appear not yet valid
+until the device clock is stepped. The mirror validates certificate format but
+does not enforce its validity dates, so it can distribute a future-dated rotated
+certificate. This is the SiMa build-signing certificate, obtained over the same
+corporate HTTP trust boundary as the internal package mirror. A production fleet
+must distribute its own trusted verification certificate. No private key is
+copied, and this workflow does not install the certificate onto boards.
