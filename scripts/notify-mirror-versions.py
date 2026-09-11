@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 
 
 KINDS = {'apt': 'APT', 'packages': 'APT package changes', 'images': 'Device images'}
+TABLE_CELL_LIMIT = 2000
+TABLE_CELL_OVERFLOW = '… (see workflow report)'
 
 
 def save_state(path, state):
@@ -104,7 +106,10 @@ def message_blocks(items, run_url):
             else:
                 # Preserve unfamiliar pending events from older producers verbatim.
                 cells = (event, '—', '—', '—')
-            rows.append([{'type': 'raw_text', 'text': value} for value in cells])
+            rows.append([{'type': 'raw_text', 'text': (
+                value if len(value) <= TABLE_CELL_LIMIT else
+                value[:TABLE_CELL_LIMIT - len(TABLE_CELL_OVERFLOW)] + TABLE_CELL_OVERFLOW
+            )} for value in cells])
         blocks.append({'type': 'table', 'rows': rows,
                        'column_settings': [{'is_wrapped': True} for _ in range(4)]})
         if len(packages) > 99:

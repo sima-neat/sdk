@@ -248,3 +248,25 @@ def test_shared_sender_includes_blocks_and_keeps_plain_text_compatible(monkeypat
     assert requests[-1]['text'] == 'fallback'
     sender('test-token', 'C123', 'daily digest')
     assert 'blocks' not in requests[-1]
+
+
+@pytest.mark.parametrize('length', [1999, 2000, 2001, 5000])
+def test_table_cell_limits_cover_versions_and_legacy_events(tmp_path, length):
+    value = 'v' * length
+    events = [f'package (arm64): added {value}; removed {value}', value]
+    state = tmp_path / 'state.json'
+    # A failed send retains the complete event for the next run.
+    with pytest.raises(RuntimeError):
+        m.notify(state, {'packages': events}, RUN, Mock(side_effect=RuntimeError()))
+    assert {item['version'] for item in json.loads(state.read_text())['pending']} == set(events)
+    send = Mock()
+    m.notify(state, {}, NEXT_RUN, send)
+    blocks = send.call_args.kwargs['blocks']
+    table = next(block for block in blocks if block['type'] == 'table')
+    expected = value if length <= 2000 else value[:2000 - len(m.TABLE_CELL_OVERFLOW)] + m.TABLE_CELL_OVERFLOW
+    assert table['rows'][1][2]['text'] == expected
+    assert table['rows'][1][3]['text'] == expected
+    assert table['rows'][2][0]['text'] == expected
+    assert all(len(cell['text']) <= 2000 for row in table['rows'] for cell in row)
+    assert RUN in blocks[-1]['text']['text']
+    assert not json.loads(state.read_text())['pending']

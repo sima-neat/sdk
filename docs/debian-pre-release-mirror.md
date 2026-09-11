@@ -322,7 +322,9 @@ APT package digest and does not use its channel setting.
 The message summarizes actual APT package changes between the previous and current
 validated inventories, device image build names, and a link to the GitHub Actions
 run. It uses a native Slack Block Kit table with Package, Architecture, Removed
-versions, and Added versions columns. Full version strings wrap within their cells.
+versions, and Added versions columns. Version strings wrap within their cells.
+Cells exceeding Slack’s 2,000-character limit are truncated with a note directing
+readers to the full workflow report; the stored events remain complete for retries.
 The table shows up to 99 changes (plus its header), with an overflow count and a
 link to the full workflow report for larger runs. It prioritizes entries
 with added versions over removal-only entries and sorting each group alphabetically; unchanged retained
