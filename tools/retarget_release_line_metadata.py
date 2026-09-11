@@ -106,12 +106,12 @@ def update_manifest_metadata_entry(manifest_path: Path, metadata_path: Path) -> 
     metadata_sha = sha256_file(metadata_path)
     metadata_size = metadata_path.stat().st_size
     for artifact in artifacts:
-        if artifact.get("path") == "metadata.json":
+        if artifact.get("path") == metadata_path.name:
             artifact["sha256"] = metadata_sha
             artifact["size"] = metadata_size
             break
     else:
-        raise SystemExit("manifest.json does not contain metadata.json artifact entry")
+        raise SystemExit(f"manifest.json does not contain {metadata_path.name} artifact entry")
 
     write_json(manifest_path, manifest, indent=2)
 
@@ -168,27 +168,36 @@ def main() -> None:
             raise SystemExit(f"Empty latest.tag for {repo_name}/{args.release_line_ref}")
 
         prefix = f"{repo_name}/{encoded_branch_key}/{latest_tag}"
-        metadata_path = work_dir / "metadata.json"
         manifest_path = work_dir / "manifest.json"
-        run("aws", "s3", "cp", f"s3://{args.bucket}/{prefix}/metadata.json", str(metadata_path))
         run("aws", "s3", "cp", f"s3://{args.bucket}/{prefix}/manifest.json", str(manifest_path))
+        metadata_names = ["metadata.json"]
+        # Older release-line packages may predate the Studio variant.
+        if any(
+            artifact.get("path") == "metadata-edgematic-studio.json"
+            for artifact in load_json(manifest_path).get("artifacts", [])
+        ):
+            metadata_names.append("metadata-edgematic-studio.json")
 
         # Edit locally first, then upload metadata and its manifest together.
         # latest.tag is intentionally not changed.
-        retarget_metadata_resource(metadata_path, args.image_resource)
-        update_manifest_metadata_entry(manifest_path, metadata_path)
+        for name in metadata_names:
+            metadata_path = work_dir / name
+            run("aws", "s3", "cp", f"s3://{args.bucket}/{prefix}/{name}", str(metadata_path))
+            retarget_metadata_resource(metadata_path, args.image_resource)
+            update_manifest_metadata_entry(manifest_path, metadata_path)
 
         upload_args = s3_cp_args(args.sse_kms_key_id)
-        run(
-            "aws",
-            "s3",
-            "cp",
-            str(metadata_path),
-            f"s3://{args.bucket}/{prefix}/metadata.json",
-            "--content-type",
-            "application/json",
-            *upload_args,
-        )
+        for name in metadata_names:
+            run(
+                "aws",
+                "s3",
+                "cp",
+                str(work_dir / name),
+                f"s3://{args.bucket}/{prefix}/{name}",
+                "--content-type",
+                "application/json",
+                *upload_args,
+            )
         run(
             "aws",
             "s3",
@@ -208,7 +217,7 @@ def main() -> None:
                 "--distribution-id",
                 args.cloudfront_distribution_id,
                 "--paths",
-                f"/{prefix}/metadata.json",
+                *(f"/{prefix}/{name}" for name in metadata_names),
                 f"/{prefix}/manifest.json",
             )
 

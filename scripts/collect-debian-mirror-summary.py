@@ -127,7 +127,18 @@ class GithubSource:
         )
         if process.returncode:
             raise CollectionError(process.stderr.strip() or "gh api failed")
-        return json.loads(process.stdout)
+        if "--paginate" not in arguments:
+            return json.loads(process.stdout)
+        # Older runner installations support --paginate but not --slurp.
+        # gh emits one complete JSON document per page; parse that stream here.
+        decoder = json.JSONDecoder()
+        remaining = process.stdout.lstrip()
+        pages = []
+        while remaining:
+            page, end = decoder.raw_decode(remaining)
+            pages.append(page)
+            remaining = remaining[end:].lstrip()
+        return pages
 
     def _json(self, endpoint: str) -> dict[str, Any]:
         document = self._run_json([endpoint])
@@ -147,7 +158,7 @@ class GithubSource:
             f"repos/{self.repository}/actions/workflows/{self.workflow}/runs"
             f"?{query}"
         )
-        pages = self._run_json(["--paginate", "--slurp", endpoint])
+        pages = self._run_json(["--paginate", endpoint])
         if not isinstance(pages, list):
             raise CollectionError("GitHub returned invalid workflow-run pagination data")
         return [run for page in pages for run in page.get("workflow_runs", [])]
