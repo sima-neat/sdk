@@ -111,6 +111,8 @@ def notify(state_path, versions, run_url, send):
             values = [format_version(kind, item['version']) for item in items if item['kind'] == kind]
             if values:
                 if kind == 'packages':
+                    # Favor newly available versions, including retried outbox entries.
+                    values.sort(key=lambda value: (': added ' not in value, value))
                     lines.append(f'{label}: {len(values)}')
                     lines.extend('• ' + value[:500] for value in values[:5])
                     if len(values) > 5:

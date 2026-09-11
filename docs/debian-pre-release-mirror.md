@@ -321,7 +321,8 @@ APT package digest and does not use its channel setting.
 
 The message summarizes actual APT package changes between the previous and current
 validated inventories, device image build names, and a link to the GitHub Actions
-run. It shows the change count and up to five package changes; unchanged retained
+run. It shows the change count and up to five package changes, prioritizing entries
+with added versions over removal-only entries and sorting each group alphabetically; unchanged retained
 versions are omitted. The workflow table lists removed and added versions instead
 of repeating both full histories. Without a previous APT inventory, no package
 change notification is sent because no reliable comparison is available. It is sent after publication, so

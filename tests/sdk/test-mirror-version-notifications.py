@@ -159,3 +159,30 @@ def test_package_preview_is_bounded(tmp_path):
     assert 'APT package changes: 16' in message
     assert message.count('• ') == 5
     assert '11 more' in message
+
+
+@pytest.mark.parametrize('retry', [False, True])
+def test_package_preview_prioritizes_additions_over_removals(tmp_path, retry):
+    state = tmp_path / 'state.json'
+    events = [f'a-removed-{i} (arm64): removed 1.0' for i in range(5)] + [
+        'z-new (arm64): added 2.0',
+        'y-updated (arm64): added 2.0; removed 1.0',
+    ]
+    if retry:
+        state.write_text(json.dumps({
+            'schema_version': 1, 'seen': {},
+            'pending': [{'kind': 'packages', 'version': value, 'run_url': RUN}
+                        for value in events],
+        }))
+    send = Mock()
+    m.notify(state, {} if retry else {'packages': events}, NEXT_RUN if retry else RUN, send)
+    message = send.call_args.args[0]
+    bullets = [line for line in message.splitlines() if line.startswith('• ')]
+    assert bullets[:2] == [
+        '• y-updated (arm64): added 2.0; removed 1.0',
+        '• z-new (arm64): added 2.0',
+    ]
+    assert len(bullets) == 5
+    assert 'APT package changes: 7' in message
+    assert '…and 2 more' in message
+    assert f'<{RUN}|GitHub workflow run>' in message
