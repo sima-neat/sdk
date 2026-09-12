@@ -23,5 +23,9 @@ if not active.is_symlink():
             elif path.suffix in ('.pc', '.cmake', '.la'):
                 text = path.read_text()
                 path.write_text(text.replace(str(active), str(generation)))
+    requested = sorted({item.strip() for item in os.environ.get('SDK_PKG_LIST', '').split(',') if item.strip()})
+    manifest = generation / 'var/lib/sima-sdk/requested-packages'
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(''.join(package + '\n' for package in requested))
     subprocess.run(["chmod", "-R", "a+rX,a-w", str(generation)], check=True)
     active.symlink_to(generation)

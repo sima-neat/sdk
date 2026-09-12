@@ -397,8 +397,13 @@ esac
 EOF
 chmod +x "${tmpdir}/bin/aarch64-linux-gnu-g++"
 common_env+=("SYSROOT_INSTALLER=/bin/true" "PATH=${tmpdir}/bin:${PATH}")
-/usr/bin/python3 "${ROOT_DIR}/scripts/initialize-sysroot-generations.py" "${tmpdir}/sysroot"
+SDK_PKG_LIST=" libz-dev, liba-dev,libz-dev " /usr/bin/python3 "${ROOT_DIR}/scripts/initialize-sysroot-generations.py" "${tmpdir}/sysroot"
 initial_generation="$(readlink -f "${tmpdir}/sysroot")"
+[[ "$(cat "${initial_generation}/var/lib/sima-sdk/requested-packages")" == $'liba-dev\nlibz-dev' ]]
+sed -i 's/^Platform Version = .*/Platform Version = 3.0.0~git202609070138.4a147cf-1157/' "${tmpdir}/sdk-release"
+rm "${initial_generation}/var/lib/sima-sdk/sysroot-overlay"
+env "${common_env[@]}" SDK_PKG_LIST=liba-dev,libz-dev "${SYSROOT_COMMAND}" update 3.0.0~git202609070138.4a147cf-1157
+[[ "$(readlink -f "${tmpdir}/sysroot")" == "${initial_generation}" ]]
 echo obsolete > "${initial_generation}/usr/include/obsolete.h"
 daily_revision=3.0.0~git202609120138.dcab8a6-1369
 for invalid in 3.0.0~pre4617 2.2.0~git202609120138.dcab8a6-1369 --latest; do
@@ -458,5 +463,20 @@ run_sysroot update "${daily_revision}"
   flock -x 9
   if run_sysroot update "${daily_revision}"; then fail "concurrent update accepted"; fi
 ) 9>/var/lock/sima-sdk-sysroot.lock
+
+# Same revision rebuilds for changed requests, but ordering/duplicates do not.
+for packages in 'libz-dev, liba-dev,libz-dev' ''; do
+  before="$(readlink -f "${tmpdir}/sysroot")"
+  env "${common_env[@]}" SDK_PKG_LIST="${packages}" "${SYSROOT_COMMAND}" update "${daily_revision}"
+  [[ "$(readlink -f "${tmpdir}/sysroot")" != "${before}" ]]
+  selected="$(readlink -f "${tmpdir}/sysroot")"
+  normalized="$(cat "${selected}/var/lib/sima-sdk/requested-packages")"
+  expected=""
+  [[ -z "${packages}" ]] || expected=$'liba-dev\nlibz-dev'
+  [[ "${normalized}" == "${expected}" ]]
+  equivalent="${packages:+ liba-dev ,libz-dev }"
+  env "${common_env[@]}" SDK_PKG_LIST="${equivalent}" "${SYSROOT_COMMAND}" update "${daily_revision}"
+  [[ "$(readlink -f "${tmpdir}/sysroot")" == "${selected}" ]]
+done
 
 echo "sysroot update tests passed"

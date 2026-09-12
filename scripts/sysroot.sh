@@ -969,6 +969,7 @@ apply_sysroot_update() {
   chmod -R a+rX "${sysroot}"
   if [[ "${channel}" == daily ]]; then
     validate_generation "${sysroot}"
+    requested_packages > "${sysroot}/var/lib/sima-sdk/requested-packages"
     printf 'Previous Generation = %s\n' "${previous_generation}" >> "$(sysroot_overlay_path "${sysroot}")"
     chmod -R a+rX,a-w "${sysroot}"
     update_overlay_pending=0
@@ -1056,6 +1057,11 @@ cmd_status() {
       echo "WARNING: The sysroot overlay is not complete; rerun the update or recreate the SDK container."
     fi
   fi
+}
+
+requested_packages() {
+  printf '%s\n' "${SDK_PKG_LIST:-}" | tr ',' '\n' |
+    sed 's/^[[:space:]]*//;s/[[:space:]]*$//;/^$/d' | LC_ALL=C sort -u
 }
 
 cmd_update() {
@@ -1146,7 +1152,8 @@ EOF
     current_revision="$(read_release_field "$(sysroot_overlay_path "${sysroot}")" "Platform Revision")"
     current_state="$(read_release_field "$(sysroot_overlay_path "${sysroot}")" "Overlay State")"
   fi
-  if [[ "${current_state}" == "active" && "${current_revision}" == "${target_revision}" ]]; then
+  if [[ "${current_state}" == "active" && "${current_revision}" == "${target_revision}" ]] &&
+    { [[ "${channel}" != daily ]] || cmp -s <(requested_packages) "${sysroot}/var/lib/sima-sdk/requested-packages"; }; then
     echo "Sysroot is already at ${target_revision}; no changes are required."
     return
   fi

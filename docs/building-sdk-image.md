@@ -205,7 +205,8 @@ sysroot status
 
 Daily updates require an exact version with the same platform base. `--dry-run`
 resolves packages without modifying the active sysroot. Repeating the active
-revision skips reinstalling. Both amd64 and arm64 SDK hosts resolve arm64 target
+revision skips reinstalling only when the requested `SDK_PKG_LIST` is unchanged.
+Changing that list creates a fresh generation at the same revision. Both amd64 and arm64 SDK hosts resolve arm64 target
 packages.
 
 Each update extracts a fresh generation, records package versions and SHA256
