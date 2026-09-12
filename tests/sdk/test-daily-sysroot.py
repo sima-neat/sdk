@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('sdk_setup', ROOT / 'scripts/simaai_setup_sdk.py')
@@ -57,6 +58,62 @@ class DailySelectionTest(unittest.TestCase):
         headers = candidate('6.18.3-1218')
         self.assertIs(module.daily_candidate([candidate('6.19', 'deb.debian.org', 'trixie'), headers], PLATFORM), headers)
 
+    def test_versioned_virtual_dependency_uses_provides(self):
+        import apt_pkg
+
+        saved_config = {key: apt_pkg.config.find(key) for key in apt_pkg.config.keys()}
+        self.addCleanup(lambda: [apt_pkg.config.set(k, v) for k, v in saved_config.items()])
+        self.addCleanup(apt_pkg.config.clear, "")
+        abi = "qt6-base-private-abi"
+        core = "libqt6core6t64"
+        package_version = "6.8.2+dfsg-9+deb13u2"
+
+        cache_factory = module.apt.Cache
+
+        def package(name, version, depends="", provides=""):
+            architecture = "all" if name == "simaai-palette-modalix" else "arm64"
+            return (f"Package: {name}\nVersion: {version}\nArchitecture: {architecture}\n"
+                    "Status: install ok installed\n"
+                    + (f"Depends: {depends}\n" if depends else "")
+                    + (f"Provides: {provides}\n" if provides else "")
+                    + "Description: fixture\n\n")
+
+        class ResolutionComplete(Exception):
+            """Stop after runtime resolution, before download-directory creation."""
+
+        cases = (
+            ("6.8.2", package_version, False, ResolutionComplete),
+            ("6.8.2", package_version, True, ResolutionComplete),
+            ("6.8.1", "6.8.2", False, RuntimeError),
+            ("", "6.8.2", False, RuntimeError),
+        )
+        for provided_version, version, preselected, expected in cases:
+            with self.subTest(provided=provided_version, preselected=preselected):
+                provides = f"{abi} (= {provided_version})" if provided_version else abi
+                consumers = ("libqt6dbus6", "libqt6gui6")
+                dependencies = [f"{core} (= {version})"] if preselected else []
+                status = package(core, version, provides=provides)
+                status += "".join(package(name, package_version, f"{abi} (= 6.8.2)")
+                                  for name in consumers)
+                status += package("simaai-palette-modalix", PLATFORM,
+                                  ", ".join(dependencies + list(consumers)))
+                with tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory) / "var/lib/dpkg/status"
+                    path.parent.mkdir(parents=True)
+                    path.write_text(status)
+                    apt_pkg.config.set("APT::Architecture", "amd64")
+                    cache_factory(rootdir=directory)  # Create APT directories before the stop hook.
+                    with patch.dict(os.environ, {"SDK_APT_CHANNEL": "daily"}), \
+                         patch.object(module.apt, "Cache", side_effect=lambda: cache_factory(rootdir=directory)), \
+                         patch.object(module.apt.package.Version, "origins", property(
+                             lambda v: candidate(v.version, "deb.debian.org", "trixie").origins)), \
+                         patch.object(module, "update_apt_cache"), \
+                         patch.object(module, "whitelist", [], create=True), \
+                         patch.object(module.os, "makedirs", side_effect=ResolutionComplete), \
+                         self.assertRaises(expected):
+                        module.main("simaai-palette-modalix:arm64", PLATFORM, "6.18.3-1218",
+                                    "/unused-downloads", "/unused-sysroot")
+
     def test_floating_daily_selector_uses_debian_ordering(self):
         with tempfile.TemporaryDirectory() as directory:
             packages = Path(directory) / "Packages"
@@ -87,16 +144,15 @@ class DailySelectionTest(unittest.TestCase):
             for name in ("libblas.so", "liblapack.so", "libopenblas.so"):
                 self.assertEqual((libdir / name).read_text(), "target library")
 
-    def test_daily_sdk_rejects_legacy_mutations_before_apt(self):
+    def test_daily_sdk_rejects_legacy_install_before_apt(self):
         with tempfile.TemporaryDirectory() as directory:
             metadata = Path(directory) / "sdk-release"
             metadata.write_text("Platform Base = 3.0.0\nPlatform Channel = daily\n")
-            for command in (["update", "--latest", "--yes"], ["install", "libpgm-dev"]):
-                result = subprocess.run(["bash", str(ROOT / "scripts/sysroot.sh"), *command],
-                                        env={**os.environ, "SDK_RELEASE_FILE": str(metadata)},
-                                        capture_output=True, text=True)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("rebuild with BASE_SDK_VERSION and SDK_PKG_LIST", result.stderr)
+            result = subprocess.run(["bash", str(ROOT / "scripts/sysroot.sh"), "install", "libpgm-dev"],
+                                    env={**os.environ, "SDK_RELEASE_FILE": str(metadata)},
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("rebuild with BASE_SDK_VERSION and SDK_PKG_LIST", result.stderr)
 
     def test_wrapper_keeps_kernel_version_and_extra_packages_separate(self):
         with tempfile.TemporaryDirectory() as directory:

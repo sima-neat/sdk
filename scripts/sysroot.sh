@@ -20,7 +20,8 @@ Usage:
   ${program_name} remove  [options] package [package ...]
   ${program_name} list    [options]
   ${program_name} status  [options]
-  ${program_name} update  [options] [X.Y.Z~preN]
+  ${program_name} update  [options] [EXACT_PLATFORM_VERSION]
+  ${program_name} rollback [options]
   ${program_name} help
 
 Manages Debian package payloads in the SDK sysroot. Install downloads packages
@@ -32,7 +33,7 @@ Options:
   --sysroot PATH  Sysroot to operate on (default: \${SYSROOT:-${DEFAULT_SYSROOT}})
   --arch ARCH     Target architecture for unqualified packages (default: ${DEFAULT_ARCH})
   --dry-run       Print actions without changing the sysroot
-  --latest        Select the newest pre-release for the SDK Platform Base
+  --latest        Select the newest pre-release for the SDK Platform Base (not daily)
   --yes           Confirm a --latest update without an interactive prompt
   -h, --help      Show this help
 
@@ -44,6 +45,7 @@ Examples:
   sudo ${program_name} update
   ${program_name} status
   sudo ${program_name} update --latest --yes
+  sudo ${program_name} update 3.0.0~git202609070138.4a147cf-1157
   ${program_name} status
 EOF
 }
@@ -99,6 +101,7 @@ reexec_as_root_if_needed() {
       sudo_cmd+=("SYSROOT_INSTALLER=${SYSROOT_INSTALLER}")
     fi
     for name in \
+      SYSROOT_ACTIVE \
       SDK_PKG_LIST \
       SDK_RELEASE_FILE \
       SDK_SYSROOT_PYTHON \
@@ -365,7 +368,7 @@ resolve_component_name() {
 }
 
 parse_common_options() {
-  sysroot="${SYSROOT:-${DEFAULT_SYSROOT}}"
+  sysroot="${SYSROOT_ACTIVE:-${SYSROOT:-${DEFAULT_SYSROOT}}}"
   arch="${SYSROOT_ARCH:-${DEFAULT_ARCH}}"
   dry_run=0
   args=()
@@ -678,8 +681,8 @@ write_overlay_metadata() {
 Overlay State = active
 Platform Base = ${platform_base}
 Platform Revision = ${platform_revision}
-Platform Channel = pre-release
-Platform Repository = ${PRE_RELEASE_REPOSITORY}
+Platform Channel = ${4:-pre-release}
+Platform Repository = ${5:-${PRE_RELEASE_REPOSITORY}}
 Updated At = $(date -u +%Y-%m-%dT%H:%M:%SZ)
 Package Inventory = ${inventory}
 EOF
@@ -702,8 +705,8 @@ Overlay State = ${state}
 Platform Base = ${platform_base}
 Platform Revision = ${target_revision}
 Previous Platform Revision = ${previous_revision}
-Platform Channel = pre-release
-Platform Repository = ${PRE_RELEASE_REPOSITORY}
+Platform Channel = ${6:-pre-release}
+Platform Repository = ${7:-${PRE_RELEASE_REPOSITORY}}
 Updated At = $(date -u +%Y-%m-%dT%H:%M:%SZ)
 Package Inventory = $(sysroot_inventory_path "${sysroot}")
 EOF
@@ -711,7 +714,7 @@ EOF
 }
 
 parse_update_options() {
-  sysroot="${SYSROOT:-${DEFAULT_SYSROOT}}"
+  sysroot="${SYSROOT_ACTIVE:-${SYSROOT:-${DEFAULT_SYSROOT}}}"
   arch="${SYSROOT_ARCH:-${DEFAULT_ARCH}}"
   dry_run=0
   update_latest=0
@@ -906,7 +909,8 @@ apply_sysroot_update() {
   local platform_base="$1"
   local platform_revision="$2"
   local previous_revision="$3"
-  local download_dir
+  local channel="$4" repository="$5"
+  local download_dir build_revision="${platform_revision##*~pre}"
 
   [[ -x "${PLATFORM_SETUP}" ]] || die "platform sysroot setup command is unavailable: ${PLATFORM_SETUP}"
   download_dir="${SYSROOT_UPDATE_DOWNLOAD_DIR:-/tmp/modalix-overlay-${platform_revision}}"
@@ -914,22 +918,33 @@ apply_sysroot_update() {
   update_previous_revision="${previous_revision}"
   update_target_revision="${platform_revision}"
   update_overlay_pending=0
+  local active_sysroot="${sysroot}" previous_generation=""
   trap cleanup_update_transaction EXIT
-  configure_update_apt "${platform_revision}" 1001
+  if [[ "${channel}" == daily ]]; then
+    [[ -x "${INSTALLER}" ]] || die "sysroot finalizer is unavailable: ${INSTALLER}"
+    [[ -L "${sysroot}" ]] || die "daily updates require a generation-enabled SDK image"
+    previous_generation="$(realpath -e -- "${sysroot}")"
+    build_revision=""
+    if [[ "${dry_run}" != 1 ]]; then
+      sysroot="$(mktemp -d "${active_sysroot}.generations/${platform_revision}.XXXXXX")"
+    fi
+  else
+    configure_update_apt "${platform_revision}" 1001
+  fi
   if [[ "${dry_run}" != "1" ]]; then
-    write_overlay_transition \
-      "${sysroot}" "${platform_base}" "${previous_revision}" "${platform_revision}" "updating"
     update_overlay_pending=1
+    write_overlay_transition \
+      "${sysroot}" "${platform_base}" "${previous_revision}" "${platform_revision}" "updating" "${channel}" "${repository}"
   fi
   echo "Resolving and validating the complete ${platform_revision} package cohort..."
   if ! SYSROOT="${sysroot}" \
     SYSROOT_UPDATE_DOWNLOAD_DIR="${download_dir}" \
-    SDK_APT_CHANNEL=pre-release \
-    SIMAAI_PLATFORM_BUILD_REVISION="${platform_revision##*~pre}" \
+    SDK_APT_CHANNEL="${channel}" \
+    SIMAAI_PLATFORM_BUILD_REVISION="${build_revision}" \
     SIMAAI_VALIDATE_TARGET_ORIGIN=1 \
     SIMAAI_SETUP_DOWNLOAD_ONLY="${dry_run}" \
     "${PLATFORM_SETUP}" "${platform_revision}" "${SDK_PKG_LIST:-}"; then
-    if [[ "${dry_run}" != "1" ]]; then
+    if [[ "${dry_run}" != "1" && "${channel}" != daily ]]; then
       echo "${program_name}: update failed while extracting packages; recreate the SDK container to guarantee a clean sysroot." >&2
     fi
     return 1
@@ -940,19 +955,74 @@ apply_sysroot_update() {
     return
   fi
 
+  if [[ "${channel}" == daily ]]; then
+    "${INSTALLER}" "${sysroot}" --finalize-only
+  fi
   if [[ ! -s "$(sysroot_inventory_path "${sysroot}")" ]]; then
     write_package_inventory "${sysroot}" "${download_dir}"
   fi
   merge_tracked_manifests_into_inventory "${sysroot}"
   refresh_tracked_manifests "${sysroot}" "${arch}" "${download_dir}"
-  write_overlay_metadata "${sysroot}" "${platform_base}" "${platform_revision}"
+  write_overlay_metadata "${sysroot}" "${platform_base}" "${platform_revision}" "${channel}" "${repository}"
   # Package extraction preserves archive modes. Updates run as root, but the
   # resulting SDK sysroot must remain consumable by non-root builds.
   chmod -R a+rX "${sysroot}"
+  if [[ "${channel}" == daily ]]; then
+    validate_generation "${sysroot}"
+    requested_packages > "${sysroot}/var/lib/sima-sdk/requested-packages"
+    printf 'Previous Generation = %s\n' "${previous_generation}" >> "$(sysroot_overlay_path "${sysroot}")"
+    chmod -R a+rX,a-w "${sysroot}"
+    update_overlay_pending=0
+    activate_generation "${active_sysroot}" "${sysroot}"
+  fi
   update_overlay_pending=0
   echo "Sysroot overlay is active at ${platform_revision}."
   echo "Run '${program_name} status' to inspect it; recreate the SDK container to restore the image-default sysroot."
   echo "Start a new shell to display the overlay revision in the SDK prompt."
+}
+
+# One lock also protects the shared APT configuration and download cache.
+lock_generations() {
+  exec 9>/var/lock/sima-sdk-sysroot.lock
+  flock -n 9 || die "another sysroot update is running"
+}
+
+activate_generation() {
+  local active="$1" target="$2" staging
+  staging="$(mktemp -d "${active}.activate.XXXXXX")"
+  ln -s "${target}" "${staging}/active"
+  mv -Tf "${staging}/active" "${active}"
+  rmdir "${staging}" || true
+}
+
+validate_generation() {
+  local root="$1" compiler="aarch64-linux-gnu-g++" probe major
+  major="$("${compiler}" -dumpversion)"
+  [[ "${major}" -ge 14 && "$("${compiler}" -dumpmachine)" == aarch64* ]] || die "daily sysroots require the SDK AArch64 GCC 14+ toolchain"
+  [[ -s "$(sysroot_inventory_path "${root}")" && -s "${root}/var/lib/sima-sdk/packages.sha256" ]] || die "generation has no package manifest"
+  probe="$(mktemp -d)"
+  if ! printf '#include <iostream>\n#include <thread>\n#include <linux/version.h>\nint main() { std::thread t([] { std::cout << LINUX_VERSION_CODE; }); t.join(); }\n' |
+    "${compiler}" --sysroot="${root}" -L"${root}/usr/lib/gcc/aarch64-linux-gnu/${major}" \
+      -L"${root}/usr/lib/aarch64-linux-gnu" -Wl,-rpath-link,"${root}/usr/lib/aarch64-linux-gnu" \
+      -x c++ - -pthread -o "${probe}/check"; then
+    rm -rf "${probe}"
+    die "selected sysroot is incompatible with the SDK compiler"
+  fi
+  rm -rf "${probe}"
+  "${compiler}" --version > "${root}/var/lib/sima-sdk/compiler.txt"
+  sha256sum "$(readlink -f "$(command -v "${compiler}")")" >> "${root}/var/lib/sima-sdk/compiler.txt"
+}
+
+cmd_rollback() {
+  parse_common_options "$@"
+  [[ ${#args[@]} == 0 && "${dry_run}" == 0 ]] || die "rollback takes only --sysroot"
+  [[ -L "${sysroot}" ]] || die "rollback requires a generation-enabled SDK"
+  lock_generations
+  local previous
+  previous="$(read_release_field "$(sysroot_overlay_path "${sysroot}")" "Previous Generation")"
+  [[ "${previous}" == "${sysroot}.generations/"* && -d "${previous}" ]] || die "no previous generation is available"
+  activate_generation "${sysroot}" "${previous}"
+  echo "Previous sysroot generation restored. Start a new build shell."
 }
 
 cmd_status() {
@@ -989,10 +1059,13 @@ cmd_status() {
   fi
 }
 
+requested_packages() {
+  printf '%s\n' "${SDK_PKG_LIST:-}" | tr ',' '\n' |
+    sed 's/^[[:space:]]*//;s/[[:space:]]*$//;/^$/d' | LC_ALL=C sort -u
+}
+
 cmd_update() {
-  if [[ "$(read_release_field "${SDK_RELEASE_FILE}" "Platform Channel" || true)" == daily ]]; then
-    die "For the 3.0 daily SDK, rebuild with BASE_SDK_VERSION and SDK_PKG_LIST to change the sysroot."
-  fi
+  local channel repository revision_pattern
   local platform_base image_revision current_revision current_state target_revision selection answer
   local explicit_revision=0 candidate_found=0 candidate
   local -a available_versions
@@ -1005,16 +1078,30 @@ cmd_update() {
     die "invalid or missing Platform Base in ${SDK_RELEASE_FILE}: ${platform_base:-<missing>}"
   [[ -n "${image_revision}" ]] || die "Platform Version is missing from ${SDK_RELEASE_FILE}"
 
-  mapfile -t available_versions < <(list_pre_release_versions "${platform_base}")
-  [[ ${#available_versions[@]} -gt 0 ]] || \
-    die "no ${platform_base}~preN revisions are available for ${PRE_RELEASE_ANCHOR_PACKAGE}"
+  channel="$(read_release_field "${SDK_RELEASE_FILE}" "Platform Channel")"
+  repository="${PRE_RELEASE_REPOSITORY}"
+  revision_pattern='^([0-9]+\.[0-9]+\.[0-9]+)~pre[0-9]+$'
+  if [[ "${channel}" == daily ]]; then
+    [[ "${update_latest}" == 0 && ${#args[@]} -eq 1 ]] || \
+      die "daily updates require an exact X.Y.Z~gitTIMESTAMP.COMMIT-BUILD version"
+    lock_generations
+    repository="$(read_release_field "${SDK_RELEASE_FILE}" "Platform Repository")"
+    revision_pattern='^([0-9]+\.[0-9]+\.[0-9]+)~git[0-9]{12}\.[0-9a-f]+-[0-9]+$'
+    # The daily installer validates this exact version against the APT cache.
+    available_versions=("${args[0]}")
+  else
+    channel=pre-release
+    mapfile -t available_versions < <(list_pre_release_versions "${platform_base}")
+    [[ ${#available_versions[@]} -gt 0 ]] || \
+      die "no ${platform_base}~preN revisions are available for ${PRE_RELEASE_ANCHOR_PACKAGE}"
+  fi
 
   cat <<EOF
-WARNING: This operation installs pre-release SiMa.ai platform software into
+WARNING: This operation installs ${channel} SiMa.ai platform software into
 the SDK sysroot. It is intended only for development and testing.
 
 SDK Platform Base: ${platform_base}
-Repository:        ${PRE_RELEASE_REPOSITORY}
+Repository:        ${repository}
 Repository trust:  HTTPS transport with APT trusted=yes (unsigned metadata)
 EOF
 
@@ -1045,8 +1132,8 @@ EOF
     target_revision="${available_versions[selection - 1]}"
   fi
 
-  if [[ ! "${target_revision}" =~ ^([0-9]+\.[0-9]+\.[0-9]+)~pre[0-9]+$ ]]; then
-    die "update revision must use X.Y.Z~preN: ${target_revision}"
+  if [[ ! "${target_revision}" =~ ${revision_pattern} ]]; then
+    die "invalid ${channel} update revision: ${target_revision}"
   fi
   [[ "${BASH_REMATCH[1]}" == "${platform_base}" ]] || \
     die "SDK Platform Base is ${platform_base}; refusing revision ${target_revision}"
@@ -1065,7 +1152,8 @@ EOF
     current_revision="$(read_release_field "$(sysroot_overlay_path "${sysroot}")" "Platform Revision")"
     current_state="$(read_release_field "$(sysroot_overlay_path "${sysroot}")" "Overlay State")"
   fi
-  if [[ "${current_state}" == "active" && "${current_revision}" == "${target_revision}" ]]; then
+  if [[ "${current_state}" == "active" && "${current_revision}" == "${target_revision}" ]] &&
+    { [[ "${channel}" != daily ]] || cmp -s <(requested_packages) "${sysroot}/var/lib/sima-sdk/requested-packages"; }; then
     echo "Sysroot is already at ${target_revision}; no changes are required."
     return
   fi
@@ -1081,7 +1169,7 @@ EOF
     esac
   fi
 
-  apply_sysroot_update "${platform_base}" "${target_revision}" "${current_revision}"
+  apply_sysroot_update "${platform_base}" "${target_revision}" "${current_revision}" "${channel}" "${repository}"
 }
 
 cmd_install() {
@@ -1169,6 +1257,7 @@ remove_empty_parents() {
 }
 
 cmd_remove() {
+  [[ "$(read_release_field "${SDK_RELEASE_FILE}" "Platform Channel")" != daily ]] || die "daily generations are immutable; select development packages with SDK_PKG_LIST during update"
   local -a manifests
   local root pkg normalized base pkg_arch manifest all_manifest
 
@@ -1298,6 +1387,11 @@ case "${command}" in
     shift
     reexec_as_root_if_needed install "$@"
     cmd_install "$@"
+    ;;
+  rollback)
+    shift
+    reexec_as_root_if_needed rollback "$@"
+    cmd_rollback "$@"
     ;;
   remove)
     shift

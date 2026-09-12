@@ -59,27 +59,32 @@ printf '%s\t%s\t%s\n' \
   "${revision}" \
   "${SIMAAI_SETUP_DOWNLOAD_ONLY:-0}" \
   "${SIMAAI_PLATFORM_BUILD_REVISION:-}" >> "${SYSROOT_UPDATE_TEST_LOG:?}"
-for origin in \
-  debian.neat.sima.ai \
-  repo.sima.ai \
-  mirror.elxr.dev \
-  deb.debian.org \
-  security.debian.org; do
-  grep -A1 -F "Pin: origin \"${origin}\"" "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}" | \
-    grep -Fq 'Pin-Priority: 1001'
-done
-grep -A1 -F 'Pin: release o=Ubuntu' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}" | \
-  grep -Fq 'Pin-Priority: 100'
-[[ "${SIMAAI_VALIDATE_TARGET_ORIGIN:-}" == "1" ]]
-if [[ -n "${SYSROOT_UPDATE_APT_CANDIDATE_TEST:-}" ]]; then
-  python3 "${SYSROOT_UPDATE_APT_CANDIDATE_TEST}" \
-    "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
+if [[ "${SDK_APT_CHANNEL}" == daily ]]; then
+  [[ -z "${SIMAAI_PLATFORM_BUILD_REVISION}" && ! -e "${SYSROOT_UPDATE_APT_PREFERENCES_FILE}" ]]
+else
+  for origin in \
+    debian.neat.sima.ai \
+    repo.sima.ai \
+    mirror.elxr.dev \
+    deb.debian.org \
+    security.debian.org; do
+    grep -A1 -F "Pin: origin \"${origin}\"" "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}" | \
+      grep -Fq 'Pin-Priority: 1001'
+  done
+  grep -A1 -F 'Pin: release o=Ubuntu' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}" | \
+    grep -Fq 'Pin-Priority: 100'
+  [[ "${SIMAAI_VALIDATE_TARGET_ORIGIN:-}" == "1" ]]
+  if [[ -n "${SYSROOT_UPDATE_APT_CANDIDATE_TEST:-}" ]]; then
+    python3 "${SYSROOT_UPDATE_APT_CANDIDATE_TEST}" \
+      "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
+  fi
 fi
 rm -rf "${download_dir}"
 mkdir -p "${download_dir}"
 package_root="$(mktemp -d)"
 trap 'rm -rf "${package_root}"' EXIT
 mkdir -p "${package_root}/DEBIAN" "${package_root}/usr/lib/aarch64-linux-gnu"
+chmod 755 "${package_root}/DEBIAN"
 cat > "${package_root}/DEBIAN/control" <<CONTROL
 Package: simaai-palette-modalix
 Version: ${revision}
@@ -102,7 +107,14 @@ if [[ "${SIMAAI_SETUP_DOWNLOAD_ONLY:-0}" != "1" ]]; then
   mkdir -p "${sysroot}/var/lib/sima-sdk"
   printf 'simaai-palette-modalix\tarm64\t%s\t/usr/lib/aarch64-linux-gnu\n' "${revision}" > \
     "${sysroot}/var/lib/sima-sdk/sysroot-packages.tsv"
+  sha256sum "${download_dir}"/*.deb > "${sysroot}/var/lib/sima-sdk/packages.sha256"
 fi
+[[ "${SYSROOT_UPDATE_TEST_FAIL:-0}" != extract ]] || exit 42
+if [[ "${SYSROOT_UPDATE_TEST_FAIL:-}" == interrupt ]]; then
+  touch "${SYSROOT_UPDATE_TEST_LOG}.ready"
+  sleep 60
+fi
+
 EOF
 chmod 755 "${tmpdir}/fake-platform-setup"
 
@@ -368,5 +380,103 @@ grep -Fq 'neat-sdk-test-overlay-3-0-0-pre4617' <<< "${prompt_output}" || \
 
 [[ ! -e "${tmpdir}/apt/sources/pre-release.list" ]] || fail "temporary APT source was not cleaned up"
 [[ ! -e "${tmpdir}/apt/preferences/pre-release.pref" ]] || fail "temporary APT preferences were not cleaned up"
+
+# Exercise daily routing with the same installer fixture and transaction checks.
+sed -i -e 's/Platform Channel = pre-release/Platform Channel = daily/' \
+  -e 's@https://debian.neat.sima.ai/pre-release@https://debian.neat.sima.ai/daily@' \
+  "${tmpdir}/sdk-release"
+mkdir -p "${tmpdir}/bin"
+cat > "${tmpdir}/bin/aarch64-linux-gnu-g++" <<'EOF'
+#!/bin/bash
+case "$1" in
+  -dumpversion) echo 14 ;;
+  -dumpmachine) echo aarch64-linux-gnu ;;
+  --version) echo 'fixture GCC 14' ;;
+  *) cat >/dev/null; [[ "${SYSROOT_UPDATE_TEST_FAIL:-}" != compiler ]] ;;
+esac
+EOF
+chmod +x "${tmpdir}/bin/aarch64-linux-gnu-g++"
+common_env+=("SYSROOT_INSTALLER=/bin/true" "PATH=${tmpdir}/bin:${PATH}")
+SDK_PKG_LIST=" libz-dev, liba-dev,libz-dev " /usr/bin/python3 "${ROOT_DIR}/scripts/initialize-sysroot-generations.py" "${tmpdir}/sysroot"
+initial_generation="$(readlink -f "${tmpdir}/sysroot")"
+[[ "$(cat "${initial_generation}/var/lib/sima-sdk/requested-packages")" == $'liba-dev\nlibz-dev' ]]
+sed -i 's/^Platform Version = .*/Platform Version = 3.0.0~git202609070138.4a147cf-1157/' "${tmpdir}/sdk-release"
+rm "${initial_generation}/var/lib/sima-sdk/sysroot-overlay"
+env "${common_env[@]}" SDK_PKG_LIST=liba-dev,libz-dev "${SYSROOT_COMMAND}" update 3.0.0~git202609070138.4a147cf-1157
+[[ "$(readlink -f "${tmpdir}/sysroot")" == "${initial_generation}" ]]
+echo obsolete > "${initial_generation}/usr/include/obsolete.h"
+daily_revision=3.0.0~git202609120138.dcab8a6-1369
+for invalid in 3.0.0~pre4617 2.2.0~git202609120138.dcab8a6-1369 --latest; do
+  if run_sysroot update "${invalid}" >"${tmpdir}/out" 2>&1; then
+    fail "daily update accepted ${invalid}"
+  fi
+done
+cp "${tmpdir}/sdk-release" "${tmpdir}/image-metadata"
+cp -a "${initial_generation}" "${tmpdir}/before-daily"
+run_sysroot update "${daily_revision}" --dry-run
+diff -r "${tmpdir}/before-daily" "${initial_generation}"
+if env "${common_env[@]}" SYSROOT_UPDATE_TEST_FAIL=extract \
+  "${SYSROOT_COMMAND}" update "${daily_revision}"; then
+  fail "partial daily extraction reported success"
+fi
+diff -r "${tmpdir}/before-daily" "${initial_generation}"
+[[ "$(readlink -f "${tmpdir}/sysroot")" == "${initial_generation}" ]]
+run_sysroot update "${daily_revision}"
+[[ ! -e "${tmpdir}/sysroot/usr/include/obsolete.h" ]]
+[[ -e "${initial_generation}/usr/include/obsolete.h" ]]
+grep -Fq "Sysroot overlay revision: ${daily_revision}" <<< "$(run_sysroot status)"
+grep -Fxq 'Platform Channel = daily' "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay"
+cmp "${tmpdir}/image-metadata" "${tmpdir}/sdk-release"
+selected="$(readlink -f "${tmpdir}/sysroot")"
+# Build flags retain the permanent generation when activation changes.
+export SYSROOT_ACTIVE="${tmpdir}/sysroot"
+source "${ROOT_DIR}/scripts/simaai-init-build-env" modalix
+[[ "${SYSROOT}" == "${selected}" && "${CXXFLAGS}" == *"--sysroot=${selected}"* ]]
+unset SYSROOT_ACTIVE
+run_sysroot update "${daily_revision}"
+[[ "$(readlink -f "${tmpdir}/sysroot")" == "${selected}" ]]
+run_sysroot rollback
+[[ "$(readlink -f "${tmpdir}/sysroot")" == "${initial_generation}" ]]
+[[ "${SYSROOT}" == "${selected}" && -e "${SYSROOT}/usr/include/simaai/stdc-predef.h" ]]
+# A -> B -> C -> A uses fresh cohorts and leaves earlier generations intact.
+for revision in "${daily_revision}" 3.0.0~git202609112047.4066d33-1350 3.0.0~git202609070138.4a147cf-1157; do
+  run_sysroot update "${revision}"
+  grep -Fxq "${revision}" "${tmpdir}/sysroot/usr/lib/aarch64-linux-gnu/sysroot-update-test.txt"
+done
+before="$(readlink -f "${tmpdir}/sysroot")"
+if env "${common_env[@]}" SYSROOT_UPDATE_TEST_FAIL=compiler "${SYSROOT_COMMAND}" update "${daily_revision}"; then
+  fail "compiler failure activated a generation"
+fi
+[[ "$(readlink -f "${tmpdir}/sysroot")" == "${before}" ]]
+setsid env "${common_env[@]}" SYSROOT_UPDATE_TEST_FAIL=interrupt "${SYSROOT_COMMAND}" update "${daily_revision}" &
+updater=$!
+for attempt in {1..100}; do
+  [[ ! -e "${tmpdir}/setup.log.ready" ]] || break
+  sleep 0.02
+done
+if [[ ! -e "${tmpdir}/setup.log.ready" ]]; then kill -KILL -- "-${updater}"; fail "updater did not reach extraction"; fi
+kill -KILL -- "-${updater}"
+wait "${updater}" 2>/dev/null || true
+[[ "$(readlink -f "${tmpdir}/sysroot")" == "${before}" ]]
+run_sysroot update "${daily_revision}"
+(
+  flock -x 9
+  if run_sysroot update "${daily_revision}"; then fail "concurrent update accepted"; fi
+) 9>/var/lock/sima-sdk-sysroot.lock
+
+# Same revision rebuilds for changed requests, but ordering/duplicates do not.
+for packages in 'libz-dev, liba-dev,libz-dev' ''; do
+  before="$(readlink -f "${tmpdir}/sysroot")"
+  env "${common_env[@]}" SDK_PKG_LIST="${packages}" "${SYSROOT_COMMAND}" update "${daily_revision}"
+  [[ "$(readlink -f "${tmpdir}/sysroot")" != "${before}" ]]
+  selected="$(readlink -f "${tmpdir}/sysroot")"
+  normalized="$(cat "${selected}/var/lib/sima-sdk/requested-packages")"
+  expected=""
+  [[ -z "${packages}" ]] || expected=$'liba-dev\nlibz-dev'
+  [[ "${normalized}" == "${expected}" ]]
+  equivalent="${packages:+ liba-dev ,libz-dev }"
+  env "${common_env[@]}" SDK_PKG_LIST="${equivalent}" "${SYSROOT_COMMAND}" update "${daily_revision}"
+  [[ "$(readlink -f "${tmpdir}/sysroot")" == "${selected}" ]]
+done
 
 echo "sysroot update tests passed"

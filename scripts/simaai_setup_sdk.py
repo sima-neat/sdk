@@ -506,6 +506,13 @@ def write_sysroot_package_inventory(download_dir, sysroot):
         for (package, architecture), (version, locations) in sorted(entries.items()):
             wf.write(f"{package}\t{architecture}\t{version}\t{locations}\n")
     os.replace(temporary, inventory)
+    with open(os.path.join(inventory_dir, "packages.sha256"), "w") as manifest:
+        for deb_path in deb_paths:
+            digest = hashlib.sha256()
+            with open(deb_path, "rb") as package_file:
+                for chunk in iter(lambda: package_file.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            manifest.write(f"{digest.hexdigest()}  {os.path.basename(deb_path)}\n")
     print(f"Recorded {len(entries)} package inventory entries.", flush=True)
 
 
@@ -587,7 +594,7 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
 
         return []
 
-    def get_candidate(pkgname, requested_version):
+    def get_candidate(pkgname, requested_version, targets=None):
         """Find a package candidate, enforcing platform-version determinism."""
 
         base = base_package_name(pkgname)
@@ -603,15 +610,19 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
             if requested_version.startswith((">= ", "<= ", ">> ", "<< ", "> ", "< ")):
                 relation, requested_version = requested_version.split(" ", 1)
             candidates = daily_package_versions(cache, pkgname)
+            if targets is not None:
+                candidates = [v for v in candidates if v in targets]
             selected = daily_candidate(candidates, version, requested_version, relation)
             if selected is not None:
                 return selected
             # Debian 13 t64 packages provide legacy dependency names used by
             # platform binaries (for example liblttng-ust1 -> liblttng-ust1t64).
-            for provider in cache.get_providing_packages(pkgname):
+            for provider in cache.get_providing_packages(pkgname, candidate_only=False):
                 selected = daily_candidate(
-                    [v for v in provider.versions if v.architecture in ("arm64", "all")],
-                    version, requested_version, relation
+                    [v for v in provider.versions
+                     if v.architecture in ("arm64", "all")
+                     and (v in targets if targets is not None else base in v.provides)],
+                    version
                 )
                 if selected is not None:
                     return selected
@@ -656,16 +667,14 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
                     name = normalize_arm64_name(dep.name)
                     if name in blacklist or base_package_name(name) in SKIP_PACKAGES:
                         break
-                    requested = dep.version or ""
-                    if requested and dep.relation != "=":
-                        requested = f"{dep.relation} {requested}"
-                    selected = get_candidate(name, requested)
+                    targets = dep.target_versions
+                    selected = get_candidate(name, "", targets)
                     if selected is None:
                         continue
                     name = normalize_arm64_name(selected.package.name)
-                    if graph.get(name) and dep.version:
-                        import apt_pkg
-                        if not apt_pkg.check_dep(graph[name], dep.relation, dep.version):
+                    if graph.get(name):
+                        existing = get_candidate(name, graph[name])
+                        if existing not in targets:
                             raise RuntimeError(f"Conflicting dependency for {name}: {graph[name]} does not satisfy {dep}")
                     if not graph.get(name):
                         graph[name] = selected.version
@@ -970,6 +979,9 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
             )
 
     print("Updating cache...")
+    if daily_channel:
+        import apt_pkg
+        apt_pkg.config.set("APT::Architecture", "arm64")
     cache = apt.Cache()
     update_apt_cache(cache)
     cache.open(None)

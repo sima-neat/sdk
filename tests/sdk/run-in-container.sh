@@ -86,7 +86,7 @@ test_modalix_cross_toolchain() {
   fi
   local sysroot_gcc_libdir="${SYSROOT}/usr/lib/gcc/aarch64-linux-gnu/${compiler_major}"
 
-  test "${SYSROOT}" = "/opt/toolchain/aarch64/modalix"
+  test "${SYSROOT}" = "$(readlink -f /opt/toolchain/aarch64/modalix)"
   command -v "${compiler}"
   test -d "${SYSROOT}/usr/include"
   test -d "${sysroot_libdir}"
@@ -351,6 +351,27 @@ test_platform_cross_profile() {
   test ! -e /neat-resources/apps-src
 }
 
+test_daily_generation_cycle() {
+  local active="/opt/toolchain/aarch64/modalix" original revision before
+  original="$(sdk_release_value 'Platform Version')"
+  local -a revisions
+  sudo apt-get update
+  mapfile -t revisions < <(apt-cache madison simaai-palette-modalix |
+    awk -v original="${original}" '$3 != original && $3 ~ /^3[.]0[.]0~git/ { if (!seen[$3]++) print $3 }' | head -n 2)
+  [[ ${#revisions[@]} == 2 ]]
+  before="$(sha256sum "${SDK_RELEASE_FILE}")"
+  for revision in "${revisions[@]}" "${original}"; do
+    sudo env SDK_PKG_LIST="${SDK_PKG_LIST:-}" sysroot update --sysroot "${active}" "${revision}" --dry-run
+    sudo env SDK_PKG_LIST="${SDK_PKG_LIST:-}" sysroot update --sysroot "${active}" "${revision}"
+    setup_sdk_environment
+    test_modalix_cross_toolchain
+    test_daily_development_sysroot
+    (cd "/tmp/modalix-overlay-${revision}" && sha256sum -c "${SYSROOT}/var/lib/sima-sdk/packages.sha256" >/dev/null)
+    grep -Fxq "Platform Revision = ${revision}" "${SYSROOT}/var/lib/sima-sdk/sysroot-overlay"
+  done
+  [[ "$(sha256sum "${SDK_RELEASE_FILE}")" == "${before}" ]]
+}
+
 setup_sdk_environment
 
 rm -rf "${WORK_DIR}"
@@ -365,6 +386,7 @@ if [[ -r "${SDK_RELEASE_FILE}" ]] && [[ "$(sdk_release_value "SDK Profile")" == 
   run_test "Modalix cross toolchain" test_modalix_cross_toolchain
   if [[ "$(sdk_release_value "Platform Channel")" == daily ]]; then
     run_test "Debian 13 development sysroot" test_daily_development_sysroot
+    run_test "Daily sysroot generation cycle" test_daily_generation_cycle
   else
     run_test "Representative sysroot overlay install" test_sysroot_overlay_representative
   fi
