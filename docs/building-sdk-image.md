@@ -203,13 +203,12 @@ sudo sysroot update 3.0.0~git202609070138.4a147cf-1157
 sysroot status
 ```
 
-Add `--dry-run` to resolve and validate packages without changing the sysroot.
-Daily updates require the same platform base and an exact version; `--latest`
-and standalone `sysroot install` remain unavailable for daily images. Repeating
-the active version does not reinstall it. Updates keep a temporary sysroot
-backup for failure recovery, requiring room for a second copy. The active
-overlay is recorded separately from the unchanged `/etc/sdk-release` image
-metadata. Existing `~preN` updates retain their behavior.
+Daily updates require an exact version with the same platform base. `--dry-run`
+leaves the sysroot unchanged; repeating the active revision skips reinstalling.
+Updates preserve image metadata and keep a temporary backup for failure recovery.
+They overlay package files: obsolete files are not removed. Rebuild the SDK image
+when a clean sysroot is required. Daily `--latest` and `sysroot install` remain
+unsupported; existing `~preN` updates are unchanged.
 
 The SDK build environment exports `-march=armv8.2-a+crypto -mtune=cortex-a65`:
 the architecture flag controls permitted instructions, while the tuning flag

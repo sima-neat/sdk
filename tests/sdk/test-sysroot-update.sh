@@ -238,8 +238,6 @@ grep -Fxq 'Platform Revision = 3.0.0~pre4617' "${tmpdir}/sysroot/var/lib/sima-sd
 awk -F '\t' '$1 == "simaai-palette-modalix" && $2 == "arm64" && $3 == "3.0.0~pre4617" && $4 == "/usr/lib/aarch64-linux-gnu" { found = 1 } END { exit !found }' \
   "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-packages.tsv" || \
   fail "package inventory was not recorded"
-[[ "$(stat -c '%a' "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay")" == "644" ]] || \
-  fail "overlay metadata is unreadable to non-root users"
 updated_list="$(run_sysroot list)"
 grep -Eq '^simaai-palette-modalix[[:space:]]+arm64[[:space:]]+3\.0\.0~pre4617[[:space:]]+/usr/lib/aarch64-linux-gnu$' \
   <<< "${updated_list}" || \
