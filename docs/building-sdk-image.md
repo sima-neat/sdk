@@ -206,26 +206,24 @@ sysroot status
 Daily updates require an exact version with the same platform base. `--dry-run`
 resolves packages without modifying the active sysroot. Repeating the active
 revision skips reinstalling only when the requested `SDK_PKG_LIST` is unchanged.
-Changing that list creates a fresh generation at the same revision. Both amd64 and arm64 SDK hosts resolve arm64 target
-packages.
+Changing that list rebuilds the sysroot at the same revision. Both amd64 and
+arm64 SDK hosts resolve arm64 target packages.
 
-Each update extracts a fresh generation, records package versions and SHA256
-checksums, and checks compatibility with the SDK compiler before atomically
-switching the active symlink. Obsolete package files are not carried forward.
-Include additional development packages explicitly with `SDK_PKG_LIST` when
-updating. `/etc/sdk-release` continues to describe the original image.
+The active sysroot is a real directory at `/opt/toolchain/aarch64/modalix`.
+Each update extracts and validates a replacement in a temporary sibling directory,
+records package versions and SHA256 checksums, and checks the SDK compiler.
+It adjusts package configuration paths to the final location before replacement.
+Obsolete files are not carried forward. Include additional development packages
+explicitly with `SDK_PKG_LIST`. `/etc/sdk-release` still describes the image.
 
-Build environments use permanent generation paths. Existing shells and configured
-builds retain their generation; start a new shell and reconfigure a build directory
-to use an update. Consumers that hardcode the active symlink must instead use
-`SYSROOT` from `simaai-init-build-env` to obtain this guarantee.
-
-`sudo sysroot rollback` reactivates the previous generation. Updates are serialized;
-failed or interrupted extraction never replaces the active generation. Generations
-are retained, including incomplete attempts, so running builds keep their files.
-Disk space grows with updates; remove unused generations only after their builds
-have finished. This layout is initialized during SDK image construction; older
-images with a plain sysroot directory must first use the refreshed SDK image.
+Stop builds before updating or rolling back. Replacement is not atomic; do not
+start builds until the command succeeds. Reconfigure existing build directories
+after changing versions. `sudo sysroot rollback` restores the previous sysroot.
+One complete backup is kept under `modalix.update/previous`; the next update
+replaces it. If replacement is interrupted, rerun the update to restore the
+backup before retrying. Failed extraction leaves the active directory untouched.
+Existing images using the symlink layout must be recreated from the refreshed
+image. Updates are serialized by the existing lock.
 Daily `--latest` and standalone `sysroot install`/`remove` remain unsupported.
 Existing `~preN` updates are unchanged.
 
