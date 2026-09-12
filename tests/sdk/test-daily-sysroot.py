@@ -68,8 +68,11 @@ class DailySelectionTest(unittest.TestCase):
         core = "libqt6core6t64"
         package_version = "6.8.2+dfsg-9+deb13u2"
 
+        cache_factory = module.apt.Cache
+
         def package(name, version, depends="", provides=""):
-            return (f"Package: {name}\nVersion: {version}\nArchitecture: arm64\n"
+            architecture = "all" if name == "simaai-palette-modalix" else "arm64"
+            return (f"Package: {name}\nVersion: {version}\nArchitecture: {architecture}\n"
                     "Status: install ok installed\n"
                     + (f"Depends: {depends}\n" if depends else "")
                     + (f"Provides: {provides}\n" if provides else "")
@@ -98,9 +101,10 @@ class DailySelectionTest(unittest.TestCase):
                     path = Path(directory) / "var/lib/dpkg/status"
                     path.parent.mkdir(parents=True)
                     path.write_text(status)
-                    cache = module.apt.Cache(rootdir=directory)
+                    apt_pkg.config.set("APT::Architecture", "amd64")
+                    cache_factory(rootdir=directory)  # Create APT directories before the stop hook.
                     with patch.dict(os.environ, {"SDK_APT_CHANNEL": "daily"}), \
-                         patch.object(module.apt, "Cache", return_value=cache), \
+                         patch.object(module.apt, "Cache", side_effect=lambda: cache_factory(rootdir=directory)), \
                          patch.object(module.apt.package.Version, "origins", property(
                              lambda v: candidate(v.version, "deb.debian.org", "trixie").origins)), \
                          patch.object(module, "update_apt_cache"), \

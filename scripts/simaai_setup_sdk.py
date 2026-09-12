@@ -506,6 +506,13 @@ def write_sysroot_package_inventory(download_dir, sysroot):
         for (package, architecture), (version, locations) in sorted(entries.items()):
             wf.write(f"{package}\t{architecture}\t{version}\t{locations}\n")
     os.replace(temporary, inventory)
+    with open(os.path.join(inventory_dir, "packages.sha256"), "w") as manifest:
+        for deb_path in deb_paths:
+            digest = hashlib.sha256()
+            with open(deb_path, "rb") as package_file:
+                for chunk in iter(lambda: package_file.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            manifest.write(f"{digest.hexdigest()}  {os.path.basename(deb_path)}\n")
     print(f"Recorded {len(entries)} package inventory entries.", flush=True)
 
 
@@ -972,6 +979,9 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
             )
 
     print("Updating cache...")
+    if daily_channel:
+        import apt_pkg
+        apt_pkg.config.set("APT::Architecture", "arm64")
     cache = apt.Cache()
     update_apt_cache(cache)
     cache.open(None)

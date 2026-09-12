@@ -21,6 +21,7 @@ Usage:
   ${program_name} list    [options]
   ${program_name} status  [options]
   ${program_name} update  [options] [EXACT_PLATFORM_VERSION]
+  ${program_name} rollback [options]
   ${program_name} help
 
 Manages Debian package payloads in the SDK sysroot. Install downloads packages
@@ -100,6 +101,7 @@ reexec_as_root_if_needed() {
       sudo_cmd+=("SYSROOT_INSTALLER=${SYSROOT_INSTALLER}")
     fi
     for name in \
+      SYSROOT_ACTIVE \
       SDK_PKG_LIST \
       SDK_RELEASE_FILE \
       SDK_SYSROOT_PYTHON \
@@ -366,7 +368,7 @@ resolve_component_name() {
 }
 
 parse_common_options() {
-  sysroot="${SYSROOT:-${DEFAULT_SYSROOT}}"
+  sysroot="${SYSROOT_ACTIVE:-${SYSROOT:-${DEFAULT_SYSROOT}}}"
   arch="${SYSROOT_ARCH:-${DEFAULT_ARCH}}"
   dry_run=0
   args=()
@@ -712,7 +714,7 @@ EOF
 }
 
 parse_update_options() {
-  sysroot="${SYSROOT:-${DEFAULT_SYSROOT}}"
+  sysroot="${SYSROOT_ACTIVE:-${SYSROOT:-${DEFAULT_SYSROOT}}}"
   arch="${SYSROOT_ARCH:-${DEFAULT_ARCH}}"
   dry_run=0
   update_latest=0
@@ -885,16 +887,7 @@ configure_active_overlay_apt() {
 
 cleanup_update_transaction() {
   cleanup_update_apt
-  if [[ -n "${update_backup:-}" ]]; then
-    if [[ "${update_overlay_pending:-0}" == 1 ]]; then
-      if ! rm -rf -- "${sysroot}" || ! mv -- "${update_backup}/sysroot" "${sysroot}"; then
-        echo "${program_name}: could not restore the sysroot; backup retained at ${update_backup}" >&2
-        return 1
-      fi
-      echo "Previous sysroot restored."
-    fi
-    rm -rf -- "${update_backup}"
-  elif [[ "${update_overlay_pending:-0}" == "1" ]]; then
+  if [[ "${update_overlay_pending:-0}" == "1" ]]; then
     write_overlay_transition \
       "${sysroot}" \
       "${update_platform_base}" \
@@ -925,17 +918,15 @@ apply_sysroot_update() {
   update_previous_revision="${previous_revision}"
   update_target_revision="${platform_revision}"
   update_overlay_pending=0
-  update_backup=""
+  local active_sysroot="${sysroot}" previous_generation=""
   trap cleanup_update_transaction EXIT
   if [[ "${channel}" == daily ]]; then
     [[ -x "${INSTALLER}" ]] || die "sysroot finalizer is unavailable: ${INSTALLER}"
-    [[ -d "${sysroot}" && ! -L "${sysroot}" ]] || die "daily updates require an existing sysroot directory"
-    sysroot="$(realpath -e -- "${sysroot}")"
-    [[ "${sysroot}" != / ]] || die "refusing to update the filesystem root"
+    [[ -L "${sysroot}" ]] || die "daily updates require a generation-enabled SDK image"
+    previous_generation="$(realpath -e -- "${sysroot}")"
     build_revision=""
     if [[ "${dry_run}" != 1 ]]; then
-      update_backup="$(mktemp -d "${sysroot}.update.XXXXXX")"
-      cp -a -- "${sysroot}" "${update_backup}/sysroot"
+      sysroot="$(mktemp -d "${active_sysroot}.generations/${platform_revision}.XXXXXX")"
     fi
   else
     configure_update_apt "${platform_revision}" 1001
@@ -976,10 +967,61 @@ apply_sysroot_update() {
   # Package extraction preserves archive modes. Updates run as root, but the
   # resulting SDK sysroot must remain consumable by non-root builds.
   chmod -R a+rX "${sysroot}"
+  if [[ "${channel}" == daily ]]; then
+    validate_generation "${sysroot}"
+    printf 'Previous Generation = %s\n' "${previous_generation}" >> "$(sysroot_overlay_path "${sysroot}")"
+    chmod -R a+rX,a-w "${sysroot}"
+    update_overlay_pending=0
+    activate_generation "${active_sysroot}" "${sysroot}"
+  fi
   update_overlay_pending=0
   echo "Sysroot overlay is active at ${platform_revision}."
   echo "Run '${program_name} status' to inspect it; recreate the SDK container to restore the image-default sysroot."
   echo "Start a new shell to display the overlay revision in the SDK prompt."
+}
+
+# One lock also protects the shared APT configuration and download cache.
+lock_generations() {
+  exec 9>/var/lock/sima-sdk-sysroot.lock
+  flock -n 9 || die "another sysroot update is running"
+}
+
+activate_generation() {
+  local active="$1" target="$2" staging
+  staging="$(mktemp -d "${active}.activate.XXXXXX")"
+  ln -s "${target}" "${staging}/active"
+  mv -Tf "${staging}/active" "${active}"
+  rmdir "${staging}" || true
+}
+
+validate_generation() {
+  local root="$1" compiler="aarch64-linux-gnu-g++" probe major
+  major="$("${compiler}" -dumpversion)"
+  [[ "${major}" -ge 14 && "$("${compiler}" -dumpmachine)" == aarch64* ]] || die "daily sysroots require the SDK AArch64 GCC 14+ toolchain"
+  [[ -s "$(sysroot_inventory_path "${root}")" && -s "${root}/var/lib/sima-sdk/packages.sha256" ]] || die "generation has no package manifest"
+  probe="$(mktemp -d)"
+  if ! printf '#include <iostream>\n#include <thread>\n#include <linux/version.h>\nint main() { std::thread t([] { std::cout << LINUX_VERSION_CODE; }); t.join(); }\n' |
+    "${compiler}" --sysroot="${root}" -L"${root}/usr/lib/gcc/aarch64-linux-gnu/${major}" \
+      -L"${root}/usr/lib/aarch64-linux-gnu" -Wl,-rpath-link,"${root}/usr/lib/aarch64-linux-gnu" \
+      -x c++ - -pthread -o "${probe}/check"; then
+    rm -rf "${probe}"
+    die "selected sysroot is incompatible with the SDK compiler"
+  fi
+  rm -rf "${probe}"
+  "${compiler}" --version > "${root}/var/lib/sima-sdk/compiler.txt"
+  sha256sum "$(readlink -f "$(command -v "${compiler}")")" >> "${root}/var/lib/sima-sdk/compiler.txt"
+}
+
+cmd_rollback() {
+  parse_common_options "$@"
+  [[ ${#args[@]} == 0 && "${dry_run}" == 0 ]] || die "rollback takes only --sysroot"
+  [[ -L "${sysroot}" ]] || die "rollback requires a generation-enabled SDK"
+  lock_generations
+  local previous
+  previous="$(read_release_field "$(sysroot_overlay_path "${sysroot}")" "Previous Generation")"
+  [[ "${previous}" == "${sysroot}.generations/"* && -d "${previous}" ]] || die "no previous generation is available"
+  activate_generation "${sysroot}" "${previous}"
+  echo "Previous sysroot generation restored. Start a new build shell."
 }
 
 cmd_status() {
@@ -1036,6 +1078,7 @@ cmd_update() {
   if [[ "${channel}" == daily ]]; then
     [[ "${update_latest}" == 0 && ${#args[@]} -eq 1 ]] || \
       die "daily updates require an exact X.Y.Z~gitTIMESTAMP.COMMIT-BUILD version"
+    lock_generations
     repository="$(read_release_field "${SDK_RELEASE_FILE}" "Platform Repository")"
     revision_pattern='^([0-9]+\.[0-9]+\.[0-9]+)~git[0-9]{12}\.[0-9a-f]+-[0-9]+$'
     # The daily installer validates this exact version against the APT cache.
@@ -1207,6 +1250,7 @@ remove_empty_parents() {
 }
 
 cmd_remove() {
+  [[ "$(read_release_field "${SDK_RELEASE_FILE}" "Platform Channel")" != daily ]] || die "daily generations are immutable; select development packages with SDK_PKG_LIST during update"
   local -a manifests
   local root pkg normalized base pkg_arch manifest all_manifest
 
@@ -1336,6 +1380,11 @@ case "${command}" in
     shift
     reexec_as_root_if_needed install "$@"
     cmd_install "$@"
+    ;;
+  rollback)
+    shift
+    reexec_as_root_if_needed rollback "$@"
+    cmd_rollback "$@"
     ;;
   remove)
     shift

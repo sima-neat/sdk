@@ -232,6 +232,7 @@ RUN SIMA_CLI_REF="${SIMA_CLI_REF}" \
 COPY scripts/install-sysroot-overlay.sh /usr/local/bin/install-sysroot-overlay.sh
 COPY scripts/install-sdk-sysroot-overlay.sh /usr/local/bin/install-sdk-sysroot-overlay.sh
 COPY scripts/sysroot.sh /usr/local/bin/sysroot
+COPY scripts/initialize-sysroot-generations.py /usr/local/bin/initialize-sysroot-generations.py
 COPY scripts/neat-deps.sh /usr/local/bin/neat-deps.sh
 COPY deps/manifest.json /usr/local/share/sima-sdk/deps/manifest.json
 COPY config/sysroot-overlay.conf /usr/local/share/sima-sdk/sysroot-overlay.conf
@@ -254,7 +255,10 @@ RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     ln -sf /usr/local/bin/insight-admin /usr/local/bin/install-neat-insight && \
     chmod 755 /usr/local/bin/devkit.sh && \
     chmod 755 /usr/local/bin/devkit-sync-rsync.sh && \
-    install-sdk-sysroot-overlay.sh
+    install-sdk-sysroot-overlay.sh && \
+    if [ "${SDK_APT_CHANNEL}" = daily ]; then \
+      /usr/bin/python3 /usr/local/bin/initialize-sysroot-generations.py /opt/toolchain/aarch64/modalix; \
+    fi
 
 RUN if [ -n "${NEAT_INSIGHT_BRANCH}${NEAT_INSIGHT_VERSION}" ]; then \
       /usr/local/bin/insight-admin update "${NEAT_INSIGHT_BRANCH:-main}" "${NEAT_INSIGHT_VERSION:-latest}"; \
