@@ -321,9 +321,15 @@ APT package digest and does not use its channel setting.
 
 The message summarizes actual APT package changes between the previous and current
 validated inventories, device image build names, and a link to the GitHub Actions
-run. It shows the change count and up to five package changes, prioritizing entries
+run. It uses a native Slack Block Kit table with Package, Architecture, Removed
+versions, and Added versions columns. Version strings wrap within their cells.
+Cells exceeding Slack’s 2,000-character limit are truncated with a note directing
+readers to the full workflow report; the stored events remain complete for retries.
+The table shows up to 99 changes (plus its header), with an overflow count and a
+link to the full workflow report for larger runs. It prioritizes entries
 with added versions over removal-only entries and sorting each group alphabetically; unchanged retained
-versions are omitted. The workflow table lists removed and added versions instead
+versions are omitted. A compact text fallback includes up to five changes for
+notifications and accessibility. The workflow table lists removed and added versions instead
 of repeating both full histories. Without a previous APT inventory, no package
 change notification is sent because no reliable comparison is available. It is sent after publication, so
 preview-only runs do not announce images or packages as available. Device image
@@ -345,8 +351,9 @@ Example:
 ```text
 Mirror changes published
 APT package changes: 16
-• example (arm64): added 2.0; removed 1.0
-…additional changes are summarized; see the workflow report.
+Package | Architecture | Removed versions | Added versions
+example | arm64        | 1.0              | 2.0
+…remaining package rows (up to 99 changes)
 Device images: 3.0.0_daily_develop_B1168
 GitHub workflow run
 ```
