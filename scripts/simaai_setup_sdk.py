@@ -509,26 +509,6 @@ def write_sysroot_package_inventory(download_dir, sysroot):
     print(f"Recorded {len(entries)} package inventory entries.", flush=True)
 
 
-def daily_dependency_satisfied(candidate, pkgname, requested_version="", relation="="):
-    """Check a dependency against this package version or its matching Provides."""
-    import apt_pkg
-
-    name = base_package_name(pkgname)
-    if name == base_package_name(candidate.package.name):
-        return not requested_version or apt_pkg.check_dep(
-            candidate.version, relation, requested_version
-        )
-    for group in apt_pkg.parse_depends(candidate.record.get("Provides", "")):
-        for provided_name, provided_version, _ in group:
-            if provided_name == name and (
-                not requested_version or provided_version and apt_pkg.check_dep(
-                    provided_version, relation, requested_version
-                )
-            ):
-                return True
-    return False
-
-
 def daily_candidate(candidates, platform_version, requested_version="", relation="="):
     """Select a target package without imposing Palette's version on components.
 
@@ -607,7 +587,7 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
 
         return []
 
-    def get_candidate(pkgname, requested_version):
+    def get_candidate(pkgname, requested_version, targets=None):
         """Find a package candidate, enforcing platform-version determinism."""
 
         base = base_package_name(pkgname)
@@ -623,6 +603,8 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
             if requested_version.startswith((">= ", "<= ", ">> ", "<< ", "> ", "< ")):
                 relation, requested_version = requested_version.split(" ", 1)
             candidates = daily_package_versions(cache, pkgname)
+            if targets is not None:
+                candidates = [v for v in candidates if v in targets]
             selected = daily_candidate(candidates, version, requested_version, relation)
             if selected is not None:
                 return selected
@@ -632,7 +614,7 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
                 selected = daily_candidate(
                     [v for v in provider.versions
                      if v.architecture in ("arm64", "all")
-                     and daily_dependency_satisfied(v, pkgname, requested_version, relation)],
+                     and (v in targets if targets is not None else base in v.provides)],
                     version
                 )
                 if selected is not None:
@@ -678,18 +660,14 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
                     name = normalize_arm64_name(dep.name)
                     if name in blacklist or base_package_name(name) in SKIP_PACKAGES:
                         break
-                    requested = dep.version or ""
-                    if requested and dep.relation != "=":
-                        requested = f"{dep.relation} {requested}"
-                    selected = get_candidate(name, requested)
+                    targets = dep.target_versions
+                    selected = get_candidate(name, "", targets)
                     if selected is None:
                         continue
                     name = normalize_arm64_name(selected.package.name)
                     if graph.get(name):
                         existing = get_candidate(name, graph[name])
-                        if existing is None or not daily_dependency_satisfied(
-                            existing, dep.name, dep.version, dep.relation
-                        ):
+                        if existing not in targets:
                             raise RuntimeError(f"Conflicting dependency for {name}: {graph[name]} does not satisfy {dep}")
                     if not graph.get(name):
                         graph[name] = selected.version

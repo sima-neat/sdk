@@ -59,27 +59,21 @@ class DailySelectionTest(unittest.TestCase):
         self.assertIs(module.daily_candidate([candidate('6.19', 'deb.debian.org', 'trixie'), headers], PLATFORM), headers)
 
     def test_versioned_virtual_dependency_uses_provides(self):
+        import apt_pkg
+
+        saved_config = {key: apt_pkg.config.find(key) for key in apt_pkg.config.keys()}
+        self.addCleanup(lambda: [apt_pkg.config.set(k, v) for k, v in saved_config.items()])
+        self.addCleanup(apt_pkg.config.clear, "")
         abi = "qt6-base-private-abi"
         core = "libqt6core6t64"
         package_version = "6.8.2+dfsg-9+deb13u2"
 
-        def dependency(name, version=""):
-            return SimpleNamespace(name=name, version=version, relation="=")
-
-        def package(name, version, dependencies=(), provides=""):
-            item = candidate(version, "deb.debian.org", "trixie")
-            item.package = SimpleNamespace(name=name)
-            item.architecture = "arm64"
-            item.record = {"Provides": provides}
-            item.get_dependencies = lambda _kind: [[dep] for dep in dependencies]
-            return item
-
-        class Cache(dict):
-            def open(self, _progress):
-                pass
-
-            def get_providing_packages(self, name, candidate_only=True):
-                return [self[f"{core}:arm64"]] if name == f"{abi}:arm64" else []
+        def package(name, version, depends="", provides=""):
+            return (f"Package: {name}\nVersion: {version}\nArchitecture: arm64\n"
+                    "Status: install ok installed\n"
+                    + (f"Depends: {depends}\n" if depends else "")
+                    + (f"Provides: {provides}\n" if provides else "")
+                    + "Description: fixture\n\n")
 
         class ResolutionComplete(Exception):
             """Stop after runtime resolution, before download-directory creation."""
@@ -93,24 +87,28 @@ class DailySelectionTest(unittest.TestCase):
         for provided_version, version, preselected, expected in cases:
             with self.subTest(provided=provided_version, preselected=preselected):
                 provides = f"{abi} (= {provided_version})" if provided_version else abi
-                provider = package(core, version, provides=provides)
-                # Two consumers exercise reuse of the provider already in the graph.
-                consumers = [package(name, package_version, [dependency(abi, "6.8.2")])
-                             for name in ("libqt6dbus6", "libqt6gui6")]
-                dependencies = [dependency(core, version)] if preselected else []
-                dependencies += [dependency(item.package.name) for item in consumers]
-                palette = package("simaai-palette-modalix", PLATFORM, dependencies)
-                palette.origins = candidate(PLATFORM).origins
-                cache = Cache({f"{item.package.name}:arm64": SimpleNamespace(versions=[item])
-                               for item in [palette, provider, *consumers]})
-                with patch.dict(os.environ, {"SDK_APT_CHANNEL": "daily"}), \
-                     patch.object(module.apt, "Cache", return_value=cache), \
-                     patch.object(module, "update_apt_cache"), \
-                     patch.object(module, "whitelist", [], create=True), \
-                     patch.object(module.os, "makedirs", side_effect=ResolutionComplete), \
-                     self.assertRaises(expected):
-                    module.main("simaai-palette-modalix:arm64", PLATFORM, "6.18.3-1218",
-                                "/unused-downloads", "/unused-sysroot")
+                consumers = ("libqt6dbus6", "libqt6gui6")
+                dependencies = [f"{core} (= {version})"] if preselected else []
+                status = package(core, version, provides=provides)
+                status += "".join(package(name, package_version, f"{abi} (= 6.8.2)")
+                                  for name in consumers)
+                status += package("simaai-palette-modalix", PLATFORM,
+                                  ", ".join(dependencies + list(consumers)))
+                with tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory) / "var/lib/dpkg/status"
+                    path.parent.mkdir(parents=True)
+                    path.write_text(status)
+                    cache = module.apt.Cache(rootdir=directory)
+                    with patch.dict(os.environ, {"SDK_APT_CHANNEL": "daily"}), \
+                         patch.object(module.apt, "Cache", return_value=cache), \
+                         patch.object(module.apt.package.Version, "origins", property(
+                             lambda v: candidate(v.version, "deb.debian.org", "trixie").origins)), \
+                         patch.object(module, "update_apt_cache"), \
+                         patch.object(module, "whitelist", [], create=True), \
+                         patch.object(module.os, "makedirs", side_effect=ResolutionComplete), \
+                         self.assertRaises(expected):
+                        module.main("simaai-palette-modalix:arm64", PLATFORM, "6.18.3-1218",
+                                    "/unused-downloads", "/unused-sysroot")
 
     def test_floating_daily_selector_uses_debian_ordering(self):
         with tempfile.TemporaryDirectory() as directory:
