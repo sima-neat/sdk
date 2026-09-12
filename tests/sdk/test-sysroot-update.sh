@@ -59,27 +59,32 @@ printf '%s\t%s\t%s\n' \
   "${revision}" \
   "${SIMAAI_SETUP_DOWNLOAD_ONLY:-0}" \
   "${SIMAAI_PLATFORM_BUILD_REVISION:-}" >> "${SYSROOT_UPDATE_TEST_LOG:?}"
-for origin in \
-  debian.neat.sima.ai \
-  repo.sima.ai \
-  mirror.elxr.dev \
-  deb.debian.org \
-  security.debian.org; do
-  grep -A1 -F "Pin: origin \"${origin}\"" "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}" | \
-    grep -Fq 'Pin-Priority: 1001'
-done
-grep -A1 -F 'Pin: release o=Ubuntu' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}" | \
-  grep -Fq 'Pin-Priority: 100'
-[[ "${SIMAAI_VALIDATE_TARGET_ORIGIN:-}" == "1" ]]
-if [[ -n "${SYSROOT_UPDATE_APT_CANDIDATE_TEST:-}" ]]; then
-  python3 "${SYSROOT_UPDATE_APT_CANDIDATE_TEST}" \
-    "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
+if [[ "${SDK_APT_CHANNEL}" == daily ]]; then
+  [[ -z "${SIMAAI_PLATFORM_BUILD_REVISION}" && ! -e "${SYSROOT_UPDATE_APT_PREFERENCES_FILE}" ]]
+else
+  for origin in \
+    debian.neat.sima.ai \
+    repo.sima.ai \
+    mirror.elxr.dev \
+    deb.debian.org \
+    security.debian.org; do
+    grep -A1 -F "Pin: origin \"${origin}\"" "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}" | \
+      grep -Fq 'Pin-Priority: 1001'
+  done
+  grep -A1 -F 'Pin: release o=Ubuntu' "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}" | \
+    grep -Fq 'Pin-Priority: 100'
+  [[ "${SIMAAI_VALIDATE_TARGET_ORIGIN:-}" == "1" ]]
+  if [[ -n "${SYSROOT_UPDATE_APT_CANDIDATE_TEST:-}" ]]; then
+    python3 "${SYSROOT_UPDATE_APT_CANDIDATE_TEST}" \
+      "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}"
+  fi
 fi
 rm -rf "${download_dir}"
 mkdir -p "${download_dir}"
 package_root="$(mktemp -d)"
 trap 'rm -rf "${package_root}"' EXIT
 mkdir -p "${package_root}/DEBIAN" "${package_root}/usr/lib/aarch64-linux-gnu"
+chmod 755 "${package_root}/DEBIAN"
 cat > "${package_root}/DEBIAN/control" <<CONTROL
 Package: simaai-palette-modalix
 Version: ${revision}
@@ -103,6 +108,8 @@ if [[ "${SIMAAI_SETUP_DOWNLOAD_ONLY:-0}" != "1" ]]; then
   printf 'simaai-palette-modalix\tarm64\t%s\t/usr/lib/aarch64-linux-gnu\n' "${revision}" > \
     "${sysroot}/var/lib/sima-sdk/sysroot-packages.tsv"
 fi
+[[ "${SYSROOT_UPDATE_TEST_FAIL:-0}" != extract ]] || exit 42
+
 EOF
 chmod 755 "${tmpdir}/fake-platform-setup"
 
@@ -231,6 +238,8 @@ grep -Fxq 'Platform Revision = 3.0.0~pre4617' "${tmpdir}/sysroot/var/lib/sima-sd
 awk -F '\t' '$1 == "simaai-palette-modalix" && $2 == "arm64" && $3 == "3.0.0~pre4617" && $4 == "/usr/lib/aarch64-linux-gnu" { found = 1 } END { exit !found }' \
   "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-packages.tsv" || \
   fail "package inventory was not recorded"
+[[ "$(stat -c '%a' "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay")" == "644" ]] || \
+  fail "overlay metadata is unreadable to non-root users"
 updated_list="$(run_sysroot list)"
 grep -Eq '^simaai-palette-modalix[[:space:]]+arm64[[:space:]]+3\.0\.0~pre4617[[:space:]]+/usr/lib/aarch64-linux-gnu$' \
   <<< "${updated_list}" || \
@@ -368,5 +377,30 @@ grep -Fq 'neat-sdk-test-overlay-3-0-0-pre4617' <<< "${prompt_output}" || \
 
 [[ ! -e "${tmpdir}/apt/sources/pre-release.list" ]] || fail "temporary APT source was not cleaned up"
 [[ ! -e "${tmpdir}/apt/preferences/pre-release.pref" ]] || fail "temporary APT preferences were not cleaned up"
+
+# Exercise daily routing with the same installer fixture and transaction checks.
+sed -i -e 's/Platform Channel = pre-release/Platform Channel = daily/' \
+  -e 's@https://debian.neat.sima.ai/pre-release@https://debian.neat.sima.ai/daily@' \
+  "${tmpdir}/sdk-release"
+common_env+=("SYSROOT_INSTALLER=/bin/true")
+daily_revision=3.0.0~git202609120138.dcab8a6-1369
+for invalid in 3.0.0~pre4617 2.2.0~git202609120138.dcab8a6-1369 --latest; do
+  if run_sysroot update "${invalid}" >"${tmpdir}/out" 2>&1; then
+    fail "daily update accepted ${invalid}"
+  fi
+done
+cp "${tmpdir}/sdk-release" "${tmpdir}/image-metadata"
+cp -a "${tmpdir}/sysroot" "${tmpdir}/before-daily"
+run_sysroot update "${daily_revision}" --dry-run
+diff -r "${tmpdir}/before-daily" "${tmpdir}/sysroot"
+if env "${common_env[@]}" SYSROOT_UPDATE_TEST_FAIL=extract \
+  "${SYSROOT_COMMAND}" update "${daily_revision}"; then
+  fail "partial daily extraction reported success"
+fi
+diff -r "${tmpdir}/before-daily" "${tmpdir}/sysroot"
+run_sysroot update "${daily_revision}"
+grep -Fq "Sysroot overlay revision: ${daily_revision}" <<< "$(run_sysroot status)"
+grep -Fxq 'Platform Channel = daily' "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay"
+cmp "${tmpdir}/image-metadata" "${tmpdir}/sdk-release"
 
 echo "sysroot update tests passed"

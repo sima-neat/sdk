@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('sdk_setup', ROOT / 'scripts/simaai_setup_sdk.py')
@@ -56,6 +57,60 @@ class DailySelectionTest(unittest.TestCase):
         self.assertIsNone(module.daily_candidate([host, bookworm], PLATFORM))
         headers = candidate('6.18.3-1218')
         self.assertIs(module.daily_candidate([candidate('6.19', 'deb.debian.org', 'trixie'), headers], PLATFORM), headers)
+
+    def test_versioned_virtual_dependency_uses_provides(self):
+        abi = "qt6-base-private-abi"
+        core = "libqt6core6t64"
+        package_version = "6.8.2+dfsg-9+deb13u2"
+
+        def dependency(name, version=""):
+            return SimpleNamespace(name=name, version=version, relation="=")
+
+        def package(name, version, dependencies=(), provides=""):
+            item = candidate(version, "deb.debian.org", "trixie")
+            item.package = SimpleNamespace(name=name)
+            item.architecture = "arm64"
+            item.record = {"Provides": provides}
+            item.get_dependencies = lambda _kind: [[dep] for dep in dependencies]
+            return item
+
+        class Cache(dict):
+            def open(self, _progress):
+                pass
+
+            def get_providing_packages(self, name, candidate_only=True):
+                return [self[f"{core}:arm64"]] if name == f"{abi}:arm64" else []
+
+        class ResolutionComplete(Exception):
+            """Stop after runtime resolution, before download-directory creation."""
+
+        cases = (
+            ("6.8.2", package_version, False, ResolutionComplete),
+            ("6.8.2", package_version, True, ResolutionComplete),
+            ("6.8.1", "6.8.2", False, RuntimeError),
+            ("", "6.8.2", False, RuntimeError),
+        )
+        for provided_version, version, preselected, expected in cases:
+            with self.subTest(provided=provided_version, preselected=preselected):
+                provides = f"{abi} (= {provided_version})" if provided_version else abi
+                provider = package(core, version, provides=provides)
+                # Two consumers exercise reuse of the provider already in the graph.
+                consumers = [package(name, package_version, [dependency(abi, "6.8.2")])
+                             for name in ("libqt6dbus6", "libqt6gui6")]
+                dependencies = [dependency(core, version)] if preselected else []
+                dependencies += [dependency(item.package.name) for item in consumers]
+                palette = package("simaai-palette-modalix", PLATFORM, dependencies)
+                palette.origins = candidate(PLATFORM).origins
+                cache = Cache({f"{item.package.name}:arm64": SimpleNamespace(versions=[item])
+                               for item in [palette, provider, *consumers]})
+                with patch.dict(os.environ, {"SDK_APT_CHANNEL": "daily"}), \
+                     patch.object(module.apt, "Cache", return_value=cache), \
+                     patch.object(module, "update_apt_cache"), \
+                     patch.object(module, "whitelist", [], create=True), \
+                     patch.object(module.os, "makedirs", side_effect=ResolutionComplete), \
+                     self.assertRaises(expected):
+                    module.main("simaai-palette-modalix:arm64", PLATFORM, "6.18.3-1218",
+                                "/unused-downloads", "/unused-sysroot")
 
     def test_floating_daily_selector_uses_debian_ordering(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -885,7 +885,16 @@ configure_active_overlay_apt() {
 
 cleanup_update_transaction() {
   cleanup_update_apt
-  if [[ "${update_overlay_pending:-0}" == "1" ]]; then
+  if [[ -n "${update_backup:-}" ]]; then
+    if [[ "${update_overlay_pending:-0}" == 1 ]]; then
+      if ! rm -rf -- "${sysroot}" || ! mv -- "${update_backup}/sysroot" "${sysroot}"; then
+        echo "${program_name}: could not restore the sysroot; backup retained at ${update_backup}" >&2
+        return 1
+      fi
+      echo "Previous sysroot restored."
+    fi
+    rm -rf -- "${update_backup}"
+  elif [[ "${update_overlay_pending:-0}" == "1" ]]; then
     write_overlay_transition \
       "${sysroot}" \
       "${update_platform_base}" \
@@ -907,7 +916,8 @@ apply_sysroot_update() {
   local platform_base="$1"
   local platform_revision="$2"
   local previous_revision="$3"
-  local download_dir
+  local channel="$4" repository="$5"
+  local download_dir build_revision="${platform_revision##*~pre}"
 
   [[ -x "${PLATFORM_SETUP}" ]] || die "platform sysroot setup command is unavailable: ${PLATFORM_SETUP}"
   download_dir="${SYSROOT_UPDATE_DOWNLOAD_DIR:-/tmp/modalix-overlay-${platform_revision}}"
@@ -915,22 +925,35 @@ apply_sysroot_update() {
   update_previous_revision="${previous_revision}"
   update_target_revision="${platform_revision}"
   update_overlay_pending=0
+  update_backup=""
   trap cleanup_update_transaction EXIT
-  configure_update_apt "${platform_revision}" 1001
+  if [[ "${channel}" == daily ]]; then
+    [[ -x "${INSTALLER}" ]] || die "sysroot finalizer is unavailable: ${INSTALLER}"
+    [[ -d "${sysroot}" && ! -L "${sysroot}" ]] || die "daily updates require an existing sysroot directory"
+    sysroot="$(realpath -e -- "${sysroot}")"
+    [[ "${sysroot}" != / ]] || die "refusing to update the filesystem root"
+    build_revision=""
+    if [[ "${dry_run}" != 1 ]]; then
+      update_backup="$(mktemp -d "${sysroot}.update.XXXXXX")"
+      cp -a -- "${sysroot}" "${update_backup}/sysroot"
+    fi
+  else
+    configure_update_apt "${platform_revision}" 1001
+  fi
   if [[ "${dry_run}" != "1" ]]; then
-    write_overlay_transition \
-      "${sysroot}" "${platform_base}" "${previous_revision}" "${platform_revision}" "updating"
     update_overlay_pending=1
+    write_overlay_transition \
+      "${sysroot}" "${platform_base}" "${previous_revision}" "${platform_revision}" "updating" "${channel}" "${repository}"
   fi
   echo "Resolving and validating the complete ${platform_revision} package cohort..."
   if ! SYSROOT="${sysroot}" \
     SYSROOT_UPDATE_DOWNLOAD_DIR="${download_dir}" \
-    SDK_APT_CHANNEL=pre-release \
-    SIMAAI_PLATFORM_BUILD_REVISION="${platform_revision##*~pre}" \
+    SDK_APT_CHANNEL="${channel}" \
+    SIMAAI_PLATFORM_BUILD_REVISION="${build_revision}" \
     SIMAAI_VALIDATE_TARGET_ORIGIN=1 \
     SIMAAI_SETUP_DOWNLOAD_ONLY="${dry_run}" \
     "${PLATFORM_SETUP}" "${platform_revision}" "${SDK_PKG_LIST:-}"; then
-    if [[ "${dry_run}" != "1" ]]; then
+    if [[ "${dry_run}" != "1" && "${channel}" != daily ]]; then
       echo "${program_name}: update failed while extracting packages; recreate the SDK container to guarantee a clean sysroot." >&2
     fi
     return 1
@@ -941,12 +964,15 @@ apply_sysroot_update() {
     return
   fi
 
+  if [[ "${channel}" == daily ]]; then
+    "${INSTALLER}" "${sysroot}" --finalize-only
+  fi
   if [[ ! -s "$(sysroot_inventory_path "${sysroot}")" ]]; then
     write_package_inventory "${sysroot}" "${download_dir}"
   fi
   merge_tracked_manifests_into_inventory "${sysroot}"
   refresh_tracked_manifests "${sysroot}" "${arch}" "${download_dir}"
-  write_overlay_metadata "${sysroot}" "${platform_base}" "${platform_revision}"
+  write_overlay_metadata "${sysroot}" "${platform_base}" "${platform_revision}" "${channel}" "${repository}"
   # Package extraction preserves archive modes. Updates run as root, but the
   # resulting SDK sysroot must remain consumable by non-root builds.
   chmod -R a+rX "${sysroot}"
@@ -990,90 +1016,8 @@ cmd_status() {
   fi
 }
 
-cleanup_daily_update() {
-  if [[ "${daily_update_pending:-0}" == "1" ]]; then
-    if ! rm -rf -- "${sysroot}" || ! mv -- "${daily_update_backup}/sysroot" "${sysroot}"; then
-      echo "${program_name}: could not restore the sysroot; backup retained at ${daily_update_backup}" >&2
-      return 1
-    fi
-    echo "Previous sysroot restored."
-  fi
-  if [[ -n "${daily_update_backup:-}" ]]; then
-    rm -rf -- "${daily_update_backup}"
-  fi
-}
-
-cmd_daily_update() {
-  local platform_base target_revision current_revision current_state overlay repository download_dir
-
-  parse_update_options "$@"
-  [[ "${update_latest}" == "0" && ${#args[@]} -eq 1 ]] || \
-    die "daily updates require an exact X.Y.Z~gitTIMESTAMP.COMMIT-BUILD version"
-  target_revision="${args[0]}"
-  [[ "${target_revision}" =~ ^([0-9]+\.[0-9]+\.[0-9]+)~git[0-9]{12}\.[0-9a-f]+-[0-9]+$ ]] || \
-    die "daily update revision must use X.Y.Z~gitTIMESTAMP.COMMIT-BUILD: ${target_revision}"
-  platform_base="$(read_release_field "${SDK_RELEASE_FILE}" "Platform Base")"
-  [[ "${platform_base}" == 3.* && "${BASH_REMATCH[1]}" == "${platform_base}" ]] || \
-    die "SDK Platform Base is ${platform_base}; refusing revision ${target_revision}"
-  current_revision="$(read_release_field "${SDK_RELEASE_FILE}" "Platform Version")"
-  [[ -n "${current_revision}" ]] || die "Platform Version is missing from ${SDK_RELEASE_FILE}"
-  current_state=active
-  overlay="$(sysroot_overlay_path "${sysroot}")"
-  if [[ -r "${overlay}" ]]; then
-    current_revision="$(read_release_field "${overlay}" "Platform Revision")"
-    current_state="$(read_release_field "${overlay}" "Overlay State")"
-  fi
-  if [[ "${current_state}" == active && "${current_revision}" == "${target_revision}" ]]; then
-    echo "Sysroot is already at ${target_revision}; no changes are required."
-    return
-  fi
-
-  [[ -x "${PLATFORM_SETUP}" ]] || die "platform sysroot setup command is unavailable: ${PLATFORM_SETUP}"
-  [[ -x "${INSTALLER}" ]] || die "sysroot finalizer is unavailable: ${INSTALLER}"
-  [[ -d "${sysroot}" && ! -L "${sysroot}" ]] || die "daily updates require an existing sysroot directory"
-  sysroot="$(realpath -e -- "${sysroot}")"
-  [[ "${sysroot}" != / ]] || die "refusing to update the filesystem root"
-  repository="$(read_release_field "${SDK_RELEASE_FILE}" "Platform Repository")"
-  download_dir="${SYSROOT_UPDATE_DOWNLOAD_DIR:-/tmp/modalix-overlay-${target_revision}}"
-
-  # Use the existing installation path so pkg-config and CMake paths remain valid.
-  # Keep a complete backup until extraction, finalization, and bookkeeping succeed.
-  daily_update_pending=0
-  daily_update_backup=""
-  trap cleanup_daily_update EXIT
-  if [[ "${dry_run}" != "1" ]]; then
-    daily_update_backup="$(mktemp -d "${sysroot}.update.XXXXXX")"
-    cp -a -- "${sysroot}" "${daily_update_backup}/sysroot"
-    daily_update_pending=1
-    write_overlay_transition "${sysroot}" "${platform_base}" "${current_revision}" \
-      "${target_revision}" updating daily "${repository}"
-  fi
-  echo "Resolving and validating daily sysroot ${target_revision}..."
-  if ! SYSROOT="${sysroot}" SYSROOT_UPDATE_DOWNLOAD_DIR="${download_dir}" \
-    SDK_APT_CHANNEL=daily SIMAAI_SETUP_DOWNLOAD_ONLY="${dry_run}" \
-    SIMAAI_VALIDATE_TARGET_ORIGIN=1 \
-    "${PLATFORM_SETUP}" "${target_revision}" "${SDK_PKG_LIST:-}"; then
-    echo "${program_name}: daily sysroot update failed." >&2
-    return 1
-  fi
-  if [[ "${dry_run}" == "1" ]]; then
-    echo "Dry run complete: ${target_revision} resolved and validated; the sysroot was not modified."
-    return
-  fi
-  "${INSTALLER}" "${sysroot}" --finalize-only
-  merge_tracked_manifests_into_inventory "${sysroot}"
-  refresh_tracked_manifests "${sysroot}" "${arch}" "${download_dir}"
-  chmod -R a+rX "${sysroot}"
-  write_overlay_metadata "${sysroot}" "${platform_base}" "${target_revision}" daily "${repository}"
-  daily_update_pending=0
-  echo "Sysroot overlay is active at ${target_revision}."
-}
-
 cmd_update() {
-  if [[ "$(read_release_field "${SDK_RELEASE_FILE}" "Platform Channel" || true)" == daily ]]; then
-    cmd_daily_update "$@"
-    return
-  fi
+  local channel repository revision_pattern
   local platform_base image_revision current_revision current_state target_revision selection answer
   local explicit_revision=0 candidate_found=0 candidate
   local -a available_versions
@@ -1086,16 +1030,29 @@ cmd_update() {
     die "invalid or missing Platform Base in ${SDK_RELEASE_FILE}: ${platform_base:-<missing>}"
   [[ -n "${image_revision}" ]] || die "Platform Version is missing from ${SDK_RELEASE_FILE}"
 
-  mapfile -t available_versions < <(list_pre_release_versions "${platform_base}")
-  [[ ${#available_versions[@]} -gt 0 ]] || \
-    die "no ${platform_base}~preN revisions are available for ${PRE_RELEASE_ANCHOR_PACKAGE}"
+  channel="$(read_release_field "${SDK_RELEASE_FILE}" "Platform Channel")"
+  repository="${PRE_RELEASE_REPOSITORY}"
+  revision_pattern='^([0-9]+\.[0-9]+\.[0-9]+)~pre[0-9]+$'
+  if [[ "${channel}" == daily ]]; then
+    [[ "${update_latest}" == 0 && ${#args[@]} -eq 1 ]] || \
+      die "daily updates require an exact X.Y.Z~gitTIMESTAMP.COMMIT-BUILD version"
+    repository="$(read_release_field "${SDK_RELEASE_FILE}" "Platform Repository")"
+    revision_pattern='^([0-9]+\.[0-9]+\.[0-9]+)~git[0-9]{12}\.[0-9a-f]+-[0-9]+$'
+    # The daily installer validates this exact version against the APT cache.
+    available_versions=("${args[0]}")
+  else
+    channel=pre-release
+    mapfile -t available_versions < <(list_pre_release_versions "${platform_base}")
+    [[ ${#available_versions[@]} -gt 0 ]] || \
+      die "no ${platform_base}~preN revisions are available for ${PRE_RELEASE_ANCHOR_PACKAGE}"
+  fi
 
   cat <<EOF
-WARNING: This operation installs pre-release SiMa.ai platform software into
+WARNING: This operation installs ${channel} SiMa.ai platform software into
 the SDK sysroot. It is intended only for development and testing.
 
 SDK Platform Base: ${platform_base}
-Repository:        ${PRE_RELEASE_REPOSITORY}
+Repository:        ${repository}
 Repository trust:  HTTPS transport with APT trusted=yes (unsigned metadata)
 EOF
 
@@ -1126,8 +1083,8 @@ EOF
     target_revision="${available_versions[selection - 1]}"
   fi
 
-  if [[ ! "${target_revision}" =~ ^([0-9]+\.[0-9]+\.[0-9]+)~pre[0-9]+$ ]]; then
-    die "update revision must use X.Y.Z~preN: ${target_revision}"
+  if [[ ! "${target_revision}" =~ ${revision_pattern} ]]; then
+    die "invalid ${channel} update revision: ${target_revision}"
   fi
   [[ "${BASH_REMATCH[1]}" == "${platform_base}" ]] || \
     die "SDK Platform Base is ${platform_base}; refusing revision ${target_revision}"
@@ -1162,7 +1119,7 @@ EOF
     esac
   fi
 
-  apply_sysroot_update "${platform_base}" "${target_revision}" "${current_revision}"
+  apply_sysroot_update "${platform_base}" "${target_revision}" "${current_revision}" "${channel}" "${repository}"
 }
 
 cmd_install() {
