@@ -501,6 +501,52 @@ if run_sysroot update "${daily_revision}" --dry-run; then fail "dry run ignored 
 /usr/bin/python3 "${ROOT_DIR}/scripts/sysroot-directory.py" recover "${tmpdir}/sysroot"
 diff -r "${tmpdir}/expected-recovery" "${tmpdir}/sysroot"
 [[ ! -e "${tmpdir}/sysroot.update/pending" ]]
+# Interrupt both the backup rename handoff and cleanup of the retired copy.
+/usr/bin/python3 - "${ROOT_DIR}/scripts/sysroot-directory.py" "${tmpdir}/sysroot" <<'PYTEST'
+import importlib.util
+from pathlib import Path
+import shutil
+import sys
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("directory", sys.argv[1])
+helper = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(helper)
+for phase in ("delete", "publish"):
+    with TemporaryDirectory() as temp:
+        active = Path(temp) / "sysroot"
+        work = Path(str(active) + ".update")
+        previous, staging = work / "previous", work / "next"
+        shutil.copytree(sys.argv[2], active)
+        (active / "payload").write_text("old")
+        shutil.copytree(active, previous)
+        (active / "payload").write_text("healthy")
+        shutil.copytree(active, staging)
+        rename, remove = Path.rename, helper.remove
+        def interrupted_remove(path):
+            if phase == "delete" and path in (previous, work / "retired") and path.exists():
+                (path / "payload").unlink()
+                raise KeyboardInterrupt
+            remove(path)
+        def interrupted_rename(path, target):
+            if phase == "publish" and path == work / "backup":
+                raise KeyboardInterrupt
+            return rename(path, target)
+        with patch.object(helper, "remove", interrupted_remove), patch.object(Path, "rename", interrupted_rename):
+            with patch.object(sys, "argv", ["helper", "activate", str(active)]):
+                try:
+                    helper.main()
+                except KeyboardInterrupt:
+                    pass
+                else:
+                    raise AssertionError("interruption was not injected")
+        assert (active / "payload").read_text() == "healthy"
+        with patch.object(sys, "argv", ["helper", "rollback", str(active)]):
+            helper.main()
+        assert (active / "payload").read_text() == ("old" if phase == "publish" else "healthy")
+print("backup handoff interruption tests passed")
+PYTEST
 # Reject an uninitialized backup without touching the active sysroot.
 touch "${tmpdir}/sysroot.update/pending"
 rm "${tmpdir}/sysroot.update/previous/var/lib/sima-sdk/requested-packages"

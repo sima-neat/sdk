@@ -52,6 +52,7 @@ def main():
         raise RuntimeError("Use a refreshed SDK image with a real sysroot directory")
     work = Path(str(active) + ".update")
     previous, pending = work / "previous", work / "pending"
+    retired = work / "retired"
     if operation == "init":
         requested = sorted({p.strip() for p in os.environ.get("SDK_PKG_LIST", "").split(",") if p.strip()})
         manifest = active / "var/lib/sima-sdk/requested-packages"
@@ -63,6 +64,9 @@ def main():
         if pending.exists():
             raise RuntimeError("Interrupted replacement; run sysroot rollback before building")
         return
+    if not previous.exists() and retired.exists():
+        require_sysroot(retired)
+        retired.rename(previous)
     recover(active, previous, pending)
     if operation == "recover":
         return
@@ -86,8 +90,12 @@ def main():
     backup = work / "backup"
     remove(backup)
     shutil.copytree(active, backup, symlinks=True)
-    remove(previous)
+    # Never recursively delete the backup that rollback can select.
+    remove(retired)
+    if previous.exists():
+        previous.rename(retired)
     backup.rename(previous)
+    remove(retired)
     pending.touch()
     try:
         remove(active)
