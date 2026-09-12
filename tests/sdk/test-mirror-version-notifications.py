@@ -186,3 +186,87 @@ def test_package_preview_prioritizes_additions_over_removals(tmp_path, retry):
     assert 'APT package changes: 7' in message
     assert '…and 2 more' in message
     assert f'<{RUN}|GitHub workflow run>' in message
+
+
+def test_table_shows_all_sixteen_changes_with_full_versions(tmp_path):
+    version = '2.2.0~git202609112047.177c0f3-1350'
+    send = Mock()
+    events = [f'pkg{i:02} (arm64): added {version}; removed 1.0' for i in range(16)]
+    m.notify(tmp_path / 'state.json', {'packages': events}, RUN, send)
+    blocks = send.call_args.kwargs['blocks']
+    table = next(block for block in blocks if block['type'] == 'table')
+    assert len(table['rows']) == 17
+    assert [cell['text'] for cell in table['rows'][1]] == ['pkg00', 'arm64', '1.0', version]
+    assert all(column['is_wrapped'] for column in table['column_settings'])
+    assert RUN in blocks[-1]['text']['text']
+
+
+def test_table_bounds_and_preserves_add_remove_and_multiple_versions(tmp_path):
+    events = ['a (arm64): added 2.0, 3.0; removed 1.0', 'b (all): added 1.0']
+    events += [f'z{i:03} (arm64): removed 1.0' for i in range(100)]
+    send = Mock()
+    m.notify(tmp_path / 'state.json', {'packages': events}, RUN, send)
+    blocks = send.call_args.kwargs['blocks']
+    table = next(block for block in blocks if block['type'] == 'table')
+    assert len(table['rows']) == 100
+    assert [cell['text'] for cell in table['rows'][1]] == ['a', 'arm64', '1.0', '2.0, 3.0']
+    assert [cell['text'] for cell in table['rows'][2]] == ['b', 'all', '—', '1.0']
+    assert [cell['text'] for cell in table['rows'][3]] == ['z000', 'arm64', '1.0', '—']
+    assert any('3 more changes' in block.get('elements', [{}])[0].get('text', '') for block in blocks)
+
+
+def test_package_table_retry_preserves_original_run_and_literal_cells(tmp_path):
+    state = tmp_path / 'state.json'
+    events = ['example (arm64): added <!channel>&; removed 1.0', 'legacy event']
+    with pytest.raises(RuntimeError):
+        m.notify(state, {'packages': events}, RUN, Mock(side_effect=RuntimeError()))
+    send = Mock()
+    m.notify(state, {}, NEXT_RUN, send)
+    blocks = send.call_args.kwargs['blocks']
+    table = next(block for block in blocks if block['type'] == 'table')
+    assert table['rows'][1][3] == {'type': 'raw_text', 'text': '<!channel>&'}
+    assert table['rows'][2][0]['text'] == 'legacy event'
+    assert RUN in blocks[-1]['text']['text']
+    assert NEXT_RUN not in json.dumps(blocks)
+    assert not json.loads(state.read_text())['pending']
+
+
+def test_shared_sender_includes_blocks_and_keeps_plain_text_compatible(monkeypatch):
+    import io
+    import runpy
+    sender = runpy.run_path(str(ROOT / 'scripts/post-debian-mirror-summary.py'))['post_message']
+    requests = []
+
+    def respond(request, **kwargs):
+        requests.append(json.loads(request.data))
+        return io.BytesIO(b'{"ok": true}')
+
+    monkeypatch.setattr('urllib.request.urlopen', respond)
+    blocks = m.message_blocks([], RUN)
+    sender('test-token', 'C123', 'fallback', blocks=blocks)
+    assert requests[-1]['blocks'] == blocks
+    assert requests[-1]['text'] == 'fallback'
+    sender('test-token', 'C123', 'daily digest')
+    assert 'blocks' not in requests[-1]
+
+
+@pytest.mark.parametrize('length', [1999, 2000, 2001, 5000])
+def test_table_cell_limits_cover_versions_and_legacy_events(tmp_path, length):
+    value = 'v' * length
+    events = [f'package (arm64): added {value}; removed {value}', value]
+    state = tmp_path / 'state.json'
+    # A failed send retains the complete event for the next run.
+    with pytest.raises(RuntimeError):
+        m.notify(state, {'packages': events}, RUN, Mock(side_effect=RuntimeError()))
+    assert {item['version'] for item in json.loads(state.read_text())['pending']} == set(events)
+    send = Mock()
+    m.notify(state, {}, NEXT_RUN, send)
+    blocks = send.call_args.kwargs['blocks']
+    table = next(block for block in blocks if block['type'] == 'table')
+    expected = value if length <= 2000 else value[:2000 - len(m.TABLE_CELL_OVERFLOW)] + m.TABLE_CELL_OVERFLOW
+    assert table['rows'][1][2]['text'] == expected
+    assert table['rows'][1][3]['text'] == expected
+    assert table['rows'][2][0]['text'] == expected
+    assert all(len(cell['text']) <= 2000 for row in table['rows'] for cell in row)
+    assert RUN in blocks[-1]['text']['text']
+    assert not json.loads(state.read_text())['pending']
