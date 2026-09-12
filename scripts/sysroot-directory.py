@@ -27,10 +27,18 @@ def relocate(root, destination):
         receipt.write_text(receipt.read_text().replace(str(root), str(destination)))
 
 
+def require_sysroot(root):
+    metadata = root / "var/lib/sima-sdk"
+    if root.is_symlink() or not all(
+        (metadata / name).is_file()
+        for name in ("requested-packages", "sysroot-packages.tsv")
+    ):
+        raise RuntimeError(f"Not an initialized SDK sysroot: {root}")
+
+
 def recover(active, previous, pending):
     if pending.exists():
-        if not previous.is_dir():
-            raise RuntimeError("Interrupted update has no complete backup")
+        require_sysroot(previous)
         remove(active)
         shutil.copytree(previous, active, symlinks=True)
         pending.unlink()
@@ -50,6 +58,7 @@ def main():
         manifest.parent.mkdir(parents=True, exist_ok=True)
         manifest.write_text("".join(p + "\n" for p in requested))
         return
+    require_sysroot(previous if pending.exists() else active)
     if operation == "check":
         if pending.exists():
             raise RuntimeError("Interrupted replacement; run sysroot rollback before building")
@@ -64,11 +73,11 @@ def main():
         staging.mkdir()
         return
     if operation == "rollback":
-        if not previous.is_dir():
-            raise RuntimeError("No previous sysroot is available")
+        require_sysroot(previous)
         remove(staging)
         shutil.copytree(previous, staging, symlinks=True)
     elif operation == "activate":
+        require_sysroot(staging)
         relocate(staging, active)
     else:
         raise ValueError(operation)

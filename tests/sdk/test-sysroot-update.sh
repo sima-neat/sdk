@@ -413,6 +413,19 @@ for invalid in 3.0.0~pre4617 2.2.0~git202609120138.dcab8a6-1369 --latest; do
     fail "daily update accepted ${invalid}"
   fi
 done
+# An absolute path alone must not authorize replacing an unrelated directory.
+mkdir "${tmpdir}/unmanaged"
+echo preserve > "${tmpdir}/unmanaged/existing-file"
+for operation in update rollback; do
+  extra=()
+  [[ "${operation}" != update ]] || extra=("${daily_revision}")
+  if run_sysroot "${operation}" --sysroot "${tmpdir}/unmanaged" "${extra[@]}" > "${tmpdir}/out" 2>&1; then
+    fail "accepted an unmanaged sysroot"
+  fi
+  grep -q 'Not an initialized SDK sysroot' "${tmpdir}/out"
+  [[ "$(cat "${tmpdir}/unmanaged/existing-file")" == preserve ]]
+  [[ ! -e "${tmpdir}/unmanaged.update" ]]
+done
 cp "${tmpdir}/sdk-release" "${tmpdir}/image-metadata"
 cp -a "${initial_generation}" "${tmpdir}/before-daily"
 run_sysroot update "${daily_revision}" --dry-run
@@ -488,4 +501,11 @@ if run_sysroot update "${daily_revision}" --dry-run; then fail "dry run ignored 
 /usr/bin/python3 "${ROOT_DIR}/scripts/sysroot-directory.py" recover "${tmpdir}/sysroot"
 diff -r "${tmpdir}/expected-recovery" "${tmpdir}/sysroot"
 [[ ! -e "${tmpdir}/sysroot.update/pending" ]]
+# Reject an uninitialized backup without touching the active sysroot.
+touch "${tmpdir}/sysroot.update/pending"
+rm "${tmpdir}/sysroot.update/previous/var/lib/sima-sdk/requested-packages"
+if /usr/bin/python3 "${ROOT_DIR}/scripts/sysroot-directory.py" recover "${tmpdir}/sysroot"; then
+  fail "recovery accepted an uninitialized backup"
+fi
+diff -r "${tmpdir}/expected-recovery" "${tmpdir}/sysroot"
 echo "sysroot update tests passed"
