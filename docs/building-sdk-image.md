@@ -195,9 +195,21 @@ REQUESTED_PRE_RELEASE_BASE=3.0.0 \
 ```
 
 `/etc/sdk-release` records the daily repository, exact platform version, base
-`3.0.0`, and `Neat Core = not bundled`. In-container `sysroot update` still
-supports the legacy `~preN` overlay flow; rebuild the experimental image to
-change its daily platform revision.
+`3.0.0`, and `Neat Core = not bundled`. Update an existing daily SDK with an
+exact mirrored version:
+
+```bash
+sudo sysroot update 3.0.0~git202609070138.4a147cf-1157
+sysroot status
+```
+
+Add `--dry-run` to resolve and validate packages without changing the sysroot.
+Daily updates require the same platform base and an exact version; `--latest`
+and standalone `sysroot install` remain unavailable for daily images. Repeating
+the active version does not reinstall it. Updates keep a temporary sysroot
+backup for failure recovery, requiring room for a second copy. The active
+overlay is recorded separately from the unchanged `/etc/sdk-release` image
+metadata. Existing `~preN` updates retain their behavior.
 
 The SDK build environment exports `-march=armv8.2-a+crypto -mtune=cortex-a65`:
 the architecture flag controls permitted instructions, while the tuning flag

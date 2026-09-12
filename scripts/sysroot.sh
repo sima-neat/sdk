@@ -20,7 +20,7 @@ Usage:
   ${program_name} remove  [options] package [package ...]
   ${program_name} list    [options]
   ${program_name} status  [options]
-  ${program_name} update  [options] [X.Y.Z~preN]
+  ${program_name} update  [options] [EXACT_PLATFORM_VERSION]
   ${program_name} help
 
 Manages Debian package payloads in the SDK sysroot. Install downloads packages
@@ -32,7 +32,7 @@ Options:
   --sysroot PATH  Sysroot to operate on (default: \${SYSROOT:-${DEFAULT_SYSROOT}})
   --arch ARCH     Target architecture for unqualified packages (default: ${DEFAULT_ARCH})
   --dry-run       Print actions without changing the sysroot
-  --latest        Select the newest pre-release for the SDK Platform Base
+  --latest        Select the newest pre-release for the SDK Platform Base (not daily)
   --yes           Confirm a --latest update without an interactive prompt
   -h, --help      Show this help
 
@@ -44,6 +44,7 @@ Examples:
   sudo ${program_name} update
   ${program_name} status
   sudo ${program_name} update --latest --yes
+  sudo ${program_name} update 3.0.0~git202609070138.4a147cf-1157
   ${program_name} status
 EOF
 }
@@ -678,8 +679,8 @@ write_overlay_metadata() {
 Overlay State = active
 Platform Base = ${platform_base}
 Platform Revision = ${platform_revision}
-Platform Channel = pre-release
-Platform Repository = ${PRE_RELEASE_REPOSITORY}
+Platform Channel = ${4:-pre-release}
+Platform Repository = ${5:-${PRE_RELEASE_REPOSITORY}}
 Updated At = $(date -u +%Y-%m-%dT%H:%M:%SZ)
 Package Inventory = ${inventory}
 EOF
@@ -702,8 +703,8 @@ Overlay State = ${state}
 Platform Base = ${platform_base}
 Platform Revision = ${target_revision}
 Previous Platform Revision = ${previous_revision}
-Platform Channel = pre-release
-Platform Repository = ${PRE_RELEASE_REPOSITORY}
+Platform Channel = ${6:-pre-release}
+Platform Repository = ${7:-${PRE_RELEASE_REPOSITORY}}
 Updated At = $(date -u +%Y-%m-%dT%H:%M:%SZ)
 Package Inventory = $(sysroot_inventory_path "${sysroot}")
 EOF
@@ -989,9 +990,89 @@ cmd_status() {
   fi
 }
 
+cleanup_daily_update() {
+  if [[ "${daily_update_pending:-0}" == "1" ]]; then
+    if ! rm -rf -- "${sysroot}" || ! mv -- "${daily_update_backup}/sysroot" "${sysroot}"; then
+      echo "${program_name}: could not restore the sysroot; backup retained at ${daily_update_backup}" >&2
+      return 1
+    fi
+    echo "Previous sysroot restored."
+  fi
+  if [[ -n "${daily_update_backup:-}" ]]; then
+    rm -rf -- "${daily_update_backup}"
+  fi
+}
+
+cmd_daily_update() {
+  local platform_base target_revision current_revision current_state overlay repository download_dir
+
+  parse_update_options "$@"
+  [[ "${update_latest}" == "0" && ${#args[@]} -eq 1 ]] || \
+    die "daily updates require an exact X.Y.Z~gitTIMESTAMP.COMMIT-BUILD version"
+  target_revision="${args[0]}"
+  [[ "${target_revision}" =~ ^([0-9]+\.[0-9]+\.[0-9]+)~git[0-9]{12}\.[0-9a-f]+-[0-9]+$ ]] || \
+    die "daily update revision must use X.Y.Z~gitTIMESTAMP.COMMIT-BUILD: ${target_revision}"
+  platform_base="$(read_release_field "${SDK_RELEASE_FILE}" "Platform Base")"
+  [[ "${platform_base}" == 3.* && "${BASH_REMATCH[1]}" == "${platform_base}" ]] || \
+    die "SDK Platform Base is ${platform_base}; refusing revision ${target_revision}"
+  current_revision="$(read_release_field "${SDK_RELEASE_FILE}" "Platform Version")"
+  [[ -n "${current_revision}" ]] || die "Platform Version is missing from ${SDK_RELEASE_FILE}"
+  current_state=active
+  overlay="$(sysroot_overlay_path "${sysroot}")"
+  if [[ -r "${overlay}" ]]; then
+    current_revision="$(read_release_field "${overlay}" "Platform Revision")"
+    current_state="$(read_release_field "${overlay}" "Overlay State")"
+  fi
+  if [[ "${current_state}" == active && "${current_revision}" == "${target_revision}" ]]; then
+    echo "Sysroot is already at ${target_revision}; no changes are required."
+    return
+  fi
+
+  [[ -x "${PLATFORM_SETUP}" ]] || die "platform sysroot setup command is unavailable: ${PLATFORM_SETUP}"
+  [[ -x "${INSTALLER}" ]] || die "sysroot finalizer is unavailable: ${INSTALLER}"
+  [[ -d "${sysroot}" && ! -L "${sysroot}" ]] || die "daily updates require an existing sysroot directory"
+  sysroot="$(realpath -e -- "${sysroot}")"
+  [[ "${sysroot}" != / ]] || die "refusing to update the filesystem root"
+  repository="$(read_release_field "${SDK_RELEASE_FILE}" "Platform Repository")"
+  download_dir="${SYSROOT_UPDATE_DOWNLOAD_DIR:-/tmp/modalix-overlay-${target_revision}}"
+
+  # Use the existing installation path so pkg-config and CMake paths remain valid.
+  # Keep a complete backup until extraction, finalization, and bookkeeping succeed.
+  daily_update_pending=0
+  daily_update_backup=""
+  trap cleanup_daily_update EXIT
+  if [[ "${dry_run}" != "1" ]]; then
+    daily_update_backup="$(mktemp -d "${sysroot}.update.XXXXXX")"
+    cp -a -- "${sysroot}" "${daily_update_backup}/sysroot"
+    daily_update_pending=1
+    write_overlay_transition "${sysroot}" "${platform_base}" "${current_revision}" \
+      "${target_revision}" updating daily "${repository}"
+  fi
+  echo "Resolving and validating daily sysroot ${target_revision}..."
+  if ! SYSROOT="${sysroot}" SYSROOT_UPDATE_DOWNLOAD_DIR="${download_dir}" \
+    SDK_APT_CHANNEL=daily SIMAAI_SETUP_DOWNLOAD_ONLY="${dry_run}" \
+    SIMAAI_VALIDATE_TARGET_ORIGIN=1 \
+    "${PLATFORM_SETUP}" "${target_revision}" "${SDK_PKG_LIST:-}"; then
+    echo "${program_name}: daily sysroot update failed." >&2
+    return 1
+  fi
+  if [[ "${dry_run}" == "1" ]]; then
+    echo "Dry run complete: ${target_revision} resolved and validated; the sysroot was not modified."
+    return
+  fi
+  "${INSTALLER}" "${sysroot}" --finalize-only
+  merge_tracked_manifests_into_inventory "${sysroot}"
+  refresh_tracked_manifests "${sysroot}" "${arch}" "${download_dir}"
+  chmod -R a+rX "${sysroot}"
+  write_overlay_metadata "${sysroot}" "${platform_base}" "${target_revision}" daily "${repository}"
+  daily_update_pending=0
+  echo "Sysroot overlay is active at ${target_revision}."
+}
+
 cmd_update() {
   if [[ "$(read_release_field "${SDK_RELEASE_FILE}" "Platform Channel" || true)" == daily ]]; then
-    die "For the 3.0 daily SDK, rebuild with BASE_SDK_VERSION and SDK_PKG_LIST to change the sysroot."
+    cmd_daily_update "$@"
+    return
   fi
   local platform_base image_revision current_revision current_state target_revision selection answer
   local explicit_revision=0 candidate_found=0 candidate

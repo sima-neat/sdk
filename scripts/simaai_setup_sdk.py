@@ -509,6 +509,26 @@ def write_sysroot_package_inventory(download_dir, sysroot):
     print(f"Recorded {len(entries)} package inventory entries.", flush=True)
 
 
+def daily_dependency_satisfied(candidate, pkgname, requested_version="", relation="="):
+    """Check a dependency against this package version or its matching Provides."""
+    import apt_pkg
+
+    name = base_package_name(pkgname)
+    if name == base_package_name(candidate.package.name):
+        return not requested_version or apt_pkg.check_dep(
+            candidate.version, relation, requested_version
+        )
+    for group in apt_pkg.parse_depends(candidate.record.get("Provides", "")):
+        for provided_name, provided_version, _ in group:
+            if provided_name == name and (
+                not requested_version or provided_version and apt_pkg.check_dep(
+                    provided_version, relation, requested_version
+                )
+            ):
+                return True
+    return False
+
+
 def daily_candidate(candidates, platform_version, requested_version="", relation="="):
     """Select a target package without imposing Palette's version on components.
 
@@ -608,10 +628,12 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
                 return selected
             # Debian 13 t64 packages provide legacy dependency names used by
             # platform binaries (for example liblttng-ust1 -> liblttng-ust1t64).
-            for provider in cache.get_providing_packages(pkgname):
+            for provider in cache.get_providing_packages(pkgname, candidate_only=False):
                 selected = daily_candidate(
-                    [v for v in provider.versions if v.architecture in ("arm64", "all")],
-                    version, requested_version, relation
+                    [v for v in provider.versions
+                     if v.architecture in ("arm64", "all")
+                     and daily_dependency_satisfied(v, pkgname, requested_version, relation)],
+                    version
                 )
                 if selected is not None:
                     return selected
@@ -663,9 +685,11 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
                     if selected is None:
                         continue
                     name = normalize_arm64_name(selected.package.name)
-                    if graph.get(name) and dep.version:
-                        import apt_pkg
-                        if not apt_pkg.check_dep(graph[name], dep.relation, dep.version):
+                    if graph.get(name):
+                        existing = get_candidate(name, graph[name])
+                        if existing is None or not daily_dependency_satisfied(
+                            existing, dep.name, dep.version, dep.relation
+                        ):
                             raise RuntimeError(f"Conflicting dependency for {name}: {graph[name]} does not satisfy {dep}")
                     if not graph.get(name):
                         graph[name] = selected.version
