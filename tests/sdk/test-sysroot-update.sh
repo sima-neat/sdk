@@ -102,6 +102,8 @@ if [[ "${SIMAAI_SETUP_DOWNLOAD_ONLY:-0}" != "1" ]]; then
   cp "${package_root}/usr/lib/aarch64-linux-gnu/sysroot-update-test.txt" \
     "${sysroot}/usr/lib/aarch64-linux-gnu/sysroot-update-test.txt"
   printf '#define SIMAAI_TEST 1\n' > "${sysroot}/usr/include/simaai/stdc-predef.h"
+  printf 'prefix=%s/usr\n' "${sysroot}" > "${sysroot}/test.pc"
+  ln -sfn "${sysroot}/usr/include/simaai/stdc-predef.h" "${sysroot}/header-link"
   chmod 0750 "${sysroot}/usr/include/simaai"
   chmod 0640 "${sysroot}/usr/include/simaai/stdc-predef.h"
   mkdir -p "${sysroot}/var/lib/sima-sdk"
@@ -396,8 +398,8 @@ case "$1" in
 esac
 EOF
 chmod +x "${tmpdir}/bin/aarch64-linux-gnu-g++"
-common_env+=("SYSROOT_INSTALLER=/bin/true" "PATH=${tmpdir}/bin:${PATH}")
-SDK_PKG_LIST=" libz-dev, liba-dev,libz-dev " /usr/bin/python3 "${ROOT_DIR}/scripts/initialize-sysroot-generations.py" "${tmpdir}/sysroot"
+common_env+=("SYSROOT_INSTALLER=/bin/true" "SYSROOT_DIRECTORY_HELPER=${ROOT_DIR}/scripts/sysroot-directory.py" "PATH=${tmpdir}/bin:${PATH}")
+SDK_PKG_LIST=" libz-dev, liba-dev,libz-dev " /usr/bin/python3 "${ROOT_DIR}/scripts/sysroot-directory.py" init "${tmpdir}/sysroot"
 initial_generation="$(readlink -f "${tmpdir}/sysroot")"
 [[ "$(cat "${initial_generation}/var/lib/sima-sdk/requested-packages")" == $'liba-dev\nlibz-dev' ]]
 sed -i 's/^Platform Version = .*/Platform Version = 3.0.0~git202609070138.4a147cf-1157/' "${tmpdir}/sdk-release"
@@ -423,31 +425,26 @@ diff -r "${tmpdir}/before-daily" "${initial_generation}"
 [[ "$(readlink -f "${tmpdir}/sysroot")" == "${initial_generation}" ]]
 run_sysroot update "${daily_revision}"
 [[ ! -e "${tmpdir}/sysroot/usr/include/obsolete.h" ]]
-[[ -e "${initial_generation}/usr/include/obsolete.h" ]]
+[[ -e "${tmpdir}/sysroot.update/previous/usr/include/obsolete.h" ]]
 grep -Fq "Sysroot overlay revision: ${daily_revision}" <<< "$(run_sysroot status)"
 grep -Fxq 'Platform Channel = daily' "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay"
 cmp "${tmpdir}/image-metadata" "${tmpdir}/sdk-release"
-selected="$(readlink -f "${tmpdir}/sysroot")"
-# Build flags retain the permanent generation when activation changes.
-export SYSROOT_ACTIVE="${tmpdir}/sysroot"
-source "${ROOT_DIR}/scripts/simaai-init-build-env" modalix
-[[ "${SYSROOT}" == "${selected}" && "${CXXFLAGS}" == *"--sysroot=${selected}"* ]]
-unset SYSROOT_ACTIVE
+[[ -d "${tmpdir}/sysroot" && ! -L "${tmpdir}/sysroot" ]]
+selected="$(stat -c %i "${tmpdir}/sysroot")"
 run_sysroot update "${daily_revision}"
-[[ "$(readlink -f "${tmpdir}/sysroot")" == "${selected}" ]]
+[[ "$(stat -c %i "${tmpdir}/sysroot")" == "${selected}" ]]
 run_sysroot rollback
-[[ "$(readlink -f "${tmpdir}/sysroot")" == "${initial_generation}" ]]
-[[ "${SYSROOT}" == "${selected}" && -e "${SYSROOT}/usr/include/simaai/stdc-predef.h" ]]
-# A -> B -> C -> A uses fresh cohorts and leaves earlier generations intact.
+[[ -e "${tmpdir}/sysroot/usr/include/obsolete.h" ]]
+# A -> B -> C -> A replaces the directory without obsolete files.
 for revision in "${daily_revision}" 3.0.0~git202609112047.4066d33-1350 3.0.0~git202609070138.4a147cf-1157; do
   run_sysroot update "${revision}"
   grep -Fxq "${revision}" "${tmpdir}/sysroot/usr/lib/aarch64-linux-gnu/sysroot-update-test.txt"
 done
-before="$(readlink -f "${tmpdir}/sysroot")"
+before="$(stat -c %i "${tmpdir}/sysroot")"
 if env "${common_env[@]}" SYSROOT_UPDATE_TEST_FAIL=compiler "${SYSROOT_COMMAND}" update "${daily_revision}"; then
   fail "compiler failure activated a generation"
 fi
-[[ "$(readlink -f "${tmpdir}/sysroot")" == "${before}" ]]
+[[ "$(stat -c %i "${tmpdir}/sysroot")" == "${before}" ]]
 setsid env "${common_env[@]}" SYSROOT_UPDATE_TEST_FAIL=interrupt "${SYSROOT_COMMAND}" update "${daily_revision}" &
 updater=$!
 for attempt in {1..100}; do
@@ -457,7 +454,7 @@ done
 if [[ ! -e "${tmpdir}/setup.log.ready" ]]; then kill -KILL -- "-${updater}"; fail "updater did not reach extraction"; fi
 kill -KILL -- "-${updater}"
 wait "${updater}" 2>/dev/null || true
-[[ "$(readlink -f "${tmpdir}/sysroot")" == "${before}" ]]
+[[ "$(stat -c %i "${tmpdir}/sysroot")" == "${before}" ]]
 run_sysroot update "${daily_revision}"
 (
   flock -x 9
@@ -466,17 +463,29 @@ run_sysroot update "${daily_revision}"
 
 # Same revision rebuilds for changed requests, but ordering/duplicates do not.
 for packages in 'libz-dev, liba-dev,libz-dev' ''; do
-  before="$(readlink -f "${tmpdir}/sysroot")"
+  before="$(stat -c %i "${tmpdir}/sysroot")"
   env "${common_env[@]}" SDK_PKG_LIST="${packages}" "${SYSROOT_COMMAND}" update "${daily_revision}"
-  [[ "$(readlink -f "${tmpdir}/sysroot")" != "${before}" ]]
-  selected="$(readlink -f "${tmpdir}/sysroot")"
-  normalized="$(cat "${selected}/var/lib/sima-sdk/requested-packages")"
+  [[ "$(stat -c %i "${tmpdir}/sysroot")" != "${before}" ]]
+  selected="$(stat -c %i "${tmpdir}/sysroot")"
+  normalized="$(cat "${tmpdir}/sysroot/var/lib/sima-sdk/requested-packages")"
   expected=""
   [[ -z "${packages}" ]] || expected=$'liba-dev\nlibz-dev'
   [[ "${normalized}" == "${expected}" ]]
   equivalent="${packages:+ liba-dev ,libz-dev }"
   env "${common_env[@]}" SDK_PKG_LIST="${equivalent}" "${SYSROOT_COMMAND}" update "${daily_revision}"
-  [[ "$(readlink -f "${tmpdir}/sysroot")" == "${selected}" ]]
+  [[ "$(stat -c %i "${tmpdir}/sysroot")" == "${selected}" ]]
 done
 
+grep -Fxq "prefix=${tmpdir}/sysroot/usr" "${tmpdir}/sysroot/test.pc"
+[[ "$(readlink "${tmpdir}/sysroot/header-link")" == "${tmpdir}/sysroot/usr/include/simaai/stdc-predef.h" ]]
+# Model interruption after removing the old directory but before activation.
+cp -a "${tmpdir}/sysroot.update/previous" "${tmpdir}/expected-recovery"
+touch "${tmpdir}/sysroot.update/pending"
+rm -rf "${tmpdir}/sysroot"
+mkdir -p "${tmpdir}/sysroot"
+echo partial > "${tmpdir}/sysroot/interrupted-file"
+if run_sysroot update "${daily_revision}" --dry-run; then fail "dry run ignored interrupted replacement"; fi
+/usr/bin/python3 "${ROOT_DIR}/scripts/sysroot-directory.py" recover "${tmpdir}/sysroot"
+diff -r "${tmpdir}/expected-recovery" "${tmpdir}/sysroot"
+[[ ! -e "${tmpdir}/sysroot.update/pending" ]]
 echo "sysroot update tests passed"

@@ -20,7 +20,7 @@ BOARD=$1
 elif [ "${BOARD}" = "modalix" ]; then
 	echo "Setting up build environment for modalix..."
 	export SYSROOT_ACTIVE="${SYSROOT_ACTIVE:-/opt/toolchain/aarch64/modalix}"
-	export SYSROOT="$(readlink -f "${SYSROOT_ACTIVE}")"
+	export SYSROOT="${SYSROOT_ACTIVE}"
 	export CFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=${SYSROOT}"
 	export CXXFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=${SYSROOT}"
 	export CPPFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=${SYSROOT}"

@@ -179,6 +179,17 @@ int main(int argc, char **argv) {
   return 0;
 }
 EOF
+  # Exercise the public path with the same rooted lookup used by consumers.
+  test ! -L /opt/toolchain/aarch64/modalix
+  cat > "${WORK_DIR}/find-glib.cmake" <<'EOF'
+set(CMAKE_SYSROOT "/opt/toolchain/aarch64/modalix")
+set(CMAKE_FIND_ROOT_PATH "${CMAKE_SYSROOT}")
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GLIB REQUIRED glib-2.0)
+find_library(GLIB_LIBRARY NAMES glib-2.0 HINTS ${GLIB_LIBRARY_DIRS} REQUIRED)
+EOF
+  cmake -P "${WORK_DIR}/find-glib.cmake"
   flags="$(pkg-config --cflags --libs gstreamer-1.0 fmt spdlog opencv4 lttng-ust jsoncpp simaai-memory-lib)"
   # pkg-config emits a shell-separated compiler argument list.
   # shellcheck disable=SC2086
@@ -351,7 +362,7 @@ test_platform_cross_profile() {
   test ! -e /neat-resources/apps-src
 }
 
-test_daily_generation_cycle() {
+test_daily_update_cycle() {
   local active="/opt/toolchain/aarch64/modalix" original revision before
   original="$(sdk_release_value 'Platform Version')"
   local -a revisions
@@ -386,7 +397,7 @@ if [[ -r "${SDK_RELEASE_FILE}" ]] && [[ "$(sdk_release_value "SDK Profile")" == 
   run_test "Modalix cross toolchain" test_modalix_cross_toolchain
   if [[ "$(sdk_release_value "Platform Channel")" == daily ]]; then
     run_test "Debian 13 development sysroot" test_daily_development_sysroot
-    run_test "Daily sysroot generation cycle" test_daily_generation_cycle
+    run_test "Daily sysroot update cycle" test_daily_update_cycle
   else
     run_test "Representative sysroot overlay install" test_sysroot_overlay_representative
   fi

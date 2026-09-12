@@ -5,6 +5,7 @@ program_name="$(basename "$0")"
 DEFAULT_SYSROOT="/opt/toolchain/aarch64/modalix"
 DEFAULT_ARCH="arm64"
 INSTALLER="${SYSROOT_INSTALLER:-/usr/local/bin/install-sysroot-overlay.sh}"
+DIRECTORY_HELPER="${SYSROOT_DIRECTORY_HELPER:-/usr/local/bin/sysroot-directory.py}"
 PLATFORM_SETUP="${SYSROOT_PLATFORM_SETUP:-/usr/local/bin/setup-sdk-sysroot.sh}"
 SDK_RELEASE_FILE="${SDK_RELEASE_FILE:-/etc/sdk-release}"
 PRE_RELEASE_REPOSITORY="${SYSROOT_PRE_RELEASE_REPOSITORY:-https://debian.neat.sima.ai/pre-release}"
@@ -102,6 +103,7 @@ reexec_as_root_if_needed() {
     fi
     for name in \
       SYSROOT_ACTIVE \
+      SYSROOT_DIRECTORY_HELPER \
       SDK_PKG_LIST \
       SDK_RELEASE_FILE \
       SDK_SYSROOT_PYTHON \
@@ -918,15 +920,14 @@ apply_sysroot_update() {
   update_previous_revision="${previous_revision}"
   update_target_revision="${platform_revision}"
   update_overlay_pending=0
-  local active_sysroot="${sysroot}" previous_generation=""
+  local active_sysroot="${sysroot}"
   trap cleanup_update_transaction EXIT
   if [[ "${channel}" == daily ]]; then
     [[ -x "${INSTALLER}" ]] || die "sysroot finalizer is unavailable: ${INSTALLER}"
-    [[ -L "${sysroot}" ]] || die "daily updates require a generation-enabled SDK image"
-    previous_generation="$(realpath -e -- "${sysroot}")"
     build_revision=""
     if [[ "${dry_run}" != 1 ]]; then
-      sysroot="$(mktemp -d "${active_sysroot}.generations/${platform_revision}.XXXXXX")"
+      /usr/bin/python3 "${DIRECTORY_HELPER}" prepare "${active_sysroot}"
+      sysroot="${active_sysroot}.update/next"
     fi
   else
     configure_update_apt "${platform_revision}" 1001
@@ -968,12 +969,11 @@ apply_sysroot_update() {
   # resulting SDK sysroot must remain consumable by non-root builds.
   chmod -R a+rX "${sysroot}"
   if [[ "${channel}" == daily ]]; then
-    validate_generation "${sysroot}"
+    validate_staged_sysroot "${sysroot}"
     requested_packages > "${sysroot}/var/lib/sima-sdk/requested-packages"
-    printf 'Previous Generation = %s\n' "${previous_generation}" >> "$(sysroot_overlay_path "${sysroot}")"
     chmod -R a+rX,a-w "${sysroot}"
     update_overlay_pending=0
-    activate_generation "${active_sysroot}" "${sysroot}"
+    /usr/bin/python3 "${DIRECTORY_HELPER}" activate "${active_sysroot}"
   fi
   update_overlay_pending=0
   echo "Sysroot overlay is active at ${platform_revision}."
@@ -982,20 +982,12 @@ apply_sysroot_update() {
 }
 
 # One lock also protects the shared APT configuration and download cache.
-lock_generations() {
+lock_updates() {
   exec 9>/var/lock/sima-sdk-sysroot.lock
   flock -n 9 || die "another sysroot update is running"
 }
 
-activate_generation() {
-  local active="$1" target="$2" staging
-  staging="$(mktemp -d "${active}.activate.XXXXXX")"
-  ln -s "${target}" "${staging}/active"
-  mv -Tf "${staging}/active" "${active}"
-  rmdir "${staging}" || true
-}
-
-validate_generation() {
+validate_staged_sysroot() {
   local root="$1" compiler="aarch64-linux-gnu-g++" probe major
   major="$("${compiler}" -dumpversion)"
   [[ "${major}" -ge 14 && "$("${compiler}" -dumpmachine)" == aarch64* ]] || die "daily sysroots require the SDK AArch64 GCC 14+ toolchain"
@@ -1016,13 +1008,9 @@ validate_generation() {
 cmd_rollback() {
   parse_common_options "$@"
   [[ ${#args[@]} == 0 && "${dry_run}" == 0 ]] || die "rollback takes only --sysroot"
-  [[ -L "${sysroot}" ]] || die "rollback requires a generation-enabled SDK"
-  lock_generations
-  local previous
-  previous="$(read_release_field "$(sysroot_overlay_path "${sysroot}")" "Previous Generation")"
-  [[ "${previous}" == "${sysroot}.generations/"* && -d "${previous}" ]] || die "no previous generation is available"
-  activate_generation "${sysroot}" "${previous}"
-  echo "Previous sysroot generation restored. Start a new build shell."
+  lock_updates
+  /usr/bin/python3 "${DIRECTORY_HELPER}" rollback "${sysroot}"
+  echo "Previous sysroot restored. Reconfigure before building."
 }
 
 cmd_status() {
@@ -1084,7 +1072,13 @@ cmd_update() {
   if [[ "${channel}" == daily ]]; then
     [[ "${update_latest}" == 0 && ${#args[@]} -eq 1 ]] || \
       die "daily updates require an exact X.Y.Z~gitTIMESTAMP.COMMIT-BUILD version"
-    lock_generations
+    lock_updates
+    if [[ "${dry_run}" == 1 ]]; then
+      /usr/bin/python3 "${DIRECTORY_HELPER}" check "${sysroot}"
+    else
+      /usr/bin/python3 "${DIRECTORY_HELPER}" recover "${sysroot}"
+    fi
+    echo "Stop builds before updating; reconfigure them after the update."
     repository="$(read_release_field "${SDK_RELEASE_FILE}" "Platform Repository")"
     revision_pattern='^([0-9]+\.[0-9]+\.[0-9]+)~git[0-9]{12}\.[0-9a-f]+-[0-9]+$'
     # The daily installer validates this exact version against the APT cache.
@@ -1257,7 +1251,7 @@ remove_empty_parents() {
 }
 
 cmd_remove() {
-  [[ "$(read_release_field "${SDK_RELEASE_FILE}" "Platform Channel")" != daily ]] || die "daily generations are immutable; select development packages with SDK_PKG_LIST during update"
+  [[ "$(read_release_field "${SDK_RELEASE_FILE}" "Platform Channel")" != daily ]] || die "daily sysroots are replaced as a whole; select development packages with SDK_PKG_LIST during update"
   local -a manifests
   local root pkg normalized base pkg_arch manifest all_manifest
 
