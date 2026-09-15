@@ -91,3 +91,60 @@ def test_uses_immutable_by_hash_when_advertised():
         return data
     assert m.read_index('http://fixture', get) == [package()]
     assert len(urls) == 2
+
+
+@pytest.mark.parametrize('required,candidate', [('1.0', '1.0-0'), ('1.0', '0:1.0'), ('1.01-01', '1.1-1')])
+def test_debian_equivalent_dependency_versions(required, candidate):
+    records = [package(Depends=f'vendor (= {required})'), package('vendor', candidate)]
+    assert m.available(records, IMAGE)['status'] == 'available'
+
+
+@pytest.mark.parametrize('candidate', ['1.0-1', '1:1.0', '1.0~rc1', '1.1'])
+def test_debian_unequal_dependency_versions(candidate):
+    records = [package(Depends='vendor (= 1.0)'), package('vendor', candidate)]
+    assert m.available(records, IMAGE)['status'] == 'incomplete'
+
+
+def test_equivalent_transitive_alternative_and_cycle():
+    records = [package(Depends='absent (= 1) | vendor (= 1.0)'),
+               package('vendor', '1.0-0', Depends='leaf (= 2.0)'),
+               package('leaf', '0:2.0', Depends='vendor (= 1.0)')]
+    assert m.available(records, IMAGE)['status'] == 'available'
+    records.pop()
+    assert m.available(records, IMAGE)['status'] == 'incomplete'
+
+
+def test_all_equivalent_candidates_are_considered():
+    records = [package(Depends='vendor (= 1.0)'),
+               package('vendor', '1.0', Depends='missing (= 1)'),
+               package('vendor', '1.0-0')]
+    assert m.available(records, IMAGE)['status'] == 'available'
+
+
+@pytest.mark.parametrize('failure', [OSError(), m.subprocess.TimeoutExpired('dpkg', 5), None])
+def test_comparator_failure_reports_unknown(monkeypatch, failure):
+    from types import SimpleNamespace
+    m.versions_equal.cache_clear()
+    def run(*args, **kwargs):
+        if failure is not None:
+            raise failure
+        return SimpleNamespace(returncode=2)
+    monkeypatch.setattr(m.subprocess, 'run', run)
+    records = [package(Depends='vendor (= 1.0)'), package('vendor', '1.0-0')]
+    report = m.check([IMAGE], lambda url: records)
+    assert report['builds'][0]['internal']['status'] == 'unknown'
+    assert report['builds'][0]['external']['status'] == 'unknown'
+
+
+def test_comparisons_are_cached_and_literal_equality_is_fast(monkeypatch):
+    from unittest.mock import Mock
+    from types import SimpleNamespace
+    m.versions_equal.cache_clear()
+    run = Mock(return_value=SimpleNamespace(returncode=0))
+    monkeypatch.setattr(m.subprocess, 'run', run)
+    assert m.versions_equal('1.0', '1.0')
+    run.assert_not_called()
+    assert m.versions_equal('1.0-0', '1.0')
+    assert m.versions_equal('1.0-0', '1.0')
+    run.assert_called_once()
+    m.versions_equal.cache_clear()

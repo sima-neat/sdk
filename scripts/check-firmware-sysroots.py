@@ -11,6 +11,8 @@ import gzip
 import hashlib
 import json
 import re
+import subprocess
+from functools import lru_cache
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -75,6 +77,22 @@ def read_index(base, get=fetch):
     return [p for p in records if p['Architecture'] in ('arm64', 'all')]
 
 
+@lru_cache(maxsize=4096)
+def versions_equal(candidate, required):
+    if candidate == required:
+        return True
+    try:
+        result = subprocess.run(
+            ['dpkg', '--compare-versions', candidate, 'eq', required],
+            capture_output=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError('Debian version comparison failed') from exc
+    if result.returncode not in (0, 1):
+        raise ValueError('Debian version comparison failed')
+    return result.returncode == 0
+
+
 def available(records, image):
     match = IMAGE.fullmatch(image)
     if not match:
@@ -84,7 +102,9 @@ def available(records, image):
     anchors = [p for p in records if p['Package'] == ANCHOR and version_re.fullmatch(p['Version'])]
     if not anchors:
         return {'status': 'missing', 'reason': 'Exact release/build palette package is absent'}
-    by_key = {(p['Package'], p['Version']): p for p in records}
+    by_name = {}
+    for package in records:
+        by_name.setdefault(package['Package'], []).append(package)
 
     def gaps(package, visiting):
         key = package['Package'], package['Version']
@@ -101,8 +121,9 @@ def available(records, image):
                 # constraints require a full SDK APT solve, outside this check.
                 if any(item[2] != '=' for item in alternatives):
                     continue
-                choices = [by_key.get((item[1], item[3])) for item in alternatives]
-                if not any(p is not None and not gaps(p, visiting) for p in choices):
+                choices = (p for item in alternatives for p in by_name.get(item[1], [])
+                           if versions_equal(p['Version'], item[3]))
+                if not any(not gaps(p, visiting) for p in choices):
                     missing.append(group.strip())
         return missing
 
@@ -131,7 +152,7 @@ def check(images, reader=read_index):
             try:
                 item[label] = available(records, name)
             except ValueError:
-                item[label] = {'status': 'unknown', 'reason': 'Unsupported package metadata'}
+                item[label] = {'status': 'unknown', 'reason': 'Package metadata or Debian version comparison could not be evaluated'}
     return {'schema_version': 1, 'scope': 'anchor-and-exact-dependency-index-availability',
             'builds': list(results.values())}
 
