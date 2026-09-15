@@ -22,7 +22,7 @@ def fallback_report(context: dict[str, Any], max_characters: int) -> str:
     current = platform.get("current_version")
 
     lines = [
-        f"🗞️ *Debian mirror — last {window.get('hours', 24):g} hours*",
+        f"🗞️ *Pre-release mirror summary — last {window.get('hours', 24):g} hours*",
         "",
     ]
     platform_observed = bool(platform.get("timeline"))

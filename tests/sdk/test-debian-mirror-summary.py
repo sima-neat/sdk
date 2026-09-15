@@ -177,7 +177,7 @@ def test_collection_and_fallback() -> None:
         report = generator.fallback_report(context, 1000)
         assert "2.1.3~pre4593" in report and "2.1.3~pre4617" in report
         assert "`foo`" not in report and "Notable changes" not in report and len(report) <= 1000
-        assert report.startswith("🗞️ *Debian mirror")
+        assert report.startswith("🗞️ *Pre-release mirror summary")
         blocks = poster.digest_blocks(report.strip())
         assert blocks[0] == blocks[-1] == {"type": "divider"}
         assert "\n\n".join(block["text"]["text"] for block in blocks[1:-1]) == report.strip()
