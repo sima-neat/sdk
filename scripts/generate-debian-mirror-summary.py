@@ -13,10 +13,6 @@ def slack_text(value: object) -> str:
     return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def version_list(values: list[str]) -> str:
-    return ", ".join(slack_text(value) for value in values) or "none"
-
-
 def fallback_report(context: dict[str, Any], max_characters: int) -> str:
     window = context.get("window", {})
     platform = context.get("platform", {})
@@ -26,7 +22,7 @@ def fallback_report(context: dict[str, Any], max_characters: int) -> str:
     current = platform.get("current_version")
 
     lines = [
-        f"*Pre-release mirror — last {window.get('hours', 24):g} hours*",
+        f"🗞️ *Debian mirror — last {window.get('hours', 24):g} hours*",
         "",
     ]
     platform_observed = bool(platform.get("timeline"))
@@ -44,52 +40,12 @@ def fallback_report(context: dict[str, Any], max_characters: int) -> str:
         lines.append("• Platform: no platform publication detected in window")
     lines.extend(
         [
-            f"• Publications: {publication_count}",
-            f"• Package transitions: {int(counts.get('package_transitions', 0))}",
-            f"• Added package files: {int(counts.get('added_files', 0))}",
-            f"• Removed from indexes: {int(counts.get('removed_files', 0))}",
+            f"*{publication_count} publications · {int(counts.get('package_transitions', 0))} package transitions*",
+            f"{int(counts.get('added_files', 0))} package files added · "
+            f"{int(counts.get('removed_files', 0))} removed from indexes",
         ]
     )
-
-    transitions = context.get("package_transitions", [])
-    added = context.get("added_packages", [])
-    removed = context.get("removed_packages", [])
-    details: list[str] = []
-    for transition in transitions:
-        architectures = ", ".join(slack_text(value) for value in transition.get("architectures", []))
-        details.append(
-            f"• `{slack_text(transition.get('package', 'unknown'))}`: "
-            f"`{version_list(sorted(set(transition.get('previous_versions', [])) - set(transition.get('current_versions', []))))}` → "
-            f"`{version_list(sorted(set(transition.get('current_versions', [])) - set(transition.get('previous_versions', []))))}` ({architectures})"
-        )
-    if not details:
-        for item in added[:5]:
-            architectures = ", ".join(slack_text(value) for value in item.get("architectures", []))
-            details.append(
-                f"• Added `{slack_text(item.get('package', 'unknown'))}` "
-                f"`{slack_text(item.get('version', 'unknown'))}` ({architectures})"
-            )
-        for item in removed[:5]:
-            architectures = ", ".join(slack_text(value) for value in item.get("architectures", []))
-            details.append(
-                f"• Removed `{slack_text(item.get('package', 'unknown'))}` "
-                f"`{slack_text(item.get('version', 'unknown'))}` ({architectures})"
-            )
-
-    if details:
-        lines.extend(["", "*Notable changes*"])
-        included = 0
-        for detail in details:
-            candidate = "\n".join([*lines, detail])
-            if len(candidate) > max_characters - 350:
-                break
-            lines.append(detail)
-            included += 1
-        if included < len(details):
-            lines.append(f"• …and {len(details) - included} additional change(s)")
-    elif publication_count:
-        lines.extend(["", "No package-index changes were reported."])
-    else:
+    if not publication_count:
         lines.extend(["", "No mirror publications were found in this window."])
 
     reports = context.get("reports", [])

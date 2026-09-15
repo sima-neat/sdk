@@ -116,6 +116,10 @@ provenance. This is the input to the daily reporting workflow.
 
 ## Daily change digest
 
+The 🗞️ Slack digest is framed by native divider blocks and includes only the
+platform version transition, publication/package totals, and source-report links.
+Per-package details remain in the linked reports rather than the Slack digest.
+
 The `Daily pre-release mirror summary` workflow runs once per day on the agent
 summary runner using these labels:
 

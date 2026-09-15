@@ -44,6 +44,20 @@ def post_message(token: str, channel: str, text: str, *, blocks: list[dict] | No
     return document
 
 
+def digest_blocks(text: str) -> list[dict]:
+    # Separate paragraphs preserve links and keep each section below Slack's
+    # 3,000-character limit. The generated digest is deliberately short.
+    sections = text.split("\n\n")
+    if any(len(section) > 3000 for section in sections):
+        raise RuntimeError("Mirror digest paragraph exceeds Slack's section limit")
+    return [
+        {"type": "divider"},
+        *[{"type": "section", "text": {"type": "mrkdwn", "text": section}}
+          for section in sections if section],
+        {"type": "divider"},
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--report", type=Path, required=True)
@@ -64,7 +78,7 @@ def main() -> int:
         print("SLACK_BOT_TOKEN and SLACK_CHANNEL_ID are required", file=sys.stderr)
         return 1
     try:
-        response = post_message(token, channel, text)
+        response = post_message(token, channel, text, blocks=digest_blocks(text))
     except RuntimeError as error:
         print(error, file=sys.stderr)
         return 1
