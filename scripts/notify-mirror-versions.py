@@ -11,7 +11,7 @@ import tempfile
 from urllib.parse import urlparse
 
 
-KINDS = {'apt': 'APT', 'packages': 'APT package changes', 'images': 'Device images'}
+KINDS = {'apt': 'APT', 'packages': 'APT package changes', 'images': 'Device images', 'sysroots': 'Sysroot package availability'}
 TABLE_CELL_LIMIT = 2000
 TABLE_CELL_OVERFLOW = '… (see workflow report)'
 
@@ -35,12 +35,32 @@ def load_report(path):
     return json.loads(path.read_text()) if path.is_file() else {}
 
 
-def collect(apt, images):
+def sysroot_events(report):
+    events = []
+    for item in report.get('builds', []):
+        internal, external = item['internal']['status'], item['external']['status']
+        if external == 'available':
+            detail = 'Matching external platform package set is available.'
+        elif external == 'unknown':
+            detail = 'External mirror check failed; availability is unknown.'
+        elif internal == 'available':
+            detail = 'Available internally; external mirror is not ready. You may need to wait for synchronization.'
+        elif internal == 'unknown':
+            detail = 'External package set is not ready; internal availability is unknown.'
+        else:
+            detail = 'Matching package set is not yet complete internally or externally.'
+        events.append(f"{item['image']}: {detail} (internal: {internal}; external: {external}; package-index check only)")
+    return events
+
+
+def collect(apt, images, readiness=None):
     # Preview-only runs must never announce versions as available.
     result = {
         'apt': [],
         'images': images.get('copied_versions', []) if images.get('result') == 'Published' else [],
     }
+    if readiness and images.get('result') == 'Published':
+        result['sysroots'] = sysroot_events(readiness)
     changes = apt.get('changes', {})
     if apt.get('result') == 'Published' and changes.get('baseline_available') is True:
         events = []
@@ -117,7 +137,7 @@ def message_blocks(items, run_url):
                 'type': 'mrkdwn',
                 'text': f'{len(packages) - 99} more changes; see the workflow report.',
             }]})
-    for kind in ('apt', 'images'):
+    for kind in ('apt', 'images', 'sysroots'):
         for item in items:
             if item['kind'] == kind:
                 blocks.append({'type': 'section', 'text': {
@@ -140,7 +160,13 @@ def notify(state_path, versions, run_url, send):
         pending = {item['version'] for item in state['pending'] if item['kind'] == kind}
         for version in sorted(set(versions.get(kind, [])) - pending):
             identity = run_url + '\n' + version if kind == 'packages' else version
-            if identity in seen:
+            if kind == 'sysroots':
+                image = version.split(': ', 1)[0]
+                observations = state.setdefault('sysroot_observations', {})
+                if observations.get(image) == version:
+                    continue
+                observations[image] = version
+            elif identity in seen:
                 continue
             state['pending'].append({'kind': kind, 'version': version, 'run_url': run_url})
     # Record the original detecting run before contacting Slack. A failed send
@@ -172,7 +198,8 @@ def notify(state_path, versions, run_url, send):
         send('\n'.join(lines), blocks=message_blocks(items, original_run))
         for item in items:
             identity = item['run_url'] + '\n' + item['version'] if item['kind'] == 'packages' else item['version']
-            state['seen'].setdefault(item['kind'], []).append(identity)
+            if item['kind'] != 'sysroots':
+                state['seen'].setdefault(item['kind'], []).append(identity)
             state['pending'].remove(item)
         save_state(state_path, state)
 
@@ -182,8 +209,10 @@ def main():
     parser.add_argument('--apt-report', type=Path, required=True)
     parser.add_argument('--image-report', type=Path, required=True)
     parser.add_argument('--state', type=Path, required=True)
+    parser.add_argument('--sysroot-report', type=Path)
     args = parser.parse_args()
-    versions = collect(load_report(args.apt_report), load_report(args.image_report))
+    versions = collect(load_report(args.apt_report), load_report(args.image_report),
+                       load_report(args.sysroot_report) if args.sysroot_report else None)
     post = runpy.run_path(str(Path(__file__).with_name('post-debian-mirror-summary.py')))['post_message']
 
     def send(text, *, blocks):

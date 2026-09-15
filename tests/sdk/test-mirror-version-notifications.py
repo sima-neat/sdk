@@ -270,3 +270,47 @@ def test_table_cell_limits_cover_versions_and_legacy_events(tmp_path, length):
     assert all(len(cell['text']) <= 2000 for row in table['rows'] for cell in row)
     assert RUN in blocks[-1]['text']['text']
     assert not json.loads(state.read_text())['pending']
+
+
+def readiness(internal='available', external='missing'):
+    return {'builds': [{'image': '3.0.0_daily_develop_B1371',
+                       'internal': {'status': internal}, 'external': {'status': external}}]}
+
+
+def test_readiness_rechecks_unchanged_images_and_notifies_transitions(tmp_path):
+    state = tmp_path / 'state.json'
+    send = Mock()
+    images = {'result': 'Published', 'versions': ['3.0.0_daily_develop_B1371'], 'copied_versions': []}
+    waiting = m.collect({'result': 'No change'}, images, readiness())
+    m.notify(state, waiting, RUN, send)
+    assert 'You may need to wait' in send.call_args.args[0]
+    m.notify(state, waiting, NEXT_RUN, send)
+    send.assert_called_once()
+    ready = m.collect({}, images, readiness(external='available'))
+    m.notify(state, ready, NEXT_RUN, send)
+    assert send.call_count == 2
+    assert 'Matching external platform package set is available' in send.call_args.args[0]
+    # Availability can regress; don't suppress a previously seen state forever.
+    m.notify(state, waiting, NEXT_RUN, send)
+    assert send.call_count == 3
+    assert any('Sysroot package availability' in b.get('text', {}).get('text', '')
+               for b in send.call_args.kwargs['blocks'])
+
+
+def test_readiness_failure_uses_durable_outbox(tmp_path):
+    state = tmp_path / 'state.json'
+    versions = {'sysroots': m.sysroot_events(readiness())}
+    with pytest.raises(RuntimeError):
+        m.notify(state, versions, RUN, Mock(side_effect=RuntimeError()))
+    send = Mock()
+    m.notify(state, versions, NEXT_RUN, send)
+    send.assert_called_once()
+    assert RUN in send.call_args.args[0]
+    m.notify(state, versions, NEXT_RUN, send)
+    send.assert_called_once()
+
+
+def test_readiness_preview_and_unknown_are_not_availability():
+    assert 'sysroots' not in m.collect({}, {'result': 'Validated only'}, readiness())
+    assert 'unknown' in m.sysroot_events(readiness(external='unknown'))[0]
+    assert 'wait for synchronization' not in m.sysroot_events(readiness(internal='unknown'))[0]
