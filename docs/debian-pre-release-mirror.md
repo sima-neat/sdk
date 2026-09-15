@@ -413,3 +413,36 @@ certificate. This is the SiMa build-signing certificate, obtained over the same
 corporate HTTP trust boundary as the internal package mirror. A production fleet
 must distribute its own trusted verification certificate. No private key is
 copied, and this workflow does not install the certificate onto boards.
+
+## Firmware sysroot package availability
+
+After image publication, the workflow checks the internal daily package index
+first and the external daily index second for each of the seven retained image
+builds. Matching requires the exact platform release and build number: a 3.0.0
+B1371 image requires a `3.0.0~git<timestamp>.<commit>-1371` palette package.
+Adjacent builds and other releases do not qualify.
+
+The check covers `simaai-palette-modalix` and the transitive dependency groups
+that pin exact versions, including alternatives and `Pre-Depends`. Dependency
+versions use Debian equality via `dpkg --compare-versions`, so equivalent spellings
+such as `1.0` and `1.0-0` match. Comparator failures produce an unknown observation. It verifies
+the index checksum against Release metadata and uses immutable by-hash URLs
+when advertised. This is package-index availability,
+not a full APT dependency solve, package download verification, or SDK installation
+test; unversioned and range-constrained base OS dependencies are outside its scope.
+
+The existing Slack mirror notification includes a 📦 sysroot availability section:
+✅ means the matching external package set is available, ⏳ means it is available
+internally while external synchronization is pending, ⚠️ means the package set is
+missing or incomplete in both indexes, and ❔ means availability could not be checked. If
+packages are available internally but absent or incomplete externally, it explains
+that users may need to wait for synchronization. Failed requests, inconsistent
+snapshots, or unsupported metadata produce an unknown result rather than claiming
+packages are missing. Image mirroring continues independently.
+
+Every publishing run rechecks retained images, even when no APT or image changes
+were copied. Persistent notification state suppresses unchanged observations and
+retries failed Slack sends; a later external-ready observation triggers an update.
+The first check seeds notifications for all retained builds. Preview runs do not
+publish availability notifications. A `firmware-sysroot-readiness` workflow artifact
+retains the observations and dependency gaps for three days.
