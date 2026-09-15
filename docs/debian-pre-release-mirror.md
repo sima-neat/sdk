@@ -429,7 +429,10 @@ when advertised. This is package-index availability,
 not a full APT dependency solve, package download verification, or SDK installation
 test; unversioned and range-constrained base OS dependencies are outside its scope.
 
-The existing Slack mirror notification includes the observed availability. If
+The existing Slack mirror notification includes a 📦 sysroot availability section:
+✅ means the matching external package set is available, ⏳ means it is available
+internally while external synchronization is pending, ⚠️ means the package set is
+missing or incomplete in both indexes, and ❔ means availability could not be checked. If
 packages are available internally but absent or incomplete externally, it explains
 that users may need to wait for synchronization. Failed requests, inconsistent
 snapshots, or unsupported metadata produce an unknown result rather than claiming

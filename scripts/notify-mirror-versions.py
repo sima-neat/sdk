@@ -11,7 +11,7 @@ import tempfile
 from urllib.parse import urlparse
 
 
-KINDS = {'apt': 'APT', 'packages': 'APT package changes', 'images': 'Device images', 'sysroots': 'Sysroot package availability'}
+KINDS = {'apt': 'APT', 'packages': 'APT package changes', 'images': 'Device images', 'sysroots': '📦 Sysroot package availability'}
 TABLE_CELL_LIMIT = 2000
 TABLE_CELL_OVERFLOW = '… (see workflow report)'
 
@@ -40,15 +40,15 @@ def sysroot_events(report):
     for item in report.get('builds', []):
         internal, external = item['internal']['status'], item['external']['status']
         if external == 'available':
-            detail = 'Matching external platform package set is available.'
+            detail = '✅ Matching external platform package set is available.'
         elif external == 'unknown':
-            detail = 'External mirror check failed; availability is unknown.'
+            detail = '❔ External mirror check failed; availability is unknown.'
         elif internal == 'available':
-            detail = 'Available internally; external mirror is not ready. You may need to wait for synchronization.'
+            detail = '⏳ Available internally; external mirror is not ready. You may need to wait for synchronization.'
         elif internal == 'unknown':
-            detail = 'External package set is not ready; internal availability is unknown.'
+            detail = '❔ External package set is not ready; internal availability is unknown.'
         else:
-            detail = 'Matching package set is not yet complete internally or externally.'
+            detail = '⚠️ Matching package set is not yet complete internally or externally.'
         events.append(f"{item['image']}: {detail} (internal: {internal}; external: {external}; package-index check only)")
     return events
 
