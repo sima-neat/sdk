@@ -63,6 +63,7 @@ jobs:
             awscli \
             ca-certificates \
             curl \
+            dpkg \
             gnupg \
             jq \
             openssl \

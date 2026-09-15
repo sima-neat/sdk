@@ -423,7 +423,9 @@ B1371 image requires a `3.0.0~git<timestamp>.<commit>-1371` palette package.
 Adjacent builds and other releases do not qualify.
 
 The check covers `simaai-palette-modalix` and the transitive dependency groups
-that pin exact versions, including alternatives and `Pre-Depends`. It verifies
+that pin exact versions, including alternatives and `Pre-Depends`. Dependency
+versions use Debian equality via `dpkg --compare-versions`, so equivalent spellings
+such as `1.0` and `1.0-0` match. Comparator failures produce an unknown observation. It verifies
 the index checksum against Release metadata and uses immutable by-hash URLs
 when advertised. This is package-index availability,
 not a full APT dependency solve, package download verification, or SDK installation
