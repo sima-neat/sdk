@@ -8,11 +8,13 @@ import re
 from pathlib import Path
 import runpy
 import tempfile
+import time
 from urllib.parse import urlparse
 
 
 KINDS = {'apt': 'APT', 'packages': 'APT package changes', 'images': 'Device images', 'sysroots': '📦 Sysroot package availability'}
 TABLE_CELL_LIMIT = 2000
+TABLE_TEXT_LIMIT = 10000
 TABLE_CELL_OVERFLOW = '… (see workflow report)'
 
 
@@ -116,7 +118,10 @@ def message_blocks(items, run_url):
         }})
         rows = [[{'type': 'raw_text', 'text': label} for label in
                  ('Package', 'Architecture', 'Removed versions', 'Added versions')]]
-        # Slack allows 100 rows including the header, and one table per message.
+        table_text_length = sum(len(cell['text']) for cell in rows[0])
+        included_packages = 0
+        # Slack allows 100 rows including the header, one table per message,
+        # and at most 10,000 characters across all cells in that table.
         for event in packages[:99]:
             match = re.fullmatch(r'(.+?) \(([^()]+)\): (.+)', event)
             if match:
@@ -126,16 +131,22 @@ def message_blocks(items, run_url):
             else:
                 # Preserve unfamiliar pending events from older producers verbatim.
                 cells = (event, '—', '—', '—')
-            rows.append([{'type': 'raw_text', 'text': (
+            row = [{'type': 'raw_text', 'text': (
                 value if len(value) <= TABLE_CELL_LIMIT else
                 value[:TABLE_CELL_LIMIT - len(TABLE_CELL_OVERFLOW)] + TABLE_CELL_OVERFLOW
-            )} for value in cells])
+            )} for value in cells]
+            row_text_length = sum(len(cell['text']) for cell in row)
+            if table_text_length + row_text_length > TABLE_TEXT_LIMIT:
+                break
+            rows.append(row)
+            table_text_length += row_text_length
+            included_packages += 1
         blocks.append({'type': 'table', 'rows': rows,
                        'column_settings': [{'is_wrapped': True} for _ in range(4)]})
-        if len(packages) > 99:
+        if len(packages) > included_packages:
             blocks.append({'type': 'context', 'elements': [{
                 'type': 'mrkdwn',
-                'text': f'{len(packages) - 99} more changes; see the workflow report.',
+                'text': f'{len(packages) - included_packages} more changes; see the workflow report.',
             }]})
     for kind in ('apt', 'images', 'sysroots'):
         for item in items:
@@ -150,7 +161,7 @@ def message_blocks(items, run_url):
     return blocks
 
 
-def notify(state_path, versions, run_url, send):
+def notify(state_path, versions, run_url, send, pause_between_sends=None):
     validate_run_url(run_url)
     state = load_report(state_path) or {'schema_version': 1, 'seen': {}, 'pending': []}
     if state.get('schema_version') != 1:
@@ -179,7 +190,9 @@ def notify(state_path, versions, run_url, send):
     groups = {}
     for item in state['pending']:
         groups.setdefault(item['run_url'], []).append(item)
-    for original_run, items in groups.items():
+    for group_index, (original_run, items) in enumerate(groups.items()):
+        if group_index and pause_between_sends:
+            pause_between_sends()
         validate_run_url(original_run)
         lines = ['Mirror changes published']
         for kind, label in KINDS.items():
@@ -226,7 +239,8 @@ def main():
     run_url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
     # Workflow concurrency serializes writers, and this state lives on the same
     # persistent runner volume as the mirror cache.
-    notify(args.state, versions, run_url, send)
+    notify(args.state, versions, run_url, send,
+           pause_between_sends=lambda: time.sleep(1))
 
 
 if __name__ == '__main__':
