@@ -57,8 +57,10 @@ def test_pending_and_new_events_keep_separate_original_run_links(tmp_path):
     with pytest.raises(RuntimeError):
         m.notify(state, {'apt': ['v1']}, RUN, Mock(side_effect=RuntimeError()))
     send = Mock()
-    m.notify(state, {'apt': ['v1', 'v2']}, NEXT_RUN, send)
+    pause = Mock()
+    m.notify(state, {'apt': ['v1', 'v2']}, NEXT_RUN, send, pause_between_sends=pause)
     assert len(send.call_args_list) == 2
+    pause.assert_called_once_with()
     assert RUN in send.call_args_list[0].args[0]
     assert NEXT_RUN in send.call_args_list[1].args[0]
 
@@ -213,6 +215,19 @@ def test_table_bounds_and_preserves_add_remove_and_multiple_versions(tmp_path):
     assert [cell['text'] for cell in table['rows'][2]] == ['b', 'all', '—', '1.0']
     assert [cell['text'] for cell in table['rows'][3]] == ['z000', 'arm64', '1.0', '—']
     assert any('3 more changes' in block.get('elements', [{}])[0].get('text', '') for block in blocks)
+
+
+def test_table_bounds_aggregate_cell_text_and_reports_omitted_rows(tmp_path):
+    version = 'v' * 2000
+    events = [f'pkg{i} (arm64): added {version}; removed {version}' for i in range(3)]
+    send = Mock()
+    m.notify(tmp_path / 'state.json', {'packages': events}, RUN, send)
+    blocks = send.call_args.kwargs['blocks']
+    table = next(block for block in blocks if block['type'] == 'table')
+    table_text_length = sum(len(cell['text']) for row in table['rows'] for cell in row)
+    assert table_text_length <= m.TABLE_TEXT_LIMIT
+    assert len(table['rows']) == 3
+    assert any('1 more change' in block.get('elements', [{}])[0].get('text', '') for block in blocks)
 
 
 def test_package_table_retry_preserves_original_run_and_literal_cells(tmp_path):
