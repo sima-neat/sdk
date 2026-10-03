@@ -45,14 +45,20 @@ def post_message(token: str, channel: str, text: str, *, blocks: list[dict] | No
     return document
 
 
-def slack_api(token: str, method: str, payload: dict[str, object]) -> dict[str, object]:
+def slack_api(token: str, method: str, payload: dict[str, object], *, form_encoded: bool = False) -> dict[str, object]:
+    if form_encoded:
+        data = urllib.parse.urlencode(payload).encode("utf-8")
+        content_type = "application/x-www-form-urlencoded; charset=utf-8"
+    else:
+        data = json.dumps(payload).encode("utf-8")
+        content_type = "application/json; charset=utf-8"
     request = urllib.request.Request(
         SLACK_API_ROOT + method,
-        data=json.dumps(payload).encode("utf-8"),
+        data=data,
         method="POST",
         headers={
             "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json; charset=utf-8",
+            "Content-Type": content_type,
         },
     )
     try:
@@ -61,17 +67,26 @@ def slack_api(token: str, method: str, payload: dict[str, object]) -> dict[str, 
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
         raise RuntimeError(f"Slack {method} request failed: {error}") from error
     if not document.get("ok"):
-        raise RuntimeError(f"Slack {method} rejected the request: {document.get('error', 'unknown_error')}")
+        messages = document.get("response_metadata", {}).get("messages", [])
+        detail = "; ".join(str(message) for message in messages[:3]) if isinstance(messages, list) else ""
+        suffix = f" ({detail})" if detail else ""
+        raise RuntimeError(
+            f"Slack {method} rejected the request: {document.get('error', 'unknown_error')}{suffix}"
+        )
     return document
 
 
 def upload_file(token: str, channel: str, path: Path, *, thread_ts: str, title: str) -> dict[str, object]:
     """Upload a file through Slack's supported external upload sequence."""
     data = path.read_bytes()
-    upload = slack_api(token, "files.getUploadURLExternal", {
-        "filename": path.name,
-        "length": len(data),
-    })
+    upload = slack_api(
+        token,
+        "files.getUploadURLExternal",
+        {"filename": path.name, "length": len(data)},
+        # This method's simple scalar arguments are most compatible with
+        # Slack workspaces when sent using its documented form encoding.
+        form_encoded=True,
+    )
     upload_url, file_id = upload.get("upload_url"), upload.get("file_id")
     if not isinstance(upload_url, str) or not isinstance(file_id, str):
         raise RuntimeError("Slack files.getUploadURLExternal returned no upload URL or file ID")

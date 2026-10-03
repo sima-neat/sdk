@@ -403,12 +403,15 @@ def codex_schema(keys: list[str]) -> dict[str, Any]:
 
 def codex_enrich(context_path: Path, work_dir: Path, timeout: int) -> dict[str, Any] | None:
     if os.environ.get("IMAGE_CHANGE_REPORT_SKIP_CODEX") == "1":
+        print("Codex summary skipped: IMAGE_CHANGE_REPORT_SKIP_CODEX=1", file=sys.stderr)
         return None
     try:
         help_process = subprocess.run(["codex", "exec", "--help"], capture_output=True, text=True, timeout=30, check=False)
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"Codex summary unavailable: {type(error).__name__}", file=sys.stderr)
         return None
     if help_process.returncode or "--output-schema" not in help_process.stdout or "--output-last-message" not in help_process.stdout:
+        print("Codex summary unavailable: installed CLI lacks required structured-output flags", file=sys.stderr)
         return None
     context_document = json.loads(context_path.read_text(encoding="utf-8"))
     keys = [section["key"] for section in context_document["packages"]]
@@ -436,7 +439,7 @@ BEGIN UNTRUSTED CHANGE EVIDENCE
 END UNTRUSTED CHANGE EVIDENCE
 """
     command = [
-        "codex", "exec", "--sandbox", "read-only", "--output-schema", str(schema_path),
+        "codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "--output-schema", str(schema_path),
         "--output-last-message", str(output_path), "--cd", str(absolute_context.parent), prompt,
     ]
     try:
@@ -449,7 +452,11 @@ END UNTRUSTED CHANGE EVIDENCE
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
         print(f"Codex summary unavailable: {type(error).__name__}: {error}", file=sys.stderr)
         return None
-    if not isinstance(result, dict) or not isinstance(result.get("slack_summary"), str):
+    if not isinstance(result, dict):
+        print(f"Codex summary unavailable: expected an object, got {type(result).__name__}", file=sys.stderr)
+        return None
+    if not isinstance(result.get("slack_summary"), str):
+        print("Codex summary unavailable: response has no string slack_summary", file=sys.stderr)
         return None
     expected = set(keys)
     actual = {item.get("key") for item in result.get("packages", []) if isinstance(item, dict)}
@@ -599,6 +606,7 @@ def generate(build: str, manifest_text: str, source_map: dict[str, Any], output_
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image-report", type=Path, help="Published image mirror result JSON")
+    parser.add_argument("--replay-build", help="Regenerate one already-published image build from S3")
     parser.add_argument("--build", help="One image build, for local fixture generation")
     parser.add_argument("--manifest", type=Path, help="Local manifestChanges.txt, used with --build")
     parser.add_argument("--source-map", type=Path, default=Path(__file__).with_name("debian-package-source-map.json"))
@@ -609,8 +617,8 @@ def main() -> int:
     args = parser.parse_args()
     if bool(args.build) != bool(args.manifest):
         parser.error("--build and --manifest must be used together")
-    if not args.build and not args.image_report:
-        parser.error("provide --image-report or --build with --manifest")
+    if sum((bool(args.image_report), bool(args.replay_build), bool(args.build))) != 1:
+        parser.error("provide exactly one of --image-report, --replay-build, or --build with --manifest")
     source_map = json.loads(args.source_map.read_text(encoding="utf-8"))
     if source_map.get("schema_version") != 2:
         raise ValueError("Unsupported package source map schema")
@@ -619,6 +627,12 @@ def main() -> int:
                       services["jenkins"]["elxr_builder_path"])
     if args.build:
         builds = [(args.build, args.manifest.read_text(encoding="utf-8"))]
+    elif args.replay_build:
+        if not BUILD_RE.fullmatch(args.replay_build):
+            parser.error("--replay-build must be a complete daily image build name")
+        from mirror_aws import s3_client
+        s3 = s3_client()
+        builds = [(args.replay_build, read_s3_manifest(s3, args.replay_build))]
     else:
         report = json.loads(args.image_report.read_text(encoding="utf-8")) if args.image_report.is_file() else {}
         names = report.get("copied_versions", []) if report.get("result") == "Published" else []

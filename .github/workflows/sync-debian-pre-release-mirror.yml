@@ -27,6 +27,11 @@ on:
         required: true
         default: "16"
         type: string
+      replay_image_build:
+        description: Regenerate and resend one already-published daily image report
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -46,6 +51,7 @@ jobs:
       AWS_REGION: ${{ vars.VULCAN_DEBIAN_MIRROR_AWS_REGION || 'us-west-2' }}
       DEBIAN_MIRROR_WORK_ROOT: ${{ vars.DEBIAN_MIRROR_WORK_ROOT || '/var/lib/sima-neat/debian-mirror' }}
       VULCAN_DEBIAN_MIRROR_BUCKET: ${{ vars.VULCAN_DEBIAN_MIRROR_BUCKET || 'sima-neat-debian-production' }}
+      REPLAY_IMAGE_BUILD: ${{ inputs.replay_image_build || '' }}
       VULCAN_DEBIAN_MIRROR_CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.VULCAN_DEBIAN_MIRROR_CLOUDFRONT_DISTRIBUTION_ID || 'E64NIJ10VID5O' }}
       VULCAN_DEBIAN_MIRROR_KMS_KEY_ID: ${{ vars.VULCAN_DEBIAN_MIRROR_KMS_KEY_ID || 'arn:aws:kms:us-west-2:069171140053:key/4bf76f64-6ff3-4447-8572-b4f92163d497' }}
       VULCAN_DEBIAN_MIRROR_PUBLISHER_ROLE_ARN: ${{ vars.VULCAN_DEBIAN_MIRROR_PUBLISHER_ROLE_ARN || 'arn:aws:iam::069171140053:role/NeatProductionDebianMirrorPublisher' }}
@@ -84,6 +90,7 @@ jobs:
 
       - name: Configure production AWS credentials
         id: mirror_credentials
+        if: ${{ inputs.replay_image_build == '' }}
         uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: ${{ env.AWS_REGION }}
@@ -136,7 +143,7 @@ jobs:
           role-session-name: sdk-daily-images-${{ github.run_id }}
 
       - name: Mirror daily platform images and retain the latest 7 builds
-        if: ${{ !cancelled() && steps.daily_credentials.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.daily_credentials.outcome == 'success' && inputs.replay_image_build == '' }}
         run: |
           set -euo pipefail
           arguments=(--work-root "${DEBIAN_MIRROR_WORK_ROOT}" --report "out/daily-platform-images/result.json")
@@ -146,25 +153,38 @@ jobs:
           python3 scripts/sync-daily-platform-images.py "${arguments[@]}"
 
       - name: Check matching internal and external sysroot packages
-        if: ${{ !cancelled() && steps.daily_credentials.outcome == 'success' && (github.event_name == 'schedule' || inputs.publish == true) }}
+        if: ${{ !cancelled() && steps.daily_credentials.outcome == 'success' && inputs.replay_image_build == '' && (github.event_name == 'schedule' || inputs.publish == true) }}
         run: |
           python3 scripts/check-firmware-sysroots.py \
             --image-report out/daily-platform-images/result.json \
             --report out/daily-platform-images/sysroot-readiness.json
 
       - name: Generate source change reports for new device images
-        if: ${{ !cancelled() && steps.daily_credentials.outcome == 'success' && (github.event_name == 'schedule' || inputs.publish == true) }}
+        if: ${{ !cancelled() && steps.daily_credentials.outcome == 'success' && (inputs.replay_image_build != '' || github.event_name == 'schedule' || inputs.publish == true) }}
         continue-on-error: true
         env:
           GIT_TERMINAL_PROMPT: "0"
-          JENKINS_USER: ${{ vars.JENKINS_USER }}
+          JENKINS_USER: ${{ secrets.JENKINS_USERNAME || vars.JENKINS_USERNAME || secrets.JENKINS_USER || vars.JENKINS_USER }}
           JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
         run: |
-          python3 scripts/generate-image-change-report.py \
-            --image-report out/daily-platform-images/result.json \
-            --output-dir "${DEBIAN_MIRROR_WORK_ROOT}/version-notifications/image-change-reports" \
-            --evidence-dir out/daily-platform-images/change-reports \
+          set -euo pipefail
+          bitbucket_known_hosts="${RUNNER_TEMP}/bitbucket-known-hosts"
+          curl --fail --silent --show-error \
+            https://bitbucket.org/site/ssh \
+            --output "${bitbucket_known_hosts}"
+          chmod 0600 "${bitbucket_known_hosts}"
+          export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${bitbucket_known_hosts}"
+          arguments=(
+            --output-dir "${DEBIAN_MIRROR_WORK_ROOT}/version-notifications/image-change-reports"
+            --evidence-dir out/daily-platform-images/change-reports
             --cache-root "${DEBIAN_MIRROR_WORK_ROOT}/source-change-cache"
+          )
+          if [[ -n "${REPLAY_IMAGE_BUILD}" ]]; then
+            arguments+=(--replay-build "${REPLAY_IMAGE_BUILD}")
+          else
+            arguments+=(--image-report out/daily-platform-images/result.json)
+          fi
+          python3 scripts/generate-image-change-report.py "${arguments[@]}"
 
       - name: Upload device image source change reports
         if: always()
@@ -185,14 +205,28 @@ jobs:
           retention-days: 3
 
       - name: Notify Slack of new APT and device image versions
-        if: ${{ always() && steps.mirror_workspace.outcome == 'success' && (github.event_name == 'schedule' || inputs.publish == true) }}
+        if: ${{ always() && steps.mirror_workspace.outcome == 'success' && (inputs.replay_image_build != '' || github.event_name == 'schedule' || inputs.publish == true) }}
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_VULCAN_EVENT_CHANNEL_ID: ${{ vars.SLACK_VULCAN_EVENT_CHANNEL_ID }}
         run: |
-          python3 scripts/notify-mirror-versions.py \
-            --apt-report out/debian-mirror-sync/mirror-sync-result.json \
-            --image-report out/daily-platform-images/result.json \
-            --sysroot-report out/daily-platform-images/sysroot-readiness.json \
-            --image-change-report-dir "${DEBIAN_MIRROR_WORK_ROOT}/version-notifications/image-change-reports" \
+          set -euo pipefail
+          report_dir="${DEBIAN_MIRROR_WORK_ROOT}/version-notifications/image-change-reports"
+          if [[ -n "${REPLAY_IMAGE_BUILD}" ]]; then
+            # Require evidence produced by this replay, never a stale persisted report.
+            report_dir="out/daily-platform-images/change-reports"
+          fi
+          arguments=(
+            --image-change-report-dir "${report_dir}"
             --state "${DEBIAN_MIRROR_WORK_ROOT}/version-notifications/state.json"
+          )
+          if [[ -n "${REPLAY_IMAGE_BUILD}" ]]; then
+            arguments+=(--replay-image-build "${REPLAY_IMAGE_BUILD}")
+          else
+            arguments+=(
+              --apt-report out/debian-mirror-sync/mirror-sync-result.json
+              --image-report out/daily-platform-images/result.json
+              --sysroot-report out/daily-platform-images/sysroot-readiness.json
+            )
+          fi
+          python3 scripts/notify-mirror-versions.py "${arguments[@]}"
