@@ -52,8 +52,9 @@ self-hosted, Linux, X64, apt-mirror
 
 Restrict the runner group to `sima-neat/sdk`. The host must resolve and reach
 `sw-web.eng.sima.ai`, allow passwordless `sudo` for package installation and
-workspace creation, and provide at least 150 GiB of persistent storage. The
-workflow stores incremental mirror state outside the Actions checkout at:
+workspace creation, and keep at least 25 GiB free on the persistent volume
+before synchronization. The workflow stores incremental mirror state outside
+the Actions checkout at:
 
 ```text
 /var/lib/sima-neat/debian-mirror
