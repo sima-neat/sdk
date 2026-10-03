@@ -375,6 +375,11 @@ thread using Slack's external upload API. The Slack app therefore needs both
 `chat:write` and `files:write`. Report generation is fail-open: source, Jenkins,
 or Codex failures do not suppress the base mirror notification.
 
+The runner needs a Bitbucket-authorized SSH identity; the workflow loads
+Bitbucket Cloud's published host keys into an isolated known-hosts file. Jenkins
+build-number provenance additionally requires the `JENKINS_USER` variable and
+`JENKINS_API_TOKEN` secret to be available to the production environment.
+
 For an already-published image, manually dispatch `Sync pre-release Debian
 mirror` with `replay_image_build` set to its complete build name, for example
 `3.0.0_daily_develop_B1855`. Replay reads the retained manifest from S3,

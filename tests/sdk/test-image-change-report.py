@@ -55,6 +55,8 @@ def test_workflow_generates_reports_fail_open_and_passes_them_to_slack():
     assert generate["continue-on-error"] is True
     assert "--evidence-dir out/daily-platform-images/change-reports" in generate["run"]
     assert "--replay-build" in generate["run"]
+    assert "https://bitbucket.org/site/ssh" in generate["run"]
+    assert "StrictHostKeyChecking=yes" in generate["run"]
     assert "--image-change-report-dir" in notify["run"]
     assert "--replay-image-build" in notify["run"]
     triggers = workflow.get("on", workflow.get(True))

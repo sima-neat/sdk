@@ -168,6 +168,12 @@ jobs:
           JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
         run: |
           set -euo pipefail
+          bitbucket_known_hosts="${RUNNER_TEMP}/bitbucket-known-hosts"
+          curl --fail --silent --show-error \
+            https://bitbucket.org/site/ssh \
+            --output "${bitbucket_known_hosts}"
+          chmod 0600 "${bitbucket_known_hosts}"
+          export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${bitbucket_known_hosts}"
           arguments=(
             --output-dir "${DEBIAN_MIRROR_WORK_ROOT}/version-notifications/image-change-reports"
             --evidence-dir out/daily-platform-images/change-reports

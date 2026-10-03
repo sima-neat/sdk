@@ -449,7 +449,11 @@ END UNTRUSTED CHANGE EVIDENCE
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
         print(f"Codex summary unavailable: {type(error).__name__}: {error}", file=sys.stderr)
         return None
-    if not isinstance(result, dict) or not isinstance(result.get("slack_summary"), str):
+    if not isinstance(result, dict):
+        print(f"Codex summary unavailable: expected an object, got {type(result).__name__}", file=sys.stderr)
+        return None
+    if not isinstance(result.get("slack_summary"), str):
+        print("Codex summary unavailable: response has no string slack_summary", file=sys.stderr)
         return None
     expected = set(keys)
     actual = {item.get("key") for item in result.get("packages", []) if isinstance(item, dict)}
