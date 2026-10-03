@@ -178,6 +178,7 @@ jobs:
             --output-dir "${DEBIAN_MIRROR_WORK_ROOT}/version-notifications/image-change-reports"
             --evidence-dir out/daily-platform-images/change-reports
             --cache-root "${DEBIAN_MIRROR_WORK_ROOT}/source-change-cache"
+            --package-index "${DEBIAN_MIRROR_WORK_ROOT}/agate/repository/dists/agate/non-free/binary-arm64/Packages.gz"
           )
           if [[ -n "${REPLAY_IMAGE_BUILD}" ]]; then
             arguments+=(--replay-build "${REPLAY_IMAGE_BUILD}")

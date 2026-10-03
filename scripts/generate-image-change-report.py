@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import base64
 import dataclasses
+import datetime
+import gzip
 import hashlib
 import html
 import json
@@ -27,6 +29,9 @@ PREFIX = "daily-platform-images/"
 BUILD_RE = re.compile(r"3[.]0[.]0_daily_[A-Za-z0-9_-]+_B([0-9]+)\Z")
 GIT_VERSION_RE = re.compile(
     r"(?:~|[.+-])git(?:[0-9]{12})?[.]([0-9a-fA-F]{7,40})(?:\b|\Z)"
+)
+TIMESTAMPED_GIT_VERSION_RE = re.compile(
+    r"~git(?P<timestamp>[0-9]{12})[.](?P<hash>[0-9a-fA-F]{7,40})-(?P<build>[0-9]+)(?:\b|\Z)"
 )
 JIRA_RE = re.compile(r"\b[A-Z][A-Z0-9]+-[0-9]+\b")
 JIRA_PROJECT_KEYS = {"SOCSW", "SWMLA"}
@@ -108,6 +113,45 @@ def git_hash(version: str | None) -> str | None:
 def package_build_number(version: str | None) -> int | None:
     match = re.search(r"-([0-9]+)(?:[+~].*)?\Z", version or "")
     return int(match.group(1)) if match else None
+
+
+class PackageVersionIndex:
+    """Recover complete Debian versions omitted by manifestChanges.txt."""
+
+    def __init__(self, path: Path | None):
+        self.versions: dict[tuple[str, str], set[str]] = {}
+        if not path or not path.is_file():
+            return
+        opener = gzip.open if path.suffix == ".gz" else open
+        with opener(path, "rt", encoding="utf-8", errors="replace") as packages:
+            for paragraph in packages.read().split("\n\n"):
+                fields = {}
+                for line in paragraph.splitlines():
+                    if ": " in line and not line.startswith((" ", "\t")):
+                        key, value = line.split(": ", 1)
+                        fields[key] = value
+                package, version = fields.get("Package"), fields.get("Version")
+                revision = git_hash(version)
+                if package and version and revision:
+                    self.versions.setdefault((package, revision), set()).add(version)
+
+    def complete(self, package: str | None, version: str | None) -> str | None:
+        package = package_without_architecture(package)
+        revision = git_hash(version)
+        matches = self.versions.get((package, revision), set()) if package and revision else set()
+        return next(iter(matches)) if len(matches) == 1 else None
+
+
+def package_snapshot_time(package_index: PackageVersionIndex | None, package: str | None,
+                          version: str | None) -> str | None:
+    complete = package_index.complete(package, version) if package_index else None
+    match = TIMESTAMPED_GIT_VERSION_RE.search(complete or "")
+    if not match:
+        return None
+    parsed = datetime.datetime.strptime(match.group("timestamp"), "%Y%m%d%H%M").replace(
+        tzinfo=datetime.timezone.utc
+    )
+    return parsed.replace(second=59).isoformat().replace("+00:00", "Z")
 
 
 class Jenkins:
@@ -252,7 +296,18 @@ def commit_link(web_url: str | None, commit: str) -> str | None:
     return f"{web_url}/commits/{commit}"
 
 
-def git_comparison(repository: Path, before: str | None, after: str | None, web_url: str | None) -> dict[str, Any]:
+def resolve_snapshot(repository: Path, source_ref: str, timestamp: str | None) -> str | None:
+    if not timestamp:
+        return None
+    revision = resolve_commit(repository, source_ref)
+    if not revision:
+        return None
+    resolved = run_git(repository, "rev-list", "-1", f"--before={timestamp}", revision).strip()
+    return resolved if re.fullmatch(r"[0-9a-f]{40}", resolved) else None
+
+
+def git_comparison(repository: Path, before: str | None, after: str | None,
+                   web_url: str | None, source_path: str | None = None) -> dict[str, Any]:
     if before and after and before == after:
         return {"relationship": "same", "commits": [], "files": [], "truncated": False}
     if before and after:
@@ -267,7 +322,9 @@ def git_comparison(repository: Path, before: str | None, after: str | None, web_
         relationship = "added" if after else "removed"
     fields = "%H%x1f%an%x1f%aI%x1f%s%x1f%b%x1e"
     commit_limit = 1 if not (before and after) else MAX_COMMITS + 1
-    raw = run_git(repository, "log", "--no-merges", f"--max-count={commit_limit}", f"--format={fields}", revision)
+    pathspec = ["--", source_path] if source_path else []
+    raw = run_git(repository, "log", "--no-merges", f"--max-count={commit_limit}",
+                  f"--format={fields}", revision, *pathspec)
     records = []
     for record in raw.split("\x1e"):
         values = record.strip().split("\x1f", 4)
@@ -289,7 +346,7 @@ def git_comparison(repository: Path, before: str | None, after: str | None, web_
     records = records[:MAX_COMMITS]
     files: list[dict[str, Any]] = []
     if before and after:
-        numstat = run_git(repository, "diff", "--numstat", before, after)
+        numstat = run_git(repository, "diff", "--numstat", before, after, *pathspec)
         for line in numstat.splitlines()[:MAX_FILES]:
             values = line.split("\t", 2)
             if len(values) == 3:
@@ -316,7 +373,8 @@ def deterministic_description(section: dict[str, Any]) -> str:
 
 
 def collect_section(change: ManifestChange, source: dict[str, Any] | None, cache_root: Path,
-                    jenkins: Jenkins, platform: str, services: dict[str, Any]) -> dict[str, Any]:
+                    jenkins: Jenkins, platform: str, services: dict[str, Any],
+                    package_index: PackageVersionIndex | None = None) -> dict[str, Any]:
     provenance = source.get("version_provenance") if source else None
     before_hash, after_hash = git_hash(change.before_version), git_hash(change.after_version)
     resolution_note = ""
@@ -334,9 +392,9 @@ def collect_section(change: ManifestChange, source: dict[str, Any] | None, cache
             after_hash = jenkins.source_commit(after_build, change.package, platform) if after_build else None
         except (OSError, subprocess.SubprocessError, urllib.error.URLError, RuntimeError) as error:
             resolution_note = f"Jenkins provenance could not be read: {type(error).__name__}."
-    elif provenance == "synthetic_package_commit":
+    elif provenance == "parent_repository_snapshot":
         before_hash = after_hash = None
-        resolution_note = "These version hashes come from temporary package repositories, not the mapped Bitbucket repository."
+        resolution_note = "The package index did not contain enough provenance to resolve the parent repository snapshots."
     elif provenance not in {"git_suffix", "pinned_git", "legacy_package"}:
         if source and source.get("note"):
             resolution_note = str(source["note"])
@@ -360,16 +418,34 @@ def collect_section(change: ManifestChange, source: dict[str, Any] | None, cache
         "resolution_note": resolution_note,
         "comparison": {"relationship": "unavailable", "commits": [], "files": [], "truncated": False},
     }
-    if source and source_url(source, services) and (before_hash or after_hash):
+    snapshots = (None, None)
+    if provenance == "parent_repository_snapshot":
+        snapshots = (
+            package_snapshot_time(package_index, change.before_package, change.before_version),
+            package_snapshot_time(package_index, change.after_package, change.after_version),
+        )
+    if source and source_url(source, services) and (before_hash or after_hash or any(snapshots)):
         try:
             repository = ensure_repository(cache_root, source, services)
-            before_full = resolve_commit(repository, before_hash)
-            after_full = resolve_commit(repository, after_hash)
+            if provenance == "parent_repository_snapshot":
+                source_ref = str(source.get("source_ref", "develop"))
+                before_full = resolve_snapshot(repository, source_ref, snapshots[0])
+                after_full = resolve_snapshot(repository, source_ref, snapshots[1])
+                if (change.before_version and not before_full) or (change.after_version and not after_full):
+                    raise ValueError("Parent repository snapshot could not be resolved")
+                resolution_note = (
+                    "Resolved to the parent repository revision current at the package build timestamp."
+                )
+            else:
+                before_full = resolve_commit(repository, before_hash)
+                after_full = resolve_commit(repository, after_hash)
             section["before_hash"] = before_full
             section["after_hash"] = after_full
             section["comparison"] = git_comparison(
-                repository, before_full, after_full, section["repository_url"]
+                repository, before_full, after_full, section["repository_url"],
+                source.get("source_path"),
             )
+            section["resolution_note"] = resolution_note
         except (OSError, subprocess.SubprocessError, RuntimeError, ValueError) as error:
             section["resolution_note"] = f"Source comparison unavailable: {type(error).__name__}: {error}"
     section["description"] = deterministic_description(section)
@@ -564,7 +640,8 @@ def read_s3_manifest(s3: Any, build: str) -> str:
 
 
 def generate(build: str, manifest_text: str, source_map: dict[str, Any], output_dir: Path,
-             cache_root: Path, codex_timeout: int, jenkins: Jenkins) -> tuple[Path, Path, Path]:
+             cache_root: Path, codex_timeout: int, jenkins: Jenkins,
+             package_index: PackageVersionIndex | None = None) -> tuple[Path, Path, Path]:
     match = BUILD_RE.fullmatch(build)
     if not match:
         raise ValueError(f"Invalid daily image build: {build}")
@@ -573,7 +650,7 @@ def generate(build: str, manifest_text: str, source_map: dict[str, Any], output_
     defaults = source_map.get("defaults", {})
     sources = [{**defaults, **source} for source in source_map["sources"]]
     sections = [collect_section(change, matching_source(change, sources), cache_root, jenkins,
-                                "modalix", services) for change in changes]
+                                "modalix", services, package_index) for change in changes]
     output_dir.mkdir(parents=True, exist_ok=True)
     context_path = output_dir / f"{build}.json"
     jenkins_url = (services["jenkins"]["base_url"].rstrip("/") + "/" +
@@ -613,6 +690,8 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--evidence-dir", type=Path, help="Optional second copy for workflow artifacts")
     parser.add_argument("--cache-root", type=Path, required=True)
+    parser.add_argument("--package-index", type=Path,
+                        help="Debian Packages or Packages.gz used to recover complete build provenance")
     parser.add_argument("--codex-timeout", type=int, default=300)
     args = parser.parse_args()
     if bool(args.build) != bool(args.manifest):
@@ -625,6 +704,7 @@ def main() -> int:
     services = source_map["services"]
     jenkins = Jenkins(services["jenkins"]["base_url"],
                       services["jenkins"]["elxr_builder_path"])
+    package_index = PackageVersionIndex(args.package_index)
     if args.build:
         builds = [(args.build, args.manifest.read_text(encoding="utf-8"))]
     elif args.replay_build:
@@ -643,7 +723,8 @@ def main() -> int:
         s3 = s3_client()
         builds = [(name, read_s3_manifest(s3, name)) for name in names]
     for build, manifest_text in builds:
-        paths = generate(build, manifest_text, source_map, args.output_dir, args.cache_root, args.codex_timeout, jenkins)
+        paths = generate(build, manifest_text, source_map, args.output_dir, args.cache_root,
+                         args.codex_timeout, jenkins, package_index)
         if args.evidence_dir:
             args.evidence_dir.mkdir(parents=True, exist_ok=True)
             for path in paths:

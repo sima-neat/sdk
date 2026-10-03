@@ -57,6 +57,7 @@ def test_workflow_generates_reports_fail_open_and_passes_them_to_slack():
     assert "--replay-build" in generate["run"]
     assert "https://bitbucket.org/site/ssh" in generate["run"]
     assert "StrictHostKeyChecking=yes" in generate["run"]
+    assert "--package-index" in generate["run"]
     assert generate["env"]["JENKINS_USER"] == (
         "${{ secrets.JENKINS_USERNAME || vars.JENKINS_USERNAME || "
         "secrets.JENKINS_USER || vars.JENKINS_USER }}"
@@ -95,6 +96,81 @@ def test_latest_manifest_shape_parses_add_update_and_variant_switch():
 def test_git_hash_accepts_legacy_and_timestamped_versions():
     assert report.git_hash("2.2.0~git.bdf0902") == "bdf0902"
     assert report.git_hash("3.0.0~git202609120138.aBcDeF0-1371") == "abcdef0"
+
+
+def test_package_index_recovers_parent_snapshot_times(tmp_path):
+    packages = tmp_path / "Packages"
+    packages.write_text(
+        "Package: simaai-discovery\n"
+        "Version: 3.0.0~git202610020121.1758321-1847\n\n"
+        "Package: simaai-discovery\n"
+        "Version: 3.0.0~git202610030121.5ae04ba-1855\n",
+        encoding="utf-8",
+    )
+    index = report.PackageVersionIndex(packages)
+
+    assert report.package_snapshot_time(
+        index, "simaai-discovery", "3.0.0~git.1758321"
+    ) == "2026-10-02T01:21:59Z"
+    assert report.package_snapshot_time(
+        index, "simaai-discovery", "3.0.0~git.5ae04ba"
+    ) == "2026-10-03T01:21:59Z"
+
+
+def test_parent_repository_package_uses_scoped_snapshots(monkeypatch, tmp_path):
+    source = {
+        "package_regex": "^simaai-discovery$",
+        "repository": "swsoc-elxr",
+        "source_ref": "develop",
+        "source_path": "configs/packages/simaai-discovery",
+        "version_provenance": "parent_repository_snapshot",
+    }
+    packages = tmp_path / "Packages"
+    packages.write_text(
+        "Package: simaai-discovery\n"
+        "Version: 3.0.0~git202610020121.1758321-1847\n\n"
+        "Package: simaai-discovery\n"
+        "Version: 3.0.0~git202610030121.5ae04ba-1855\n",
+        encoding="utf-8",
+    )
+    snapshots = []
+    comparisons = []
+    monkeypatch.setattr(report, "ensure_repository", lambda *_args: tmp_path)
+
+    def resolve_snapshot(_repository, source_ref, timestamp):
+        snapshots.append((source_ref, timestamp))
+        return "a" * 40
+
+    def compare(_repository, before, after, _web_url, source_path):
+        comparisons.append((before, after, source_path))
+        return {"relationship": "same", "commits": [], "files": [], "truncated": False}
+
+    monkeypatch.setattr(report, "resolve_snapshot", resolve_snapshot)
+    monkeypatch.setattr(report, "git_comparison", compare)
+    section = report.collect_section(
+        report.ManifestChange(
+            "simaai-discovery", "3.0.0~git.1758321",
+            "simaai-discovery", "3.0.0~git.5ae04ba",
+        ),
+        source,
+        tmp_path,
+        object(),
+        "modalix",
+        {"bitbucket": {
+            "web_base_url": "https://bitbucket.org",
+            "ssh_base_url": "ssh://git@bitbucket.org",
+            "default_workspace": "sima-ai",
+        }},
+        report.PackageVersionIndex(packages),
+    )
+
+    assert snapshots == [
+        ("develop", "2026-10-02T01:21:59Z"),
+        ("develop", "2026-10-03T01:21:59Z"),
+    ]
+    assert comparisons == [("a" * 40, "a" * 40, source["source_path"])]
+    assert section["comparison"]["relationship"] == "same"
+    assert "package build timestamp" in section["resolution_note"]
 
 
 def test_every_package_rule_has_a_unique_mapping_for_known_manifest_packages():

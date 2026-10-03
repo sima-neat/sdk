@@ -363,8 +363,12 @@ definition paths, or repeated Jenkins URLs.
 
 The default `git_suffix` provenance resolves the hash embedded in a Debian
 version. `jenkins_build_number` resolves build-number-only versions through the
-configured eLxr builder, while `synthetic_package_commit` marks hashes created
-by temporary packaging repositories rather than the mapped source repository.
+configured eLxr builder. `parent_repository_snapshot` handles packages assembled
+from paths in eLxr configuration repositories: it recovers their complete
+timestamped versions from the mirrored Debian index and compares the parent
+repository revisions current at those build timestamps, scoped to the configured
+package path, instead of treating the temporary packaging commit as source
+provenance.
 A rule without `repository` explicitly means no canonical Git source is
 available for comparison.
 
