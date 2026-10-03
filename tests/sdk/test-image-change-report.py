@@ -310,6 +310,7 @@ def test_codex_exec_allows_ephemeral_non_git_report_directory(monkeypatch, tmp_p
     prompt = commands[0][-1]
     assert "specific, observable validation scenarios" in prompt
     assert "mark the relevant risk as unknown" in prompt
+    assert "Start every bullet with a short bold label" in prompt
 
 
 def test_release_guidance_is_rendered_and_escaped():
@@ -321,9 +322,19 @@ def test_release_guidance_is_rendered_and_escaped():
         "consumer_guidance": ["Stage rollout & monitor boot failures"],
     }
 
-    rendered = report.render_html("build", [], "Summary", guidance)
+    rendered = report.render_html(
+        "build", [],
+        "• *Overall risk: high.* Check `bootctl` <output>.\n"
+        "• *QA priority:* Verify signed image boot.",
+        guidance,
+    )
 
     assert "Release guidance" in rendered
     assert "Risk: high" in rendered
     assert "Potential &lt;boot&gt; impact" in rendered
     assert "Stage rollout &amp; monitor boot failures" in rendered
+    assert '<ul class="overview-list">' in rendered
+    assert '<strong class="overview-heading risk-high">Overall risk: high.</strong>' in rendered
+    assert '<strong class="overview-heading">QA priority:</strong>' in rendered
+    assert "<code>bootctl</code> &lt;output&gt;" in rendered
+    assert "*Overall risk" not in rendered

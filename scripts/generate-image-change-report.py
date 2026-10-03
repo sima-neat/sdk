@@ -546,9 +546,10 @@ evidence is unavailable, mark the relevant risk as unknown instead of guessing.
 Return JSON matching the supplied schema.
 
 slack_summary must be plain Slack mrkdwn, at most {MAX_SLACK_SUMMARY} characters,
-with 3-5 concise bullets. Include the overall risk, the most important affected
-areas, and the highest-value QA or consumer action. Keep the detailed guidance in
-release_guidance rather than overflowing Slack.
+with 3-5 concise bullets. Start every bullet with a short bold label such as
+"*Overall risk:*" or "*QA priority:*". Include the overall risk, the most
+important affected areas, and the highest-value QA or consumer action. Keep the
+detailed guidance in release_guidance rather than overflowing Slack.
 
 For release_guidance:
 - risk_level is high only when evidence indicates security, boot, ABI/API,
@@ -663,6 +664,35 @@ def display_revision(version: str | None, commit: str | None) -> str:
     return version or "not present"
 
 
+def render_overview_html(summary: str, risk_level: str) -> str:
+    """Render the small, generated Slack subset without trusting it as HTML."""
+    token_pattern = re.compile(r"(`([^`\n]+)`|\*([^*\n]+)\*)")
+
+    def inline(value: str) -> str:
+        parts: list[str] = []
+        position = 0
+        for match in token_pattern.finditer(value):
+            parts.append(html.escape(value[position:match.start()], quote=True))
+            if match.group(2) is not None:
+                parts.append(f"<code>{html.escape(match.group(2), quote=True)}</code>")
+            else:
+                label = match.group(3) or ""
+                risk_class = f" risk-{risk_level}" if label.lower().startswith("overall risk") else ""
+                parts.append(
+                    f'<strong class="overview-heading{risk_class}">'
+                    f"{html.escape(label, quote=True)}</strong>"
+                )
+            position = match.end()
+        parts.append(html.escape(value[position:], quote=True))
+        return "".join(parts)
+
+    lines = [line.strip() for line in summary.splitlines() if line.strip()]
+    if lines and all(line.startswith(("• ", "- ")) for line in lines):
+        items = "".join(f"<li>{inline(line[2:].strip())}</li>" for line in lines)
+        return f'<ul class="overview-list">{items}</ul>'
+    return "".join(f"<p>{inline(line)}</p>" for line in lines)
+
+
 def render_html(build: str, sections: list[dict[str, Any]], summary: str,
                 guidance: dict[str, Any]) -> str:
     def esc(value: Any) -> str:
@@ -672,11 +702,14 @@ def render_html(build: str, sections: list[dict[str, Any]], summary: str,
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SDK image source changes</title><style>
 :root{color-scheme:light dark}body{font:15px/1.5 system-ui,sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;color:#1f2937;background:#fff}
-h1{font-size:1.7rem}h2{font-size:1.18rem;margin:0}h3{font-size:1rem;margin:.9rem 0 .3rem}.summary,.guidance,.package{border:1px solid #d1d5db;border-radius:10px;padding:1rem;margin:1rem 0}.risk{font-weight:700;text-transform:capitalize}.meta{color:#4b5563}.hash{font-family:ui-monospace,SFMono-Regular,monospace}.commit,.file{margin:.35rem 0}.warning{color:#92400e}.ticket{white-space:nowrap}a{color:#075985}details{margin-top:.75rem}table{border-collapse:collapse;width:100%}th,td{text-align:left;vertical-align:top;border-bottom:1px solid #e5e7eb;padding:.35rem}.num{text-align:right}
-@media(prefers-color-scheme:dark){body{color:#e5e7eb;background:#111827}.meta{color:#9ca3af}.warning{color:#fbbf24}a{color:#7dd3fc}.summary,.guidance,.package{border-color:#374151}th,td{border-color:#374151}}
+h1{font-size:1.7rem}h2{font-size:1.18rem;margin:0}h3{font-size:1rem;margin:.9rem 0 .3rem}.summary,.guidance,.package{border:1px solid #d1d5db;border-radius:10px;padding:1rem;margin:1rem 0}.overview-list{margin:.75rem 0 0;padding-left:1.3rem}.overview-list li{margin:.55rem 0}.overview-heading{color:#075985;font-weight:750}.overview-heading.risk-low{color:#15803d}.overview-heading.risk-moderate,.overview-heading.risk-unknown{color:#a16207}.overview-heading.risk-high{color:#b91c1c}.summary code{background:#f3f4f6;border-radius:4px;padding:.08rem .3rem}.risk{font-weight:700;text-transform:capitalize}.meta{color:#4b5563}.hash{font-family:ui-monospace,SFMono-Regular,monospace}.commit,.file{margin:.35rem 0}.warning{color:#92400e}.ticket{white-space:nowrap}a{color:#075985}details{margin-top:.75rem}table{border-collapse:collapse;width:100%}th,td{text-align:left;vertical-align:top;border-bottom:1px solid #e5e7eb;padding:.35rem}.num{text-align:right}
+@media(prefers-color-scheme:dark){body{color:#e5e7eb;background:#111827}.meta{color:#9ca3af}.warning{color:#fbbf24}a,.overview-heading{color:#7dd3fc}.overview-heading.risk-low{color:#86efac}.overview-heading.risk-moderate,.overview-heading.risk-unknown{color:#fbbf24}.overview-heading.risk-high{color:#fca5a5}.summary code{background:#1f2937}.summary,.guidance,.package{border-color:#374151}th,td{border-color:#374151}}
 </style></head><body>""",
         f"<h1>SDK image changes: <span class=\"hash\">{esc(build)}</span></h1>",
-        f"<div class=\"summary\"><h2>Overview</h2><p>{esc(summary).replace(chr(10), '<br>')}</p></div>",
+        (
+            f'<section class="summary"><h2>Overview</h2>'
+            f"{render_overview_html(summary, str(guidance['risk_level']))}</section>"
+        ),
     ]
     parts.extend([
         "<section class=\"guidance\"><h2>Release guidance</h2>",
