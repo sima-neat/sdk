@@ -189,3 +189,31 @@ def test_replay_cli_reads_published_manifest_from_s3(monkeypatch, tmp_path):
 
     assert report.main() == 0
     assert generated == [(build, "> package 1.0~git.abcdef0\n")]
+
+
+def test_codex_exec_allows_ephemeral_non_git_report_directory(monkeypatch, tmp_path):
+    context = tmp_path / "context.json"
+    context.write_text(json.dumps({"packages": [{"key": "package-transition"}]}))
+    work_dir = tmp_path / "codex"
+    work_dir.mkdir()
+    commands = []
+
+    def run(command, **_kwargs):
+        if command == ["codex", "exec", "--help"]:
+            return types.SimpleNamespace(
+                returncode=0,
+                stdout="--output-schema --output-last-message",
+                stderr="",
+            )
+        commands.append(command)
+        output = Path(command[command.index("--output-last-message") + 1])
+        output.write_text(json.dumps({
+            "slack_summary": "Summary",
+            "packages": [{"key": "package-transition", "description": "Description"}],
+        }))
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(report.subprocess, "run", run)
+
+    assert report.codex_enrich(context, work_dir, 30)["slack_summary"] == "Summary"
+    assert "--skip-git-repo-check" in commands[0]

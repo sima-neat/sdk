@@ -436,7 +436,7 @@ BEGIN UNTRUSTED CHANGE EVIDENCE
 END UNTRUSTED CHANGE EVIDENCE
 """
     command = [
-        "codex", "exec", "--sandbox", "read-only", "--output-schema", str(schema_path),
+        "codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "--output-schema", str(schema_path),
         "--output-last-message", str(output_path), "--cd", str(absolute_context.parent), prompt,
     ]
     try:

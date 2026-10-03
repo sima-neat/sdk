@@ -1,6 +1,7 @@
 """Version notification grouping, quiet runs, and durable failure recovery."""
 import importlib.util
 import json
+import urllib.parse
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -328,6 +329,10 @@ def test_shared_sender_uses_external_upload_sequence(monkeypatch, tmp_path):
     def respond(request, **kwargs):
         requests.append(request)
         if request.full_url.endswith('files.getUploadURLExternal'):
+            assert request.headers['Content-type'].startswith('application/x-www-form-urlencoded')
+            assert urllib.parse.parse_qs(request.data.decode()) == {
+                'filename': ['report.html'], 'length': ['17'],
+            }
             return Response(b'{"ok":true,"upload_url":"https://files.slack.com/upload/v1/test","file_id":"F123"}')
         if request.full_url.startswith('https://files.slack.com/upload/'):
             assert request.data == b'<html>safe</html>'
