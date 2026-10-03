@@ -223,12 +223,22 @@ def ensure_repository(cache_root: Path, source: dict[str, Any], services: dict[s
     return repository
 
 
-def resolve_commit(repository: Path, prefix: str | None) -> str | None:
-    if not prefix:
+def resolve_commit(repository: Path, revision: str | None) -> str | None:
+    if not revision:
         return None
-    matches = [commit for commit in run_git(repository, "rev-list", "--all").splitlines() if commit.startswith(prefix)]
+    for candidate in (revision, f"refs/remotes/origin/{revision}"):
+        resolved = run_git(repository, "rev-parse", "--verify", f"{candidate}^{{commit}}", check=False).strip()
+        if re.fullmatch(r"[0-9a-f]{40}", resolved):
+            return resolved
+    matches = [commit for commit in run_git(repository, "rev-list", "--all").splitlines()
+               if commit.startswith(revision)]
+    if not matches:
+        run_git(repository, "fetch", "--no-tags", "origin", revision, check=False)
+        resolved = run_git(repository, "rev-parse", "--verify", "FETCH_HEAD^{commit}", check=False).strip()
+        if re.fullmatch(r"[0-9a-f]{40}", resolved):
+            return resolved
     if len(matches) != 1:
-        raise ValueError(f"Commit prefix {prefix} resolved to {len(matches)} commits")
+        raise ValueError(f"Revision {revision} resolved to {len(matches)} commits")
     return matches[0]
 
 
@@ -308,13 +318,19 @@ def collect_section(change: ManifestChange, source: dict[str, Any] | None, cache
     provenance = source.get("version_provenance") if source else None
     before_hash, after_hash = git_hash(change.before_version), git_hash(change.after_version)
     resolution_note = ""
-    if provenance == "jenkins_build_number":
+    if provenance in {"pinned_git", "pinned_git_with_elxr_overlay"}:
+        pinned_ref = source.get("source_ref") if source else None
+        before_hash = pinned_ref if change.before_version else None
+        after_hash = pinned_ref if change.after_version else None
+        if not pinned_ref:
+            resolution_note = "The pinned source mapping does not define a source ref."
+    elif provenance == "jenkins_build_number":
         try:
             before_build = package_build_number(change.before_version)
             after_build = package_build_number(change.after_version)
             before_hash = jenkins.source_commit(before_build, change.package, platform) if before_build else None
             after_hash = jenkins.source_commit(after_build, change.package, platform) if after_build else None
-        except (OSError, urllib.error.URLError, RuntimeError) as error:
+        except (OSError, subprocess.SubprocessError, urllib.error.URLError, RuntimeError) as error:
             resolution_note = f"Jenkins provenance could not be read: {type(error).__name__}."
     elif provenance == "synthetic_package_commit":
         before_hash = after_hash = None

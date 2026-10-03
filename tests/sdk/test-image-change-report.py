@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -93,3 +94,62 @@ def test_every_package_rule_has_a_unique_mapping_for_known_manifest_packages():
     ]
     assert mapped[0]["version_provenance"] == "git_suffix"
     assert mapped[1]["version_provenance"] == "jenkins_build_number"
+
+
+def test_pinned_source_ref_is_used_when_package_version_has_no_git_hash(monkeypatch, tmp_path):
+    source = {
+        "package_regex": "^g2o$",
+        "repository_url": "https://example.invalid/g2o",
+        "source_ref": "debian/0_20230806-5",
+        "version_provenance": "pinned_git",
+    }
+    change = report.ManifestChange("g2o", "0~20230806-4", "g2o", "0~20230806-5")
+    resolved = "a" * 40
+    revisions = []
+    monkeypatch.setattr(report, "ensure_repository", lambda *_args: tmp_path)
+
+    def resolve(_repository, revision):
+        revisions.append(revision)
+        return resolved
+
+    monkeypatch.setattr(report, "resolve_commit", resolve)
+    monkeypatch.setattr(
+        report,
+        "git_comparison",
+        lambda *_args: {"relationship": "same", "commits": [], "files": [], "truncated": False},
+    )
+
+    section = report.collect_section(
+        change, source, tmp_path, object(), "modalix",
+        {"bitbucket": {"web_base_url": "https://bitbucket.org", "ssh_base_url": "ssh://git@bitbucket.org",
+                       "default_workspace": "sima-ai"}},
+    )
+
+    assert revisions == [source["source_ref"], source["source_ref"]]
+    assert section["before_hash"] == section["after_hash"] == resolved
+    assert section["comparison"]["relationship"] == "same"
+
+
+def test_jenkins_timeout_degrades_to_unavailable_provenance(tmp_path):
+    class TimedOutJenkins:
+        def source_commit(self, *_args):
+            raise subprocess.TimeoutExpired("curl", 70)
+
+    source = {
+        "package_regex": "^linux-image-.*$",
+        "repository": "simaai-linux",
+        "version_provenance": "jenkins_build_number",
+    }
+    change = report.ManifestChange(
+        "linux-image-6.18.3-modalix", "6.18.3-1833",
+        "linux-image-6.18.3-modalix", "6.18.3-1847",
+    )
+
+    section = report.collect_section(
+        change, source, tmp_path, TimedOutJenkins(), "modalix",
+        {"bitbucket": {"web_base_url": "https://bitbucket.org", "ssh_base_url": "ssh://git@bitbucket.org",
+                       "default_workspace": "sima-ai"}},
+    )
+
+    assert section["comparison"]["relationship"] == "unavailable"
+    assert section["resolution_note"] == "Jenkins provenance could not be read: TimeoutExpired."
