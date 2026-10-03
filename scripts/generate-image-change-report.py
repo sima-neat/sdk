@@ -416,6 +416,7 @@ def collect_section(change: ManifestChange, source: dict[str, Any] | None, cache
         "after_hash": after_hash,
         "repository": repository_name(source, services) if source else None,
         "repository_url": repository_web_url(source, services) if source else None,
+        "source_path": source.get("source_path") if source else None,
         "provenance": provenance,
         "resolution_note": resolution_note,
         "comparison": {"relationship": "unavailable", "commits": [], "files": [], "truncated": False},
@@ -741,7 +742,10 @@ h1{font-size:1.7rem}h2{font-size:1.18rem;margin:0}h3{font-size:1rem;margin:.9rem
         if section.get("repository"):
             url = section.get("repository_url")
             repository = esc(section["repository"])
-            parts.append(f"<p class=\"meta\">Source: <a href=\"{esc(url)}\">{repository}</a></p>" if url else f"<p class=\"meta\">Source: {repository}</p>")
+            source = f'<a href="{esc(url)}">{repository}</a>' if url else repository
+            if section.get("source_path"):
+                source += f' / <span class="hash">{esc(section["source_path"])}</span>'
+            parts.append(f'<p class="meta">Source: {source}</p>')
         if section.get("resolution_note"):
             parts.append(f"<p class=\"warning\">{esc(section['resolution_note'])}</p>")
         commits = section["comparison"].get("commits", [])

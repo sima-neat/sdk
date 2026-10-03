@@ -170,6 +170,7 @@ def test_parent_repository_package_uses_scoped_snapshots(monkeypatch, tmp_path):
     ]
     assert comparisons == [("a" * 40, "a" * 40, source["source_path"])]
     assert section["comparison"]["relationship"] == "same"
+    assert section["source_path"] == "configs/packages/simaai-discovery"
     assert "package build timestamp" in section["resolution_note"]
 
 
@@ -321,9 +322,24 @@ def test_release_guidance_is_rendered_and_escaped():
         "qa_focus": ["Verify signed image boot"],
         "consumer_guidance": ["Stage rollout & monitor boot failures"],
     }
+    sections = [{
+        "package": "package",
+        "before_package": "package",
+        "after_package": "package",
+        "before": "1",
+        "after": "2",
+        "before_hash": "a" * 40,
+        "after_hash": "b" * 40,
+        "description": "Changed.",
+        "repository": "sima-ai/swsoc-elxr",
+        "repository_url": "https://bitbucket.org/sima-ai/swsoc-elxr",
+        "source_path": "configs/packages/<package>",
+        "resolution_note": "",
+        "comparison": {"commits": [], "files": [], "truncated": False},
+    }]
 
     rendered = report.render_html(
-        "build", [],
+        "build", sections,
         "• *Overall risk: high.* Check `bootctl` <output>.\n"
         "• *QA priority:* Verify signed image boot.",
         guidance,
@@ -338,3 +354,4 @@ def test_release_guidance_is_rendered_and_escaped():
     assert '<strong class="overview-heading">QA priority:</strong>' in rendered
     assert "<code>bootctl</code> &lt;output&gt;" in rendered
     assert "*Overall risk" not in rendered
+    assert "configs/packages/&lt;package&gt;" in rendered
