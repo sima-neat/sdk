@@ -15,6 +15,7 @@ KINDS = {'apt': 'APT', 'packages': 'APT package changes', 'images': 'Device imag
 TABLE_CELL_LIMIT = 2000
 TABLE_TEXT_LIMIT = 10000
 TABLE_CELL_OVERFLOW = '… (see workflow report)'
+IMAGE_BUILD_RE = re.compile(r'3[.]0[.]0_daily_[A-Za-z0-9_-]+_B[0-9]+')
 
 
 def save_state(path, state):
@@ -103,7 +104,7 @@ def image_change_artifacts(items, report_dir):
     attachments, summaries = [], {}
     for item in items:
         version = item['version']
-        if item['kind'] != 'images' or not re.fullmatch(r'3[.]0[.]0_daily_[A-Za-z0-9_-]+_B[0-9]+', version):
+        if item['kind'] != 'images' or not IMAGE_BUILD_RE.fullmatch(version):
             continue
         report = (root / f'{version}.html').resolve()
         summary = (root / f'{version}.slack.txt').resolve()
@@ -251,16 +252,37 @@ def notify(state_path, versions, run_url, send, pause_between_sends=None, report
         save_state(state_path, state)
 
 
+def replay_image_notification(build, run_url, send, report_dir):
+    if not IMAGE_BUILD_RE.fullmatch(build):
+        raise ValueError('Expected a complete daily image build name')
+    report = report_dir / f'{build}.html' if report_dir else None
+    if report is None or not report.is_file():
+        raise FileNotFoundError(f'HTML source-change report is missing for replay build {build}')
+    # Replay must not mutate or depend on the durable scheduled-notification
+    # ledger. A temporary state also makes an already-seen image send once.
+    with tempfile.TemporaryDirectory(prefix='image-change-replay-') as temporary:
+        notify(Path(temporary) / 'state.json', {'images': [build]}, run_url, send,
+               report_dir=report_dir)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--apt-report', type=Path, required=True)
-    parser.add_argument('--image-report', type=Path, required=True)
+    parser.add_argument('--apt-report', type=Path)
+    parser.add_argument('--image-report', type=Path)
     parser.add_argument('--state', type=Path, required=True)
     parser.add_argument('--sysroot-report', type=Path)
     parser.add_argument('--image-change-report-dir', type=Path)
+    parser.add_argument('--replay-image-build')
     args = parser.parse_args()
-    versions = collect(load_report(args.apt_report), load_report(args.image_report),
-                       load_report(args.sysroot_report) if args.sysroot_report else None)
+    if args.replay_image_build:
+        if args.apt_report or args.image_report or args.sysroot_report:
+            parser.error('--replay-image-build cannot be combined with mirror result inputs')
+        versions = None
+    else:
+        if not args.apt_report or not args.image_report:
+            parser.error('--apt-report and --image-report are required for normal notifications')
+        versions = collect(load_report(args.apt_report), load_report(args.image_report),
+                           load_report(args.sysroot_report) if args.sysroot_report else None)
     sender = runpy.run_path(str(Path(__file__).with_name('post-debian-mirror-summary.py')))
     post, upload = sender['post_message'], sender['upload_file']
 
@@ -281,9 +303,13 @@ def main():
     run_url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
     # Workflow concurrency serializes writers, and this state lives on the same
     # persistent runner volume as the mirror cache.
-    notify(args.state, versions, run_url, send,
-           pause_between_sends=lambda: time.sleep(1),
-           report_dir=args.image_change_report_dir)
+    if args.replay_image_build:
+        replay_image_notification(args.replay_image_build, run_url, send,
+                                  args.image_change_report_dir)
+    else:
+        notify(args.state, versions, run_url, send,
+               pause_between_sends=lambda: time.sleep(1),
+               report_dir=args.image_change_report_dir)
 
 
 if __name__ == '__main__':

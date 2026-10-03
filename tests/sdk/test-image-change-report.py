@@ -4,6 +4,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
@@ -53,7 +54,18 @@ def test_workflow_generates_reports_fail_open_and_passes_them_to_slack():
     notify = next(step for step in steps if "notify-mirror-versions.py" in step.get("run", ""))
     assert generate["continue-on-error"] is True
     assert "--evidence-dir out/daily-platform-images/change-reports" in generate["run"]
+    assert "--replay-build" in generate["run"]
+    assert "https://bitbucket.org/site/ssh" in generate["run"]
+    assert "StrictHostKeyChecking=yes" in generate["run"]
+    assert generate["env"]["JENKINS_USER"] == (
+        "${{ secrets.JENKINS_USERNAME || vars.JENKINS_USERNAME || "
+        "secrets.JENKINS_USER || vars.JENKINS_USER }}"
+    )
     assert "--image-change-report-dir" in notify["run"]
+    assert "--replay-image-build" in notify["run"]
+    triggers = workflow.get("on", workflow.get(True))
+    assert triggers["workflow_dispatch"]["inputs"]["replay_image_build"]["default"] == ""
+    assert workflow["jobs"]["sync"]["env"]["REPLAY_IMAGE_BUILD"] == "${{ inputs.replay_image_build || '' }}"
 
 
 def test_defaults_expand_internal_and_external_repositories():
@@ -158,3 +170,56 @@ def test_jenkins_timeout_degrades_to_unavailable_provenance(tmp_path):
 
     assert section["comparison"]["relationship"] == "unavailable"
     assert section["resolution_note"] == "Jenkins provenance could not be read: TimeoutExpired."
+
+
+def test_replay_cli_reads_published_manifest_from_s3(monkeypatch, tmp_path):
+    build = "3.0.0_daily_develop_B1855"
+    s3 = object()
+    generated = []
+    monkeypatch.setitem(sys.modules, "mirror_aws", types.SimpleNamespace(s3_client=lambda: s3))
+    monkeypatch.setattr(report, "read_s3_manifest", lambda client, name: (
+        "> package 1.0~git.abcdef0\n" if (client, name) == (s3, build) else ""
+    ))
+
+    def generate(name, manifest, *_args):
+        generated.append((name, manifest))
+        return ()
+
+    monkeypatch.setattr(report, "generate", generate)
+    monkeypatch.setattr(sys, "argv", [
+        "generate-image-change-report.py",
+        "--replay-build", build,
+        "--output-dir", str(tmp_path / "reports"),
+        "--cache-root", str(tmp_path / "cache"),
+    ])
+
+    assert report.main() == 0
+    assert generated == [(build, "> package 1.0~git.abcdef0\n")]
+
+
+def test_codex_exec_allows_ephemeral_non_git_report_directory(monkeypatch, tmp_path):
+    context = tmp_path / "context.json"
+    context.write_text(json.dumps({"packages": [{"key": "package-transition"}]}))
+    work_dir = tmp_path / "codex"
+    work_dir.mkdir()
+    commands = []
+
+    def run(command, **_kwargs):
+        if command == ["codex", "exec", "--help"]:
+            return types.SimpleNamespace(
+                returncode=0,
+                stdout="--output-schema --output-last-message",
+                stderr="",
+            )
+        commands.append(command)
+        output = Path(command[command.index("--output-last-message") + 1])
+        output.write_text(json.dumps({
+            "slack_summary": "Summary",
+            "packages": [{"key": "package-transition", "description": "Description"}],
+        }))
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(report.subprocess, "run", run)
+
+    assert report.codex_enrich(context, work_dir, 30)["slack_summary"] == "Summary"
+    assert "--skip-git-repo-check" in commands[0]
