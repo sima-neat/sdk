@@ -403,12 +403,15 @@ def codex_schema(keys: list[str]) -> dict[str, Any]:
 
 def codex_enrich(context_path: Path, work_dir: Path, timeout: int) -> dict[str, Any] | None:
     if os.environ.get("IMAGE_CHANGE_REPORT_SKIP_CODEX") == "1":
+        print("Codex summary skipped: IMAGE_CHANGE_REPORT_SKIP_CODEX=1", file=sys.stderr)
         return None
     try:
         help_process = subprocess.run(["codex", "exec", "--help"], capture_output=True, text=True, timeout=30, check=False)
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"Codex summary unavailable: {type(error).__name__}", file=sys.stderr)
         return None
     if help_process.returncode or "--output-schema" not in help_process.stdout or "--output-last-message" not in help_process.stdout:
+        print("Codex summary unavailable: installed CLI lacks required structured-output flags", file=sys.stderr)
         return None
     context_document = json.loads(context_path.read_text(encoding="utf-8"))
     keys = [section["key"] for section in context_document["packages"]]
