@@ -5,6 +5,7 @@ const https = require("https");
 const os = require("os");
 const path = require("path");
 const { URLSearchParams } = require("url");
+const { resolveInsightLaunchUrl } = require("./insight-launcher");
 
 const APPS_REPO_URL = "https://github.com/sima-neat/apps";
 const SIMA_CLI_DIR = path.join(os.homedir(), ".sima-cli");
@@ -409,13 +410,15 @@ async function openInsight() {
 }
 
 async function getInsightWebUiUrl() {
-  try {
-    const stdout = await execFilePromise("neat", ["--json"], {}, { showError: false });
-    const status = JSON.parse(stdout);
-    return status?.insight?.webUiUrl || "";
-  } catch {
-    return "";
-  }
+  return resolveInsightLaunchUrl(async () => {
+    try {
+      const stdout = await execFilePromise("neat", ["--json"], {}, { showError: false });
+      const status = JSON.parse(stdout);
+      return status?.insight?.webUiUrl || "";
+    } catch {
+      return "";
+    }
+  });
 }
 
 async function getDevKitSyncState() {
