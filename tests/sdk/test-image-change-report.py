@@ -290,12 +290,40 @@ def test_codex_exec_allows_ephemeral_non_git_report_directory(monkeypatch, tmp_p
         commands.append(command)
         output = Path(command[command.index("--output-last-message") + 1])
         output.write_text(json.dumps({
-            "slack_summary": "Summary",
+            "slack_summary": "• Moderate risk: validate camera workflows.",
+            "release_guidance": {
+                "risk_level": "moderate",
+                "risk_rationale": "Runtime camera behavior changed.",
+                "affected_areas": ["Camera image processing"],
+                "qa_focus": ["Validate color rendering under each illuminant."],
+                "consumer_guidance": ["Camera users should watch for color regressions."],
+            },
             "packages": [{"key": "package-transition", "description": "Description"}],
         }))
         return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(report.subprocess, "run", run)
 
-    assert report.codex_enrich(context, work_dir, 30)["slack_summary"] == "Summary"
+    result = report.codex_enrich(context, work_dir, 30)
+    assert result["release_guidance"]["risk_level"] == "moderate"
     assert "--skip-git-repo-check" in commands[0]
+    prompt = commands[0][-1]
+    assert "specific, observable validation scenarios" in prompt
+    assert "mark the relevant risk as unknown" in prompt
+
+
+def test_release_guidance_is_rendered_and_escaped():
+    guidance = {
+        "risk_level": "high",
+        "risk_rationale": "Potential <boot> impact",
+        "affected_areas": ["Secure boot"],
+        "qa_focus": ["Verify signed image boot"],
+        "consumer_guidance": ["Stage rollout & monitor boot failures"],
+    }
+
+    rendered = report.render_html("build", [], "Summary", guidance)
+
+    assert "Release guidance" in rendered
+    assert "Risk: high" in rendered
+    assert "Potential &lt;boot&gt; impact" in rendered
+    assert "Stage rollout &amp; monitor boot failures" in rendered

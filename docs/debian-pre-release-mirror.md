@@ -379,6 +379,12 @@ thread using Slack's external upload API. The Slack app therefore needs both
 `chat:write` and `files:write`. Report generation is fail-open: source, Jenkins,
 or Codex failures do not suppress the base mirror notification.
 
+When Codex CLI is available, its structured analysis adds an evidence-based
+release risk assessment, affected functional areas, concrete QA scenarios, and
+guidance for SDK consumers. The Slack overview carries only the highest-value
+points; the complete guidance remains in the HTML report. Missing source evidence
+must be reported as uncertainty rather than inferred behavior.
+
 The runner needs a Bitbucket-authorized SSH identity; the workflow loads
 Bitbucket Cloud's published host keys into an isolated known-hosts file. Jenkins
 build-number provenance additionally requires `JENKINS_USERNAME` (or the legacy
