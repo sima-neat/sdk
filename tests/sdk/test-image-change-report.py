@@ -355,3 +355,33 @@ def test_release_guidance_is_rendered_and_escaped():
     assert "<code>bootctl</code> &lt;output&gt;" in rendered
     assert "*Overall risk" not in rendered
     assert "configs/packages/&lt;package&gt;" in rendered
+
+
+def test_html_omits_package_with_identical_resolved_commits():
+    commit = "a" * 40
+    section = {
+        "package": "rebuild-only-package",
+        "before_package": "rebuild-only-package",
+        "after_package": "rebuild-only-package",
+        "before": "1.0~git.old",
+        "after": "1.0~git.new",
+        "before_hash": commit,
+        "after_hash": commit,
+        "description": "Package metadata changed.",
+        "repository": "sima-ai/repository",
+        "repository_url": "https://bitbucket.org/sima-ai/repository",
+        "source_path": "configs/packages/rebuild-only-package",
+        "resolution_note": "",
+        "comparison": {"commits": [], "files": [], "truncated": False},
+    }
+    guidance = {
+        "risk_level": "low",
+        "risk_rationale": "No source change.",
+        "affected_areas": [],
+        "qa_focus": [],
+        "consumer_guidance": [],
+    }
+
+    rendered = report.render_html("build", [section], "Summary", guidance)
+
+    assert "rebuild-only-package" not in rendered

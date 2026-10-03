@@ -731,6 +731,10 @@ h1{font-size:1.7rem}h2{font-size:1.18rem;margin:0}h3{font-size:1rem;margin:.9rem
             parts.append("</ul>")
     parts.append("</section>")
     for section in sections:
+        before_hash = section.get("before_hash")
+        after_hash = section.get("after_hash")
+        if before_hash and after_hash and before_hash == after_hash:
+            continue
         before = display_revision(section.get("before"), section.get("before_hash"))
         after = display_revision(section.get("after"), section.get("after_hash"))
         name = section["package"]
