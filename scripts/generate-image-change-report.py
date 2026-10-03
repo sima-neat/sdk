@@ -599,6 +599,7 @@ def generate(build: str, manifest_text: str, source_map: dict[str, Any], output_
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image-report", type=Path, help="Published image mirror result JSON")
+    parser.add_argument("--replay-build", help="Regenerate one already-published image build from S3")
     parser.add_argument("--build", help="One image build, for local fixture generation")
     parser.add_argument("--manifest", type=Path, help="Local manifestChanges.txt, used with --build")
     parser.add_argument("--source-map", type=Path, default=Path(__file__).with_name("debian-package-source-map.json"))
@@ -609,8 +610,8 @@ def main() -> int:
     args = parser.parse_args()
     if bool(args.build) != bool(args.manifest):
         parser.error("--build and --manifest must be used together")
-    if not args.build and not args.image_report:
-        parser.error("provide --image-report or --build with --manifest")
+    if sum((bool(args.image_report), bool(args.replay_build), bool(args.build))) != 1:
+        parser.error("provide exactly one of --image-report, --replay-build, or --build with --manifest")
     source_map = json.loads(args.source_map.read_text(encoding="utf-8"))
     if source_map.get("schema_version") != 2:
         raise ValueError("Unsupported package source map schema")
@@ -619,6 +620,12 @@ def main() -> int:
                       services["jenkins"]["elxr_builder_path"])
     if args.build:
         builds = [(args.build, args.manifest.read_text(encoding="utf-8"))]
+    elif args.replay_build:
+        if not BUILD_RE.fullmatch(args.replay_build):
+            parser.error("--replay-build must be a complete daily image build name")
+        from mirror_aws import s3_client
+        s3 = s3_client()
+        builds = [(args.replay_build, read_s3_manifest(s3, args.replay_build))]
     else:
         report = json.loads(args.image_report.read_text(encoding="utf-8")) if args.image_report.is_file() else {}
         names = report.get("copied_versions", []) if report.get("result") == "Published" else []

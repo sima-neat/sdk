@@ -4,6 +4,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
@@ -53,7 +54,12 @@ def test_workflow_generates_reports_fail_open_and_passes_them_to_slack():
     notify = next(step for step in steps if "notify-mirror-versions.py" in step.get("run", ""))
     assert generate["continue-on-error"] is True
     assert "--evidence-dir out/daily-platform-images/change-reports" in generate["run"]
+    assert "--replay-build" in generate["run"]
     assert "--image-change-report-dir" in notify["run"]
+    assert "--replay-image-build" in notify["run"]
+    triggers = workflow.get("on", workflow.get(True))
+    assert triggers["workflow_dispatch"]["inputs"]["replay_image_build"]["default"] == ""
+    assert workflow["jobs"]["sync"]["env"]["REPLAY_IMAGE_BUILD"] == "${{ inputs.replay_image_build || '' }}"
 
 
 def test_defaults_expand_internal_and_external_repositories():
@@ -158,3 +164,28 @@ def test_jenkins_timeout_degrades_to_unavailable_provenance(tmp_path):
 
     assert section["comparison"]["relationship"] == "unavailable"
     assert section["resolution_note"] == "Jenkins provenance could not be read: TimeoutExpired."
+
+
+def test_replay_cli_reads_published_manifest_from_s3(monkeypatch, tmp_path):
+    build = "3.0.0_daily_develop_B1855"
+    s3 = object()
+    generated = []
+    monkeypatch.setitem(sys.modules, "mirror_aws", types.SimpleNamespace(s3_client=lambda: s3))
+    monkeypatch.setattr(report, "read_s3_manifest", lambda client, name: (
+        "> package 1.0~git.abcdef0\n" if (client, name) == (s3, build) else ""
+    ))
+
+    def generate(name, manifest, *_args):
+        generated.append((name, manifest))
+        return ()
+
+    monkeypatch.setattr(report, "generate", generate)
+    monkeypatch.setattr(sys, "argv", [
+        "generate-image-change-report.py",
+        "--replay-build", build,
+        "--output-dir", str(tmp_path / "reports"),
+        "--cache-root", str(tmp_path / "cache"),
+    ])
+
+    assert report.main() == 0
+    assert generated == [(build, "> package 1.0~git.abcdef0\n")]

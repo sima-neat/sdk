@@ -282,6 +282,31 @@ def test_image_report_summary_is_escaped_and_attachment_is_sent(tmp_path):
                for element in block.get('elements', []))
 
 
+def test_replay_resends_report_without_persistent_notification_state(tmp_path):
+    report_dir = tmp_path / 'reports'
+    report_dir.mkdir()
+    version = '3.0.0_daily_develop_B1855'
+    report = report_dir / f'{version}.html'
+    report.write_text('<html>report</html>')
+    (report_dir / f'{version}.slack.txt').write_text('Replay summary')
+    send = Mock()
+
+    m.replay_image_notification(version, RUN, send, report_dir)
+    m.replay_image_notification(version, NEXT_RUN, send, report_dir)
+
+    assert send.call_count == 2
+    assert send.call_args.kwargs['attachments'] == [report]
+    assert 'Replay summary' in send.call_args.args[0]
+    assert list(tmp_path.iterdir()) == [report_dir]
+
+
+def test_replay_refuses_to_send_without_html_report(tmp_path):
+    with pytest.raises(FileNotFoundError, match='HTML source-change report is missing'):
+        m.replay_image_notification(
+            '3.0.0_daily_develop_B1855', RUN, Mock(), tmp_path / 'reports'
+        )
+
+
 def test_shared_sender_uses_external_upload_sequence(monkeypatch, tmp_path):
     import io
     import runpy
