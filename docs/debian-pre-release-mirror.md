@@ -52,8 +52,9 @@ self-hosted, Linux, X64, apt-mirror
 
 Restrict the runner group to `sima-neat/sdk`. The host must resolve and reach
 `sw-web.eng.sima.ai`, allow passwordless `sudo` for package installation and
-workspace creation, and provide at least 150 GiB of persistent storage. The
-workflow stores incremental mirror state outside the Actions checkout at:
+workspace creation, and keep at least 25 GiB free on the persistent volume
+before synchronization. The workflow stores incremental mirror state outside
+the Actions checkout at:
 
 ```text
 /var/lib/sima-neat/debian-mirror
@@ -349,6 +350,30 @@ Each daily device image version links to its Jenkins console, using the numeric
 `B` suffix (for example, `3.0.0_daily_develop_B1295` links to
 `https://jenkins.eng.sima.ai/job/soc-jobs/job/elxr-builder/1295/console`).
 The GitHub workflow link is also retained.
+
+### Device image source mapping
+
+[`scripts/debian-package-source-map.json`](../scripts/debian-package-source-map.json)
+is compact runtime configuration for image change reports. Shared Bitbucket and
+Jenkins locations are defined once under `services`; common source behavior is
+defined under `defaults`. Package rules contain only a package matcher, a
+repository slug, and overrides needed for non-default hosting or provenance.
+The map deliberately contains no example builds, captured revisions, package
+definition paths, or repeated Jenkins URLs.
+
+The default `git_suffix` provenance resolves the hash embedded in a Debian
+version. `jenkins_build_number` resolves build-number-only versions through the
+configured eLxr builder, while `synthetic_package_commit` marks hashes created
+by temporary packaging repositories rather than the mapped source repository.
+A rule without `repository` explicitly means no canonical Git source is
+available for comparison.
+
+When a newly mirrored image contains `manifestChanges.txt`, the workflow writes
+the normalized evidence, a bounded Slack overview, and a self-contained HTML
+report. The notification posts the overview and uploads the HTML report in its
+thread using Slack's external upload API. The Slack app therefore needs both
+`chat:write` and `files:write`. Report generation is fail-open: source, Jenkins,
+or Codex failures do not suppress the base mirror notification.
 
 Example:
 
