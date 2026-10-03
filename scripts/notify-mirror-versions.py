@@ -5,12 +5,11 @@ import html
 import json
 import os
 import re
-from pathlib import Path
 import runpy
 import tempfile
 import time
+from pathlib import Path
 from urllib.parse import urlparse
-
 
 KINDS = {'apt': 'APT', 'packages': 'APT package changes', 'images': 'Device images', 'sysroots': '📦 Sysroot package availability'}
 TABLE_CELL_LIMIT = 2000
@@ -97,6 +96,26 @@ def format_version(kind, version):
     return label
 
 
+def image_change_artifacts(items, report_dir):
+    if report_dir is None:
+        return [], {}
+    root = report_dir.resolve()
+    attachments, summaries = [], {}
+    for item in items:
+        version = item['version']
+        if item['kind'] != 'images' or not re.fullmatch(r'3[.]0[.]0_daily_[A-Za-z0-9_-]+_B[0-9]+', version):
+            continue
+        report = (root / f'{version}.html').resolve()
+        summary = (root / f'{version}.slack.txt').resolve()
+        if report.parent == root and report.is_file():
+            attachments.append(report)
+        if summary.parent == root and summary.is_file():
+            value = summary.read_text(encoding='utf-8').strip()
+            if value:
+                summaries[version] = html.escape(value[:1400], quote=False)
+    return attachments, summaries
+
+
 def validate_run_url(url):
     parsed = urlparse(url)
     if (parsed.scheme != 'https' or not parsed.netloc or parsed.query or parsed.fragment
@@ -105,8 +124,9 @@ def validate_run_url(url):
     return url
 
 
-def message_blocks(items, run_url):
+def message_blocks(items, run_url, summaries=None, has_attachments=False):
     """Render persisted events without changing their outbox identities."""
+    summaries = summaries or {}
     blocks = [{'type': 'header', 'text': {'type': 'plain_text', 'text': 'Mirror changes published'}}]
     packages = sorted(
         (item['version'] for item in items if item['kind'] == 'packages'),
@@ -155,13 +175,21 @@ def message_blocks(items, run_url):
                     'type': 'mrkdwn',
                     'text': f'*{KINDS[kind]}:* {format_version(kind, item["version"])}',
                 }})
+                if kind == 'images' and item['version'] in summaries:
+                    blocks.append({'type': 'section', 'text': {
+                        'type': 'mrkdwn', 'text': summaries[item['version']],
+                    }})
+    if has_attachments:
+        blocks.append({'type': 'context', 'elements': [{
+            'type': 'mrkdwn', 'text': 'Detailed HTML source-change report attached in thread.',
+        }]})
     blocks.append({'type': 'section', 'text': {
         'type': 'mrkdwn', 'text': f'<{run_url}|View full changes → GitHub workflow run>',
     }})
     return blocks
 
 
-def notify(state_path, versions, run_url, send, pause_between_sends=None):
+def notify(state_path, versions, run_url, send, pause_between_sends=None, report_dir=None):
     validate_run_url(run_url)
     state = load_report(state_path) or {'schema_version': 1, 'seen': {}, 'pending': []}
     if state.get('schema_version') != 1:
@@ -207,8 +235,14 @@ def notify(state_path, versions, run_url, send, pause_between_sends=None):
                         lines.append(f'…and {len(values) - 5} more; see the workflow report.')
                 else:
                     lines.append(f'{label}: ' + ', '.join(values))
+        attachments, summaries = image_change_artifacts(items, report_dir)
+        for item in items:
+            if item['kind'] == 'images' and item['version'] in summaries:
+                lines.extend(['', summaries[item['version']]])
         lines.append(f'<{original_run}|GitHub workflow run>')
-        send('\n'.join(lines), blocks=message_blocks(items, original_run))
+        send('\n'.join(lines), blocks=message_blocks(
+            items, original_run, summaries, has_attachments=bool(attachments)),
+             attachments=attachments)
         for item in items:
             identity = item['run_url'] + '\n' + item['version'] if item['kind'] == 'packages' else item['version']
             if item['kind'] != 'sysroots':
@@ -223,24 +257,33 @@ def main():
     parser.add_argument('--image-report', type=Path, required=True)
     parser.add_argument('--state', type=Path, required=True)
     parser.add_argument('--sysroot-report', type=Path)
+    parser.add_argument('--image-change-report-dir', type=Path)
     args = parser.parse_args()
     versions = collect(load_report(args.apt_report), load_report(args.image_report),
                        load_report(args.sysroot_report) if args.sysroot_report else None)
-    post = runpy.run_path(str(Path(__file__).with_name('post-debian-mirror-summary.py')))['post_message']
+    sender = runpy.run_path(str(Path(__file__).with_name('post-debian-mirror-summary.py')))
+    post, upload = sender['post_message'], sender['upload_file']
 
-    def send(text, *, blocks):
+    def send(text, *, blocks, attachments):
         token = os.environ.get('SLACK_BOT_TOKEN', '')
         channel = os.environ.get('SLACK_VULCAN_EVENT_CHANNEL_ID', '')
         if not token or not channel:
             raise ValueError('SLACK_BOT_TOKEN and SLACK_VULCAN_EVENT_CHANNEL_ID are required')
-        post(token, channel, text, blocks=blocks)
+        response = post(token, channel, text, blocks=blocks)
+        thread_ts = response.get('ts')
+        if attachments and not isinstance(thread_ts, str):
+            raise RuntimeError('Slack message response has no timestamp for report attachments')
+        for attachment in attachments:
+            upload(token, channel, attachment, thread_ts=thread_ts,
+                   title=f'SDK image source changes — {attachment.stem}')
         print('Posted new mirror versions to Slack.')
 
     run_url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
     # Workflow concurrency serializes writers, and this state lives on the same
     # persistent runner volume as the mirror cache.
     notify(args.state, versions, run_url, send,
-           pause_between_sends=lambda: time.sleep(1))
+           pause_between_sends=lambda: time.sleep(1),
+           report_dir=args.image_change_report_dir)
 
 
 if __name__ == '__main__':

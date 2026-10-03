@@ -152,6 +152,29 @@ jobs:
             --image-report out/daily-platform-images/result.json \
             --report out/daily-platform-images/sysroot-readiness.json
 
+      - name: Generate source change reports for new device images
+        if: ${{ !cancelled() && steps.daily_credentials.outcome == 'success' && (github.event_name == 'schedule' || inputs.publish == true) }}
+        continue-on-error: true
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+          JENKINS_USER: ${{ vars.JENKINS_USER }}
+          JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
+        run: |
+          python3 scripts/generate-image-change-report.py \
+            --image-report out/daily-platform-images/result.json \
+            --output-dir "${DEBIAN_MIRROR_WORK_ROOT}/version-notifications/image-change-reports" \
+            --evidence-dir out/daily-platform-images/change-reports \
+            --cache-root "${DEBIAN_MIRROR_WORK_ROOT}/source-change-cache"
+
+      - name: Upload device image source change reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: device-image-source-changes-${{ github.run_id }}
+          path: out/daily-platform-images/change-reports
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Upload sysroot package readiness report
         if: always()
         uses: actions/upload-artifact@v7
@@ -171,4 +194,5 @@ jobs:
             --apt-report out/debian-mirror-sync/mirror-sync-result.json \
             --image-report out/daily-platform-images/result.json \
             --sysroot-report out/daily-platform-images/sysroot-readiness.json \
+            --image-change-report-dir "${DEBIAN_MIRROR_WORK_ROOT}/version-notifications/image-change-reports" \
             --state "${DEBIAN_MIRROR_WORK_ROOT}/version-notifications/state.json"
