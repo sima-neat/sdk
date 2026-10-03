@@ -13,7 +13,7 @@ APT_MIRROR2_THREADS="${APT_MIRROR2_THREADS:-16}"
 
 PUBLISH=false
 FORCE=false
-MINIMUM_FREE_GIB="${MINIMUM_FREE_GIB:-100}"
+MINIMUM_FREE_GIB="${MINIMUM_FREE_GIB:-25}"
 WORK_ROOT="${DEBIAN_MIRROR_WORK_ROOT:-/var/lib/sima-neat/debian-mirror}"
 AWS_REGION="${AWS_REGION:-us-west-2}"
 BUCKET="${VULCAN_DEBIAN_MIRROR_BUCKET:-}"
@@ -29,7 +29,7 @@ Options:
   --publish            Upload a validated mirror to the production S3 bucket.
   --force              Sync even when the published InRelease digest is unchanged.
   --work-root PATH     Persistent mirror workspace.
-  --minimum-free-gib N Required free space before mirroring (default: 100).
+  --minimum-free-gib N Required free space before mirroring (default: 25).
   --help               Show this help.
 EOF
 }
