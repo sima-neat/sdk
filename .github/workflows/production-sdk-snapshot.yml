@@ -1,0 +1,439 @@
+name: Build production SDK snapshot
+
+run-name: Snapshot ${{ inputs.snapshot_label }} from SDK ${{ inputs.sdk_branch }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      sdk_branch:
+        description: SDK branch whose latest published commit image should be snapshotted (for example main or develop).
+        required: true
+        default: develop
+        type: string
+      snapshot_label:
+        description: Version and channel label without the sdk- prefix (for example 2.1.3-develop or 2.1.3-official).
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+  packages: read
+
+concurrency:
+  group: production-sdk-snapshot-${{ inputs.snapshot_label }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  AWS_REGION: us-west-2
+  VULCAN_REPOSITORY: sima-neat/vulcan
+  VULCAN_BASE_BRANCH: develop
+  # Reviewed Vulcan commit containing scripts/build-sdk-cache-snapshot.sh.
+  # Keep execution pinned; the separate PR checkout below still tracks develop.
+  VULCAN_BUILDER_REF: d987eb2d4615d26b62c2094124827338747ff1a9
+
+jobs:
+  snapshot-and-propose:
+    name: Build snapshot and open Vulcan PR
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 180
+
+    steps:
+      - name: Check out SDK workflow tools
+        uses: actions/checkout@v5
+
+      - name: Validate workflow helpers
+        run: python3 tests/sdk/test_update_vulcan_sdk_snapshot.py
+
+      - name: Resolve SDK source and immutable image
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SDK_BRANCH: ${{ inputs.sdk_branch }}
+          SNAPSHOT_LABEL: ${{ inputs.snapshot_label }}
+        run: |
+          set -euo pipefail
+
+          git check-ref-format --branch "${SDK_BRANCH}" >/dev/null
+          if [[ ! "${SNAPSHOT_LABEL}" =~ ^([0-9]+[.][0-9]+[.][0-9]+)-(develop|official)$ ]]; then
+            echo "snapshot_label must look like 2.1.3-develop or 2.1.3-official" >&2
+            exit 1
+          fi
+
+          platform_version="${BASH_REMATCH[1]}"
+          sdk_channel="${BASH_REMATCH[2]}"
+          cache_label="sdk-${SNAPSHOT_LABEL}"
+          encoded_branch="$(jq -rn --arg value "${SDK_BRANCH}" '$value | @uri')"
+          source_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${encoded_branch}" --jq .sha)"
+
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          if [[ "${SDK_BRANCH}" == "main" ]]; then
+            image_repository="ghcr.io/${owner}/sdk"
+          else
+            image_branch="$(echo "${SDK_BRANCH}" | tr '[:upper:]' '[:lower:]')"
+            image_branch="$(echo "${image_branch}" | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
+            if [[ -z "${image_branch}" ]]; then
+              echo "sdk_branch does not produce a valid SDK image repository suffix" >&2
+              exit 1
+            fi
+            image_repository="ghcr.io/${owner}/sdk-${image_branch}"
+          fi
+          image_ref="${image_repository}:${source_sha}"
+
+          {
+            echo "source_sha=${source_sha}"
+            echo "image_ref=${image_ref}"
+            echo "platform_version=${platform_version}"
+            echo "sdk_channel=${sdk_channel}"
+            echo "cache_label=${cache_label}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ vars.GHCR_READ_USERNAME || github.actor }}
+          password: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+
+      - name: Resolve source image digest
+        id: image
+        env:
+          IMAGE_REF: ${{ steps.source.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+          digest="$(docker buildx imagetools inspect "${IMAGE_REF}" --format '{{.Manifest.Digest}}')"
+          if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Unable to resolve an immutable digest for ${IMAGE_REF}: ${digest:-<empty>}" >&2
+            exit 1
+          fi
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+          image_repository="${IMAGE_REF%:*}"
+          pinned_image_ref="${image_repository}@${digest}"
+          {
+            echo "pinned_image_ref=${pinned_image_ref}"
+            echo "pinned_sdk_ref=ghcr:${pinned_image_ref#ghcr.io/}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Resolved and pinned ${pinned_image_ref}"
+
+      - name: Mint read-only Vulcan token
+        id: vulcan-read-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.VULCAN_AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.VULCAN_AUTOMATION_APP_PRIVATE_KEY }}
+          owner: sima-neat
+          repositories: vulcan
+          permission-contents: read
+
+      - name: Check out reviewed Vulcan builder
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.VULCAN_REPOSITORY }}
+          ref: ${{ env.VULCAN_BUILDER_REF }}
+          token: ${{ steps.vulcan-read-token.outputs.token }}
+          persist-credentials: false
+          path: vulcan-tools
+
+      - name: Verify Vulcan builder pin
+        run: |
+          set -euo pipefail
+          actual_ref="$(git -C vulcan-tools rev-parse HEAD)"
+          if [[ "${actual_ref}" != "${VULCAN_BUILDER_REF}" ]]; then
+            echo "Expected Vulcan builder ${VULCAN_BUILDER_REF}, checked out ${actual_ref}" >&2
+            exit 1
+          fi
+
+      - name: Configure production AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.VULCAN_SNAPSHOT_BUILDER_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: sdk-snapshot-${{ github.run_id }}
+          role-duration-seconds: 10800
+
+      - name: Build production SDK cache snapshot
+        id: snapshot
+        timeout-minutes: 150
+        working-directory: vulcan-tools
+        env:
+          AWS_PROFILE: default
+          ENVIRONMENT: production
+          GHCR_USERNAME: ${{ vars.GHCR_READ_USERNAME || github.actor }}
+          GHCR_TOKEN: ${{ secrets.GHCR_READ_TOKEN || github.token }}
+          SDK_IMAGE: ${{ steps.image.outputs.pinned_image_ref }}
+          SDK_REF: ${{ steps.image.outputs.pinned_sdk_ref }}
+          SDK_PLATFORM_VERSION: ${{ steps.source.outputs.platform_version }}
+          SDK_CHANNEL: ${{ steps.source.outputs.sdk_channel }}
+          SDK_CACHE_LABEL: ${{ steps.source.outputs.cache_label }}
+          EXPECTED_IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          STATE_FILE: ${{ runner.temp }}/vulcan-sdk-cache-state.env
+        run: |
+          set -uo pipefail
+          set +e
+          scripts/build-sdk-cache-snapshot.sh build | tee "${RUNNER_TEMP}/sdk-snapshot-build.log"
+          build_status="${PIPESTATUS[0]}"
+          set -e
+
+          snapshot_id="$(sed -n \
+            -e 's/^sdk cache snapshot completed: //p' \
+            -e 's/^Snapshot creation started: //p' \
+            "${RUNNER_TEMP}/sdk-snapshot-build.log" | tail -1)"
+          builder_digest="$(sed -n 's/^VULCAN_SDK_IMAGE_DIGEST=//p' "${RUNNER_TEMP}/sdk-snapshot-build.log" | tail -1)"
+          if [[ ! "${snapshot_id}" =~ ^snap-[0-9a-f]+$ ]]; then
+            snapshot_id=""
+          fi
+          {
+            echo "snapshot_id=${snapshot_id}"
+            echo "builder_digest=${builder_digest}"
+          } >> "${GITHUB_OUTPUT}"
+
+          if [[ "${build_status}" -ne 0 ]]; then
+            echo "Vulcan snapshot builder failed with status ${build_status}." >&2
+            exit "${build_status}"
+          fi
+          if [[ -z "${snapshot_id}" ]]; then
+            echo "The Vulcan builder did not report a valid snapshot id." >&2
+            exit 1
+          fi
+          if [[ "${builder_digest}" != "${EXPECTED_IMAGE_DIGEST}" ]]; then
+            echo "Builder pulled ${builder_digest:-<missing>}; expected ${EXPECTED_IMAGE_DIGEST}." >&2
+            exit 1
+          fi
+
+      - name: Tag snapshot for review traceability
+        env:
+          SNAPSHOT_ID: ${{ steps.snapshot.outputs.snapshot_id }}
+          SDK_BRANCH: ${{ inputs.sdk_branch }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          aws ec2 create-tags \
+            --region "${AWS_REGION}" \
+            --resources "${SNAPSHOT_ID}" \
+            --tags \
+              Key=ReviewStatus,Value=pending-vulcan-pr \
+              Key=SdkSourceBranch,Value="${SDK_BRANCH}" \
+              Key=SdkSourceCommit,Value="${SOURCE_SHA}" \
+              Key=GitHubWorkflowRun,Value="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Mint Vulcan PR token
+        id: vulcan-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.VULCAN_AUTOMATION_APP_ID }}
+          private-key: ${{ secrets.VULCAN_AUTOMATION_APP_PRIVATE_KEY }}
+          owner: sima-neat
+          repositories: vulcan
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Check out Vulcan develop for the proposal
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.VULCAN_REPOSITORY }}
+          ref: ${{ env.VULCAN_BASE_BRANCH }}
+          token: ${{ steps.vulcan-token.outputs.token }}
+          fetch-depth: 0
+          path: vulcan
+
+      - name: Set up Terraform formatter
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.3
+
+      - name: Update Vulcan production snapshot mapping
+        id: update
+        env:
+          CACHE_LABEL: ${{ steps.source.outputs.cache_label }}
+          SNAPSHOT_ID: ${{ steps.snapshot.outputs.snapshot_id }}
+        run: |
+          set -euo pipefail
+          result="$(python3 tools/update_vulcan_sdk_snapshot.py \
+            --file vulcan/envs/production/variables.tf \
+            --label "${CACHE_LABEL}" \
+            --snapshot-id "${SNAPSHOT_ID}")"
+          echo "${result}" | jq .
+          echo "previous_snapshot_id=$(jq -r '.previous_snapshot_id // ""' <<<"${result}")" >> "${GITHUB_OUTPUT}"
+          if [[ "$(jq -r .changed <<<"${result}")" != "true" ]]; then
+            echo "Vulcan already maps ${CACHE_LABEL} to ${SNAPSHOT_ID}; no PR is needed." >&2
+            exit 1
+          fi
+          terraform fmt vulcan/envs/production/variables.tf
+          git -C vulcan diff --check
+
+      - name: Push Vulcan update and open pull request
+        id: pull-request
+        env:
+          GH_TOKEN: ${{ steps.vulcan-token.outputs.token }}
+          CACHE_LABEL: ${{ steps.source.outputs.cache_label }}
+          IMAGE_REF: ${{ steps.image.outputs.pinned_image_ref }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          PREVIOUS_SNAPSHOT_ID: ${{ steps.update.outputs.previous_snapshot_id }}
+          SNAPSHOT_ID: ${{ steps.snapshot.outputs.snapshot_id }}
+          SDK_BRANCH: ${{ inputs.sdk_branch }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          update_branch="automation/${CACHE_LABEL}-${GITHUB_RUN_ID}"
+          echo "branch=${update_branch}" >> "${GITHUB_OUTPUT}"
+          git -C vulcan config user.name "sima-neat-vulcan-automation[bot]"
+          git -C vulcan config user.email "sima-neat-vulcan-automation[bot]@users.noreply.github.com"
+          git -C vulcan switch -c "${update_branch}"
+          git -C vulcan add envs/production/variables.tf
+          git -C vulcan commit -m "Update ${CACHE_LABEL} SDK snapshot"
+          git -C vulcan push origin "${update_branch}"
+
+          previous_snapshot="${PREVIOUS_SNAPSHOT_ID:-none (new label)}"
+          pr_body="$(mktemp)"
+          cat >"${pr_body}" <<EOF
+          ## Production SDK snapshot
+
+          - SDK source branch: \`${SDK_BRANCH}\`
+          - SDK source commit: \`${SOURCE_SHA}\`
+          - Source image: \`${IMAGE_REF}\`
+          - Source image digest: \`${IMAGE_DIGEST}\`
+          - SDK cache label: \`${CACHE_LABEL}\`
+          - New snapshot: \`${SNAPSHOT_ID}\`
+          - Previous snapshot: \`${previous_snapshot}\`
+          - Build workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          ## Manual rollout
+
+          1. Review the snapshot metadata and Terraform validation checks.
+          2. Merge this PR into \`${VULCAN_BASE_BRANCH}\` when approved.
+          3. Apply the Vulcan production Terraform stack through the approved production path.
+          4. After rollout validation and the retention window, delete the previous snapshot if it is no longer referenced.
+
+          The workflow intentionally does not apply Terraform or delete the previous snapshot before manual approval.
+          EOF
+
+          pr_url="$(gh pr create \
+            --repo "${VULCAN_REPOSITORY}" \
+            --base "${VULCAN_BASE_BRANCH}" \
+            --head "${update_branch}" \
+            --title "Update ${CACHE_LABEL} SDK snapshot" \
+            --body-file "${pr_body}")"
+          echo "url=${pr_url}" >> "${GITHUB_OUTPUT}"
+
+      - name: Clean up failed snapshot proposal
+        id: failure-cleanup
+        if: ${{ always() && (failure() || cancelled()) && steps.pull-request.outputs.url == '' }}
+        env:
+          AWS_PROFILE: default
+          ENVIRONMENT: production
+          GH_TOKEN: ${{ steps.vulcan-token.outputs.token }}
+          SNAPSHOT_ID: ${{ steps.snapshot.outputs.snapshot_id }}
+          STATE_FILE: ${{ runner.temp }}/vulcan-sdk-cache-state.env
+          UPDATE_BRANCH: automation/${{ steps.source.outputs.cache_label }}-${{ github.run_id }}
+        run: |
+          set -uo pipefail
+
+          builder_cleanup="not required"
+          if [[ -f "${STATE_FILE}" ]]; then
+            if (cd vulcan-tools && scripts/build-sdk-cache-snapshot.sh cleanup); then
+              builder_cleanup="temporary builder resources deleted"
+            else
+              builder_cleanup="temporary builder resource cleanup failed"
+            fi
+          fi
+
+          snapshot_id="${SNAPSHOT_ID:-}"
+          if [[ -z "${snapshot_id}" && -f "${RUNNER_TEMP}/sdk-snapshot-build.log" ]]; then
+            snapshot_id="$(sed -n \
+              -e 's/^sdk cache snapshot completed: //p' \
+              -e 's/^Snapshot creation started: //p' \
+              "${RUNNER_TEMP}/sdk-snapshot-build.log" | tail -1)"
+          fi
+          if [[ ! "${snapshot_id}" =~ ^snap-[0-9a-f]+$ ]]; then
+            echo "No snapshot was created; cleanup is not required."
+            echo "result=no snapshot was created; ${builder_cleanup}" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          SNAPSHOT_ID="${snapshot_id}"
+
+          if [[ -n "${GH_TOKEN:-}" && -n "${UPDATE_BRANCH:-}" ]]; then
+            pr_query="$(mktemp)"
+            if ! gh pr list \
+              --repo "${VULCAN_REPOSITORY}" \
+              --head "${UPDATE_BRANCH}" \
+              --state open \
+              --json url \
+              >"${pr_query}"; then
+              echo "Could not determine whether ${UPDATE_BRANCH} has an open PR; retaining ${SNAPSHOT_ID}." >&2
+              echo "result=retained because Vulcan PR status could not be verified; ${builder_cleanup}" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+            existing_pr="$(jq -r '.[0].url // ""' "${pr_query}")"
+            if [[ -n "${existing_pr}" ]]; then
+              echo "An open Vulcan PR exists at ${existing_pr}; retaining ${SNAPSHOT_ID}."
+              echo "result=retained for ${existing_pr}; ${builder_cleanup}" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+          fi
+
+          cleanup_result="deleted"
+          if ! aws ec2 delete-snapshot --region "${AWS_REGION}" --snapshot-id "${SNAPSHOT_ID}"; then
+            cleanup_result="tagged failed; automatic deletion was not accepted"
+            delete_after="$(date -u -d '+7 days' +%Y-%m-%dT%H:%M:%SZ)"
+            aws ec2 create-tags \
+              --region "${AWS_REGION}" \
+              --resources "${SNAPSHOT_ID}" \
+              --tags \
+                Key=ReviewStatus,Value=failed-workflow \
+                Key=DeleteAfter,Value="${delete_after}" \
+                Key=GitHubWorkflowRun,Value="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+              || cleanup_result="failed to delete or tag"
+          fi
+
+          branch_result="not pushed"
+          if [[ -n "${GH_TOKEN:-}" && -n "${UPDATE_BRANCH:-}" ]]; then
+            encoded_branch="$(jq -rn --arg value "heads/${UPDATE_BRANCH}" '$value | @uri')"
+            if gh api --method DELETE "repos/${VULCAN_REPOSITORY}/git/refs/${encoded_branch}" >/dev/null 2>&1; then
+              branch_result="deleted ${UPDATE_BRANCH}"
+            else
+              branch_result="not found or could not delete ${UPDATE_BRANCH}"
+            fi
+          fi
+
+          echo "Snapshot cleanup: ${cleanup_result}; branch cleanup: ${branch_result}; builder cleanup: ${builder_cleanup}."
+          echo "result=${cleanup_result}; ${branch_result}; ${builder_cleanup}" >> "${GITHUB_OUTPUT}"
+
+      - name: Write workflow summary
+        if: always()
+        env:
+          CACHE_LABEL: ${{ steps.source.outputs.cache_label }}
+          CLEANUP_RESULT: ${{ steps.failure-cleanup.outputs.result }}
+          IMAGE_REF: ${{ steps.image.outputs.pinned_image_ref }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          PREVIOUS_SNAPSHOT_ID: ${{ steps.update.outputs.previous_snapshot_id }}
+          PR_URL: ${{ steps.pull-request.outputs.url }}
+          SNAPSHOT_ID: ${{ steps.snapshot.outputs.snapshot_id }}
+        run: |
+          {
+            echo "## Production SDK snapshot"
+            echo
+            echo "| Field | Result |"
+            echo "| --- | --- |"
+            echo "| Source image | \`${IMAGE_REF:-not resolved}\` |"
+            echo "| Image digest | \`${IMAGE_DIGEST:-not resolved}\` |"
+            echo "| Cache label | \`${CACHE_LABEL:-not resolved}\` |"
+            echo "| New snapshot | \`${SNAPSHOT_ID:-not created}\` |"
+            echo "| Previous snapshot | \`${PREVIOUS_SNAPSHOT_ID:-none or not resolved}\` |"
+            echo "| Vulcan PR | ${PR_URL:-not created} |"
+            echo "| Terraform apply | Deferred for manual approval |"
+            echo "| Old snapshot cleanup | Deferred until rollout validation and retention expiry |"
+            echo "| Failed-run cleanup | ${CLEANUP_RESULT:-not required} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload snapshot build log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-sdk-snapshot-${{ github.run_id }}
+          path: ${{ runner.temp }}/sdk-snapshot-build.log
+          if-no-files-found: ignore
+          retention-days: 14

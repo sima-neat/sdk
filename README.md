@@ -162,6 +162,7 @@ dk /workspace/app-binary-or-dot-py-file
 
 - [Official Neat SDK installation guide](https://docs.sima-neat.com/getting-started/installation/neat-elxr-sdk)
 - [Build the SDK image locally](docs/building-sdk-image.md)
+- [Build and propose a production SDK snapshot](docs/production-sdk-snapshots.md)
 - [Manage Neat Insight in the SDK container](docs/neat-insight.md)
 - [Use the DevKit NFS workspace](docs/devkit-workspace.md)
 - [Build kernel, U-Boot, and device-tree artifacts](docs/building-software.md)
