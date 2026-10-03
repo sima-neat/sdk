@@ -57,6 +57,9 @@ def test_workflow_generates_reports_fail_open_and_passes_them_to_slack():
     assert "--replay-build" in generate["run"]
     assert "https://bitbucket.org/site/ssh" in generate["run"]
     assert "StrictHostKeyChecking=yes" in generate["run"]
+    assert generate["env"]["JENKINS_USER"] == (
+        "${{ vars.JENKINS_USERNAME || vars.JENKINS_USER }}"
+    )
     assert "--image-change-report-dir" in notify["run"]
     assert "--replay-image-build" in notify["run"]
     triggers = workflow.get("on", workflow.get(True))

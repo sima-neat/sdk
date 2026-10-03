@@ -377,8 +377,9 @@ or Codex failures do not suppress the base mirror notification.
 
 The runner needs a Bitbucket-authorized SSH identity; the workflow loads
 Bitbucket Cloud's published host keys into an isolated known-hosts file. Jenkins
-build-number provenance additionally requires the `JENKINS_USER` variable and
-`JENKINS_API_TOKEN` secret to be available to the production environment.
+build-number provenance additionally requires the `JENKINS_USERNAME` variable
+(or the legacy `JENKINS_USER` variable) and `JENKINS_API_TOKEN` secret to be
+available to the production environment.
 
 For an already-published image, manually dispatch `Sync pre-release Debian
 mirror` with `replay_image_build` set to its complete build name, for example
