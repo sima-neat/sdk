@@ -136,7 +136,7 @@
       "package_regex": "^simaai-base-files-(?:modalix|davinci)$",
       "repository": "swsoc-elxr",
       "source_path": "configs/packages/simaai-base-files",
-      "version_provenance": "synthetic_package_commit"
+      "version_provenance": "parent_repository_snapshot"
     },
     {
       "package_regex": "^simaai-common$",
@@ -146,7 +146,7 @@
       "package_regex": "^simaai-discovery$",
       "repository": "swsoc-elxr",
       "source_path": "configs/packages/simaai-discovery",
-      "version_provenance": "synthetic_package_commit"
+      "version_provenance": "parent_repository_snapshot"
     },
     {
       "package_regex": "^simaai-gst-plugins(?:-.+)?$",
@@ -180,14 +180,14 @@
       "package_regex": "^simaai-palette-(?:modalix|davinci)$",
       "repository": "swsoc-elxr",
       "source_path": "configs/packages/simaai-palette",
-      "version_provenance": "synthetic_package_commit"
+      "version_provenance": "parent_repository_snapshot"
     },
     {
       "package_regex": "^simaai-palette-upgrade$",
       "repository": "swsoc-elxr-config",
       "source_path": "boards/arm64/simaai/packages/simaai-palette-upgrade",
       "source_ref": "master",
-      "version_provenance": "synthetic_package_commit"
+      "version_provenance": "parent_repository_snapshot"
     },
     {
       "package_regex": "^simaai-parser(?:-dbgsym)?$",
