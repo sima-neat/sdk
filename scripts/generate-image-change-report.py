@@ -25,7 +25,9 @@ from typing import Any
 BUCKET = "sima-neat-artifacts-production"
 PREFIX = "daily-platform-images/"
 BUILD_RE = re.compile(r"3[.]0[.]0_daily_[A-Za-z0-9_-]+_B([0-9]+)\Z")
-GIT_VERSION_RE = re.compile(r"(?:~|[.+-])git[.]([0-9a-fA-F]{7,40})(?:\b|\Z)")
+GIT_VERSION_RE = re.compile(
+    r"(?:~|[.+-])git(?:[0-9]{12})?[.]([0-9a-fA-F]{7,40})(?:\b|\Z)"
+)
 JIRA_RE = re.compile(r"\b[A-Z][A-Z0-9]+-[0-9]+\b")
 JIRA_PROJECT_KEYS = {"SOCSW", "SWMLA"}
 JIRA_BASE_URL = "https://sima-ai.atlassian.net/browse/"

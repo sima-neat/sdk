@@ -80,6 +80,11 @@ def test_latest_manifest_shape_parses_add_update_and_variant_switch():
     assert changes[2].after_package == "troot-modalix-secure"
 
 
+def test_git_hash_accepts_legacy_and_timestamped_versions():
+    assert report.git_hash("2.2.0~git.bdf0902") == "bdf0902"
+    assert report.git_hash("3.0.0~git202609120138.aBcDeF0-1371") == "abcdef0"
+
+
 def test_every_package_rule_has_a_unique_mapping_for_known_manifest_packages():
     data = source_map()
     sources = expanded_sources(data)
