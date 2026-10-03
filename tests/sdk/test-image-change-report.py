@@ -117,6 +117,59 @@ def test_package_index_recovers_parent_snapshot_times(tmp_path):
     ) == "2026-10-03T01:21:59Z"
 
 
+def test_new_repository_cache_fetches_remote_tracking_refs(monkeypatch, tmp_path):
+    commands = []
+    monkeypatch.setattr(report, "_FETCHED_REPOSITORIES", set())
+    monkeypatch.setattr(
+        report.subprocess,
+        "run",
+        lambda command, **_kwargs: (
+            commands.append(command) or types.SimpleNamespace(returncode=0, stdout="", stderr="")
+        ),
+    )
+    monkeypatch.setattr(
+        report,
+        "run_git",
+        lambda repository, *arguments, **_kwargs: commands.append((repository, *arguments)) or "",
+    )
+    source = {"repository": "swsoc-elxr"}
+    services = {"bitbucket": {
+        "web_base_url": "https://bitbucket.org",
+        "ssh_base_url": "ssh://git@bitbucket.org",
+        "default_workspace": "sima-ai",
+    }}
+
+    repository = report.ensure_repository(tmp_path, source, services)
+
+    assert commands[0][:4] == ["git", "clone", "--bare", "--filter=blob:none"]
+    assert commands[1] == (
+        repository, "fetch", "--prune", "--no-tags", "origin",
+        "+refs/heads/*:refs/remotes/origin/*",
+    )
+
+
+def test_snapshot_uses_refreshed_remote_first_parent(monkeypatch, tmp_path):
+    calls = []
+    commit = "a" * 40
+
+    def resolve(_repository, revision):
+        calls.append(("resolve", revision))
+        return "b" * 40
+
+    def run(_repository, *arguments, **_kwargs):
+        calls.append(("git", *arguments))
+        return commit
+
+    monkeypatch.setattr(report, "resolve_commit", resolve)
+    monkeypatch.setattr(report, "run_git", run)
+
+    assert report.resolve_snapshot(tmp_path, "develop", "2026-10-03T01:21:59Z") == commit
+    assert calls == [
+        ("resolve", "refs/remotes/origin/develop"),
+        ("git", "rev-list", "-1", "--first-parent", "--before=2026-10-03T01:21:59Z", "b" * 40),
+    ]
+
+
 def test_parent_repository_package_uses_scoped_snapshots(monkeypatch, tmp_path):
     source = {
         "package_regex": "^simaai-discovery$",

@@ -265,8 +265,11 @@ def ensure_repository(cache_root: Path, source: dict[str, Any], services: dict[s
         )
         if process.returncode:
             raise RuntimeError(process.stderr.strip() or f"Cannot clone {url}")
-    else:
-        run_git(repository, "fetch", "--prune", "--no-tags", "origin", "+refs/heads/*:refs/remotes/origin/*")
+    # A bare clone creates refs/heads/*, while subsequent refreshes update
+    # refs/remotes/origin/*. Always materialize and refresh the remote-tracking
+    # refs so snapshot resolution never falls back to a stale local branch.
+    run_git(repository, "fetch", "--prune", "--no-tags", "origin",
+            "+refs/heads/*:refs/remotes/origin/*")
     _FETCHED_REPOSITORIES.add(repository)
     return repository
 
@@ -301,10 +304,11 @@ def commit_link(web_url: str | None, commit: str) -> str | None:
 def resolve_snapshot(repository: Path, source_ref: str, timestamp: str | None) -> str | None:
     if not timestamp:
         return None
-    revision = resolve_commit(repository, source_ref)
+    revision = resolve_commit(repository, f"refs/remotes/origin/{source_ref}")
     if not revision:
         return None
-    resolved = run_git(repository, "rev-list", "-1", f"--before={timestamp}", revision).strip()
+    resolved = run_git(repository, "rev-list", "-1", "--first-parent",
+                       f"--before={timestamp}", revision).strip()
     return resolved if re.fullmatch(r"[0-9a-f]{40}", resolved) else None
 
 
