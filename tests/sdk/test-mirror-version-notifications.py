@@ -104,8 +104,8 @@ def test_workflow_uses_org_slack_settings_and_handles_partial_failure():
 
 
 def test_shared_slack_sender_rejects_api_failure(monkeypatch):
-    import runpy
     import io
+    import runpy
     sender = runpy.run_path(str(ROOT / 'scripts/post-debian-mirror-summary.py'))['post_message']
     monkeypatch.setattr('urllib.request.urlopen', lambda *a, **kw: io.BytesIO(b'{"ok": false, "error": "not_in_channel"}'))
     with pytest.raises(RuntimeError, match='not_in_channel'):
@@ -263,6 +263,61 @@ def test_shared_sender_includes_blocks_and_keeps_plain_text_compatible(monkeypat
     assert requests[-1]['text'] == 'fallback'
     sender('test-token', 'C123', 'daily digest')
     assert 'blocks' not in requests[-1]
+
+
+def test_image_report_summary_is_escaped_and_attachment_is_sent(tmp_path):
+    report_dir = tmp_path / 'reports'
+    report_dir.mkdir()
+    version = '3.0.0_daily_develop_B1847'
+    (report_dir / f'{version}.html').write_text('<html>report</html>')
+    (report_dir / f'{version}.slack.txt').write_text('Fixed race; <!channel>& safe')
+    send = Mock()
+    m.notify(tmp_path / 'state.json', {'images': [version]}, RUN, send,
+             report_dir=report_dir)
+    assert send.call_args.kwargs['attachments'] == [report_dir / f'{version}.html']
+    assert '&lt;!channel&gt;&amp; safe' in send.call_args.args[0]
+    assert '<!channel>' not in send.call_args.args[0]
+    assert any('attached in thread' in element.get('text', '')
+               for block in send.call_args.kwargs['blocks']
+               for element in block.get('elements', []))
+
+
+def test_shared_sender_uses_external_upload_sequence(monkeypatch, tmp_path):
+    import io
+    import runpy
+
+    upload = runpy.run_path(str(ROOT / 'scripts/post-debian-mirror-summary.py'))['upload_file']
+    path = tmp_path / 'report.html'
+    path.write_bytes(b'<html>safe</html>')
+    requests = []
+
+    class Response(io.BytesIO):
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.close()
+
+    def respond(request, **kwargs):
+        requests.append(request)
+        if request.full_url.endswith('files.getUploadURLExternal'):
+            return Response(b'{"ok":true,"upload_url":"https://files.slack.com/upload/v1/test","file_id":"F123"}')
+        if request.full_url.startswith('https://files.slack.com/upload/'):
+            assert request.data == b'<html>safe</html>'
+            return Response(b'OK - 17')
+        assert request.full_url.endswith('files.completeUploadExternal')
+        payload = json.loads(request.data)
+        assert payload['files'] == [{'id': 'F123', 'title': 'Detailed changes'}]
+        assert payload['channel_id'] == 'C123'
+        assert payload['thread_ts'] == '123.456'
+        return Response(b'{"ok":true,"files":[{"id":"F123"}]}')
+
+    monkeypatch.setattr('urllib.request.urlopen', respond)
+    result = upload('test-token', 'C123', path, thread_ts='123.456', title='Detailed changes')
+    assert result['ok'] is True
+    assert len(requests) == 3
 
 
 @pytest.mark.parametrize('length', [1999, 2000, 2001, 5000])

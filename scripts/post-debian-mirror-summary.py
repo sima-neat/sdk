@@ -6,13 +6,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from pathlib import Path
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
-
+from pathlib import Path
 
 SLACK_API_URL = "https://slack.com/api/chat.postMessage"
+SLACK_API_ROOT = "https://slack.com/api/"
 
 
 def post_message(token: str, channel: str, text: str, *, blocks: list[dict] | None = None) -> dict[str, object]:
@@ -42,6 +43,58 @@ def post_message(token: str, channel: str, text: str, *, blocks: list[dict] | No
     if not document.get("ok"):
         raise RuntimeError(f"Slack rejected the message: {document.get('error', 'unknown_error')}")
     return document
+
+
+def slack_api(token: str, method: str, payload: dict[str, object]) -> dict[str, object]:
+    request = urllib.request.Request(
+        SLACK_API_ROOT + method,
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json; charset=utf-8",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            document = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"Slack {method} request failed: {error}") from error
+    if not document.get("ok"):
+        raise RuntimeError(f"Slack {method} rejected the request: {document.get('error', 'unknown_error')}")
+    return document
+
+
+def upload_file(token: str, channel: str, path: Path, *, thread_ts: str, title: str) -> dict[str, object]:
+    """Upload a file through Slack's supported external upload sequence."""
+    data = path.read_bytes()
+    upload = slack_api(token, "files.getUploadURLExternal", {
+        "filename": path.name,
+        "length": len(data),
+    })
+    upload_url, file_id = upload.get("upload_url"), upload.get("file_id")
+    if not isinstance(upload_url, str) or not isinstance(file_id, str):
+        raise RuntimeError("Slack files.getUploadURLExternal returned no upload URL or file ID")
+    parsed = urllib.parse.urlparse(upload_url)
+    if parsed.scheme != "https" or parsed.hostname not in {"files.slack.com", "slack-files.com"}:
+        raise RuntimeError("Slack returned an unexpected file upload URL")
+    request = urllib.request.Request(
+        upload_url,
+        data=data,
+        method="POST",
+        headers={"Content-Type": "application/octet-stream"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            if response.status != 200:
+                raise RuntimeError(f"Slack file upload failed with HTTP {response.status}")
+    except (urllib.error.URLError, TimeoutError) as error:
+        raise RuntimeError(f"Slack file upload failed: {error}") from error
+    return slack_api(token, "files.completeUploadExternal", {
+        "files": [{"id": file_id, "title": title}],
+        "channel_id": channel,
+        "thread_ts": thread_ts,
+    })
 
 
 def digest_blocks(text: str) -> list[dict]:
