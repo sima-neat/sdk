@@ -57,6 +57,7 @@ def test_workflow_generates_reports_fail_open_and_passes_them_to_slack():
     assert "--replay-build" in generate["run"]
     assert "https://bitbucket.org/site/ssh" in generate["run"]
     assert "StrictHostKeyChecking=yes" in generate["run"]
+    assert "--package-index" in generate["run"]
     assert generate["env"]["JENKINS_USER"] == (
         "${{ secrets.JENKINS_USERNAME || vars.JENKINS_USERNAME || "
         "secrets.JENKINS_USER || vars.JENKINS_USER }}"
@@ -95,6 +96,135 @@ def test_latest_manifest_shape_parses_add_update_and_variant_switch():
 def test_git_hash_accepts_legacy_and_timestamped_versions():
     assert report.git_hash("2.2.0~git.bdf0902") == "bdf0902"
     assert report.git_hash("3.0.0~git202609120138.aBcDeF0-1371") == "abcdef0"
+
+
+def test_package_index_recovers_parent_snapshot_times(tmp_path):
+    packages = tmp_path / "Packages"
+    packages.write_text(
+        "Package: simaai-discovery\n"
+        "Version: 3.0.0~git202610020121.1758321-1847\n\n"
+        "Package: simaai-discovery\n"
+        "Version: 3.0.0~git202610030121.5ae04ba-1855\n",
+        encoding="utf-8",
+    )
+    index = report.PackageVersionIndex(packages)
+
+    assert report.package_snapshot_time(
+        index, "simaai-discovery", "3.0.0~git.1758321"
+    ) == "2026-10-02T01:21:59Z"
+    assert report.package_snapshot_time(
+        index, "simaai-discovery", "3.0.0~git.5ae04ba"
+    ) == "2026-10-03T01:21:59Z"
+
+
+def test_new_repository_cache_fetches_remote_tracking_refs(monkeypatch, tmp_path):
+    commands = []
+    monkeypatch.setattr(report, "_FETCHED_REPOSITORIES", set())
+    monkeypatch.setattr(
+        report.subprocess,
+        "run",
+        lambda command, **_kwargs: (
+            commands.append(command) or types.SimpleNamespace(returncode=0, stdout="", stderr="")
+        ),
+    )
+    monkeypatch.setattr(
+        report,
+        "run_git",
+        lambda repository, *arguments, **_kwargs: commands.append((repository, *arguments)) or "",
+    )
+    source = {"repository": "swsoc-elxr"}
+    services = {"bitbucket": {
+        "web_base_url": "https://bitbucket.org",
+        "ssh_base_url": "ssh://git@bitbucket.org",
+        "default_workspace": "sima-ai",
+    }}
+
+    repository = report.ensure_repository(tmp_path, source, services)
+
+    assert commands[0][:4] == ["git", "clone", "--bare", "--filter=blob:none"]
+    assert commands[1] == (
+        repository, "fetch", "--prune", "--no-tags", "origin",
+        "+refs/heads/*:refs/remotes/origin/*",
+    )
+
+
+def test_snapshot_uses_refreshed_remote_first_parent(monkeypatch, tmp_path):
+    calls = []
+    commit = "a" * 40
+
+    def resolve(_repository, revision):
+        calls.append(("resolve", revision))
+        return "b" * 40
+
+    def run(_repository, *arguments, **_kwargs):
+        calls.append(("git", *arguments))
+        return commit
+
+    monkeypatch.setattr(report, "resolve_commit", resolve)
+    monkeypatch.setattr(report, "run_git", run)
+
+    assert report.resolve_snapshot(tmp_path, "develop", "2026-10-03T01:21:59Z") == commit
+    assert calls == [
+        ("resolve", "refs/remotes/origin/develop"),
+        ("git", "rev-list", "-1", "--first-parent", "--before=2026-10-03T01:21:59Z", "b" * 40),
+    ]
+
+
+def test_parent_repository_package_uses_scoped_snapshots(monkeypatch, tmp_path):
+    source = {
+        "package_regex": "^simaai-discovery$",
+        "repository": "swsoc-elxr",
+        "source_ref": "develop",
+        "source_path": "configs/packages/simaai-discovery",
+        "version_provenance": "parent_repository_snapshot",
+    }
+    packages = tmp_path / "Packages"
+    packages.write_text(
+        "Package: simaai-discovery\n"
+        "Version: 3.0.0~git202610020121.1758321-1847\n\n"
+        "Package: simaai-discovery\n"
+        "Version: 3.0.0~git202610030121.5ae04ba-1855\n",
+        encoding="utf-8",
+    )
+    snapshots = []
+    comparisons = []
+    monkeypatch.setattr(report, "ensure_repository", lambda *_args: tmp_path)
+
+    def resolve_snapshot(_repository, source_ref, timestamp):
+        snapshots.append((source_ref, timestamp))
+        return "a" * 40
+
+    def compare(_repository, before, after, _web_url, source_path):
+        comparisons.append((before, after, source_path))
+        return {"relationship": "same", "commits": [], "files": [], "truncated": False}
+
+    monkeypatch.setattr(report, "resolve_snapshot", resolve_snapshot)
+    monkeypatch.setattr(report, "git_comparison", compare)
+    section = report.collect_section(
+        report.ManifestChange(
+            "simaai-discovery", "3.0.0~git.1758321",
+            "simaai-discovery", "3.0.0~git.5ae04ba",
+        ),
+        source,
+        tmp_path,
+        object(),
+        "modalix",
+        {"bitbucket": {
+            "web_base_url": "https://bitbucket.org",
+            "ssh_base_url": "ssh://git@bitbucket.org",
+            "default_workspace": "sima-ai",
+        }},
+        report.PackageVersionIndex(packages),
+    )
+
+    assert snapshots == [
+        ("develop", "2026-10-02T01:21:59Z"),
+        ("develop", "2026-10-03T01:21:59Z"),
+    ]
+    assert comparisons == [("a" * 40, "a" * 40, source["source_path"])]
+    assert section["comparison"]["relationship"] == "same"
+    assert section["source_path"] == "configs/packages/simaai-discovery"
+    assert "package build timestamp" in section["resolution_note"]
 
 
 def test_every_package_rule_has_a_unique_mapping_for_known_manifest_packages():
@@ -214,12 +344,97 @@ def test_codex_exec_allows_ephemeral_non_git_report_directory(monkeypatch, tmp_p
         commands.append(command)
         output = Path(command[command.index("--output-last-message") + 1])
         output.write_text(json.dumps({
-            "slack_summary": "Summary",
+            "slack_summary": "• Moderate risk: validate camera workflows.",
+            "release_guidance": {
+                "risk_level": "moderate",
+                "risk_rationale": "Runtime camera behavior changed.",
+                "affected_areas": ["Camera image processing"],
+                "qa_focus": ["Validate color rendering under each illuminant."],
+                "consumer_guidance": ["Camera users should watch for color regressions."],
+            },
             "packages": [{"key": "package-transition", "description": "Description"}],
         }))
         return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(report.subprocess, "run", run)
 
-    assert report.codex_enrich(context, work_dir, 30)["slack_summary"] == "Summary"
+    result = report.codex_enrich(context, work_dir, 30)
+    assert result["release_guidance"]["risk_level"] == "moderate"
     assert "--skip-git-repo-check" in commands[0]
+    prompt = commands[0][-1]
+    assert "specific, observable validation scenarios" in prompt
+    assert "mark the relevant risk as unknown" in prompt
+    assert "Start every bullet with a short bold label" in prompt
+
+
+def test_release_guidance_is_rendered_and_escaped():
+    guidance = {
+        "risk_level": "high",
+        "risk_rationale": "Potential <boot> impact",
+        "affected_areas": ["Secure boot"],
+        "qa_focus": ["Verify signed image boot"],
+        "consumer_guidance": ["Stage rollout & monitor boot failures"],
+    }
+    sections = [{
+        "package": "package",
+        "before_package": "package",
+        "after_package": "package",
+        "before": "1",
+        "after": "2",
+        "before_hash": "a" * 40,
+        "after_hash": "b" * 40,
+        "description": "Changed.",
+        "repository": "sima-ai/swsoc-elxr",
+        "repository_url": "https://bitbucket.org/sima-ai/swsoc-elxr",
+        "source_path": "configs/packages/<package>",
+        "resolution_note": "",
+        "comparison": {"commits": [], "files": [], "truncated": False},
+    }]
+
+    rendered = report.render_html(
+        "build", sections,
+        "• *Overall risk: high.* Check `bootctl` <output>.\n"
+        "• *QA priority:* Verify signed image boot.",
+        guidance,
+    )
+
+    assert "Release guidance" in rendered
+    assert "Risk: high" in rendered
+    assert "Potential &lt;boot&gt; impact" in rendered
+    assert "Stage rollout &amp; monitor boot failures" in rendered
+    assert '<ul class="overview-list">' in rendered
+    assert '<strong class="overview-heading risk-high">Overall risk: high.</strong>' in rendered
+    assert '<strong class="overview-heading">QA priority:</strong>' in rendered
+    assert "<code>bootctl</code> &lt;output&gt;" in rendered
+    assert "*Overall risk" not in rendered
+    assert "configs/packages/&lt;package&gt;" in rendered
+
+
+def test_html_omits_package_with_identical_resolved_commits():
+    commit = "a" * 40
+    section = {
+        "package": "rebuild-only-package",
+        "before_package": "rebuild-only-package",
+        "after_package": "rebuild-only-package",
+        "before": "1.0~git.old",
+        "after": "1.0~git.new",
+        "before_hash": commit,
+        "after_hash": commit,
+        "description": "Package metadata changed.",
+        "repository": "sima-ai/repository",
+        "repository_url": "https://bitbucket.org/sima-ai/repository",
+        "source_path": "configs/packages/rebuild-only-package",
+        "resolution_note": "",
+        "comparison": {"commits": [], "files": [], "truncated": False},
+    }
+    guidance = {
+        "risk_level": "low",
+        "risk_rationale": "No source change.",
+        "affected_areas": [],
+        "qa_focus": [],
+        "consumer_guidance": [],
+    }
+
+    rendered = report.render_html("build", [section], "Summary", guidance)
+
+    assert "rebuild-only-package" not in rendered
