@@ -5,21 +5,26 @@ const path = require("node:path");
 const test = require("node:test");
 
 const {
+  normalizeHttpUrl,
   readInsightLaunchUrl,
-  resolveInsightLaunchUrl,
-  validHttpUrl
+  resolveInsightLaunchUrl
 } = require("../src/insight-launcher");
 
-test("accepts HTTP and HTTPS launch URLs", () => {
-  assert.equal(validHttpUrl("http://127.0.0.1:9900"), true);
-  assert.equal(validHttpUrl("https://192.0.2.10:9900/viewer?src=0,1"), true);
+test("normalizes HTTP and HTTPS launch URLs", () => {
+  assert.equal(normalizeHttpUrl("http://127.0.0.1:9900"), "http://127.0.0.1:9900/");
+  assert.equal(
+    normalizeHttpUrl("https://192.0.2.10:9900/viewer?src=0,1"),
+    "https://192.0.2.10:9900/viewer?src=0,1"
+  );
+  assert.equal(normalizeHttpUrl("https:/localhost:9900"), "https://localhost:9900/");
+  assert.equal(normalizeHttpUrl("https:localhost:9900"), "https://localhost:9900/");
 });
 
 test("rejects unsupported, malformed, and multi-line values", () => {
-  assert.equal(validHttpUrl("file:///tmp/insight"), false);
-  assert.equal(validHttpUrl("javascript:alert(1)"), false);
-  assert.equal(validHttpUrl("not a URL"), false);
-  assert.equal(validHttpUrl("https://example.test\nhttps://other.test"), false);
+  assert.equal(normalizeHttpUrl("file:///tmp/insight"), "");
+  assert.equal(normalizeHttpUrl("javascript:alert(1)"), "");
+  assert.equal(normalizeHttpUrl("not a URL"), "");
+  assert.equal(normalizeHttpUrl("https://example.test\nhttps://other.test"), "");
 });
 
 test("reads and trims a valid host-provided launch URL", async (t) => {

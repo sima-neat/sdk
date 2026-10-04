@@ -2,23 +2,26 @@ const fs = require("fs");
 
 const INSIGHT_LAUNCH_URL_FILE = "/home/docker/.insight-config/launch-url";
 
-function validHttpUrl(value) {
+function normalizeHttpUrl(value) {
   if (!value || /[\r\n]/.test(value)) {
-    return false;
+    return "";
   }
 
   try {
     const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
+    if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.host) {
+      return "";
+    }
+    return url.href;
   } catch {
-    return false;
+    return "";
   }
 }
 
 async function readInsightLaunchUrl(filePath = INSIGHT_LAUNCH_URL_FILE, readFile = fs.promises.readFile) {
   try {
     const value = (await readFile(filePath, "utf8")).trim();
-    return validHttpUrl(value) ? value : "";
+    return normalizeHttpUrl(value);
   } catch {
     return "";
   }
@@ -34,7 +37,7 @@ async function resolveInsightLaunchUrl(resolveDefault, options = {}) {
 
 module.exports = {
   INSIGHT_LAUNCH_URL_FILE,
+  normalizeHttpUrl,
   readInsightLaunchUrl,
-  resolveInsightLaunchUrl,
-  validHttpUrl
+  resolveInsightLaunchUrl
 };
