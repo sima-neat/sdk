@@ -41,6 +41,10 @@ jobs:
           python -m pip install sima-cli
           SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli --version
 
+      - name: Test VS Code extension
+        working-directory: vscode-extension
+        run: npm test
+
       - name: Build extension package
         run: |
           set -euo pipefail
