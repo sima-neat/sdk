@@ -81,6 +81,10 @@ def parse_manifest_changes(text: str) -> list[ManifestChange]:
             after_package, after_version = split_package_version(right)
         elif line.startswith(">"):
             after_package, after_version = split_package_version(line[1:])
+        elif line.endswith("<"):
+            # diff --side-by-side marks rows found only in the left (before)
+            # manifest by placing "<" after the row.
+            before_package, before_version = split_package_version(line[:-1])
         elif line.startswith("<"):
             before_package, before_version = split_package_version(line[1:])
         else:

@@ -80,17 +80,44 @@ def test_defaults_expand_internal_and_external_repositories():
     assert report.source_url(cartographer, data["services"]) == "https://github.com/ros2/cartographer"
 
 
-def test_latest_manifest_shape_parses_add_update_and_variant_switch():
+def test_latest_manifest_shape_parses_add_remove_update_and_variant_switch():
     changes = report.parse_manifest_changes(
         "> atf-modalix 2.2.0~git.bdf0902\n"
+        "atf-modalix 2.2.0~git.bdf0902                         <\n"
         "cvu-sw 2.2.0~git.80485fe | cvu-sw 2.2.0~git.8c62f50\n"
         "troot-modalix 3.0.0~git.13cc855 | troot-modalix-secure 3.0.0~git.13cc855\n"
     )
-    assert len(changes) == 3
+    assert len(changes) == 4
     assert changes[0].before_package is None
-    assert changes[1].before_package == changes[1].after_package == "cvu-sw"
-    assert changes[2].before_package == "troot-modalix"
-    assert changes[2].after_package == "troot-modalix-secure"
+    assert changes[0].after_package == "atf-modalix"
+    assert changes[1].before_package == "atf-modalix"
+    assert changes[1].before_version == "2.2.0~git.bdf0902"
+    assert changes[1].after_package is None
+    assert changes[2].before_package == changes[2].after_package == "cvu-sw"
+    assert changes[3].before_package == "troot-modalix"
+    assert changes[3].after_package == "troot-modalix-secure"
+
+
+def test_removed_package_is_described_in_report(tmp_path):
+    change = report.parse_manifest_changes(
+        "atf-modalix 2.2.0~git.bdf0902                         <\n"
+    )[0]
+    section = report.collect_section(
+        change, None, tmp_path, object(), "modalix", {}
+    )
+    guidance = {
+        "risk_level": "unknown",
+        "risk_rationale": "Package removal requires review.",
+        "affected_areas": [],
+        "qa_focus": [],
+        "consumer_guidance": [],
+    }
+
+    rendered = report.render_html("3.0.0_daily_develop_B1859", [section], "Summary", guidance)
+
+    assert section["description"] == "This package was removed from the image."
+    assert "atf-modalix → not present" in rendered
+    assert "This package was removed from the image." in rendered
 
 
 def test_git_hash_accepts_legacy_and_timestamped_versions():
