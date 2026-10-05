@@ -82,6 +82,7 @@ RUN apt-get update --allow-releaseinfo-change && \
       zlib1g-dev \
       bzip2 \
       bc \
+      binutils \
       rsync \
       kmod \
       cpio \

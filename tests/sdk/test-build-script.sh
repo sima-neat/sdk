@@ -64,7 +64,7 @@ assert_arg NEAT_CORE_SOURCE_REF=1111111111111111111111111111111111111111
 assert_arg NEAT_CORE_SOURCE_REASON=
 grep -Eq '^NEAT_CORE_RESOLUTION_ATTEMPT=(local-[0-9]{14}-[0-9]+|[0-9]+-[0-9]+)$' "${TMP_DIR}/docker-args"
 assert_arg NEAT_APPS_SOURCE_REF=2222222222222222222222222222222222222222
-assert_arg SIMA_CLI_REF=v2.1.16
+assert_arg SIMA_CLI_REF=v2.1.18
 assert_arg SIMA_CLI_VERSION=latest
 assert_arg example/sdk:test
 
@@ -100,6 +100,7 @@ fi
 dockerfile="${ROOT_DIR}/Dockerfile"
 workflow="${ROOT_DIR}/.github/workflows/docker-build.yml"
 readme="${ROOT_DIR}/README.md"
+grep -Fq '      binutils \' "${dockerfile}"
 grep -Eq '^ARG CODEX_CLI_VERSION=[0-9]+[.][0-9]+[.][0-9]+$' "${dockerfile}"
 grep -Fq 'npm install -g "@openai/codex@${CODEX_CLI_VERSION}"' "${dockerfile}"
 grep -Fq 'test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}"' "${dockerfile}"
