@@ -100,6 +100,7 @@ fi
 dockerfile="${ROOT_DIR}/Dockerfile"
 workflow="${ROOT_DIR}/.github/workflows/docker-build.yml"
 readme="${ROOT_DIR}/README.md"
+grep -Fq '      binutils \' "${dockerfile}"
 grep -Eq '^ARG CODEX_CLI_VERSION=[0-9]+[.][0-9]+[.][0-9]+$' "${dockerfile}"
 grep -Fq 'npm install -g "@openai/codex@${CODEX_CLI_VERSION}"' "${dockerfile}"
 grep -Fq 'test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}"' "${dockerfile}"
