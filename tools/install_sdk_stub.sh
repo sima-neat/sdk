@@ -81,9 +81,9 @@ main() {
         echo "DevKit IP address cannot be empty."
       fi
     done
-    "${sima_cli}" sdk setup --devkit "${devkit_ip}"
+    "${sima_cli}" sdk setup --devkit "${devkit_ip}" "$@"
   else
-    "${sima_cli}" sdk setup
+    "${sima_cli}" sdk setup "$@"
   fi
 }
 

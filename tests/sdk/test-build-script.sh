@@ -64,7 +64,7 @@ assert_arg NEAT_CORE_SOURCE_REF=1111111111111111111111111111111111111111
 assert_arg NEAT_CORE_SOURCE_REASON=
 grep -Eq '^NEAT_CORE_RESOLUTION_ATTEMPT=(local-[0-9]{14}-[0-9]+|[0-9]+-[0-9]+)$' "${TMP_DIR}/docker-args"
 assert_arg NEAT_APPS_SOURCE_REF=2222222222222222222222222222222222222222
-assert_arg SIMA_CLI_REF=v2.1.16
+assert_arg SIMA_CLI_REF=v2.1.18
 assert_arg SIMA_CLI_VERSION=latest
 assert_arg example/sdk:test
 
@@ -94,6 +94,36 @@ if (( palette_marker_line >= sima_cli_install_line )); then
 fi
 if (( release_marker_line <= resource_install_line )); then
   echo "The volatile SDK release marker must remain after dependency/resource layers." >&2
+  exit 1
+fi
+
+dockerfile="${ROOT_DIR}/Dockerfile"
+workflow="${ROOT_DIR}/.github/workflows/docker-build.yml"
+readme="${ROOT_DIR}/README.md"
+grep -Fq '      binutils \' "${dockerfile}"
+grep -Eq '^ARG CODEX_CLI_VERSION=[0-9]+[.][0-9]+[.][0-9]+$' "${dockerfile}"
+grep -Fq 'npm install -g "@openai/codex@${CODEX_CLI_VERSION}"' "${dockerfile}"
+grep -Fq 'test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}"' "${dockerfile}"
+if grep -Fq 'apt-get purge -y npm' "${dockerfile}"; then
+  echo "The SDK must retain npm so sudo codex update can update the global Codex installation." >&2
+  exit 1
+fi
+grep -Fq 'sudo codex update' "${readme}"
+grep -Fq -- '--mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,sharing=locked' "${dockerfile}"
+grep -Fq 'SYSROOT_UPDATE_DOWNLOAD_DIR=/var/cache/sima-sdk-debs' "${dockerfile}"
+grep -Fq 'path: .buildkit-cache/sima-sdk-debs' "${workflow}"
+grep -Fq "key: sdk-debs-v1-\${{ runner.os }}-\${{ needs.resolve-platform-config.outputs.base_sdk_version }}-\${{ hashFiles('Dockerfile', 'scripts/setup-sdk-sysroot.sh', 'scripts/simaai_setup_sdk.py') }}-\${{ github.run_id }}-\${{ github.run_attempt }}" "${workflow}"
+grep -Fq "sdk-debs-v1-\${{ runner.os }}-\${{ needs.resolve-platform-config.outputs.base_sdk_version }}-\${{ hashFiles('Dockerfile', 'scripts/setup-sdk-sysroot.sh', 'scripts/simaai_setup_sdk.py') }}-" "${workflow}"
+grep -Fq 'reproducible-containers/buildkit-cache-dance@5de31fc1534ed8789e63d41ea933c5df9944a261' "${workflow}"
+grep -Fq '"target": "/var/cache/sima-sdk-debs"' "${workflow}"
+grep -Fq '"id": "sima-sdk-debs-v1"' "${workflow}"
+grep -Fq 'skip-extraction: false' "${workflow}"
+if grep -Fq 'skip-extraction: ${{ steps.sdk-deb-cache.outputs.cache-hit }}' "${workflow}"; then
+  echo "An exact cache hit must not suppress persistence of repaired packages." >&2
+  exit 1
+fi
+if grep -Fq 'shutil.rmtree(dldir' "${ROOT_DIR}/scripts/simaai_setup_sdk.py"; then
+  echo "The persistent package cache must not be deleted before each SDK build." >&2
   exit 1
 fi
 

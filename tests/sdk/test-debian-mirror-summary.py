@@ -110,6 +110,55 @@ def test_version_ordering() -> None:
     assert collector.sorted_versions(values) == ["2.1.3~pre9", "2.1.3~pre10", "2.1.3~rc1", "2.1.3", "1:1.0"]
 
 
+def test_agate_platform_summary_and_rendering() -> None:
+    previous = "3.0.0~git202609090513.9e68a68-9"
+    current = "3.0.0~git202609090513.9e68a68-10"
+    # Exercise Debian revision ordering, not lexicographic string ordering.
+    assert collector.sorted_versions([current, previous]) == [previous, current]
+    for architecture in ("arm64", "all"):
+        for before, after in ((previous, current), (None, current), (previous, None), (current, previous)):
+            changes = {"added": [], "removed": [], "version_changes": []}
+            if before and after:
+                changes["version_changes"] = [{
+                    "package": "simaai-palette-modalix",
+                    "architecture": architecture,
+                    "previous_versions": [before],
+                    "current_versions": [after],
+                }]
+            elif before:
+                changes["removed"] = [package("simaai-palette-modalix", before, architecture)]
+            else:
+                changes["added"] = [package("simaai-palette-modalix", after, architecture)]
+            publication = result("a" * 64, "2026-09-09T06:45:35Z", after or "", changes)
+            publication["platform"]["versions"] = [after] if after else []
+            if before == previous and after == current:
+                publication["platform"]["versions"] = [current, previous, "invalid-version"]
+            publication["_run"] = {"id": 1, "html_url": "https://github.com/sima-neat/sdk/actions/runs/1"}
+            context = collector.build_context(
+                [publication],
+                collector.parse_utc("2026-09-09T00:00:00Z"),
+                collector.parse_utc("2026-09-10T00:00:00Z"),
+            )
+            summary = context["platform"]
+            assert summary["previous_version"] == before, (architecture, before, after, summary)
+            assert summary["current_version"] == after
+            assert summary["changed"] is True
+            report = generator.fallback_report(context, 2000)
+            if before and after:
+                assert f"Platform: `{before}` → `{after}`" in report
+            elif before:
+                assert f"Platform: `{before}` → removed" in report
+            else:
+                assert f"Platform: added `{after}`" in report
+
+
+def test_platform_version_validation() -> None:
+    for value in ("2.1.3~pre4766", "3.0.0~git202609090513.9e68a68-1218"):
+        assert collector.PLATFORM_VERSION_RE.fullmatch(value)
+    for value in ("3.0.0~git", "3.0.0~git202609090513.9e68a68", "3.0.0~git202609090513.bad!-1218", "3.0.0~prex"):
+        assert not collector.PLATFORM_VERSION_RE.fullmatch(value)
+
+
 def test_collection_and_fallback() -> None:
     with tempfile.TemporaryDirectory() as directory:
         build_fixture(Path(directory))
@@ -127,7 +176,11 @@ def test_collection_and_fallback() -> None:
         assert foo["architectures"] == ["amd64", "arm64"]
         report = generator.fallback_report(context, 1000)
         assert "2.1.3~pre4593" in report and "2.1.3~pre4617" in report
-        assert "`foo`" in report and len(report) <= 1000
+        assert "`foo`" not in report and "Notable changes" not in report and len(report) <= 1000
+        assert report.startswith("🗞️ *Pre-release mirror summary")
+        blocks = poster.digest_blocks(report.strip())
+        assert blocks[0] == blocks[-1] == {"type": "divider"}
+        assert "\n\n".join(block["text"]["text"] for block in blocks[1:-1]) == report.strip()
         empty_report = generator.fallback_report(collector.build_context([], since, as_of), 1000)
         assert "No mirror publications were found" in empty_report
 
@@ -525,11 +578,41 @@ def test_github_run_query_is_time_bounded() -> None:
     assert calls == [
         [
             "--paginate",
-            "--slurp",
             "repos/sima-neat/sdk/actions/workflows/sync.yml/runs?"
             "status=completed&created=%3E%3D2026-08-09T02%3A10%3A00Z&per_page=100",
         ]
     ]
+
+
+def test_github_pagination_supports_legacy_cli() -> None:
+    source = collector.GithubSource("sima-neat/sdk", "sync.yml")
+    original_run = collector.subprocess.run
+
+    def fake_run(arguments, **kwargs):
+        assert "--paginate" in arguments
+        assert "--slurp" not in arguments
+        return collector.subprocess.CompletedProcess(
+            arguments, 0,
+            ' {"workflow_runs": [{"id": 1}]}\n\n'
+            '{"workflow_runs": [{"id": 2}]}  \n', "",
+        )
+
+    try:
+        collector.subprocess.run = fake_run
+        assert source.list_runs(collector.parse_utc("2026-08-09T02:10:00Z")) == [
+            {"id": 1}, {"id": 2},
+        ]
+        collector.subprocess.run = lambda *a, **kw: collector.subprocess.CompletedProcess(
+            a[0], 0, '{"workflow_runs": []}\ninvalid', "",
+        )
+        try:
+            source.list_runs(collector.parse_utc("2026-08-09T02:10:00Z"))
+        except json.JSONDecodeError:
+            pass
+        else:
+            raise AssertionError("malformed pagination output was silently accepted")
+    finally:
+        collector.subprocess.run = original_run
 
 
 class FakeResponse:
@@ -576,6 +659,8 @@ def test_slack_validation_and_dry_run() -> None:
 
 def main() -> int:
     test_version_ordering()
+    test_agate_platform_summary_and_rendering()
+    test_platform_version_validation()
     test_collection_and_fallback()
     test_platform_summary_preserves_earliest_baseline()
     test_collection_preserves_digest_rollback()
@@ -589,6 +674,7 @@ def main() -> int:
     test_failed_run_after_publication_is_included()
     test_expired_replay_is_rejected()
     test_github_run_query_is_time_bounded()
+    test_github_pagination_supports_legacy_cli()
     test_slack_validation_and_dry_run()
     print("Debian mirror summary tests passed")
     return 0

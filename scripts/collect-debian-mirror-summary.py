@@ -21,7 +21,9 @@ ARTIFACT_PREFIX = "debian-pre-release-mirror-result-"
 RESULT_FILENAME = "mirror-sync-result.json"
 ANCHOR_PACKAGE = "simaai-palette-modalix"
 ANCHOR_ARCHITECTURE = "arm64"
-PLATFORM_VERSION_RE = re.compile(r"^[0-9]+(?:[.][0-9]+){2}~pre[0-9]+$")
+PLATFORM_VERSION_RE = re.compile(
+    r"^[0-9]+(?:[.][0-9]+){2}~(?:pre[0-9]+|git[0-9]{12}[.][0-9a-f]+-[0-9]+)$"
+)
 DISCOVERY_MARGIN = dt.timedelta(hours=13)
 ARTIFACT_RETENTION = dt.timedelta(hours=72)
 
@@ -125,7 +127,18 @@ class GithubSource:
         )
         if process.returncode:
             raise CollectionError(process.stderr.strip() or "gh api failed")
-        return json.loads(process.stdout)
+        if "--paginate" not in arguments:
+            return json.loads(process.stdout)
+        # Older runner installations support --paginate but not --slurp.
+        # gh emits one complete JSON document per page; parse that stream here.
+        decoder = json.JSONDecoder()
+        remaining = process.stdout.lstrip()
+        pages = []
+        while remaining:
+            page, end = decoder.raw_decode(remaining)
+            pages.append(page)
+            remaining = remaining[end:].lstrip()
+        return pages
 
     def _json(self, endpoint: str) -> dict[str, Any]:
         document = self._run_json([endpoint])
@@ -145,7 +158,7 @@ class GithubSource:
             f"repos/{self.repository}/actions/workflows/{self.workflow}/runs"
             f"?{query}"
         )
-        pages = self._run_json(["--paginate", "--slurp", endpoint])
+        pages = self._run_json(["--paginate", endpoint])
         if not isinstance(pages, list):
             raise CollectionError("GitHub returned invalid workflow-run pagination data")
         return [run for page in pages for run in page.get("workflow_runs", [])]
@@ -344,7 +357,7 @@ def platform_summary(publications: list[dict[str, Any]]) -> dict[str, Any]:
     baseline_found = False
     for index, publication in enumerate(publications):
         for item in publication.get("changes", {}).get("version_changes", []):
-            if item.get("package") == ANCHOR_PACKAGE and item.get("architecture") == ANCHOR_ARCHITECTURE:
+            if item.get("package") == ANCHOR_PACKAGE and item.get("architecture") in (ANCHOR_ARCHITECTURE, "all"):
                 previous = sorted_versions([str(value) for value in item.get("previous_versions", []) if PLATFORM_VERSION_RE.fullmatch(str(value))])
                 if previous:
                     previous_version = previous[-1]
@@ -356,7 +369,7 @@ def platform_summary(publications: list[dict[str, Any]]) -> dict[str, Any]:
                     str(item.get("version"))
                     for item in publication.get("changes", {}).get("removed", [])
                     if item.get("package") == ANCHOR_PACKAGE
-                    and item.get("architecture") == ANCHOR_ARCHITECTURE
+                    and item.get("architecture") in (ANCHOR_ARCHITECTURE, "all")
                     and PLATFORM_VERSION_RE.fullmatch(str(item.get("version")))
                 ]
             )
@@ -365,7 +378,7 @@ def platform_summary(publications: list[dict[str, Any]]) -> dict[str, Any]:
                 baseline_found = True
             elif any(
                 item.get("package") == ANCHOR_PACKAGE
-                and item.get("architecture") == ANCHOR_ARCHITECTURE
+                and item.get("architecture") in (ANCHOR_ARCHITECTURE, "all")
                 for item in publication.get("changes", {}).get("added", [])
             ):
                 # The first publication introduced the anchor, so its state at

@@ -18,6 +18,9 @@
     "Other",
     "Themes"
   ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
   "main": "./src/extension.js",
   "activationEvents": [
     "onStartupFinished",
