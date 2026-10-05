@@ -1,15 +1,15 @@
 {
   "core": {
-    "ref": "v0.4.0"
+    "ref": "v0.5.0"
   },
   "apps": {
-    "ref": "main:latest"
+    "ref": "v0.5.1"
   },
   "sima-cli": {
-    "ref": "v2.1.16"
+    "ref": "v2.1.18"
   },
   "insight": {
-    "ref": "v0.0.7"
+    "ref": "v0.0.8"
   },
   "platform-version": "2.1.3"
 }

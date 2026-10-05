@@ -40,6 +40,19 @@ write_fake_sima_cli "${override_cli}" "${log_path}"
 printf 'y\n10.0.0.244\n' | HOME="${home_dir}" PATH="/usr/bin:/bin" SIMA_CLI="${override_cli}" "${INSTALLER}" >/dev/null
 grep -Fxq "sdk setup --devkit 10.0.0.244" "${log_path}" || fail "installer did not honor SIMA_CLI override"
 
+for pairing in no yes; do
+  : > "${log_path}"
+  if [[ "${pairing}" == yes ]]; then
+    answers='y\n10.0.0.244\n'
+    expected='sdk setup --devkit 10.0.0.244 --edgematic-studio'
+  else
+    answers='n\n'
+    expected='sdk setup --edgematic-studio'
+  fi
+  printf '%b' "${answers}" | HOME="${home_dir}" PATH="/usr/bin:/bin" SIMA_CLI="${override_cli}" "${INSTALLER}" --edgematic-studio >/dev/null
+  grep -Fxq "${expected}" "${log_path}" || fail "Studio setup flag was lost with pairing=${pairing}"
+done
+
 if printf 'n\n' | HOME="${home_dir}" PATH="/usr/bin:/bin" SIMA_CLI="${tmpdir}/missing/sima-cli" "${INSTALLER}" >/dev/null 2>"${tmpdir}/stderr"; then
   fail "installer should fail when SIMA_CLI points to a missing executable"
 fi

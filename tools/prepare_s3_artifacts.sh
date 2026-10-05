@@ -12,6 +12,7 @@ Usage: tools/prepare_s3_artifacts.sh \
 Builds the Vulcan/sima-cli install stub package for the Neat SDK.
 The SDK image itself remains a GHCR container resource; this script only
 prepares metadata and the installer hook used by `sima-cli neat install`.
+Also writes metadata-edgematic-studio.json for setup with Edgematic Studio enabled.
 USAGE
 }
 
@@ -101,7 +102,7 @@ SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli packages build "${artifacts_dir}" \
   --name "${PACKAGE_NAME}" \
   --version "${PACKAGE_VERSION}" \
   --description "SiMa.ai Neat SDK install stub" \
-  --install-script "${INSTALL_SCRIPT_NAME}" \
+  --install-script "bash ./${INSTALL_SCRIPT_NAME}" \
   --host-platform "ubuntu@22.04,ubuntu@24.04" \
   --host-platform "windows" \
   --host-platform "mac"
@@ -131,13 +132,20 @@ metadata["installation"]["post-message"] = (
     "Run [cyan]sima-cli sdk neat[/cyan] to open the Neat SDK container.\n"
 )
 metadata_path.write_text(json.dumps(metadata, indent=4) + "\n", encoding="utf-8")
+
+metadata["description"] = "SiMa.ai Neat SDK with Edgematic Studio install stub"
+metadata["installation"]["script"] += " --edgematic-studio"
+metadata_path.with_name("metadata-edgematic-studio.json").write_text(
+    json.dumps(metadata, indent=4) + "\n", encoding="utf-8"
+)
 PY
 
 python3 -m json.tool "${artifacts_dir}/metadata.json" >/dev/null
 
 rm -rf "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}"
-cp -f "${artifacts_dir}/${INSTALL_SCRIPT_NAME}" "${artifacts_dir}/metadata.json" "${OUTPUT_DIR}/"
+cp -f "${artifacts_dir}/${INSTALL_SCRIPT_NAME}" "${artifacts_dir}/metadata.json" \
+  "${artifacts_dir}/metadata-edgematic-studio.json" "${OUTPUT_DIR}/"
 
 echo "Prepared SDK install stub package:"
 ls -lh "${OUTPUT_DIR}"

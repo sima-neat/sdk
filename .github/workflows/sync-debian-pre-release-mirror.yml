@@ -1,4 +1,5 @@
 name: Sync pre-release Debian mirror
+# Platform 3.0: internal deb/daily, suite agate, ARM64.
 
 on:
   schedule:
@@ -19,12 +20,17 @@ on:
       minimum_free_gib:
         description: Minimum persistent disk space required before synchronization
         required: true
-        default: "100"
+        default: "25"
         type: string
       download_workers:
         description: Maximum concurrent apt-mirror2 downloads
         required: true
         default: "16"
+        type: string
+      replay_image_build:
+        description: Regenerate and resend one already-published daily image report
+        required: false
+        default: ""
         type: string
 
 permissions:
@@ -37,7 +43,7 @@ concurrency:
 
 jobs:
   sync:
-    name: Validate and optionally publish production mirror
+    name: Validate and optionally publish Agate 3.0 mirror
     environment: production
     runs-on: [self-hosted, Linux, X64, apt-mirror]
     timeout-minutes: 720
@@ -45,6 +51,7 @@ jobs:
       AWS_REGION: ${{ vars.VULCAN_DEBIAN_MIRROR_AWS_REGION || 'us-west-2' }}
       DEBIAN_MIRROR_WORK_ROOT: ${{ vars.DEBIAN_MIRROR_WORK_ROOT || '/var/lib/sima-neat/debian-mirror' }}
       VULCAN_DEBIAN_MIRROR_BUCKET: ${{ vars.VULCAN_DEBIAN_MIRROR_BUCKET || 'sima-neat-debian-production' }}
+      REPLAY_IMAGE_BUILD: ${{ inputs.replay_image_build || '' }}
       VULCAN_DEBIAN_MIRROR_CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.VULCAN_DEBIAN_MIRROR_CLOUDFRONT_DISTRIBUTION_ID || 'E64NIJ10VID5O' }}
       VULCAN_DEBIAN_MIRROR_KMS_KEY_ID: ${{ vars.VULCAN_DEBIAN_MIRROR_KMS_KEY_ID || 'arn:aws:kms:us-west-2:069171140053:key/4bf76f64-6ff3-4447-8572-b4f92163d497' }}
       VULCAN_DEBIAN_MIRROR_PUBLISHER_ROLE_ARN: ${{ vars.VULCAN_DEBIAN_MIRROR_PUBLISHER_ROLE_ARN || 'arn:aws:iam::069171140053:role/NeatProductionDebianMirrorPublisher' }}
@@ -54,18 +61,25 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Install mirror dependencies
+        id: mirror_dependencies
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             awscli \
+            ca-certificates \
             curl \
-            apt-mirror2 \
+            dpkg \
+            gnupg \
             jq \
+            openssl \
             python3 \
+            python3-boto3 \
             util-linux
+          scripts/install-apt-mirror2.sh
 
       - name: Prepare persistent mirror workspace
+        id: mirror_workspace
         run: |
           set -euo pipefail
           sudo install -d \
@@ -75,17 +89,30 @@ jobs:
             "${DEBIAN_MIRROR_WORK_ROOT}"
 
       - name: Configure production AWS credentials
+        id: mirror_credentials
+        if: ${{ inputs.replay_image_build == '' }}
         uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.VULCAN_DEBIAN_MIRROR_PUBLISHER_ROLE_ARN }}
           role-session-name: sdk-debian-mirror-${{ github.run_id }}
 
+      - name: Synchronize SWUpdate verification certificate
+        if: ${{ !cancelled() && steps.mirror_credentials.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          arguments=()
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ inputs.publish }}" == "true" ]]; then
+            arguments+=(--publish)
+          fi
+          python3 scripts/sync-swupdate-certificate.py "${arguments[@]}"
+
       - name: Synchronize and validate mirror
+        if: ${{ !cancelled() && steps.mirror_credentials.outcome == 'success' }}
         env:
           APT_MIRROR2_THREADS: ${{ inputs.download_workers || '16' }}
           DEBIAN_MIRROR_REPORT_DIR: ${{ github.workspace }}/out/debian-mirror-sync
-          MINIMUM_FREE_GIB: ${{ inputs.minimum_free_gib || '100' }}
+          MINIMUM_FREE_GIB: ${{ inputs.minimum_free_gib || '25' }}
         run: |
           set -euo pipefail
           arguments=(--minimum-free-gib "${MINIMUM_FREE_GIB}")
@@ -105,3 +132,102 @@ jobs:
           path: out/debian-mirror-sync/mirror-sync-result.json
           if-no-files-found: ignore
           retention-days: 3
+
+      - name: Refresh production AWS credentials for daily platform images
+        id: daily_credentials
+        if: ${{ !cancelled() && steps.mirror_dependencies.outcome == 'success' && steps.mirror_workspace.outcome == 'success' }}
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.VULCAN_DEBIAN_MIRROR_PUBLISHER_ROLE_ARN }}
+          role-session-name: sdk-daily-images-${{ github.run_id }}
+
+      - name: Mirror daily platform images and retain the latest 7 builds
+        if: ${{ !cancelled() && steps.daily_credentials.outcome == 'success' && inputs.replay_image_build == '' }}
+        run: |
+          set -euo pipefail
+          arguments=(--work-root "${DEBIAN_MIRROR_WORK_ROOT}" --report "out/daily-platform-images/result.json")
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ inputs.publish }}" == "true" ]]; then
+            arguments+=(--publish)
+          fi
+          python3 scripts/sync-daily-platform-images.py "${arguments[@]}"
+
+      - name: Check matching internal and external sysroot packages
+        if: ${{ !cancelled() && steps.daily_credentials.outcome == 'success' && inputs.replay_image_build == '' && (github.event_name == 'schedule' || inputs.publish == true) }}
+        run: |
+          python3 scripts/check-firmware-sysroots.py \
+            --image-report out/daily-platform-images/result.json \
+            --report out/daily-platform-images/sysroot-readiness.json
+
+      - name: Generate source change reports for new device images
+        if: ${{ !cancelled() && steps.daily_credentials.outcome == 'success' && (inputs.replay_image_build != '' || github.event_name == 'schedule' || inputs.publish == true) }}
+        continue-on-error: true
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+          JENKINS_USER: ${{ secrets.JENKINS_USERNAME || vars.JENKINS_USERNAME || secrets.JENKINS_USER || vars.JENKINS_USER }}
+          JENKINS_API_TOKEN: ${{ secrets.JENKINS_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          bitbucket_known_hosts="${RUNNER_TEMP}/bitbucket-known-hosts"
+          curl --fail --silent --show-error \
+            https://bitbucket.org/site/ssh \
+            --output "${bitbucket_known_hosts}"
+          chmod 0600 "${bitbucket_known_hosts}"
+          export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${bitbucket_known_hosts}"
+          arguments=(
+            --output-dir "${DEBIAN_MIRROR_WORK_ROOT}/version-notifications/image-change-reports"
+            --evidence-dir out/daily-platform-images/change-reports
+            --cache-root "${DEBIAN_MIRROR_WORK_ROOT}/source-change-cache"
+            --package-index "${DEBIAN_MIRROR_WORK_ROOT}/agate/repository/dists/agate/non-free/binary-arm64/Packages.gz"
+          )
+          if [[ -n "${REPLAY_IMAGE_BUILD}" ]]; then
+            arguments+=(--replay-build "${REPLAY_IMAGE_BUILD}")
+          else
+            arguments+=(--image-report out/daily-platform-images/result.json)
+          fi
+          python3 scripts/generate-image-change-report.py "${arguments[@]}"
+
+      - name: Upload device image source change reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: device-image-source-changes-${{ github.run_id }}
+          path: out/daily-platform-images/change-reports
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload sysroot package readiness report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: firmware-sysroot-readiness-${{ github.run_id }}
+          path: out/daily-platform-images/sysroot-readiness.json
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Notify Slack of new APT and device image versions
+        if: ${{ always() && steps.mirror_workspace.outcome == 'success' && (inputs.replay_image_build != '' || github.event_name == 'schedule' || inputs.publish == true) }}
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_VULCAN_EVENT_CHANNEL_ID: ${{ vars.SLACK_VULCAN_EVENT_CHANNEL_ID }}
+        run: |
+          set -euo pipefail
+          report_dir="${DEBIAN_MIRROR_WORK_ROOT}/version-notifications/image-change-reports"
+          if [[ -n "${REPLAY_IMAGE_BUILD}" ]]; then
+            # Require evidence produced by this replay, never a stale persisted report.
+            report_dir="out/daily-platform-images/change-reports"
+          fi
+          arguments=(
+            --image-change-report-dir "${report_dir}"
+            --state "${DEBIAN_MIRROR_WORK_ROOT}/version-notifications/state.json"
+          )
+          if [[ -n "${REPLAY_IMAGE_BUILD}" ]]; then
+            arguments+=(--replay-image-build "${REPLAY_IMAGE_BUILD}")
+          else
+            arguments+=(
+              --apt-report out/debian-mirror-sync/mirror-sync-result.json
+              --image-report out/daily-platform-images/result.json
+              --sysroot-report out/daily-platform-images/sysroot-readiness.json
+            )
+          fi
+          python3 scripts/notify-mirror-versions.py "${arguments[@]}"

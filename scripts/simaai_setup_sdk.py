@@ -23,8 +23,8 @@ import concurrent.futures
 import fnmatch
 import glob
 import hashlib
+import json
 import os
-import shutil
 import subprocess
 import sys
 import threading
@@ -139,6 +139,8 @@ class DownloadProgress:
         self.known = set()
         self.completed = set()
         self.cached = set()
+        self.downloaded_bytes = 0
+        self.cached_bytes = 0
         self.lock = threading.Lock()
         self.stop_event = None
         self.thread = None
@@ -149,27 +151,41 @@ class DownloadProgress:
         with self.lock:
             self.known.update(names)
 
-    def complete(self, name, cached):
+    def complete(self, name, cached, size_bytes=0):
         with self.lock:
             self.completed.add(name)
             if cached:
                 self.cached.add(name)
+                self.cached_bytes += size_bytes
+            else:
+                self.downloaded_bytes += size_bytes
 
     def snapshot(self):
         with self.lock:
             ready = len(self.completed)
             total = len(self.known)
             cached = len(self.cached)
+            downloaded_bytes = self.downloaded_bytes
+            cached_bytes = self.cached_bytes
         elapsed = int(time.monotonic() - self.started_at)
-        return ready, total, cached, elapsed
+        return ready, total, cached, downloaded_bytes, cached_bytes, elapsed
+
+    @staticmethod
+    def format_bytes(size_bytes):
+        value = float(size_bytes)
+        for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+            if value < 1024 or unit == "TiB":
+                return f"{value:.1f} {unit}"
+            value /= 1024
 
     def message(self, frame=0):
-        ready, total, cached, elapsed = self.snapshot()
+        ready, total, cached, downloaded_bytes, cached_bytes, elapsed = self.snapshot()
         downloaded = ready - cached
         spinner = self.SPINNER[frame % len(self.SPINNER)]
         return (
             f"{spinner} Packages ready: {ready}/{total} "
-            f"(downloaded {downloaded}, cached {cached}) [{elapsed}s]"
+            f"(downloaded {downloaded}/{self.format_bytes(downloaded_bytes)}, "
+            f"cached {cached}/{self.format_bytes(cached_bytes)}) [{elapsed}s]"
         )
 
     def render_loop(self):
@@ -203,10 +219,11 @@ class DownloadProgress:
         self.thread = None
 
     def finish(self):
-        ready, total, cached, elapsed = self.snapshot()
+        ready, total, cached, downloaded_bytes, cached_bytes, elapsed = self.snapshot()
         print(
             f"Package transfer complete: {ready}/{total} ready "
-            f"({ready - cached} downloaded, {cached} cached) in {elapsed}s.",
+            f"({ready - cached} downloaded/{self.format_bytes(downloaded_bytes)}, "
+            f"{cached} cached/{self.format_bytes(cached_bytes)}) in {elapsed}s.",
             flush=True,
         )
 
@@ -336,6 +353,30 @@ def package_control_fields(deb_path, *wanted_fields):
             f"Missing control fields {', '.join(missing)} in {deb_path}"
         )
     return tuple(values[field] for field in wanted_fields)
+
+
+def download_cache_metadata_path(deb_path):
+    return f"{deb_path}.cache.json"
+
+
+def read_download_cache_metadata(deb_path):
+    try:
+        with open(
+            download_cache_metadata_path(deb_path), "rt", encoding="utf-8"
+        ) as rf:
+            metadata = json.load(rf)
+    except (OSError, json.JSONDecodeError):
+        return None
+    return metadata if isinstance(metadata, dict) else None
+
+
+def write_download_cache_metadata(deb_path, metadata):
+    metadata_path = download_cache_metadata_path(deb_path)
+    temporary = f"{metadata_path}.partial"
+    with open(temporary, "wt", encoding="utf-8") as wf:
+        json.dump(metadata, wf, sort_keys=True)
+        wf.write("\n")
+    os.replace(temporary, metadata_path)
 
 
 def package_payload_locations(deb_path):
@@ -588,12 +629,22 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
 
     def downloaded_package_matches(
         dlname,
+        expected_uri,
         expected_package,
         expected_architecture,
         expected_version,
         expected_sha256,
     ):
         if not os.path.isfile(dlname):
+            return False
+        expected_metadata = {
+            "architecture": expected_architecture,
+            "package": expected_package,
+            "sha256": expected_sha256,
+            "uri": expected_uri,
+            "version": expected_version,
+        }
+        if read_download_cache_metadata(dlname) != expected_metadata:
             return False
         try:
             pkg = package_field(dlname, "Package")
@@ -621,6 +672,7 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
 
         cached = downloaded_package_matches(
             dlname,
+            uri,
             expected_package,
             expected_architecture,
             expected_version,
@@ -662,10 +714,20 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
             )
         if expected_version and ver != expected_version:
             raise RuntimeError(f"Unexpected {pkg} version {ver}; expected {expected_version}")
+        write_download_cache_metadata(
+            dlname,
+            {
+                "architecture": expected_architecture,
+                "package": expected_package,
+                "sha256": expected_sha256,
+                "uri": uri,
+                "version": expected_version,
+            },
+        )
         record_expected_version(pkg, architecture, expected_version)
         with selected_downloads_lock:
             selected_downloads.add(os.path.abspath(dlname))
-        return cached
+        return cached, os.path.getsize(dlname)
 
     def download_candidates(candidates):
         """Download candidate tuples concurrently, then surface every failure."""
@@ -691,7 +753,8 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
                 }
                 for future in concurrent.futures.as_completed(futures):
                     name = futures[future]
-                    download_progress.complete(name, future.result())
+                    cached, size_bytes = future.result()
+                    download_progress.complete(name, cached, size_bytes)
         finally:
             download_progress.end_batch()
 
@@ -845,8 +908,6 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
     graph["linux-libc-dev:arm64"] = libc_ver
 
     shadow.clear()
-    if not PLATFORM_BUILD_REVISION:
-        shutil.rmtree(dldir, ignore_errors=True)
     os.makedirs(dldir, exist_ok=True)
     with open(expected_versions_manifest, "wt", encoding="utf-8"):
         pass
@@ -880,6 +941,10 @@ def main(pkg_name, version, libc_ver, dldir, installdir):
             filename.endswith(".deb") and path not in selected_downloads
         ):
             os.unlink(path)
+        elif filename.endswith(".deb.cache.json"):
+            deb_path = path.removesuffix(".cache.json")
+            if deb_path not in selected_downloads:
+                os.unlink(path)
 
     if os.environ.get("SIMAAI_SETUP_DOWNLOAD_ONLY") == "1":
         print("SDK package download and dependency validation completed; skipping extraction.")

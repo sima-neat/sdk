@@ -1,0 +1,279 @@
+{
+  "schema_version": 2,
+  "services": {
+    "bitbucket": {
+      "web_base_url": "https://bitbucket.org",
+      "ssh_base_url": "ssh://git@bitbucket.org",
+      "default_workspace": "sima-ai"
+    },
+    "jenkins": {
+      "base_url": "https://jenkins.eng.sima.ai",
+      "elxr_builder_path": "/job/soc-jobs/job/elxr-builder/"
+    }
+  },
+  "defaults": {
+    "source_ref": "develop",
+    "version_provenance": "git_suffix"
+  },
+  "sources": [
+    {
+      "package_regex": "^a65apps(?:-.+)?$",
+      "repository": "a65-apps"
+    },
+    {
+      "package_regex": "^appcomplex(?:-.+)?$",
+      "repository": "appcomplex"
+    },
+    {
+      "package_regex": "^atf-(?:modalix|davinci)$",
+      "repository": "soc-simaai-atf"
+    },
+    {
+      "package_regex": "^cvu-sw(?:-dev)?$",
+      "repository": "cvu-sw"
+    },
+    {
+      "package_regex": "^cartographer(?:-.+)?$",
+      "repository_url": "https://github.com/ros2/cartographer",
+      "source_ref": "ros2"
+    },
+    {
+      "package_regex": "^desktop-base$",
+      "version_provenance": "prebuilt_internal_artifact"
+    },
+    {
+      "package_regex": "^evtransforms$",
+      "repository": "ev-transforms"
+    },
+    {
+      "package_regex": "^(?:g2o|libg2o.+)$",
+      "repository_url": "https://salsa.debian.org/science-team/g2o",
+      "source_ref": "debian/0_20230806-5",
+      "version_provenance": "pinned_git"
+    },
+    {
+      "package_regex": "^inferencetools$",
+      "repository": "devkit-inference-tools"
+    },
+    {
+      "package_regex": "^libisp3a-state(?:1|1-dbgsym|-dev)$",
+      "repository": "swsoc-isp3a-state"
+    },
+    {
+      "package_regex": "^libisp3a(?:1|1-dbgsym|-dev)$",
+      "repository": "swsoc-isp3a"
+    },
+    {
+      "package_regex": "^linux-(?:modalix|davinci)$|^linux-(?:headers|image)-[^/]+-(?:modalix|davinci)$|^linux-libc-dev$",
+      "repository": "simaai-linux",
+      "version_provenance": "jenkins_build_number"
+    },
+    {
+      "package_regex": "^(?:libcamera(?:-dbgsym|-dev|-tools|-tools-dbgsym)?|python3-libcamera)$",
+      "repository": "swsoc-libcamera"
+    },
+    {
+      "package_regex": "^libsynopsys$",
+      "repository": "swsoc-3rdparty-libs",
+      "source_ref": "master"
+    },
+    {
+      "package_regex": "^libmongoose(?:-.+)?$",
+      "repository_url": "https://github.com/cesanta/mongoose",
+      "source_ref": "master"
+    },
+    {
+      "package_regex": "^llamacpp(?:-.+)?$",
+      "repository_url": "https://github.com/ggml-org/llama.cpp",
+      "source_ref": "master"
+    },
+    {
+      "package_regex": "^lttng-modules-(?:modalix|davinci)$",
+      "repository_url": "https://git.lttng.org/lttng-modules.git",
+      "source_ref": "stable-2.14"
+    },
+    {
+      "package_regex": "^m4-mla-(?:modalix|davinci)$",
+      "repository": "m4_mla"
+    },
+    {
+      "package_regex": "^mpktools$",
+      "repository": "vdp-mpktool"
+    },
+    {
+      "package_regex": "^oot-dtbo-(?:modalix|davinci)$",
+      "repository": "meta-simaai",
+      "version_provenance": "legacy_package"
+    },
+    {
+      "package_regex": "^optee-os-(?:modalix|davinci)$",
+      "repository": "simaai-tee"
+    },
+    {
+      "package_regex": "^ros2$",
+      "repository_url": "https://github.com/ros2/ros2",
+      "source_ref": "e68ca8053c36a87966876c286f6af40ac56cf459",
+      "version_provenance": "pinned_multi_repository_manifest"
+    },
+    {
+      "package_regex": "^python3-(?:blobfile|ml-dtypes|sentencepiece|tiktoken)$",
+      "version_provenance": "source_archive_from_config"
+    },
+    {
+      "package_regex": "^python3-numpy-allocator(?:-dbgsym)?$",
+      "repository_url": "https://github.com/inaccel/numpy-allocator",
+      "source_ref": "master"
+    },
+    {
+      "package_regex": "^rtabmap-ros(?:-.+)?$",
+      "version_provenance": "source_archive_from_config"
+    },
+    {
+      "package_regex": "^(?:simaai-a65-plat-tests(?:-dbgsym)?|simaai-sdk-tools)$",
+      "repository": "simaai-a65-platform-tests"
+    },
+    {
+      "package_regex": "^simaai-base-files-(?:modalix|davinci)$",
+      "repository": "swsoc-elxr",
+      "source_path": "configs/packages/simaai-base-files",
+      "version_provenance": "parent_repository_snapshot"
+    },
+    {
+      "package_regex": "^simaai-common$",
+      "repository": "simaai-common"
+    },
+    {
+      "package_regex": "^simaai-discovery$",
+      "repository": "swsoc-elxr",
+      "source_path": "configs/packages/simaai-discovery",
+      "version_provenance": "parent_repository_snapshot"
+    },
+    {
+      "package_regex": "^simaai-gst-plugins(?:-.+)?$",
+      "repository": "gst-simaai-plugins-base"
+    },
+    {
+      "package_regex": "^simaai-hpi-(?:modalix|davinci)(?:-dbgsym)?$",
+      "repository": "swsoc-hpidrv"
+    },
+    {
+      "package_regex": "^simaai-log(?:-dev|-dbgsym)?$",
+      "repository": "simaai-log"
+    },
+    {
+      "package_regex": "^simaai-logd(?:-dbgsym)?$",
+      "repository": "simaai-log"
+    },
+    {
+      "package_regex": "^simaai-(?:ltrd|rctd)$",
+      "repository": "simaai-trace"
+    },
+    {
+      "package_regex": "^simaai-memory-lib(?:-.+)?$",
+      "repository": "simaai-memory-lib"
+    },
+    {
+      "package_regex": "^simaai-mlart-(?:modalix|davinci)(?:-.+)?$",
+      "repository": "mla_rt"
+    },
+    {
+      "package_regex": "^simaai-palette-(?:modalix|davinci)$",
+      "repository": "swsoc-elxr",
+      "source_path": "configs/packages/simaai-palette",
+      "version_provenance": "parent_repository_snapshot"
+    },
+    {
+      "package_regex": "^simaai-palette-upgrade$",
+      "repository": "swsoc-elxr-config",
+      "source_path": "boards/arm64/simaai/packages/simaai-palette-upgrade",
+      "source_ref": "master",
+      "version_provenance": "parent_repository_snapshot"
+    },
+    {
+      "package_regex": "^simaai-parser(?:-dbgsym)?$",
+      "repository": "simaai-parser"
+    },
+    {
+      "package_regex": "^simaai-pcie-ep(?:-.+)?$",
+      "repository": "pcie"
+    },
+    {
+      "package_regex": "^simaai-pcie-drv-(?:modalix|davinci)$",
+      "repository": "pcie",
+      "version_provenance": "legacy_package"
+    },
+    {
+      "package_regex": "^simaai-rtabmap(?:-.+)?$",
+      "repository": "vdp-robotics-rtab-map"
+    },
+    {
+      "package_regex": "^simaai-heap(?:-dev|-dbgsym)?$",
+      "repository": "simaai-soc-pipeline"
+    },
+    {
+      "package_regex": "^simaai-socpipeline(?:-dbgsym|-dev|-doc)?$",
+      "repository": "simaai-soc-pipeline"
+    },
+    {
+      "package_regex": "^simaai-trace(?:-dev|-dbgsym)?$",
+      "repository": "simaai-trace"
+    },
+    {
+      "package_regex": "^simaai-traced(?:-dbgsym)?$",
+      "repository": "simaai-trace"
+    },
+    {
+      "package_regex": "^(?:simaai-utils|python3-simaai-utils)$",
+      "repository": "sima-utils"
+    },
+    {
+      "package_regex": "^smifb-(?:modalix|davinci)$",
+      "repository_url": "https://github.com/teddywlq/smifb4.0",
+      "source_ref": "3a2a5616157a22895a55a1c4cf0474a431e6fa58",
+      "version_provenance": "pinned_git_with_elxr_overlay"
+    },
+    {
+      "package_regex": "^smifb3-(?:modalix|davinci)$",
+      "repository": "meta-simaai",
+      "version_provenance": "legacy_package"
+    },
+    {
+      "package_regex": "^swsoc-video-codec-(?:modalix|davinci)(?:-.+)?$",
+      "repository": "swsoc-video-codec"
+    },
+    {
+      "package_regex": "^troot-(?:davinci|modalix(?:-secure)?)$",
+      "repository": "dvboot"
+    },
+    {
+      "package_regex": "^(?:tvm(?:-dbgsym|-dev)?|python3-tvm)$",
+      "repository": "tvm"
+    },
+    {
+      "package_regex": "^v4l-utils(?:-.+)?$",
+      "repository_url": "https://git.linuxtv.org/v4l-utils.git",
+      "source_ref": "stable-1.30"
+    },
+    {
+      "package_regex": "^vdp-llm-libs(?:-dbgsym)?$",
+      "repository": "vdp-llm-libs"
+    },
+    {
+      "package_regex": "^vdp-navigation(?:-.+)?$",
+      "repository": "vdp-simaai-ros2"
+    },
+    {
+      "package_regex": "^vdpcli(?:-dbgsym)?$",
+      "repository": "vdp-cli"
+    },
+    {
+      "package_regex": "^vdpspy(?:-dbgsym)?$",
+      "repository": "vdp-spy",
+      "source_ref": "fix_deb13_build_errors"
+    },
+    {
+      "package_regex": "^u-boot-(?:davinci|modalix(?:-secure)?)$",
+      "repository": "sima-ai-uboot"
+    }
+  ]
+}
