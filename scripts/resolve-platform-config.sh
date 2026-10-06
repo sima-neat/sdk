@@ -56,8 +56,13 @@ is_protected_ref() {
 }
 
 if [[ -z "${pre_release_base}" ]]; then
-  emit release "" "${stable_base_sdk_version}"
-  exit 0
+  if is_protected_ref; then
+    emit release "" "${stable_base_sdk_version}"
+    exit 0
+  fi
+  # Development refs follow the manifest's platform line without duplicating
+  # that version in workflow configuration. Protected refs remain stable above.
+  pre_release_base="${stable_base_sdk_version}"
 fi
 
 case "${pre_release_base}" in

@@ -77,17 +77,26 @@ chmod 755 "${tmpdir}/dpkg"
 run_resolver() {
   PRE_RELEASE_PACKAGES_FILE="${PRE_RELEASE_PACKAGES_FILE-${tmpdir}/Packages}" \
     DPKG_COMMAND="${tmpdir}/dpkg" \
-    STABLE_BASE_SDK_VERSION=3.0.0 \
+    STABLE_BASE_SDK_VERSION="${STABLE_BASE_SDK_VERSION-3.0.0}" \
     "${RESOLVER}"
 }
 
-stable="$(PRE_RELEASE_BASE= GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop run_resolver)"
-grep -Fxq 'sdk_apt_channel=release' <<< "${stable}" || fail "stable channel was not selected"
-grep -Fxq 'base_sdk_version=3.0.0' <<< "${stable}" || fail "stable version was incorrect"
+for protected_ref in main release-3.0; do
+  stable="$(PRE_RELEASE_BASE='' GITHUB_REF_TYPE=branch GITHUB_REF_NAME="${protected_ref}" run_resolver)"
+  grep -Fxq 'sdk_apt_channel=release' <<< "${stable}" || fail "${protected_ref} did not select the stable channel"
+  grep -Fxq 'requested_pre_release_base=' <<< "${stable}" || fail "${protected_ref} unexpectedly selected a floating version"
+  grep -Fxq 'base_sdk_version=3.0.0' <<< "${stable}" || fail "${protected_ref} stable version was incorrect"
+done
 
-floating="$(PRE_RELEASE_BASE=3.0.0 GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop run_resolver)"
+floating="$(STABLE_BASE_SDK_VERSION='' PRE_RELEASE_BASE='' GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop run_resolver)"
 grep -Fxq 'sdk_apt_channel=daily' <<< "${floating}" || fail "pre-release channel was not selected"
+grep -Fxq 'requested_pre_release_base=3.0.0' <<< "${floating}" || fail "manifest platform version was not selected"
 grep -Fxq 'base_sdk_version=3.0.0~git202609090314.abcdef0-4460' <<< "${floating}" || fail "floating selector did not choose the newest Debian version"
+
+tag_stable="$(PRE_RELEASE_BASE='' GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v3.0.0 run_resolver)"
+grep -Fxq 'sdk_apt_channel=release' <<< "${tag_stable}" || fail "tag did not select the stable channel"
+grep -Fxq 'requested_pre_release_base=' <<< "${tag_stable}" || fail "tag unexpectedly selected a floating version"
+grep -Fxq 'base_sdk_version=3.0.0' <<< "${tag_stable}" || fail "tag stable version was incorrect"
 
 by_hash_floating="$(
   PRE_RELEASE_BASE=3.0.0 \
@@ -168,8 +177,12 @@ done
 docker_workflow="${ROOT_DIR}/.github/workflows/docker-build.yml"
 grep -Fq 'pre_release_base:' "${docker_workflow}" || \
   fail "manual workflow dispatch does not expose a pre-release selector"
-grep -Fq "inputs.pre_release_base || '3.0.0'" "${docker_workflow}" || \
-  fail "manual selector does not override the 3.0.0 default"
+grep -Fq "PRE_RELEASE_BASE: \${{ inputs.pre_release_base }}" "${docker_workflow}" || \
+  fail "workflow does not pass the optional manual selector to the resolver"
+if grep -Fq "inputs.pre_release_base || '3.0.0'" "${docker_workflow}" || \
+   grep -Fq 'vars.PRE_RELEASE_BASE' "${docker_workflow}"; then
+  fail "workflow duplicates the manifest platform selector"
+fi
 
 cat > "${tmpdir}/DailyPackages" <<'EOF'
 Package: simaai-palette-modalix
