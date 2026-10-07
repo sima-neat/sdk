@@ -1090,18 +1090,17 @@ devkit-container-remote() {
     -o BatchMode=yes
     -o ConnectTimeout=8
   )
-  if [[ -t 0 && -t 1 ]]; then
-    ssh_args+=(-t)
-  else
-    ssh_args+=(-T)
-  fi
   case "${action}" in
     docker-check|registry-setup|setup)
       detach_stdin=1
       ;;
   esac
   if [[ "${detach_stdin}" == 1 ]]; then
-    ssh_args+=(-n)
+    ssh_args+=(-T -n)
+  elif [[ -t 0 && -t 1 ]]; then
+    ssh_args+=(-t)
+  else
+    ssh_args+=(-T)
   fi
   ssh_args+=("${DEVKIT_SYNC_DEVKIT_USER:-sima}@${DEVKIT_SYNC_DEVKIT_IP}")
 
