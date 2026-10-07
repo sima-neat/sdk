@@ -173,7 +173,7 @@ The SDK supports an NFS-based shared workspace with a DevKit. The workspace is s
 Start the SDK container with the DevKit IP:
 
 ```bash
-sima-cli sdk setup --devkit-ip 10.0.0.244
+sima-cli sdk setup --devkit 10.0.0.244
 ```
 
 Open a direct SSH shell to the paired DevKit:
@@ -187,6 +187,24 @@ Run an executable or Python application from the DevKit:
 ```bash
 dk /workspace/app-binary-or-dot-py-file
 ```
+
+Build and push an ARM64 container image from the SDK, then download and run it
+on the paired DevKit:
+
+```bash
+docker buildx build \
+  --platform linux/arm64 \
+  --tag "${SIMA_CONTAINER_REGISTRY}/hello-neat:develop" \
+  --push \
+  .
+
+dk container deploy hello-neat:develop --detach --name hello-neat --network host
+```
+
+`deploy` always downloads the current image before running it. Use
+`dk container run hello-neat:develop ...` to run the image already available on
+the DevKit. Put Docker run options after the image name. Use `--` before a
+container command and its arguments.
 
 ## Advanced Topics
 

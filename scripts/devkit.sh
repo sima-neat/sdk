@@ -973,6 +973,13 @@ Remote workspace    : ${DEVKIT_SYNC_REMOTE_ROOT:-${DEVKIT_SYNC_MOUNT_POINT:-/wor
 NFS mount path      : ${DEVKIT_SYNC_NFS_MOUNT_POINT:-${DEVKIT_SYNC_MOUNT_POINT:-/workspace}}
 EOF
 
+  if [[ -n "${SIMA_CONTAINER_REGISTRY:-}" && -n "${SIMA_DEVKIT_CONTAINER_REGISTRY:-}" ]]; then
+    echo "SDK image registry  : ${SIMA_CONTAINER_REGISTRY}"
+    echo "DevKit registry     : ${SIMA_DEVKIT_CONTAINER_REGISTRY}"
+  else
+    echo "Container registry  : not configured"
+  fi
+
   if [[ -n "${DEVKIT_SYNC_HINT:-}" ]]; then
     echo "Status hint         : ${DEVKIT_SYNC_HINT}"
   fi
@@ -1015,6 +1022,234 @@ devkit-local-sync-scope() {
   else
     printf '%s/%s\n' "${root}" "${rel_path%%/*}"
   fi
+}
+
+devkit-container-usage() {
+  cat >&2 <<'EOF'
+Usage:
+  dk container deploy <image> [docker-run-options] [-- command [args...]]
+  dk container run <image> [docker-run-options] [-- command [args...]]
+  dk container pull <image>
+  dk container images
+  dk container list
+  dk container logs <container> [docker-logs-options]
+  dk container stop <container>
+  dk container remove <container> [docker-rm-options]
+
+Examples:
+  dk container deploy hello-neat:develop --detach --name hello-neat --network host
+  dk container run hello-neat:develop --rm -- --help
+  dk container logs hello-neat --follow
+EOF
+}
+
+devkit-container-image-ref() {
+  local image="${1:-}"
+  local sdk_registry="${SIMA_CONTAINER_REGISTRY:-}"
+  local devkit_registry="${SIMA_DEVKIT_CONTAINER_REGISTRY:-}"
+
+  if [[ -z "${devkit_registry}" ]]; then
+    echo "The local container registry is not configured for this SDK shell." >&2
+    echo "Run 'sima-cli sdk setup --devkit <devkit-ip>', then open a new SDK shell." >&2
+    return 2
+  fi
+  if [[ -z "${image}" || "${image}" == -* || "${image}" == /* || "${image}" == *://* ]]; then
+    echo "Invalid container image name: ${image:-<empty>}" >&2
+    return 2
+  fi
+
+  case "${image}" in
+    "${devkit_registry}"/*)
+      printf '%s\n' "${image}"
+      ;;
+    "${sdk_registry}"/*)
+      printf '%s/%s\n' "${devkit_registry}" "${image#"${sdk_registry}"/}"
+      ;;
+    *)
+      printf '%s/%s\n' "${devkit_registry}" "${image}"
+      ;;
+  esac
+}
+
+devkit-container-remote() {
+  local action="$1"
+  shift
+  local -a ssh_args=(
+    ssh
+    -p "${DEVKIT_SYNC_DEVKIT_PORT:-22}"
+    -o BatchMode=yes
+    -o ConnectTimeout=8
+  )
+  if [[ -t 0 && -t 1 ]]; then
+    ssh_args+=(-t)
+  else
+    ssh_args+=(-T)
+  fi
+  ssh_args+=("${DEVKIT_SYNC_DEVKIT_USER:-sima}@${DEVKIT_SYNC_DEVKIT_IP}")
+  ssh_args+=(bash --noprofile --norc -s -- "${action}" "$@")
+
+  "${ssh_args[@]}" <<'EOS_CONTAINER'
+set -euo pipefail
+
+action="${1:?missing container action}"
+shift
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is not installed on the DevKit." >&2
+  exit 2
+fi
+
+DOCKER=(docker)
+if ! docker info >/dev/null 2>&1; then
+  if command -v sudo >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; then
+    DOCKER=(sudo -n docker)
+  else
+    echo "Docker is installed on the DevKit, but the current user cannot use it." >&2
+    echo "Run DevKit setup again so sima-cli can configure passwordless sudo." >&2
+    exit 2
+  fi
+fi
+
+run_image() {
+  local image="$1"
+  shift
+  local after_separator=0
+  local arg
+  local -a run_options=()
+  local -a command_args=()
+  for arg in "$@"; do
+    if [[ "${arg}" == "--" && "${after_separator}" == "0" ]]; then
+      after_separator=1
+    elif [[ "${after_separator}" == "0" ]]; then
+      run_options+=("${arg}")
+    else
+      command_args+=("${arg}")
+    fi
+  done
+  if (( ${#run_options[@]} > 0 && ${#command_args[@]} > 0 )); then
+    "${DOCKER[@]}" run "${run_options[@]}" "${image}" "${command_args[@]}"
+  elif (( ${#run_options[@]} > 0 )); then
+    "${DOCKER[@]}" run "${run_options[@]}" "${image}"
+  elif (( ${#command_args[@]} > 0 )); then
+    "${DOCKER[@]}" run "${image}" "${command_args[@]}"
+  else
+    "${DOCKER[@]}" run "${image}"
+  fi
+}
+
+require_arm64_image() {
+  local image="$1"
+  local architecture=""
+  if ! architecture="$("${DOCKER[@]}" image inspect --format '{{.Architecture}}' "${image}")"; then
+    echo "Image ${image} is not available on the DevKit." >&2
+    echo "Use 'dk container deploy' to download it first." >&2
+    return 2
+  fi
+  case "${architecture}" in
+    arm64|aarch64)
+      ;;
+    *)
+      echo "Image ${image} is for ${architecture:-an unknown architecture}, not ARM64." >&2
+      echo "Rebuild it with 'docker buildx build --platform linux/arm64 --push'." >&2
+      return 2
+      ;;
+  esac
+}
+
+case "${action}" in
+  deploy)
+    image="${1:?missing image}"
+    shift
+    echo "Downloading ${image} on the DevKit."
+    "${DOCKER[@]}" pull "${image}"
+    require_arm64_image "${image}"
+    echo "Starting ${image} on the DevKit."
+    run_image "${image}" "$@"
+    ;;
+  run)
+    image="${1:?missing image}"
+    shift
+    require_arm64_image "${image}"
+    echo "Starting ${image} on the DevKit."
+    run_image "${image}" "$@"
+    ;;
+  pull)
+    image="${1:?missing image}"
+    "${DOCKER[@]}" pull "${image}"
+    require_arm64_image "${image}"
+    ;;
+  images)
+    "${DOCKER[@]}" image ls --filter "reference=${1:?missing registry}/*"
+    ;;
+  list)
+    "${DOCKER[@]}" ps -a
+    ;;
+  logs)
+    container="${1:?missing container name}"
+    shift
+    "${DOCKER[@]}" logs "$@" "${container}"
+    ;;
+  stop)
+    "${DOCKER[@]}" stop "${1:?missing container name}"
+    ;;
+  remove)
+    container="${1:?missing container name}"
+    shift
+    "${DOCKER[@]}" rm "$@" "${container}"
+    ;;
+  *)
+    echo "Unknown DevKit container action: ${action}" >&2
+    exit 2
+    ;;
+esac
+EOS_CONTAINER
+}
+
+devkit-container() {
+  local action="${1:-}"
+  if [[ -z "${action}" || "${action}" == "help" || "${action}" == "--help" || "${action}" == "-h" ]]; then
+    devkit-container-usage
+    return 0
+  fi
+  shift
+
+  case "${action}" in
+    deploy|run|pull)
+      if [[ $# -lt 1 ]]; then
+        devkit-container-usage
+        return 2
+      fi
+      local image
+      image="$(devkit-container-image-ref "$1")" || return $?
+      shift
+      printf '[DevKit] container %s: %s\n' "${action}" "${image}"
+      devkit-container-remote "${action}" "${image}" "$@"
+      ;;
+    images)
+      if [[ -z "${SIMA_DEVKIT_CONTAINER_REGISTRY:-}" ]]; then
+        devkit-container-image-ref "registry-check" >/dev/null || return $?
+      fi
+      devkit-container-remote images "${SIMA_DEVKIT_CONTAINER_REGISTRY}"
+      ;;
+    list)
+      devkit-container-remote list
+      ;;
+    logs|stop|remove|rm)
+      if [[ $# -lt 1 ]]; then
+        devkit-container-usage
+        return 2
+      fi
+      if [[ "${action}" == "rm" ]]; then
+        action="remove"
+      fi
+      devkit-container-remote "${action}" "$@"
+      ;;
+    *)
+      echo "Unknown dk container command: ${action}" >&2
+      devkit-container-usage
+      return 2
+      ;;
+  esac
 }
 
 # Run a local /workspace binary or Python script on the paired DevKit.
@@ -1395,7 +1630,7 @@ EOS
 unalias dk >/dev/null 2>&1 || true
 dk() {
   if [[ $# -lt 1 ]]; then
-    echo "Usage: dk <local-executable-path|shell|sync|status> [args...]" >&2
+    echo "Usage: dk <local-executable-path|shell|sync|status|container> [args...]" >&2
     return 0
   fi
   case "$1" in
@@ -1407,6 +1642,11 @@ dk() {
     status)
       shift
       devkit-status "$@"
+      return $?
+      ;;
+    container)
+      shift
+      devkit-container "$@"
       return $?
       ;;
   esac
@@ -1434,6 +1674,8 @@ __devkit_persist_export() {
   __devkit_persist_export DEVKIT_RSYNC_REMOTE_ROOT
   __devkit_persist_export DEVKIT_RSYNC_HELPER
   __devkit_persist_export DEVKIT_SYNC_HINT
+  __devkit_persist_export SIMA_CONTAINER_REGISTRY
+  __devkit_persist_export SIMA_DEVKIT_CONTAINER_REGISTRY
   __devkit_persist_export SDK_RELEASE_REF
   __devkit_persist_export SDK_PROMPT_REF
   __devkit_persist_export SDK_IMAGE_BRANCH
@@ -1469,6 +1711,10 @@ __devkit_persist_export() {
   declare -f devkit-sync
   declare -f devkit-status
   declare -f devkit-local-sync-scope
+  declare -f devkit-container-usage
+  declare -f devkit-container-image-ref
+  declare -f devkit-container-remote
+  declare -f devkit-container
   declare -f devkit-run
   echo 'unalias dk >/dev/null 2>&1 || true'
   declare -f dk
@@ -1625,6 +1871,12 @@ EOF
 EOF
     ;;
 esac
+if [[ -n "${SIMA_DEVKIT_CONTAINER_REGISTRY:-}" ]]; then
+  cat <<EOF
+  Deploy an SDK-built container image:
+    dk container deploy <image>:<tag> --detach --name <container-name>
+EOF
+fi
 cat <<EOF
 ============================================================
 ${_c_rst}
