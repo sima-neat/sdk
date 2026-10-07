@@ -1083,6 +1083,7 @@ devkit-container-remote() {
   # shellcheck disable=SC2016
   local remote_wrapper='set -euo pipefail; encoded="${1#x}"; script="$(printf "%s" "${encoded}" | base64 -d; printf .)"; script="${script%?}"; shift; args=(); for encoded in "$@"; do encoded="${encoded#x}"; decoded="$(printf "%s" "${encoded}" | base64 -d; printf .)"; args+=("${decoded%?}"); done; exec bash --noprofile --norc -c "${script}" -- "${args[@]}"'
   local encoded=""
+  local detach_stdin=0
   local -a ssh_args=(
     ssh
     -p "${DEVKIT_SYNC_DEVKIT_PORT:-22}"
@@ -1093,6 +1094,14 @@ devkit-container-remote() {
     ssh_args+=(-t)
   else
     ssh_args+=(-T)
+  fi
+  case "${action}" in
+    docker-check|registry-setup|setup)
+      detach_stdin=1
+      ;;
+  esac
+  if [[ "${detach_stdin}" == 1 ]]; then
+    ssh_args+=(-n)
   fi
   ssh_args+=("${DEVKIT_SYNC_DEVKIT_USER:-sima}@${DEVKIT_SYNC_DEVKIT_IP}")
 

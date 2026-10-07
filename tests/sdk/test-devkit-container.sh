@@ -63,11 +63,14 @@ EOF
 chmod +x "${TMP_DIR}/bin/sudo"
 
 ssh() {
+  local detach_stdin=0
   local found_host=0
   local arg
   local remote_command=""
   for arg in "$@"; do
-    if [[ "${found_host}" == "1" ]]; then
+    if [[ "${arg}" == -n ]]; then
+      detach_stdin=1
+    elif [[ "${found_host}" == "1" ]]; then
       if [[ -n "${remote_command}" ]]; then
         remote_command+=" "
       fi
@@ -78,6 +81,12 @@ ssh() {
   done
   [[ "${found_host}" == "1" ]] || fail "mock ssh did not receive a remote host"
   [[ -n "${remote_command}" ]] || fail "mock ssh did not receive a remote command"
+  if [[ "${FAKE_REQUIRE_DETACHED_SSH:-0}" == 1 ]]; then
+    FAKE_SSH_SEQUENCE=$((${FAKE_SSH_SEQUENCE:-0} + 1))
+    if [[ "${FAKE_SSH_SEQUENCE}" == 1 && "${detach_stdin}" != 1 ]]; then
+      fail "non-workload SSH preflight did not detach caller stdin"
+    fi
+  fi
   if [[ "${FAKE_SSH_DOCKER_MISSING_COUNT:-0}" -gt 0 ]]; then
     FAKE_SSH_DOCKER_MISSING_COUNT=$((FAKE_SSH_DOCKER_MISSING_COUNT - 1))
     echo "Docker is not installed on the DevKit." >&2
@@ -193,8 +202,12 @@ grep -Fqx 'ARG=' "${DOCKER_LOG}" || fail "empty container argument was not prese
 
 : > "${DOCKER_LOG}"
 export FAKE_DOCKER_READ_STDIN=1
+export FAKE_REQUIRE_DETACHED_SSH=1
+export FAKE_SSH_SEQUENCE=0
 printf 'keyboard input\n' | devkit-container run hello-neat:develop -i -- /bin/sh
 unset FAKE_DOCKER_READ_STDIN
+unset FAKE_REQUIRE_DETACHED_SSH
+unset FAKE_SSH_SEQUENCE
 grep -Fqx 'STDIN=keyboard input' "${DOCKER_LOG}" || \
   fail "interactive container did not receive caller stdin"
 

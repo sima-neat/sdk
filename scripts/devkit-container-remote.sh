@@ -92,8 +92,8 @@ install_docker() (
   local mirror=/etc/apt/sources.list.d/0000mirror.list
   local disabled_mirror=/root/apt-disabled/0000mirror.list
   local install_marker=/etc/docker/.sima-sdk-install-in-progress
+  local install_phase=""
   local mirror_moved=0
-  local resume_install=0
   local services_stopped=0
   local target_user=""
   local entry=""
@@ -172,10 +172,11 @@ install_docker() (
   echo "Installing Docker CE for ARM64 on the Modalix DevKit."
   sudo -n mkdir -p /etc/docker
   if sudo -n test -e "${install_marker}"; then
-    resume_install=1
+    install_phase="$(sudo -n cat "${install_marker}" 2>/dev/null || true)"
     echo "Resuming an interrupted Docker installation."
   else
-    sudo -n touch "${install_marker}"
+    install_phase=started
+    printf '%s\n' "${install_phase}" | sudo -n tee "${install_marker}" >/dev/null
   fi
   if sudo -n test -e "${disabled_mirror}" && ! sudo -n test -e "${mirror}"; then
     mirror_moved=1
@@ -248,13 +249,14 @@ PY
       return 2
     fi
   else
-    if [[ "${resume_install}" == 0 ]] && \
+    if [[ "${install_phase}" != migration ]] && \
        sudo -n sh -c 'test -n "$(find /data/containerd -mindepth 1 -print -quit)"' && \
        sudo -n sh -c 'test -n "$(find /var/lib/containerd -mindepth 1 -print -quit)"'; then
       echo "Both /data/containerd and /var/lib/containerd already contain data; refusing to merge unrelated state." >&2
-      sudo -n rm -f "${install_marker}"
       return 2
     fi
+    install_phase=migration
+    printf '%s\n' "${install_phase}" | sudo -n tee "${install_marker}" >/dev/null
     sudo -n mkdir -p "${migration_marker_dir}" "${migration_staging_root}"
     mapfile -d '' -t migration_markers < <(
       sudo -n find "${migration_marker_dir}" -mindepth 1 -maxdepth 1 -type f -print0
