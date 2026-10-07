@@ -30,11 +30,13 @@ container after `sima-cli sdk setup -y -n` starts it.
 - `insight-video-routing/` downloads a small H.264 video, streams it from the
   runner into the SDK container's published Insight video UDP port with
   `ffmpeg`, then verifies vf ingest through the Insight API.
-- `container-build/` runs on the native ARM64 smoke worker. It invokes Buildx
-  as a non-root SDK user in an opt-in socket-mounted SDK container,
-  cross-compiles and packages the Hello Neat C++ example, builds a sibling
-  `linux/arm64` image through the mounted host daemon, and executes a tiny
-  ARM64 probe from the image to verify its exact output marker.
+- `container-build/` runs from both SDK architectures when Neat Core is
+  installed and skips cleanly for Core-less SDK profiles. It invokes Buildx as
+  a non-root SDK user in an opt-in socket-mounted SDK container, cross-compiles
+  the Hello Neat C++ example, packages the executable and its runtime-library
+  closure into a minimal `linux/arm64` image, and executes that image. The
+  ARM64 smoke worker provides the native runtime check; the AMD64 worker repeats
+  it with ARM64 emulation to validate the cross-host developer workflow.
 - `hello-neat/` contains the minimal Hello Neat example from the public docs.
 - `representative-builds/internals/` builds a tiny CMake target that consumes
   `NeatInternals` and its transitive sysroot dependencies.

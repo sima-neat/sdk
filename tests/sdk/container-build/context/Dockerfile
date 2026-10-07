@@ -1,6 +1,5 @@
-FROM debian:bookworm-slim
+FROM scratch
 
-COPY buildx-smoke /usr/local/bin/buildx-smoke
-COPY neat-artifacts/ /opt/neat/bin/
+COPY rootfs/ /
 
-ENTRYPOINT ["/usr/local/bin/buildx-smoke"]
+ENTRYPOINT ["/usr/local/bin/sima_neat_hello"]

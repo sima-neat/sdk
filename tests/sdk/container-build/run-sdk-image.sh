@@ -39,6 +39,13 @@ docker exec -u root "${container_name}" bash -lc "
   chmod +x '${remote_root}/run.sh'
 "
 
-"${script_dir}/run.sh" "${container_name}"
-
-echo "ARM64 container build validated from the ${sdk_arch} SDK image."
+if "${script_dir}/run.sh" "${container_name}"; then
+  echo "ARM64 Hello Neat container validated from the ${sdk_arch} SDK image."
+else
+  status=$?
+  if [[ ${status} -eq 77 ]]; then
+    echo "SDK container-build smoke test skipped for the ${sdk_arch} SDK image."
+  else
+    exit "${status}"
+  fi
+fi
