@@ -118,14 +118,28 @@ devkit-container list
 grep -Fqx 'INSTALL_REQUESTED' "${DOCKER_LOG}" || fail "missing Docker did not offer installation"
 grep -Fqx 'ARG=ps' "${DOCKER_LOG}" || fail "container command was not retried after installation"
 
-grep -Fq '"data-root"] = "/data/docker"' "${ROOT_DIR}/scripts/devkit.sh" || \
+grep -Fq '"data-root"] = "/data/docker"' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
   fail "installer does not configure the Modalix Docker data root"
-grep -Fq '/data/containerd /var/lib/containerd none bind 0 0' "${ROOT_DIR}/scripts/devkit.sh" || \
+grep -Fq '/data/containerd /var/lib/containerd none bind 0 0' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
   fail "installer does not persist containerd storage under /data"
-grep -Fq 'docker-ce docker-ce-cli containerd.io' "${ROOT_DIR}/scripts/devkit.sh" || \
+grep -Fq 'docker-ce docker-ce-cli containerd.io' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
   fail "installer does not install the supported Docker CE packages"
-grep -Fq 'data["insecure-registries"]' "${ROOT_DIR}/scripts/devkit.sh" || \
+grep -Fq 'data["insecure-registries"]' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
   fail "installer does not configure the scoped SDK registry"
+grep -Fq '.sima-sdk-install-in-progress' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+  fail "installer does not preserve retry state after an interrupted installation"
+grep -Fq 'containerd_entries' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+  fail "containerd migration is not resumable"
+grep -Fq 'Resuming an interrupted Docker installation.' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+  fail "installer does not report or resume interrupted work"
+grep -Fq 'Resuming with the eLxr package mirror temporarily disabled.' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+  fail "installer does not restore the eLxr mirror after interruption"
+grep -Fq 'Docker services remain stopped until containerd storage setup is completed.' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+  fail "installer can restart Docker before containerd storage migration is complete"
+grep -Fq 'sima-sdk-registry-address' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+  fail "SDK does not own the DevKit registry state"
+grep -Fq 'COPY scripts/devkit-container-remote.sh /usr/local/libexec/sima-sdk/devkit-container-remote.sh' \
+  "${ROOT_DIR}/Dockerfile" || fail "SDK image does not install the DevKit container helper"
 
 resolved="$(devkit-container-image-ref hello-neat:develop)"
 [[ "${resolved}" == "192.0.2.10:5050/hello-neat:develop" ]] || \
@@ -141,8 +155,8 @@ resolved="$(devkit-container-image-ref localhost:5050/team/hello-neat:develop)"
 devkit-container deploy localhost:5050/team/hello-neat:develop \
   --name hello-neat --network host -- /app --label "two words" \
   '; touch "$INJECTION_MARKER"; #' '$(touch "$INJECTION_MARKER")' ""
-[[ "$(grep -c '^BEGIN$' "${DOCKER_LOG}")" == "4" ]] || \
-  fail "deploy should check Docker, pull, inspect, and run"
+[[ "$(grep -c '^BEGIN$' "${DOCKER_LOG}")" == "6" ]] || \
+  fail "deploy should configure the registry, then check Docker, pull, inspect, and run"
 grep -Fqx 'ARG=pull' "${DOCKER_LOG}" || fail "deploy did not pull"
 grep -Fqx 'ARG=inspect' "${DOCKER_LOG}" || fail "deploy did not inspect image architecture"
 grep -Fqx 'ARG=192.0.2.10:5050/team/hello-neat:develop' "${DOCKER_LOG}" || \
@@ -195,6 +209,28 @@ grep -Fqx 'ARG=--follow' "${DOCKER_LOG}" || fail "logs option was not forwarded"
 sed -n '/^dk()/,/^}/p' "${ROOT_DIR}/scripts/devkit.sh" > "${TMP_DIR}/dk-function.sh"
 # shellcheck source=/dev/null
 source "${TMP_DIR}/dk-function.sh"
+
+{
+  declare -f devkit-container-usage
+  declare -f devkit-container-image-ref
+  declare -f devkit-container-remote
+  declare -f devkit-container-install-docker
+  declare -f devkit-container-remote-with-setup
+  declare -f devkit-container-ensure-registry
+  declare -f devkit-container
+} > "${TMP_DIR}/persisted-container-functions.sh"
+bash --noprofile --norc -c '
+  source "$1"
+  for name in devkit-container-install-docker devkit-container-remote-with-setup devkit-container-ensure-registry; do
+    declare -F "$name" >/dev/null || exit 1
+  done
+' -- "${TMP_DIR}/persisted-container-functions.sh" || \
+  fail "persisted SDK shell is missing a container helper dependency"
+for name in devkit-container-install-docker devkit-container-remote-with-setup devkit-container-ensure-registry; do
+  grep -Fq "declare -f ${name}" "${ROOT_DIR}/scripts/devkit.sh" || \
+    fail "devkit.sh does not persist ${name} for new SDK shells"
+done
+
 : > "${DOCKER_LOG}"
 dk container pull hello-neat:develop
 grep -Fqx 'ARG=pull' "${DOCKER_LOG}" || fail "dk did not dispatch the container command"
@@ -204,5 +240,5 @@ if devkit-container-image-ref hello-neat:develop >/dev/null 2>&1; then
   fail "missing registry configuration should fail"
 fi
 
-bash -n "${ROOT_DIR}/scripts/devkit.sh"
+bash -n "${ROOT_DIR}/scripts/devkit.sh" "${ROOT_DIR}/scripts/devkit-container-remote.sh"
 echo "DevKit container command tests passed"

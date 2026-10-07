@@ -281,6 +281,7 @@ COPY scripts/insight-admin.sh /usr/local/bin/insight-admin
 COPY scripts/neat-insight-supervised.sh /usr/local/bin/neat-insight-supervised
 COPY scripts/openvscode-supervised.sh /usr/local/bin/openvscode-supervised
 COPY scripts/devkit.sh /usr/local/bin/devkit.sh
+COPY scripts/devkit-container-remote.sh /usr/local/libexec/sima-sdk/devkit-container-remote.sh
 COPY scripts/devkit-sync-rsync.sh /usr/local/bin/devkit-sync-rsync.sh
 RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/install-sdk-sysroot-overlay.sh && \
@@ -292,6 +293,7 @@ RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/openvscode-supervised && \
     ln -sf /usr/local/bin/insight-admin /usr/local/bin/install-neat-insight && \
     chmod 755 /usr/local/bin/devkit.sh && \
+    chmod 755 /usr/local/libexec/sima-sdk/devkit-container-remote.sh && \
     chmod 755 /usr/local/bin/devkit-sync-rsync.sh && \
     install-sdk-sysroot-overlay.sh && \
     if [ "${SDK_APT_CHANNEL}" = daily ]; then \
