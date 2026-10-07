@@ -24,15 +24,26 @@ docker exec -u "${remote_user}" "${container_id}" bash -lc "
   source /opt/bin/simaai-init-build-env modalix >/dev/null
   docker buildx version
   docker buildx inspect --bootstrap
-  cmake -S \"${remote_root}/hello-neat\" -B \"${remote_root}/hello-neat/build\" -DCMAKE_BUILD_TYPE=Release
-  cmake --build \"${remote_root}/hello-neat/build\" -j\"\$(nproc)\"
-  file \"${remote_root}/hello-neat/build/sima_neat_hello\" | grep -Eq 'aarch64|ARM aarch64|ARM64'
-  cp \"${remote_root}/hello-neat/build/sima_neat_hello\" \"${remote_root}/context/sima_neat_hello\"
+  rm -rf \"${remote_root}/context/neat-artifacts\"
+  mkdir -p \"${remote_root}/context/neat-artifacts\"
+  sima_neat_config=\"\$(find \"\${SYSROOT}/usr\" -type f -name SimaNeatConfig.cmake -print -quit)\"
+  if [[ -n \"\${sima_neat_config}\" ]]; then
+    cmake -S \"${remote_root}/hello-neat\" -B \"${remote_root}/hello-neat/build\" -DCMAKE_BUILD_TYPE=Release
+    cmake --build \"${remote_root}/hello-neat/build\" -j\"\$(nproc)\"
+    file \"${remote_root}/hello-neat/build/sima_neat_hello\" | grep -Eq 'aarch64|ARM aarch64|ARM64'
+    cp \"${remote_root}/hello-neat/build/sima_neat_hello\" \"${remote_root}/context/neat-artifacts/sima_neat_hello\"
+  else
+    echo 'SimaNeat is not bundled; skipping the optional Hello Neat artifact.'
+  fi
   \"\${CC}\" \${CFLAGS} \"${remote_root}/context/main.c\" -o \"${remote_root}/context/buildx-smoke\"
   file \"${remote_root}/context/buildx-smoke\" | grep -Eq 'aarch64|ARM aarch64|ARM64'
   docker buildx build --platform linux/arm64 --load -t \"${image}\" \"${remote_root}/context\"
   test \"\$(docker image inspect \"${image}\" --format '{{.Architecture}}')\" = arm64
-  docker run --rm --entrypoint test \"${image}\" -x /opt/neat/bin/sima_neat_hello
+  if [[ -n \"\${sima_neat_config}\" ]]; then
+    docker run --rm --entrypoint test \"${image}\" -x /opt/neat/bin/sima_neat_hello
+  else
+    test \"\$(docker run --rm --entrypoint find \"${image}\" /opt/neat/bin -mindepth 1 -print -quit)\" = ''
+  fi
   test \"\$(docker run --rm \"${image}\")\" = neat-sdk-buildx-arm64-ok
 "
 
