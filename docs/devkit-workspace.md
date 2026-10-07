@@ -101,3 +101,15 @@ dk container remove hello-neat
 Run `dk container help` to show the command summary. If the registry is not
 configured, rerun `sima-cli sdk setup --devkit <devkit-ip>` and open a new SDK
 shell.
+
+If Docker is not installed on the DevKit, the first `dk container` command
+explains the required board changes and asks whether to install it. The
+installer uses the Modalix storage and networking configuration, stores Docker
+and containerd data under `/data`, enables the services, and adds the DevKit
+user to the `docker` group. It requires passwordless `sudo` and Internet access
+to Docker's Debian repository. For an explicitly approved noninteractive
+installation, run:
+
+```bash
+dk container setup --yes
+```

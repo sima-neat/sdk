@@ -1027,6 +1027,7 @@ devkit-local-sync-scope() {
 devkit-container-usage() {
   cat >&2 <<'EOF'
 Usage:
+  dk container setup [--yes]
   dk container deploy <image> [docker-run-options] [-- command [args...]]
   dk container run <image> [docker-run-options] [-- command [args...]]
   dk container pull <image>
@@ -1037,6 +1038,7 @@ Usage:
   dk container remove <container> [docker-rm-options]
 
 Examples:
+  dk container setup
   dk container deploy hello-neat:develop --detach --name hello-neat --network host
   dk container run hello-neat:develop --rm -- --help
   dk container logs hello-neat --follow
@@ -1105,9 +1107,161 @@ set -euo pipefail
 action="${1:?missing container action}"
 shift
 
+configure_docker_access() {
+  local target_user
+  target_user="$(id -un)"
+  if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
+    echo "Docker setup requires passwordless sudo for ${target_user} on the DevKit." >&2
+    return 2
+  fi
+  sudo -n usermod -aG docker "${target_user}"
+  sudo -n systemctl enable --now containerd docker
+  sudo -n docker info >/dev/null
+  echo "Docker is ready on the DevKit. User ${target_user} was added to the docker group."
+}
+
+install_docker() {
+  local architecture=""
+  local mirror=/etc/apt/sources.list.d/0000mirror.list
+  local disabled_mirror=/root/apt-disabled/0000mirror.list
+  local mirror_moved=0
+  local target_user=""
+
+  target_user="$(id -un)"
+  if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
+    echo "Docker installation requires passwordless sudo for ${target_user} on the DevKit." >&2
+    return 2
+  fi
+  architecture="$(dpkg --print-architecture 2>/dev/null || true)"
+  if [[ "${architecture}" != arm64 ]]; then
+    echo "Docker installation is supported only on an ARM64 Modalix DevKit; found ${architecture:-unknown}." >&2
+    return 2
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "Docker installation requires Python 3 on the DevKit." >&2
+    return 2
+  fi
+
+  restore_elxr_mirror() {
+    if [[ "${mirror_moved}" == 1 ]] && sudo -n test -e "${disabled_mirror}" && \
+       ! sudo -n test -e "${mirror}"; then
+      sudo -n mkdir -p "$(dirname "${mirror}")"
+      sudo -n mv "${disabled_mirror}" "${mirror}"
+    fi
+  }
+  cleanup_install() {
+    restore_elxr_mirror
+    sudo -n systemctl start containerd docker >/dev/null 2>&1 || true
+  }
+  trap cleanup_install EXIT
+
+  echo "Installing Docker CE for ARM64 on the Modalix DevKit."
+  if sudo -n test -e "${mirror}"; then
+    sudo -n mkdir -p "$(dirname "${disabled_mirror}")"
+    if sudo -n test -e "${disabled_mirror}"; then
+      echo "Cannot disable ${mirror}: ${disabled_mirror} already exists." >&2
+      return 2
+    fi
+    sudo -n mv "${mirror}" "${disabled_mirror}"
+    mirror_moved=1
+  fi
+
+  sudo -n mkdir -p /etc/docker /data/docker
+  sudo -n python3 <<'PY'
+import json
+import os
+import shutil
+from pathlib import Path
+
+path = Path("/etc/docker/daemon.json")
+backup = Path(str(path) + ".sima-cli.bak")
+data = {}
+if path.exists():
+    with path.open("r", encoding="utf-8") as stream:
+        data = json.load(stream)
+    if not backup.exists():
+        shutil.copy2(str(path), str(backup))
+data["firewall-backend"] = "nftables"
+data["data-root"] = "/data/docker"
+temporary = Path(str(path) + ".sima-cli.tmp")
+with temporary.open("w", encoding="utf-8") as stream:
+    json.dump(data, stream, indent=2, sort_keys=True)
+    stream.write("\n")
+os.chmod(str(temporary), 0o644)
+os.replace(str(temporary), str(path))
+PY
+  printf 'net.ipv4.ip_forward=1\nnet.ipv6.conf.all.forwarding=1\n' \
+    | sudo -n tee /etc/sysctl.d/99-docker-forward.conf >/dev/null
+  sudo -n sysctl --system >/dev/null
+
+  sudo -n install -m 0755 -d /etc/apt/keyrings
+  if command -v curl >/dev/null 2>&1; then
+    sudo -n curl -fsSL https://download.docker.com/linux/debian/gpg \
+      -o /etc/apt/keyrings/docker.asc
+  else
+    python3 - <<'PY' | sudo -n tee /etc/apt/keyrings/docker.asc >/dev/null
+import sys
+import urllib.request
+
+with urllib.request.urlopen("https://download.docker.com/linux/debian/gpg", timeout=30) as response:
+    sys.stdout.buffer.write(response.read())
+PY
+  fi
+  sudo -n chmod a+r /etc/apt/keyrings/docker.asc
+  printf '%s\n' \
+    'deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian trixie stable' \
+    | sudo -n tee /etc/apt/sources.list.d/docker.list >/dev/null
+  sudo -n apt-get update
+  sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    docker-ce docker-ce-cli containerd.io
+
+  sudo -n systemctl stop docker.socket docker containerd
+  sudo -n mkdir -p /data/containerd /var/lib/containerd
+  if mountpoint -q /var/lib/containerd; then
+    if [[ "$(findmnt -n -o SOURCE --target /var/lib/containerd)" != /data/containerd ]]; then
+      echo "/var/lib/containerd is already mounted from an unexpected source; refusing to replace it." >&2
+      return 2
+    fi
+  else
+    if sudo -n sh -c 'test -n "$(find /data/containerd -mindepth 1 -print -quit)"' && \
+       sudo -n sh -c 'test -n "$(find /var/lib/containerd -mindepth 1 -print -quit)"'; then
+      echo "Both /data/containerd and /var/lib/containerd contain data; refusing to merge them automatically." >&2
+      return 2
+    fi
+    sudo -n find /var/lib/containerd -mindepth 1 -maxdepth 1 \
+      -exec mv -t /data/containerd -- {} +
+    if ! sudo -n grep -Fqx '/data/containerd /var/lib/containerd none bind 0 0' /etc/fstab; then
+      printf '%s\n' '/data/containerd /var/lib/containerd none bind 0 0' \
+        | sudo -n tee -a /etc/fstab >/dev/null
+    fi
+    sudo -n mount /var/lib/containerd
+  fi
+
+  sudo -n systemctl enable containerd docker
+  sudo -n systemctl restart containerd docker
+  configure_docker_access
+  if [[ "$(sudo -n docker info --format '{{.DockerRootDir}}')" != /data/docker ]]; then
+    echo "Docker started, but its data root is not /data/docker." >&2
+    return 2
+  fi
+  restore_elxr_mirror
+  mirror_moved=0
+  trap - EXIT
+  echo "Docker installation completed on the DevKit."
+}
+
+if [[ "${action}" == setup ]]; then
+  if command -v docker >/dev/null 2>&1; then
+    configure_docker_access
+  else
+    install_docker
+  fi
+  exit $?
+fi
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker is not installed on the DevKit." >&2
-  exit 2
+  exit 42
 fi
 
 DOCKER=(docker)
@@ -1226,6 +1380,54 @@ EOS_CONTAINER
   "${ssh_args[@]}"
 }
 
+devkit-container-install-docker() {
+  local assume_yes="${1:-0}"
+  local answer=""
+
+  if [[ "${assume_yes}" != 1 ]]; then
+    if [[ ! -t 0 || ! -t 1 || ! -e /dev/tty ]]; then
+      echo "Docker is not installed on the DevKit." >&2
+      echo "Run 'dk container setup --yes' to approve the Modalix Docker installation." >&2
+      return 2
+    fi
+    cat >/dev/tty <<'EOF'
+Docker is required to run SDK-built images on the DevKit.
+This will install Docker CE, store Docker and containerd data under /data,
+enable the services, and add the DevKit user to the docker group.
+EOF
+    printf 'Install Docker on the DevKit now? [y/N]: ' >/dev/tty
+    IFS= read -r answer </dev/tty
+    case "${answer}" in
+      y|Y|yes|YES|Yes) ;;
+      *)
+        echo "Docker installation skipped." >&2
+        return 2
+        ;;
+    esac
+  fi
+
+  devkit-container-remote setup
+}
+
+devkit-container-remote-with-setup() {
+  local status=0
+  if devkit-container-remote "$@"; then
+    return 0
+  else
+    status=$?
+  fi
+  if [[ "${status}" -ne 42 ]]; then
+    return "${status}"
+  fi
+  if devkit-container-install-docker; then
+    :
+  else
+    status=$?
+    return "${status}"
+  fi
+  devkit-container-remote "$@"
+}
+
 devkit-container() {
   local action="${1:-}"
   if [[ -z "${action}" || "${action}" == "help" || "${action}" == "--help" || "${action}" == "-h" ]]; then
@@ -1235,6 +1437,17 @@ devkit-container() {
   shift
 
   case "${action}" in
+    setup)
+      if [[ $# -gt 1 || ( $# -eq 1 && "$1" != --yes ) ]]; then
+        devkit-container-usage
+        return 2
+      fi
+      if [[ "${1:-}" == --yes ]]; then
+        devkit-container-install-docker 1
+      else
+        devkit-container-install-docker
+      fi
+      ;;
     deploy|run|pull)
       if [[ $# -lt 1 ]]; then
         devkit-container-usage
@@ -1244,16 +1457,16 @@ devkit-container() {
       image="$(devkit-container-image-ref "$1")" || return $?
       shift
       printf '[DevKit] container %s: %s\n' "${action}" "${image}"
-      devkit-container-remote "${action}" "${image}" "$@"
+      devkit-container-remote-with-setup "${action}" "${image}" "$@"
       ;;
     images)
       if [[ -z "${SIMA_DEVKIT_CONTAINER_REGISTRY:-}" ]]; then
         devkit-container-image-ref "registry-check" >/dev/null || return $?
       fi
-      devkit-container-remote images "${SIMA_DEVKIT_CONTAINER_REGISTRY}"
+      devkit-container-remote-with-setup images "${SIMA_DEVKIT_CONTAINER_REGISTRY}"
       ;;
     list)
-      devkit-container-remote list
+      devkit-container-remote-with-setup list
       ;;
     logs|stop|remove|rm)
       if [[ $# -lt 1 ]]; then
@@ -1263,7 +1476,7 @@ devkit-container() {
       if [[ "${action}" == "rm" ]]; then
         action="remove"
       fi
-      devkit-container-remote "${action}" "$@"
+      devkit-container-remote-with-setup "${action}" "$@"
       ;;
     *)
       echo "Unknown dk container command: ${action}" >&2

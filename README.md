@@ -206,6 +206,10 @@ dk container deploy hello-neat:develop --detach --name hello-neat --network host
 the DevKit. Put Docker run options after the image name. Use `--` before a
 container command and its arguments.
 
+If Docker is missing on the DevKit, `dk container` offers to install it with
+the required Modalix `/data` storage and nftables configuration. Use
+`dk container setup --yes` for an explicitly approved noninteractive install.
+
 ## Advanced Topics
 
 - [Official Neat SDK installation guide](https://docs.sima-neat.com/getting-started/installation/neat-elxr-sdk)

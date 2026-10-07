@@ -33,6 +33,27 @@ fi
 EOF
 chmod +x "${TMP_DIR}/bin/docker"
 
+cat > "${TMP_DIR}/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == -n ]]; then
+  shift
+fi
+printf 'SUDO_ARG=%s\n' "$@" >> "${DOCKER_LOG:?}"
+case "${1:-}" in
+  true|usermod|systemctl) exit 0 ;;
+  docker)
+    shift
+    exec docker "$@"
+    ;;
+  *)
+    echo "unexpected sudo command in test: $*" >&2
+    exit 1
+    ;;
+esac
+EOF
+chmod +x "${TMP_DIR}/bin/sudo"
+
 ssh() {
   local found_host=0
   local arg
@@ -49,6 +70,11 @@ ssh() {
   done
   [[ "${found_host}" == "1" ]] || fail "mock ssh did not receive a remote host"
   [[ -n "${remote_command}" ]] || fail "mock ssh did not receive a remote command"
+  if [[ "${FAKE_SSH_DOCKER_MISSING_COUNT:-0}" -gt 0 ]]; then
+    FAKE_SSH_DOCKER_MISSING_COUNT=$((FAKE_SSH_DOCKER_MISSING_COUNT - 1))
+    echo "Docker is not installed on the DevKit." >&2
+    return 42
+  fi
   # OpenSSH sends a space-joined command string to the login shell. Reparse it
   # here so the test catches quoting bugs hidden by direct argv forwarding.
   bash --noprofile --norc -c "${remote_command}"
@@ -62,6 +88,36 @@ export SIMA_DEVKIT_CONTAINER_REGISTRY=192.0.2.10:5050
 export DOCKER_LOG="${TMP_DIR}/docker.log"
 export INJECTION_MARKER="${TMP_DIR}/injected"
 export PATH="${TMP_DIR}/bin:${PATH}"
+
+: > "${DOCKER_LOG}"
+devkit-container setup --yes
+grep -Fqx 'SUDO_ARG=usermod' "${DOCKER_LOG}" || fail "setup did not configure the docker group"
+grep -Fqx 'SUDO_ARG=systemctl' "${DOCKER_LOG}" || fail "setup did not enable Docker services"
+
+FAKE_SSH_DOCKER_MISSING_COUNT=1
+export FAKE_SSH_DOCKER_MISSING_COUNT
+if devkit-container list >"${TMP_DIR}/missing.out" 2>&1; then
+  fail "noninteractive Docker installation should require explicit approval"
+fi
+grep -Fq 'dk container setup --yes' "${TMP_DIR}/missing.out" || \
+  fail "missing Docker error did not explain explicit setup"
+
+devkit-container-install-docker() {
+  printf 'INSTALL_REQUESTED\n' >> "${DOCKER_LOG}"
+}
+: > "${DOCKER_LOG}"
+FAKE_SSH_DOCKER_MISSING_COUNT=1
+export FAKE_SSH_DOCKER_MISSING_COUNT
+devkit-container list
+grep -Fqx 'INSTALL_REQUESTED' "${DOCKER_LOG}" || fail "missing Docker did not offer installation"
+grep -Fqx 'ARG=ps' "${DOCKER_LOG}" || fail "container command was not retried after installation"
+
+grep -Fq '"data-root"] = "/data/docker"' "${ROOT_DIR}/scripts/devkit.sh" || \
+  fail "installer does not configure the Modalix Docker data root"
+grep -Fq '/data/containerd /var/lib/containerd none bind 0 0' "${ROOT_DIR}/scripts/devkit.sh" || \
+  fail "installer does not persist containerd storage under /data"
+grep -Fq 'docker-ce docker-ce-cli containerd.io' "${ROOT_DIR}/scripts/devkit.sh" || \
+  fail "installer does not install the supported Docker CE packages"
 
 resolved="$(devkit-container-image-ref hello-neat:develop)"
 [[ "${resolved}" == "192.0.2.10:5050/hello-neat:develop" ]] || \
