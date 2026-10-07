@@ -151,6 +151,8 @@ grep -Fq 'data["insecure-registries"]' "${ROOT_DIR}/scripts/devkit-container-rem
   fail "installer does not configure the scoped SDK registry"
 grep -Fq '.sima-sdk-install-in-progress' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
   fail "installer does not preserve retry state after an interrupted installation"
+grep -Fq 'Docker setup is incomplete on the DevKit.' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+  fail "container preflight does not resume an incomplete Docker installation"
 grep -Fq 'containerd_entries' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
   fail "containerd migration is not resumable"
 grep -Fq 'Resuming an interrupted Docker installation.' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \

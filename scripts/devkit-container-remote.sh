@@ -353,10 +353,15 @@ if [[ "${action}" == setup ]]; then
 fi
 
 if [[ "${action}" == docker-check ]]; then
-  if command -v docker >/dev/null 2>&1; then
+  if command -v docker >/dev/null 2>&1 && \
+     [[ ! -e /etc/docker/.sima-sdk-install-in-progress ]]; then
     exit 0
   fi
-  echo "Docker is not installed on the DevKit." >&2
+  if command -v docker >/dev/null 2>&1; then
+    echo "Docker setup is incomplete on the DevKit." >&2
+  else
+    echo "Docker is not installed on the DevKit." >&2
+  fi
   exit 42
 fi
 
