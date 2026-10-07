@@ -173,7 +173,7 @@ resolved="$(devkit-container-image-ref localhost:5050/team/hello-neat:develop)"
 devkit-container deploy localhost:5050/team/hello-neat:develop \
   --name hello-neat --network host -- /app --label "two words" \
   '; touch "$INJECTION_MARKER"; #' '$(touch "$INJECTION_MARKER")' ""
-[[ "$(grep -c '^BEGIN$' "${DOCKER_LOG}")" == "6" ]] || \
+[[ "$(grep -c '^BEGIN$' "${DOCKER_LOG}")" == "5" ]] || \
   fail "deploy should configure the registry, then check Docker, pull, inspect, and run"
 grep -Fqx 'ARG=pull' "${DOCKER_LOG}" || fail "deploy did not pull"
 grep -Fqx 'ARG=inspect' "${DOCKER_LOG}" || fail "deploy did not inspect image architecture"

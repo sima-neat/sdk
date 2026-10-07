@@ -130,11 +130,16 @@ install_docker() (
       sudo -n mv "${disabled_mirror}" "${mirror}"
     fi
   }
+  containerd_bind_mount_ready() {
+    mountpoint -q /var/lib/containerd && \
+      [[ "$(findmnt -n -o FSROOT --target /var/lib/containerd)" == /data/containerd ]] && \
+      [[ "$(findmnt -n -o MAJ:MIN --target /var/lib/containerd)" == \
+         "$(findmnt -n -o MAJ:MIN --target /data/containerd)" ]]
+  }
   cleanup_install() {
     restore_elxr_mirror
     if [[ "${services_stopped}" == 1 ]]; then
-      if mountpoint -q /var/lib/containerd && \
-         [[ "$(findmnt -n -o SOURCE --target /var/lib/containerd)" == /data/containerd ]]; then
+      if containerd_bind_mount_ready; then
         sudo -n systemctl start containerd docker >/dev/null 2>&1 || true
       else
         echo "Docker services remain stopped until containerd storage setup is completed." >&2
@@ -220,7 +225,7 @@ PY
   services_stopped=1
   sudo -n mkdir -p /data/containerd /var/lib/containerd
   if mountpoint -q /var/lib/containerd; then
-    if [[ "$(findmnt -n -o SOURCE --target /var/lib/containerd)" != /data/containerd ]]; then
+    if ! containerd_bind_mount_ready; then
       echo "/var/lib/containerd is already mounted from an unexpected source; refusing to replace it." >&2
       return 2
     fi
@@ -340,6 +345,11 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 2
 fi
 
+if [[ "${action}" == registry-setup ]]; then
+  configure_container_registry "${1:-}"
+  exit $?
+fi
+
 DOCKER=(docker)
 if ! docker info >/dev/null 2>&1; then
   if command -v sudo >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; then
@@ -349,11 +359,6 @@ if ! docker info >/dev/null 2>&1; then
     echo "Run DevKit setup again so sima-cli can configure passwordless sudo." >&2
     exit 2
   fi
-fi
-
-if [[ "${action}" == registry-setup ]]; then
-  configure_container_registry "${1:-}"
-  exit $?
 fi
 
 run_image() {
