@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # Generated Dockerfile for modalix.
 ARG SDK_BASE_IMAGE=ubuntu:24.04
-ARG SDK_CROSS_TOOLCHAIN_IMAGE=debian:bookworm
+ARG SDK_CROSS_TOOLCHAIN_IMAGE=debian:trixie
 FROM ${SDK_CROSS_TOOLCHAIN_IMAGE} AS cross-toolchain
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -13,8 +13,8 @@ RUN chmod 755 /usr/local/bin/install-cross-toolchain.sh && \
 FROM ${SDK_BASE_IMAGE}
 
 ARG SDK_PKG_LIST
-ARG BASE_SDK_VERSION=2.1.3
-ARG SDK_APT_CHANNEL=release
+ARG BASE_SDK_VERSION=3.0.0
+ARG SDK_APT_CHANNEL=daily
 ARG REQUESTED_PRE_RELEASE_BASE=
 ARG MINIMAL_IMAGE=0
 ARG NEAT_BRANCH=main
@@ -24,7 +24,6 @@ ARG NEAT_INSIGHT_BRANCH=
 ARG NEAT_INSIGHT_VERSION=
 ARG OPENVSCODE_SERVER_VERSION=openvscode-server-v1.109.5
 ARG CODEX_CLI_VERSION=0.153.4
-ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libblkid-dev libbsd0 libcharls2 libcpp-httplib-dev libelf1 libexpat1 libffi-dev libffi8 libgdal32 libgfortran5 libglib2.0-0 libgomp1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev libjpeg62-turbo libjson-glib-dev liblapack-dev liblapack3 liblzma5 libmount-dev libopenblas-pthread-dev libopenblas0-pthread libopenjp2-7 libpng16-16 libpython3.11-dev libqt5gui5 libsepol-dev libspdlog-dev libssl3 libstdc++6 libsuperlu-dev libsuperlu5 libtiff6 liburcu-dev libwebp7 python3-dev python3.11-dev zlib1g"
 ENV SDK_PKG_LIST="\
 	libgrpc-dev,\
 	protobuf-compiler-grpc,\
@@ -134,7 +133,7 @@ RUN set -eux; \
     chmod -R a+rX "${OPENVSCODE_SERVER_DIR}"
 
 COPY --from=cross-toolchain /opt/cross-toolchain/ /
-COPY --from=cross-toolchain /opt/cross-toolchain/ /opt/bookworm-cross-toolchain/
+COPY --from=cross-toolchain /opt/cross-toolchain/ /opt/sdk-cross-toolchain/
 COPY scripts/pin-cross-toolchain.sh /usr/local/bin/pin-cross-toolchain.sh
 
 RUN chmod 755 /usr/local/bin/pin-cross-toolchain.sh && \
@@ -149,10 +148,18 @@ RUN chmod 755 /usr/local/bin/pin-cross-toolchain.sh && \
     rm -f /tmp/cross-smoke.o /tmp/cross-smoke.c /tmp/cross-smoke.cpp /tmp/cross-smoke-cxx
 
 COPY config/platform-package-patterns.txt /usr/local/share/sima-sdk/platform-package-patterns.txt
+COPY scripts/resolve-platform-config.sh /usr/local/bin/resolve-platform-config.sh
 COPY scripts/configure-apt-repos.sh /usr/local/bin/configure-apt-repos.sh
 
-RUN chmod 755 /usr/local/bin/configure-apt-repos.sh && \
-    configure-apt-repos.sh "${BASE_SDK_VERSION}"
+ENV SDK_PLATFORM_VERSION_FILE=/usr/local/share/sima-sdk/platform-version
+RUN if [ "${SDK_APT_CHANNEL}" = daily ]; then \
+      PRE_RELEASE_BASE="${BASE_SDK_VERSION}" STABLE_BASE_SDK_VERSION="${BASE_SDK_VERSION}" \
+        bash /usr/local/bin/resolve-platform-config.sh > /tmp/platform-config && \
+      sed -n 's/^base_sdk_version=//p' /tmp/platform-config > "${SDK_PLATFORM_VERSION_FILE}"; \
+    else printf '%s\n' "${BASE_SDK_VERSION}" > "${SDK_PLATFORM_VERSION_FILE}"; fi && \
+    test -s "${SDK_PLATFORM_VERSION_FILE}" && \
+    chmod 755 /usr/local/bin/configure-apt-repos.sh && \
+    configure-apt-repos.sh "$(cat "${SDK_PLATFORM_VERSION_FILE}")"
 
 RUN mkdir -p /tmp/supervisor /var/log/supervisor && \
     mkdir -p /etc/supervisor/conf.available && \
@@ -187,8 +194,8 @@ RUN install-rustup.sh
 
 RUN --mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,sharing=locked \
     SYSROOT_UPDATE_DOWNLOAD_DIR=/var/cache/sima-sdk-debs \
-    setup-sdk-sysroot.sh "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}" && \
-    cp -a /opt/bookworm-cross-toolchain/. / && \
+    setup-sdk-sysroot.sh "$(cat "${SDK_PLATFORM_VERSION_FILE}")" "${SDK_PKG_LIST}" && \
+    cp -a /opt/sdk-cross-toolchain/. / && \
     pin-cross-toolchain.sh && \
     aarch64-linux-gnu-gcc --version && \
     aarch64-linux-gnu-g++ --version && \
@@ -199,11 +206,22 @@ RUN --mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,shari
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /tmp/*
 
+# Exercise the target libc/linker layout, not only the compiler's own sysroot.
+RUN if [ "${SDK_APT_CHANNEL}" = daily ] && [ "${MINIMAL_IMAGE}" != 1 ]; then \
+      printf '#include <gst/gst.h>\n#include <simaai/simaai_memory.h>\nint main() { gst_init(nullptr, nullptr); return 0; }\n' > /tmp/agate-smoke.cpp; \
+      flags="$(PKG_CONFIG_LIBDIR=/opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu/pkgconfig:/opt/toolchain/aarch64/modalix/usr/share/pkgconfig pkg-config --cflags --libs gstreamer-1.0)" && \
+      aarch64-linux-gnu-g++ --sysroot=/opt/toolchain/aarch64/modalix /tmp/agate-smoke.cpp $flags \
+        -L/opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu \
+        -Wl,--no-as-needed -lMLArt -lsimaaimem -Wl,--as-needed -o /tmp/agate-smoke && \
+      aarch64-linux-gnu-readelf -h /tmp/agate-smoke | grep -q AArch64 && \
+      rm -f /tmp/agate-smoke.cpp /tmp/agate-smoke; \
+    fi
+
 # sima-cli uses /etc/sdk-release to distinguish a Palette SDK from a generic
 # Linux host. Keep this build-time marker stable so dependency layers are not
 # invalidated by the branch/commit identity written into the final image.
 RUN printf 'Platform Version = %s\nSDK Version = %s_Palette_SDK\n' \
-      "${BASE_SDK_VERSION}" "${BASE_SDK_VERSION}" > /etc/sdk-release
+      "$(cat "${SDK_PLATFORM_VERSION_FILE}")" "$(cat "${SDK_PLATFORM_VERSION_FILE}")" > /etc/sdk-release
 
 ARG SIMA_CLI_REF
 ARG SIMA_CLI_VERSION
@@ -215,6 +233,7 @@ RUN SIMA_CLI_REF="${SIMA_CLI_REF}" \
 COPY scripts/install-sysroot-overlay.sh /usr/local/bin/install-sysroot-overlay.sh
 COPY scripts/install-sdk-sysroot-overlay.sh /usr/local/bin/install-sdk-sysroot-overlay.sh
 COPY scripts/sysroot.sh /usr/local/bin/sysroot
+COPY scripts/sysroot-directory.py /usr/local/bin/sysroot-directory.py
 COPY scripts/neat-deps.sh /usr/local/bin/neat-deps.sh
 COPY deps/manifest.json /usr/local/share/sima-sdk/deps/manifest.json
 COPY config/sysroot-overlay.conf /usr/local/share/sima-sdk/sysroot-overlay.conf
@@ -237,7 +256,10 @@ RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     ln -sf /usr/local/bin/insight-admin /usr/local/bin/install-neat-insight && \
     chmod 755 /usr/local/bin/devkit.sh && \
     chmod 755 /usr/local/bin/devkit-sync-rsync.sh && \
-    install-sdk-sysroot-overlay.sh
+    install-sdk-sysroot-overlay.sh && \
+    if [ "${SDK_APT_CHANNEL}" = daily ]; then \
+      /usr/bin/python3 /usr/local/bin/sysroot-directory.py init /opt/toolchain/aarch64/modalix; \
+    fi
 
 RUN if [ -n "${NEAT_INSIGHT_BRANCH}${NEAT_INSIGHT_VERSION}" ]; then \
       /usr/local/bin/insight-admin update "${NEAT_INSIGHT_BRANCH:-main}" "${NEAT_INSIGHT_VERSION:-latest}"; \
@@ -260,8 +282,8 @@ ARG NEAT_CORE_SOURCE_REASON=
 ARG NEAT_APPS_SOURCE_REF=
 ARG NEAT_CORE_RESOLUTION_ATTEMPT=manual
 RUN echo "Neat Core resolution attempt: ${NEAT_CORE_RESOLUTION_ATTEMPT}" && \
-    if [ "${SDK_APT_CHANNEL}" = pre-release ]; then \
-      install-neat-resources.sh --skip "pre-release platform SDK does not bundle Core"; \
+    if [ "${SDK_APT_CHANNEL}" != release ]; then \
+      install-neat-resources.sh --skip "platform-only SDK does not bundle Core"; \
     else \
       NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}" \
       NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON}" \
@@ -284,7 +306,8 @@ LABEL org.opencontainers.image.source="https://github.com/sima-neat/sdk" \
       org.opencontainers.image.version="${SDK_RELEASE_REF}"
 
 COPY scripts/write-sdk-release.sh /usr/local/bin/write-sdk-release.sh
-RUN chmod 755 /usr/local/bin/write-sdk-release.sh && write-sdk-release.sh
+RUN chmod 755 /usr/local/bin/write-sdk-release.sh && \
+    BASE_SDK_VERSION="$(cat "${SDK_PLATFORM_VERSION_FILE}")" write-sdk-release.sh
 
 # Expose required ports
 EXPOSE 9900 9999 10000 9000-9079 9100-9179 8081 8554

@@ -16,12 +16,12 @@ DEVKIT_SH_FUNCTIONS_ONLY=1 source "${ROOT_DIR}/scripts/devkit.sh"
 
 cat > "${tmpdir}/platform-release" <<'EOF'
 SDK Profile = platform-cross
-Platform Version = 2.1.3~pre4460
-Platform Base = 2.1.3
+Platform Version = 3.0.0~pre4460
+Platform Base = 3.0.0
 Neat Core = not bundled
 EOF
 
-[[ "$(sdk_platform_version_from_release_file "${tmpdir}/platform-release")" == "2.1.3" ]] || \
+[[ "$(sdk_platform_version_from_release_file "${tmpdir}/platform-release")" == "3.0.0" ]] || \
   fail "platform-cross profile did not use Platform Base for DevKit compatibility"
 
 platform_output="$(
@@ -36,11 +36,11 @@ grep -Fq 'Neat Core is not bundled in this platform SDK; skipping DevKit Core sy
 
 cat > "${tmpdir}/full-release" <<'EOF'
 SDK Profile = full
-Platform Version = 2.1.3
+Platform Version = 3.0.0
 Neat Core = bundled
 EOF
 
-[[ "$(sdk_platform_version_from_release_file "${tmpdir}/full-release")" == "2.1.3" ]] || \
+[[ "$(sdk_platform_version_from_release_file "${tmpdir}/full-release")" == "3.0.0" ]] || \
   fail "full profile did not retain Platform Version compatibility"
 
 full_output="$(

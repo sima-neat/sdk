@@ -43,7 +43,7 @@ bzip2	amd64	1.0.8-5.1build0.1
 bzip2	arm64	1.0.8-5+b1
 EOF
 
-PATH="${WORK_DIR}/bin:${PATH}" "${VALIDATOR}" 2.1.3~pre4617 "${WORK_DIR}/debs"
+PATH="${WORK_DIR}/bin:${PATH}" "${VALIDATOR}" 3.0.0~pre4617 "${WORK_DIR}/debs"
 
 cat > "${WORK_DIR}/debs/expected-package-versions.tsv" <<'EOF'
 bzip2	amd64	1.0.8-5.1build0.1
@@ -51,7 +51,7 @@ bzip2	arm64	incorrect-version
 EOF
 
 if PATH="${WORK_DIR}/bin:${PATH}" \
-  "${VALIDATOR}" 2.1.3~pre4617 "${WORK_DIR}/debs" 2>/dev/null; then
+  "${VALIDATOR}" 3.0.0~pre4617 "${WORK_DIR}/debs" 2>/dev/null; then
   echo "Validator accepted an incorrect architecture-specific package version." >&2
   exit 1
 fi
@@ -61,6 +61,6 @@ cat > "${WORK_DIR}/debs/expected-package-versions.tsv" <<'EOF'
 bzip2	1.0.8-5.1build0.1
 EOF
 
-PATH="${WORK_DIR}/bin:${PATH}" "${VALIDATOR}" 2.1.3~pre4617 "${WORK_DIR}/debs"
+PATH="${WORK_DIR}/bin:${PATH}" "${VALIDATOR}" 3.0.0~pre4617 "${WORK_DIR}/debs"
 
 echo "Sysroot package version validator tests passed."

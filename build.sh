@@ -11,11 +11,12 @@ CONTEXT_DIR="${CONTEXT_DIR:-${SCRIPT_DIR}}"
 IMAGE_NAME="${IMAGE_NAME:-sdk}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 MINIMAL_IMAGE="${MINIMAL_IMAGE:-0}"
+SDK_PKG_LIST="${SDK_PKG_LIST:-}"
 SDK_BASE_IMAGE="${SDK_BASE_IMAGE:-ubuntu:24.04}"
-SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE:-debian:bookworm}"
 DOCKER_PLATFORM="${DOCKER_PLATFORM:-}"
-BASE_SDK_VERSION="${BASE_SDK_VERSION:-2.1.3}"
-SDK_APT_CHANNEL="${SDK_APT_CHANNEL:-release}"
+BASE_SDK_VERSION="${BASE_SDK_VERSION:-3.0.0}"
+SDK_APT_CHANNEL="${SDK_APT_CHANNEL:-daily}"
+SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE:-debian:trixie}"
 REQUESTED_PRE_RELEASE_BASE="${REQUESTED_PRE_RELEASE_BASE:-}"
 NEAT_BRANCH="${NEAT_BRANCH:-main}"
 NEAT_VERSION="${NEAT_VERSION:-latest}"
@@ -24,7 +25,11 @@ NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH:-}"
 NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION:-}"
 NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF:-}"
 NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON:-}"
-if [[ -z "${NEAT_CORE_SOURCE_REF}" ]]; then
+if [[ "${SDK_APT_CHANNEL}" != release ]]; then
+  NEAT_CORE_SOURCE_REF=""
+  NEAT_CORE_SOURCE_REASON="platform-only SDK does not bundle Core"
+  NEAT_APPS_SOURCE_REF=""
+elif [[ -z "${NEAT_CORE_SOURCE_REF}" ]]; then
   if resolved_core_source_ref="$(
     neat_resolve_dependency_source_ref core https://github.com/sima-neat/core.git
   )"; then
@@ -39,9 +44,11 @@ if [[ -z "${NEAT_CORE_SOURCE_REF}" ]]; then
     fi
   fi
 fi
-NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF:-$(
-  neat_resolve_dependency_source_ref apps https://github.com/sima-neat/apps.git
-)}"
+if [[ "${SDK_APT_CHANNEL}" == release ]]; then
+  NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF:-$(
+    neat_resolve_dependency_source_ref apps https://github.com/sima-neat/apps.git
+  )}"
+fi
 SIMA_CLI_REF="${SIMA_CLI_REF:-$(neat_dependency_ref sima-cli)}"
 SIMA_CLI_VERSION="${SIMA_CLI_VERSION:-}"
 BUILDX_OUTPUT="${BUILDX_OUTPUT:-load}"
@@ -71,7 +78,7 @@ Environment overrides:
   SDK_BASE_IMAGE  Base Docker image for the SDK host/container userspace (default: ${SDK_BASE_IMAGE})
   SDK_CROSS_TOOLCHAIN_IMAGE  Base image used only to source the pinned aarch64 cross compiler (default: ${SDK_CROSS_TOOLCHAIN_IMAGE})
   BASE_SDK_VERSION  Base eLxr/SiMa SDK package version to install (default: ${BASE_SDK_VERSION})
-  SDK_APT_CHANNEL  Platform package channel: release or pre-release (default: ${SDK_APT_CHANNEL})
+  SDK_APT_CHANNEL  Platform package channel: release, pre-release, or daily (default: ${SDK_APT_CHANNEL})
   NEAT_BRANCH  NEAT Framework branch to bake into /neat-resources (default: ${NEAT_BRANCH})
   NEAT_VERSION  NEAT Framework version/tag to bake into /neat-resources (default: ${NEAT_VERSION})
   NEAT_CORE_TARGET  Override the Neat Core Vulcan package target from deps/manifest.json
@@ -122,6 +129,15 @@ fi
 if [[ ! -f "${DOCKERFILE}" ]]; then
   echo "Dockerfile not found: ${DOCKERFILE}" >&2
   exit 1
+fi
+
+if [[ "${SDK_APT_CHANNEL}" == daily && "${BASE_SDK_VERSION}" != *~git* ]]; then
+  platform_config="$(PRE_RELEASE_BASE="${BASE_SDK_VERSION}" \
+    STABLE_BASE_SDK_VERSION="${BASE_SDK_VERSION}" \
+    "${SCRIPT_DIR}/scripts/resolve-platform-config.sh")"
+  REQUESTED_PRE_RELEASE_BASE="${BASE_SDK_VERSION}"
+  BASE_SDK_VERSION="$(printf '%s\n' "${platform_config}" | sed -n 's/^base_sdk_version=//p')"
+  [[ -n "${BASE_SDK_VERSION}" ]] || { echo "Platform version resolution failed" >&2; exit 1; }
 fi
 
 if [[ "${SIMA_CLI_REF}" == *:* ]]; then
@@ -244,6 +260,7 @@ if docker buildx version >/dev/null 2>&1; then
   buildx_cmd=(
     docker buildx build
     --platform "${docker_platform}"
+    --build-arg SDK_PKG_LIST="${SDK_PKG_LIST}"
     --build-arg MINIMAL_IMAGE="${MINIMAL_IMAGE}"
     --build-arg SDK_BASE_IMAGE="${SDK_BASE_IMAGE}"
     --build-arg SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE}"
@@ -308,6 +325,7 @@ fi
 build_cmd=(
   docker build
   --platform "${docker_platform}"
+  --build-arg SDK_PKG_LIST="${SDK_PKG_LIST}"
   --build-arg MINIMAL_IMAGE="${MINIMAL_IMAGE}"
   --build-arg SDK_BASE_IMAGE="${SDK_BASE_IMAGE}"
   --build-arg SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE}"
