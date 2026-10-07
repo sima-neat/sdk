@@ -8,6 +8,7 @@ if [[ -z "${image_ref}" ]]; then
 fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+sdk_arch="$(docker image inspect "${image_ref}" --format '{{.Architecture}}')"
 container_name="neat-sdk-buildx-smoke-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 remote_root=/tmp/neat-sdk-smoke-tests/container-build
 remote_user=buildx-smoke
@@ -38,4 +39,13 @@ docker exec -u root "${container_name}" bash -lc "
   chmod +x '${remote_root}/run.sh'
 "
 
-"${script_dir}/run.sh" "${container_name}"
+if "${script_dir}/run.sh" "${container_name}"; then
+  echo "ARM64 Hello Neat container validated from the ${sdk_arch} SDK image."
+else
+  status=$?
+  if [[ ${status} -eq 77 ]]; then
+    echo "SDK container-build smoke test skipped for the ${sdk_arch} SDK image."
+  else
+    exit "${status}"
+  fi
+fi
