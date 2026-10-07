@@ -24,6 +24,9 @@ ARG NEAT_INSIGHT_BRANCH=
 ARG NEAT_INSIGHT_VERSION=
 ARG OPENVSCODE_SERVER_VERSION=openvscode-server-v1.109.5
 ARG CODEX_CLI_VERSION=0.153.4
+ARG DOCKER_CLI_VERSION=29.8.2
+ARG DOCKER_BUILDX_VERSION=0.37.2
+ARG TARGETARCH
 ENV SDK_PKG_LIST="\
 	libgrpc-dev,\
 	protobuf-compiler-grpc,\
@@ -115,6 +118,40 @@ RUN apt-get update --allow-releaseinfo-change && \
     npm --version && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# Install only the Docker client and Buildx plugin. The SDK deliberately does
+# not run dockerd; sima-cli can opt in to mounting an existing builder socket.
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) \
+        docker_arch="x86_64"; \
+        docker_sha256="995d1ef289677f74fd58d8d2c35727b6a4ee389c69db8638a3e42d0487aa5b0f"; \
+        buildx_sha256="982ca20490b45ed1ec8d99795974d3d874a358f75938c9c237305010e6b7e548" \
+        ;; \
+      arm64) \
+        docker_arch="aarch64"; \
+        docker_sha256="76a624e4a8e5da654d1150e808175125efb5a6f1b6aa1cbd9caee18f51047a50"; \
+        buildx_sha256="efa38cb7aa7db2dbb9ad049b00b0a9737f66f033626177b5a4e845184ad7ab29" \
+        ;; \
+      *) echo "Unsupported Docker CLI architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    docker_archive="docker-${DOCKER_CLI_VERSION}.tgz"; \
+    curl -fsSL --retry 3 --retry-delay 2 \
+      "https://download.docker.com/linux/static/stable/${docker_arch}/${docker_archive}" \
+      -o "/tmp/${docker_archive}"; \
+    echo "${docker_sha256}  /tmp/${docker_archive}" | sha256sum -c -; \
+    tar -xzf "/tmp/${docker_archive}" -C /tmp; \
+    install -m 0755 /tmp/docker/docker /usr/local/bin/docker; \
+    install -d -m 0755 /usr/local/lib/docker/cli-plugins; \
+    buildx_asset="buildx-v${DOCKER_BUILDX_VERSION}.linux-${TARGETARCH}"; \
+    curl -fsSL --retry 3 --retry-delay 2 \
+      "https://github.com/docker/buildx/releases/download/v${DOCKER_BUILDX_VERSION}/${buildx_asset}" \
+      -o /usr/local/lib/docker/cli-plugins/docker-buildx; \
+    echo "${buildx_sha256}  /usr/local/lib/docker/cli-plugins/docker-buildx" | sha256sum -c -; \
+    chmod 0755 /usr/local/lib/docker/cli-plugins/docker-buildx; \
+    test "$(docker --version | awk '{print $3}' | tr -d ',')" = "${DOCKER_CLI_VERSION}"; \
+    docker buildx version | grep -F "v${DOCKER_BUILDX_VERSION}"; \
+    rm -rf /tmp/docker "/tmp/${docker_archive}"
 
 RUN set -eux; \
     case "$(dpkg --print-architecture)" in \
@@ -303,7 +340,8 @@ ENV SDK_IMAGE_TAG="${SDK_RELEASE_REF}"
 ENV SDK_PROMPT_HOSTNAME="neat-sdk-${SDK_RELEASE_REF}"
 LABEL org.opencontainers.image.source="https://github.com/sima-neat/sdk" \
       org.opencontainers.image.revision="${SDK_GIT_HASH}" \
-      org.opencontainers.image.version="${SDK_RELEASE_REF}"
+      org.opencontainers.image.version="${SDK_RELEASE_REF}" \
+      com.sima.sdk.platform.version="${BASE_SDK_VERSION}"
 
 COPY scripts/write-sdk-release.sh /usr/local/bin/write-sdk-release.sh
 RUN chmod 755 /usr/local/bin/write-sdk-release.sh && \

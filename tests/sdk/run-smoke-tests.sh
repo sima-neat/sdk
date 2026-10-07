@@ -21,5 +21,10 @@ docker cp "${SCRIPT_DIR}/." "${CONTAINER_ID}:${REMOTE_DIR}"
 docker exec "${CONTAINER_ID}" chmod +x "${REMOTE_DIR}/run-in-container.sh"
 docker exec "${CONTAINER_ID}" bash "${REMOTE_DIR}/run-in-container.sh"
 
+if [[ "$(docker image inspect "${IMAGE_REF}" --format '{{.Architecture}}')" == "arm64" ]]; then
+  chmod +x "${SCRIPT_DIR}/container-build/run-sdk-image.sh"
+  "${SCRIPT_DIR}/container-build/run-sdk-image.sh" "${IMAGE_REF}"
+fi
+
 chmod +x "${SCRIPT_DIR}/insight-video-routing/run.sh"
 "${SCRIPT_DIR}/insight-video-routing/run.sh" "${CONTAINER_ID}"
