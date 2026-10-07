@@ -1074,6 +1074,13 @@ devkit-container-image-ref() {
 devkit-container-remote() {
   local action="$1"
   shift
+  local remote_script=""
+  local remote_script_encoded=""
+  local remote_command=""
+  # The wrapper is evaluated by Bash on the DevKit, not by this shell.
+  # shellcheck disable=SC2016
+  local remote_wrapper='set -euo pipefail; encoded="${1#x}"; script="$(printf "%s" "${encoded}" | base64 -d; printf .)"; script="${script%?}"; shift; args=(); for encoded in "$@"; do encoded="${encoded#x}"; decoded="$(printf "%s" "${encoded}" | base64 -d; printf .)"; args+=("${decoded%?}"); done; exec bash --noprofile --norc -c "${script}" -- "${args[@]}"'
+  local encoded=""
   local -a ssh_args=(
     ssh
     -p "${DEVKIT_SYNC_DEVKIT_PORT:-22}"
@@ -1086,9 +1093,13 @@ devkit-container-remote() {
     ssh_args+=(-T)
   fi
   ssh_args+=("${DEVKIT_SYNC_DEVKIT_USER:-sima}@${DEVKIT_SYNC_DEVKIT_IP}")
-  ssh_args+=(bash --noprofile --norc -s -- "${action}" "$@")
 
-  "${ssh_args[@]}" <<'EOS_CONTAINER'
+  # OpenSSH joins remote argv with spaces and asks the login shell to parse the
+  # resulting command. Encode the fixed helper and each argument independently
+  # so whitespace and shell metacharacters survive that extra parsing step.
+  # Supplying the helper through bash -c also leaves SSH stdin attached to the
+  # caller, which is required by `docker run -i` and interactive shells.
+  IFS= read -r -d '' remote_script <<'EOS_CONTAINER' || true
 set -euo pipefail
 
 action="${1:?missing container action}"
@@ -1203,6 +1214,16 @@ case "${action}" in
     ;;
 esac
 EOS_CONTAINER
+
+  remote_script_encoded="$(printf '%s' "${remote_script}" | base64 | tr -d '\n')"
+  remote_command="bash --noprofile --norc -c '${remote_wrapper}' -- x${remote_script_encoded}"
+  for arg in "${action}" "$@"; do
+    encoded="$(printf '%s' "${arg}" | base64 | tr -d '\n')"
+    remote_command+=" x${encoded}"
+  done
+  ssh_args+=("${remote_command}")
+
+  "${ssh_args[@]}"
 }
 
 devkit-container() {

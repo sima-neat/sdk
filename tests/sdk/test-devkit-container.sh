@@ -26,22 +26,32 @@ set -euo pipefail
 if [[ "${1:-}" == "image" && "${2:-}" == "inspect" ]]; then
   printf '%s\n' "${FAKE_DOCKER_ARCH:-arm64}"
 fi
+if [[ "${1:-}" == "run" && "${FAKE_DOCKER_READ_STDIN:-0}" == "1" ]]; then
+  IFS= read -r line
+  printf 'STDIN=%s\n' "${line}" >> "${DOCKER_LOG:?}"
+fi
 EOF
 chmod +x "${TMP_DIR}/bin/docker"
 
 ssh() {
-  local found_separator=0
+  local found_host=0
   local arg
-  local -a remote_args=()
+  local remote_command=""
   for arg in "$@"; do
-    if [[ "${found_separator}" == "1" ]]; then
-      remote_args+=("${arg}")
-    elif [[ "${arg}" == "--" ]]; then
-      found_separator=1
+    if [[ "${found_host}" == "1" ]]; then
+      if [[ -n "${remote_command}" ]]; then
+        remote_command+=" "
+      fi
+      remote_command+="${arg}"
+    elif [[ "${arg}" == *@* ]]; then
+      found_host=1
     fi
   done
-  [[ "${found_separator}" == "1" ]] || fail "mock ssh did not receive remote arguments"
-  bash --noprofile --norc -s -- "${remote_args[@]}"
+  [[ "${found_host}" == "1" ]] || fail "mock ssh did not receive a remote host"
+  [[ -n "${remote_command}" ]] || fail "mock ssh did not receive a remote command"
+  # OpenSSH sends a space-joined command string to the login shell. Reparse it
+  # here so the test catches quoting bugs hidden by direct argv forwarding.
+  bash --noprofile --norc -c "${remote_command}"
 }
 
 export DEVKIT_SYNC_DEVKIT_IP=192.0.2.20
@@ -50,6 +60,7 @@ export DEVKIT_SYNC_DEVKIT_PORT=22
 export SIMA_CONTAINER_REGISTRY=localhost:5050
 export SIMA_DEVKIT_CONTAINER_REGISTRY=192.0.2.10:5050
 export DOCKER_LOG="${TMP_DIR}/docker.log"
+export INJECTION_MARKER="${TMP_DIR}/injected"
 export PATH="${TMP_DIR}/bin:${PATH}"
 
 resolved="$(devkit-container-image-ref hello-neat:develop)"
@@ -61,8 +72,11 @@ resolved="$(devkit-container-image-ref localhost:5050/team/hello-neat:develop)"
   fail "SDK registry address was not replaced: ${resolved}"
 
 : > "${DOCKER_LOG}"
+# These literal payloads must reach Docker unchanged, never expand locally or remotely.
+# shellcheck disable=SC2016
 devkit-container deploy localhost:5050/team/hello-neat:develop \
-  --name hello-neat --network host -- /app --label "two words"
+  --name hello-neat --network host -- /app --label "two words" \
+  '; touch "$INJECTION_MARKER"; #' '$(touch "$INJECTION_MARKER")' ""
 [[ "$(grep -c '^BEGIN$' "${DOCKER_LOG}")" == "4" ]] || \
   fail "deploy should check Docker, pull, inspect, and run"
 grep -Fqx 'ARG=pull' "${DOCKER_LOG}" || fail "deploy did not pull"
@@ -72,6 +86,21 @@ grep -Fqx 'ARG=192.0.2.10:5050/team/hello-neat:develop' "${DOCKER_LOG}" || \
 grep -Fqx 'ARG=--name' "${DOCKER_LOG}" || fail "Docker run option was not forwarded"
 grep -Fqx 'ARG=/app' "${DOCKER_LOG}" || fail "container command was not forwarded"
 grep -Fqx 'ARG=two words' "${DOCKER_LOG}" || fail "quoted container argument was not preserved"
+# shellcheck disable=SC2016
+grep -Fqx 'ARG=; touch "$INJECTION_MARKER"; #' "${DOCKER_LOG}" || \
+  fail "semicolon container argument was not preserved"
+# shellcheck disable=SC2016
+grep -Fqx 'ARG=$(touch "$INJECTION_MARKER")' "${DOCKER_LOG}" || \
+  fail "command-substitution container argument was not preserved"
+grep -Fqx 'ARG=' "${DOCKER_LOG}" || fail "empty container argument was not preserved"
+[[ ! -e "${INJECTION_MARKER}" ]] || fail "container argument was executed by the remote shell"
+
+: > "${DOCKER_LOG}"
+export FAKE_DOCKER_READ_STDIN=1
+printf 'keyboard input\n' | devkit-container run hello-neat:develop -i -- /bin/sh
+unset FAKE_DOCKER_READ_STDIN
+grep -Fqx 'STDIN=keyboard input' "${DOCKER_LOG}" || \
+  fail "interactive container did not receive caller stdin"
 
 : > "${DOCKER_LOG}"
 devkit-container run hello-neat:develop --rm
