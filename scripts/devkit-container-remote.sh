@@ -131,8 +131,26 @@ install_docker() (
     fi
   }
   containerd_bind_mount_ready() {
+    local backing_root=""
+    local backing_target=""
+    local containerd_data_path=/data/containerd
+    local expected_root=""
+    local relative_path=""
+
+    backing_target="$(findmnt -n -o TARGET --target "${containerd_data_path}")" || return 1
+    backing_root="$(findmnt -n -o FSROOT --target "${containerd_data_path}")" || return 1
+    if [[ "${containerd_data_path}" == "${backing_target}" ]]; then
+      relative_path=""
+    elif [[ "${containerd_data_path}" == "${backing_target}"/* ]]; then
+      relative_path="${containerd_data_path#"${backing_target}"}"
+    else
+      return 1
+    fi
+    expected_root="${backing_root%/}${relative_path}"
+    [[ -n "${expected_root}" ]] || expected_root=/
+
     mountpoint -q /var/lib/containerd && \
-      [[ "$(findmnt -n -o FSROOT --target /var/lib/containerd)" == /data/containerd ]] && \
+      [[ "$(findmnt -n -o FSROOT --target /var/lib/containerd)" == "${expected_root}" ]] && \
       [[ "$(findmnt -n -o MAJ:MIN --target /var/lib/containerd)" == \
          "$(findmnt -n -o MAJ:MIN --target /data/containerd)" ]]
   }
