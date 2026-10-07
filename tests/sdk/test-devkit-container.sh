@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
+export DEVKIT_CONTAINER_REMOTE_SCRIPT="${ROOT_DIR}/scripts/devkit-container-remote.sh"
 
 fail() {
   echo "FAIL: $*" >&2
