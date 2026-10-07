@@ -93,6 +93,35 @@ neat
 
 The SDK workspace is mounted at `/workspace` inside the container.
 
+### Build ARM64 Application Images
+
+Neat SDK 3.0 and newer containers automatically receive access to the host
+Docker builder during setup:
+
+```bash
+sima-cli sdk setup
+sima-cli sdk neat
+```
+
+The SDK includes a pinned Docker CLI and Buildx plugin. Before creating a 3.0+
+SDK container, `sima-cli` verifies that the host Docker CLI, daemon, and active
+local Unix socket are available, then mounts that socket. It verifies and
+bootstraps the builder with the SDK's pinned Buildx plugin after the container
+starts. The SDK does not run a nested daemon. Commands issued in the SDK create
+sibling containers managed by the host daemon. Docker socket access grants
+host-level control; `sima-cli` displays this security boundary during setup.
+
+Inside the SDK shell, build a Modalix application image with:
+
+```bash
+docker buildx inspect --bootstrap
+docker buildx build --platform linux/arm64 --load -t neat-app:dev .
+```
+
+The application should be cross-compiled against the Modalix sysroot before
+the image build. Avoid target-architecture `RUN` commands when building on a
+non-ARM64 host unless the selected builder has ARM64 emulation available.
+
 The SDK image also preinstalls a tested, pinned version of the OpenAI Codex CLI.
 From the SDK shell, run:
 
