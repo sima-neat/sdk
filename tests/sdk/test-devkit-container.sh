@@ -31,6 +31,9 @@ if [[ "${1:-}" == "run" && "${FAKE_DOCKER_READ_STDIN:-0}" == "1" ]]; then
   IFS= read -r line
   printf 'STDIN=%s\n' "${line}" >> "${DOCKER_LOG:?}"
 fi
+if [[ "${1:-}" == "run" && "${FAKE_DOCKER_RUN_STATUS:-0}" != "0" ]]; then
+  exit "${FAKE_DOCKER_RUN_STATUS}"
+fi
 EOF
 chmod +x "${TMP_DIR}/bin/docker"
 
@@ -119,6 +122,16 @@ devkit-container list
 grep -Fqx 'INSTALL_REQUESTED' "${DOCKER_LOG}" || fail "missing Docker did not offer installation"
 grep -Fqx 'ARG=ps' "${DOCKER_LOG}" || fail "container command was not retried after installation"
 
+: > "${DOCKER_LOG}"
+export FAKE_DOCKER_RUN_STATUS=42
+status=0
+devkit-container run hello-neat:develop --rm || status=$?
+unset FAKE_DOCKER_RUN_STATUS
+[[ "${status}" == 42 ]] || fail "container exit status 42 was not preserved"
+if grep -Fqx 'INSTALL_REQUESTED' "${DOCKER_LOG}"; then
+  fail "container exit status 42 was mistaken for missing Docker"
+fi
+
 grep -Fq '"data-root"] = "/data/docker"' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
   fail "installer does not configure the Modalix Docker data root"
 grep -Fq '/data/containerd /var/lib/containerd none bind 0 0' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
@@ -137,6 +150,10 @@ grep -Fq 'Resuming with the eLxr package mirror temporarily disabled.' "${ROOT_D
   fail "installer does not restore the eLxr mirror after interruption"
 grep -Fq 'Docker services remain stopped until containerd storage setup is completed.' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
   fail "installer can restart Docker before containerd storage migration is complete"
+grep -Fq '.sima-sdk-containerd-migrated' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+  fail "installer does not record completed containerd copies before deleting their source"
+grep -Fq 'sima-sdk-registry-applied' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+  fail "registry setup does not retry an interrupted Docker reload"
 grep -Fq 'sima-sdk-registry-address' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
   fail "SDK does not own the DevKit registry state"
 grep -Fq 'COPY scripts/devkit-container-remote.sh /usr/local/libexec/sima-sdk/devkit-container-remote.sh' \

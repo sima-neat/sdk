@@ -1153,19 +1153,19 @@ EOF
 
 devkit-container-remote-with-setup() {
   local status=0
-  if devkit-container-remote "$@"; then
-    return 0
-  else
-    status=$?
-  fi
-  if [[ "${status}" -ne 42 ]]; then
-    return "${status}"
-  fi
-  if devkit-container-install-docker; then
+  if devkit-container-remote docker-check; then
     :
   else
     status=$?
-    return "${status}"
+    if [[ "${status}" -ne 42 ]]; then
+      return "${status}"
+    fi
+    if devkit-container-install-docker; then
+      :
+    else
+      status=$?
+      return "${status}"
+    fi
   fi
   devkit-container-remote "$@"
 }
