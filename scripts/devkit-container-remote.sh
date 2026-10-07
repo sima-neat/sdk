@@ -432,6 +432,27 @@ require_arm64_image() {
   esac
 }
 
+list_registry_images() {
+  local registry="$1"
+  local repository=""
+  local tag=""
+  local image_id=""
+  local created=""
+  local size=""
+  local rows=""
+
+  rows="$("${DOCKER[@]}" image ls --format '{{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}\t{{.Size}}')" || return
+  printf 'REPOSITORY\tTAG\tIMAGE ID\tCREATED\tSIZE\n'
+  while IFS=$'\t' read -r repository tag image_id created size; do
+    case "${repository}" in
+      "${registry}"/*)
+        printf '%s\t%s\t%s\t%s\t%s\n' \
+          "${repository}" "${tag}" "${image_id}" "${created}" "${size}"
+        ;;
+    esac
+  done <<< "${rows}"
+}
+
 case "${action}" in
   deploy)
     image="${1:?missing image}"
@@ -455,7 +476,7 @@ case "${action}" in
     require_arm64_image "${image}"
     ;;
   images)
-    "${DOCKER[@]}" image ls --filter "reference=${1:?missing registry}/*"
+    list_registry_images "${1:?missing registry}"
     ;;
   list)
     "${DOCKER[@]}" ps -a

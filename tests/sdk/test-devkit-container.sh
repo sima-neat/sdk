@@ -27,6 +27,9 @@ set -euo pipefail
 if [[ "${1:-}" == "image" && "${2:-}" == "inspect" ]]; then
   printf '%s\n' "${FAKE_DOCKER_ARCH:-arm64}"
 fi
+if [[ "${1:-}" == "image" && "${2:-}" == "ls" && -n "${FAKE_DOCKER_IMAGE_ROWS:-}" ]]; then
+  printf '%s\n' "${FAKE_DOCKER_IMAGE_ROWS}"
+fi
 if [[ "${1:-}" == "run" && "${FAKE_DOCKER_READ_STDIN:-0}" == "1" ]]; then
   IFS= read -r line
   printf 'STDIN=%s\n' "${line}" >> "${DOCKER_LOG:?}"
@@ -238,6 +241,21 @@ grep -Fqx 'ARG=logs' "${DOCKER_LOG}" || fail "logs action was not used"
 grep -Fqx 'ARG=--follow' "${DOCKER_LOG}" || fail "logs option was not forwarded"
 [[ "$(tail -n 1 "${DOCKER_LOG}")" == "ARG=hello-neat" ]] || \
   fail "container name must follow docker logs options"
+
+: > "${DOCKER_LOG}"
+export FAKE_DOCKER_IMAGE_ROWS=$'192.0.2.10:5050/hello-neat\tdevelop\tsha256:one\t1 hour ago\t10MB\n192.0.2.10:5050/team/hello-neat\tdevelop\tsha256:two\t2 hours ago\t20MB\n192.0.2.10:50500/not-ours\tlatest\tsha256:three\t3 hours ago\t30MB'
+devkit-container images >"${TMP_DIR}/images.out"
+unset FAKE_DOCKER_IMAGE_ROWS
+grep -Fq $'192.0.2.10:5050/hello-neat\tdevelop' "${TMP_DIR}/images.out" || \
+  fail "top-level registry image was omitted"
+grep -Fq $'192.0.2.10:5050/team/hello-neat\tdevelop' "${TMP_DIR}/images.out" || \
+  fail "namespaced registry image was omitted"
+if grep -Fq '192.0.2.10:50500/not-ours' "${TMP_DIR}/images.out"; then
+  fail "image from a different registry prefix was included"
+fi
+if grep -Fq 'ARG=--filter' "${DOCKER_LOG}"; then
+  fail "image listing still uses a one-level Docker reference filter"
+fi
 
 sed -n '/^dk()/,/^}/p' "${ROOT_DIR}/scripts/devkit.sh" > "${TMP_DIR}/dk-function.sh"
 # shellcheck source=/dev/null
