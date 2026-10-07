@@ -206,8 +206,9 @@ dk container deploy hello-neat:develop --detach --name hello-neat --network host
 the DevKit. Put Docker run options after the image name. Use `--` before a
 container command and its arguments.
 
-If Docker is missing on the DevKit, `dk container` offers to install it with
-the required Modalix `/data` storage and nftables configuration. Use
+SDK setup does not install Docker on the DevKit. If Docker is missing, the
+first `dk container` command offers to install it with the required Modalix
+`/data` storage, nftables, and scoped registry configuration. Use
 `dk container setup --yes` for an explicitly approved noninteractive install.
 
 ## Advanced Topics

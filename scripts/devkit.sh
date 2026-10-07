@@ -1107,6 +1107,63 @@ set -euo pipefail
 action="${1:?missing container action}"
 shift
 
+configure_container_registry() {
+  local registry="${1:-}"
+  local changed=""
+  if [[ -z "${registry}" ]]; then
+    return 0
+  fi
+  if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
+    echo "Container registry setup requires passwordless sudo on the DevKit." >&2
+    return 2
+  fi
+  changed="$(sudo -n python3 - "${registry}" <<'PY'
+import json
+import os
+import shutil
+import sys
+from pathlib import Path
+
+path = Path("/etc/docker/daemon.json")
+state_path = Path("/etc/docker/sima-cli-registry-address")
+registry = sys.argv[1]
+data = {}
+if path.exists():
+    with path.open("r", encoding="utf-8") as stream:
+        data = json.load(stream)
+registries = data.get("insecure-registries", [])
+if not isinstance(registries, list):
+    raise RuntimeError("Docker insecure-registries must be a list")
+previous = state_path.read_text(encoding="utf-8").strip() if state_path.exists() else ""
+updated = [value for value in registries if not previous or value != previous or value == registry]
+if registry not in updated:
+    updated.append(registry)
+changed = sorted(set(updated)) != sorted(set(registries))
+backup = Path(str(path) + ".sima-cli.bak")
+if path.exists() and not backup.exists():
+    shutil.copy2(str(path), str(backup))
+data["insecure-registries"] = sorted(set(updated))
+path.parent.mkdir(parents=True, exist_ok=True)
+if changed:
+    temporary = Path(str(path) + ".sima-cli.tmp")
+    with temporary.open("w", encoding="utf-8") as stream:
+        json.dump(data, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+    os.replace(str(temporary), str(path))
+state_temporary = Path(str(state_path) + ".tmp")
+state_temporary.write_text(registry + "\n", encoding="utf-8")
+os.replace(str(state_temporary), str(state_path))
+print("changed" if changed else "unchanged")
+PY
+  )"
+  if [[ "${changed}" == changed ]]; then
+    echo "Docker registry settings changed. Restarting Docker on the DevKit."
+    sudo -n systemctl restart docker
+  fi
+  sudo -n docker info >/dev/null
+  echo "The DevKit can now download images from ${registry}."
+}
+
 configure_docker_access() {
   local target_user
   target_user="$(id -un)"
@@ -1251,11 +1308,13 @@ PY
 }
 
 if [[ "${action}" == setup ]]; then
+  registry="${1:-}"
   if command -v docker >/dev/null 2>&1; then
     configure_docker_access
   else
     install_docker
   fi
+  configure_container_registry "${registry}"
   exit $?
 fi
 
@@ -1406,7 +1465,7 @@ EOF
     esac
   fi
 
-  devkit-container-remote setup
+  devkit-container-remote setup "${SIMA_DEVKIT_CONTAINER_REGISTRY:-}"
 }
 
 devkit-container-remote-with-setup() {

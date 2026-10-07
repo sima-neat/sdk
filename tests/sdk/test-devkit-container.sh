@@ -42,6 +42,10 @@ fi
 printf 'SUDO_ARG=%s\n' "$@" >> "${DOCKER_LOG:?}"
 case "${1:-}" in
   true|usermod|systemctl) exit 0 ;;
+  python3)
+    cat >/dev/null
+    printf 'unchanged\n'
+    ;;
   docker)
     shift
     exec docker "$@"
@@ -93,6 +97,8 @@ export PATH="${TMP_DIR}/bin:${PATH}"
 devkit-container setup --yes
 grep -Fqx 'SUDO_ARG=usermod' "${DOCKER_LOG}" || fail "setup did not configure the docker group"
 grep -Fqx 'SUDO_ARG=systemctl' "${DOCKER_LOG}" || fail "setup did not enable Docker services"
+grep -Fqx 'SUDO_ARG=192.0.2.10:5050' "${DOCKER_LOG}" || \
+  fail "setup did not configure the scoped SDK registry"
 
 FAKE_SSH_DOCKER_MISSING_COUNT=1
 export FAKE_SSH_DOCKER_MISSING_COUNT
@@ -118,6 +124,8 @@ grep -Fq '/data/containerd /var/lib/containerd none bind 0 0' "${ROOT_DIR}/scrip
   fail "installer does not persist containerd storage under /data"
 grep -Fq 'docker-ce docker-ce-cli containerd.io' "${ROOT_DIR}/scripts/devkit.sh" || \
   fail "installer does not install the supported Docker CE packages"
+grep -Fq 'data["insecure-registries"]' "${ROOT_DIR}/scripts/devkit.sh" || \
+  fail "installer does not configure the scoped SDK registry"
 
 resolved="$(devkit-container-image-ref hello-neat:develop)"
 [[ "${resolved}" == "192.0.2.10:5050/hello-neat:develop" ]] || \
