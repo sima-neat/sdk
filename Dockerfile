@@ -279,6 +279,7 @@ COPY config/supervisor-openvscode.conf /etc/supervisor/conf.available/openvscode
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY scripts/insight-admin.sh /usr/local/bin/insight-admin
 COPY scripts/neat-insight-supervised.sh /usr/local/bin/neat-insight-supervised
+COPY scripts/insight-network-test.sh /usr/local/bin/insight-network-test
 COPY scripts/openvscode-supervised.sh /usr/local/bin/openvscode-supervised
 COPY scripts/devkit.sh /usr/local/bin/devkit.sh
 COPY scripts/devkit-container-remote.sh /usr/local/libexec/sima-sdk/devkit-container-remote.sh
@@ -290,6 +291,7 @@ RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/docker-entrypoint.sh && \
     chmod 755 /usr/local/bin/insight-admin && \
     chmod 755 /usr/local/bin/neat-insight-supervised && \
+    chmod 755 /usr/local/bin/insight-network-test && \
     chmod 755 /usr/local/bin/openvscode-supervised && \
     ln -sf /usr/local/bin/insight-admin /usr/local/bin/install-neat-insight && \
     chmod 755 /usr/local/bin/devkit.sh && \
