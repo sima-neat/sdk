@@ -16,6 +16,9 @@ container after `sima-cli sdk setup -y -n` starts it.
 - `test-resolve-platform-config.sh`, `test-write-sdk-release.sh`, and
   `test-devkit-platform-profile.sh` cover pre-release selection, image
   provenance, protected release refs, and intentional Core-sync skipping.
+- `test-devkit-container.sh` covers registry-address translation, lazy and
+  resumable DevKit Docker setup, fresh-shell helper persistence, and the
+  `dk container` pull, deploy, run, and lifecycle command forwarding.
 - `test-install-neat-resources.sh` covers bundled Core, unpublished and
   incompatible Core skips, explicit platform-only builds, and unexpected fatal
   installer failures.

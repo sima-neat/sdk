@@ -973,6 +973,13 @@ Remote workspace    : ${DEVKIT_SYNC_REMOTE_ROOT:-${DEVKIT_SYNC_MOUNT_POINT:-/wor
 NFS mount path      : ${DEVKIT_SYNC_NFS_MOUNT_POINT:-${DEVKIT_SYNC_MOUNT_POINT:-/workspace}}
 EOF
 
+  if [[ -n "${SIMA_CONTAINER_REGISTRY:-}" && -n "${SIMA_DEVKIT_CONTAINER_REGISTRY:-}" ]]; then
+    echo "SDK image registry  : ${SIMA_CONTAINER_REGISTRY}"
+    echo "DevKit registry     : ${SIMA_DEVKIT_CONTAINER_REGISTRY}"
+  else
+    echo "Container registry  : not configured"
+  fi
+
   if [[ -n "${DEVKIT_SYNC_HINT:-}" ]]; then
     echo "Status hint         : ${DEVKIT_SYNC_HINT}"
   fi
@@ -1015,6 +1022,226 @@ devkit-local-sync-scope() {
   else
     printf '%s/%s\n' "${root}" "${rel_path%%/*}"
   fi
+}
+
+devkit-container-usage() {
+  cat >&2 <<'EOF'
+Usage:
+  dk container setup [--yes]
+  dk container deploy <image> [docker-run-options] [-- command [args...]]
+  dk container run <image> [docker-run-options] [-- command [args...]]
+  dk container pull <image>
+  dk container images
+  dk container list
+  dk container logs <container> [docker-logs-options]
+  dk container stop <container>
+  dk container remove <container> [docker-rm-options]
+
+Examples:
+  dk container setup
+  dk container deploy hello-neat:develop --detach --name hello-neat --network host
+  dk container run hello-neat:develop --rm -- --help
+  dk container logs hello-neat --follow
+EOF
+}
+
+devkit-container-image-ref() {
+  local image="${1:-}"
+  local sdk_registry="${SIMA_CONTAINER_REGISTRY:-}"
+  local devkit_registry="${SIMA_DEVKIT_CONTAINER_REGISTRY:-}"
+
+  if [[ -z "${devkit_registry}" ]]; then
+    echo "The local container registry is not configured for this SDK shell." >&2
+    echo "Run 'sima-cli sdk setup --devkit <devkit-ip>', then open a new SDK shell." >&2
+    return 2
+  fi
+  if [[ -z "${image}" || "${image}" == -* || "${image}" == /* || "${image}" == *://* ]]; then
+    echo "Invalid container image name: ${image:-<empty>}" >&2
+    return 2
+  fi
+
+  case "${image}" in
+    "${devkit_registry}"/*)
+      printf '%s\n' "${image}"
+      ;;
+    "${sdk_registry}"/*)
+      printf '%s/%s\n' "${devkit_registry}" "${image#"${sdk_registry}"/}"
+      ;;
+    *)
+      printf '%s/%s\n' "${devkit_registry}" "${image}"
+      ;;
+  esac
+}
+
+devkit-container-remote() {
+  local action="$1"
+  shift
+  local remote_script=""
+  local remote_script_encoded=""
+  local remote_command=""
+  # The wrapper is evaluated by Bash on the DevKit, not by this shell.
+  # shellcheck disable=SC2016
+  local remote_wrapper='set -euo pipefail; encoded="${1#x}"; script="$(printf "%s" "${encoded}" | base64 -d; printf .)"; script="${script%?}"; shift; args=(); for encoded in "$@"; do encoded="${encoded#x}"; decoded="$(printf "%s" "${encoded}" | base64 -d; printf .)"; args+=("${decoded%?}"); done; exec bash --noprofile --norc -c "${script}" -- "${args[@]}"'
+  local encoded=""
+  local detach_stdin=0
+  local -a ssh_args=(
+    ssh
+    -p "${DEVKIT_SYNC_DEVKIT_PORT:-22}"
+    -o BatchMode=yes
+    -o ConnectTimeout=8
+  )
+  case "${action}" in
+    docker-check|registry-setup|setup)
+      detach_stdin=1
+      ;;
+  esac
+  if [[ "${detach_stdin}" == 1 ]]; then
+    ssh_args+=(-T -n)
+  elif [[ -t 0 && -t 1 ]]; then
+    ssh_args+=(-t)
+  else
+    ssh_args+=(-T)
+  fi
+  ssh_args+=("${DEVKIT_SYNC_DEVKIT_USER:-sima}@${DEVKIT_SYNC_DEVKIT_IP}")
+
+  # OpenSSH joins remote argv with spaces and asks the login shell to parse the
+  # resulting command. Encode the fixed helper and each argument independently
+  # so whitespace and shell metacharacters survive that extra parsing step.
+  # Supplying the helper through bash -c also leaves SSH stdin attached to the
+  # caller, which is required by `docker run -i` and interactive shells.
+  local remote_script_path="${DEVKIT_CONTAINER_REMOTE_SCRIPT:-/usr/local/libexec/sima-sdk/devkit-container-remote.sh}"
+  if [[ ! -r "${remote_script_path}" && -r "$(dirname "${BASH_SOURCE[0]}")/devkit-container-remote.sh" ]]; then
+    remote_script_path="$(dirname "${BASH_SOURCE[0]}")/devkit-container-remote.sh"
+  fi
+  if [[ ! -r "${remote_script_path}" ]]; then
+    echo "DevKit container remote helper not found: ${remote_script_path}" >&2
+    return 2
+  fi
+  remote_script="$(<"${remote_script_path}")"
+
+  remote_script_encoded="$(printf '%s' "${remote_script}" | base64 | tr -d '\n')"
+  remote_command="bash --noprofile --norc -c '${remote_wrapper}' -- x${remote_script_encoded}"
+  for arg in "${action}" "$@"; do
+    encoded="$(printf '%s' "${arg}" | base64 | tr -d '\n')"
+    remote_command+=" x${encoded}"
+  done
+  ssh_args+=("${remote_command}")
+
+  "${ssh_args[@]}"
+}
+
+devkit-container-install-docker() {
+  local assume_yes="${1:-0}"
+  local answer=""
+
+  if [[ "${assume_yes}" != 1 ]]; then
+    if [[ ! -t 0 || ! -t 1 || ! -e /dev/tty ]]; then
+      echo "Docker is not installed on the DevKit." >&2
+      echo "Run 'dk container setup --yes' to approve the Modalix Docker installation." >&2
+      return 2
+    fi
+    cat >/dev/tty <<'EOF'
+Docker is required to run SDK-built images on the DevKit.
+This will install Docker CE, store Docker and containerd data under /data,
+enable the services, and add the DevKit user to the docker group.
+EOF
+    printf 'Install Docker on the DevKit now? [y/N]: ' >/dev/tty
+    IFS= read -r answer </dev/tty
+    case "${answer}" in
+      y|Y|yes|YES|Yes) ;;
+      *)
+        echo "Docker installation skipped." >&2
+        return 2
+        ;;
+    esac
+  fi
+
+  devkit-container-remote setup "${SIMA_DEVKIT_CONTAINER_REGISTRY:-}"
+}
+
+devkit-container-remote-with-setup() {
+  local status=0
+  if devkit-container-remote docker-check; then
+    :
+  else
+    status=$?
+    if [[ "${status}" -ne 42 ]]; then
+      return "${status}"
+    fi
+    if devkit-container-install-docker; then
+      :
+    else
+      status=$?
+      return "${status}"
+    fi
+  fi
+  devkit-container-remote "$@"
+}
+
+devkit-container-ensure-registry() {
+  if [[ -z "${SIMA_DEVKIT_CONTAINER_REGISTRY:-}" ]]; then
+    devkit-container-image-ref "registry-check" >/dev/null || return $?
+  fi
+  devkit-container-remote-with-setup registry-setup "${SIMA_DEVKIT_CONTAINER_REGISTRY}"
+}
+
+devkit-container() {
+  local action="${1:-}"
+  if [[ -z "${action}" || "${action}" == "help" || "${action}" == "--help" || "${action}" == "-h" ]]; then
+    devkit-container-usage
+    return 0
+  fi
+  shift
+
+  case "${action}" in
+    setup)
+      if [[ $# -gt 1 || ( $# -eq 1 && "$1" != --yes ) ]]; then
+        devkit-container-usage
+        return 2
+      fi
+      if [[ "${1:-}" == --yes ]]; then
+        devkit-container-install-docker 1
+      else
+        devkit-container-install-docker
+      fi
+      ;;
+    deploy|run|pull)
+      if [[ $# -lt 1 ]]; then
+        devkit-container-usage
+        return 2
+      fi
+      local image
+      image="$(devkit-container-image-ref "$1")" || return $?
+      shift
+      if [[ "${action}" == deploy || "${action}" == pull ]]; then
+        devkit-container-ensure-registry || return $?
+      fi
+      printf '[DevKit] container %s: %s\n' "${action}" "${image}"
+      devkit-container-remote-with-setup "${action}" "${image}" "$@"
+      ;;
+    images)
+      devkit-container-ensure-registry || return $?
+      devkit-container-remote-with-setup images "${SIMA_DEVKIT_CONTAINER_REGISTRY}"
+      ;;
+    list)
+      devkit-container-remote-with-setup list
+      ;;
+    logs|stop|remove|rm)
+      if [[ $# -lt 1 ]]; then
+        devkit-container-usage
+        return 2
+      fi
+      if [[ "${action}" == "rm" ]]; then
+        action="remove"
+      fi
+      devkit-container-remote-with-setup "${action}" "$@"
+      ;;
+    *)
+      echo "Unknown dk container command: ${action}" >&2
+      devkit-container-usage
+      return 2
+      ;;
+  esac
 }
 
 # Run a local /workspace binary or Python script on the paired DevKit.
@@ -1395,7 +1622,7 @@ EOS
 unalias dk >/dev/null 2>&1 || true
 dk() {
   if [[ $# -lt 1 ]]; then
-    echo "Usage: dk <local-executable-path|shell|sync|status> [args...]" >&2
+    echo "Usage: dk <local-executable-path|shell|sync|status|container> [args...]" >&2
     return 0
   fi
   case "$1" in
@@ -1407,6 +1634,11 @@ dk() {
     status)
       shift
       devkit-status "$@"
+      return $?
+      ;;
+    container)
+      shift
+      devkit-container "$@"
       return $?
       ;;
   esac
@@ -1434,6 +1666,8 @@ __devkit_persist_export() {
   __devkit_persist_export DEVKIT_RSYNC_REMOTE_ROOT
   __devkit_persist_export DEVKIT_RSYNC_HELPER
   __devkit_persist_export DEVKIT_SYNC_HINT
+  __devkit_persist_export SIMA_CONTAINER_REGISTRY
+  __devkit_persist_export SIMA_DEVKIT_CONTAINER_REGISTRY
   __devkit_persist_export SDK_RELEASE_REF
   __devkit_persist_export SDK_PROMPT_REF
   __devkit_persist_export SDK_IMAGE_BRANCH
@@ -1469,6 +1703,13 @@ __devkit_persist_export() {
   declare -f devkit-sync
   declare -f devkit-status
   declare -f devkit-local-sync-scope
+  declare -f devkit-container-usage
+  declare -f devkit-container-image-ref
+  declare -f devkit-container-remote
+  declare -f devkit-container-install-docker
+  declare -f devkit-container-remote-with-setup
+  declare -f devkit-container-ensure-registry
+  declare -f devkit-container
   declare -f devkit-run
   echo 'unalias dk >/dev/null 2>&1 || true'
   declare -f dk
@@ -1625,6 +1866,12 @@ EOF
 EOF
     ;;
 esac
+if [[ -n "${SIMA_DEVKIT_CONTAINER_REGISTRY:-}" ]]; then
+  cat <<EOF
+  Deploy an SDK-built container image:
+    dk container deploy <image>:<tag> --detach --name <container-name>
+EOF
+fi
 cat <<EOF
 ============================================================
 ${_c_rst}
