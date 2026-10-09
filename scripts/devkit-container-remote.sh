@@ -4,6 +4,16 @@ set -euo pipefail
 action="${1:?missing container action}"
 shift
 
+install_marker="${DEVKIT_CONTAINER_INSTALL_MARKER:-/etc/docker/.sima-sdk-install-in-progress}"
+
+docker_is_usable() {
+  command -v docker >/dev/null 2>&1 || return 1
+  if docker info >/dev/null 2>&1; then
+    return 0
+  fi
+  command -v sudo >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1
+}
+
 configure_container_registry() {
   local registry="${1:-}"
   local changed=""
@@ -91,7 +101,6 @@ install_docker() (
   local architecture=""
   local mirror=/etc/apt/sources.list.d/0000mirror.list
   local disabled_mirror=/root/apt-disabled/0000mirror.list
-  local install_marker=/etc/docker/.sima-sdk-install-in-progress
   local install_phase=""
   local mirror_moved=0
   local services_stopped=0
@@ -342,8 +351,9 @@ PY
 
 if [[ "${action}" == setup ]]; then
   registry="${1:-}"
-  if ! command -v docker >/dev/null 2>&1 || \
-     [[ -e /etc/docker/.sima-sdk-install-in-progress ]]; then
+  if docker_is_usable; then
+    configure_docker_access
+  elif ! command -v docker >/dev/null 2>&1 || [[ -e "${install_marker}" ]]; then
     install_docker
   else
     configure_docker_access
@@ -353,12 +363,11 @@ if [[ "${action}" == setup ]]; then
 fi
 
 if [[ "${action}" == docker-check ]]; then
-  if command -v docker >/dev/null 2>&1 && \
-     [[ ! -e /etc/docker/.sima-sdk-install-in-progress ]]; then
+  if docker_is_usable; then
     exit 0
   fi
   if command -v docker >/dev/null 2>&1; then
-    echo "Docker setup is incomplete on the DevKit." >&2
+    echo "Docker is installed on the DevKit, but the daemon is not responding." >&2
   else
     echo "Docker is not installed on the DevKit." >&2
   fi

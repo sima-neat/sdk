@@ -37,6 +37,9 @@ fi
 if [[ "${1:-}" == "run" && "${FAKE_DOCKER_RUN_STATUS:-0}" != "0" ]]; then
   exit "${FAKE_DOCKER_RUN_STATUS}"
 fi
+if [[ "${1:-}" == "info" && "${FAKE_DOCKER_INFO_STATUS:-0}" != "0" ]]; then
+  exit "${FAKE_DOCKER_INFO_STATUS}"
+fi
 EOF
 chmod +x "${TMP_DIR}/bin/docker"
 
@@ -55,6 +58,9 @@ case "${1:-}" in
     ;;
   docker)
     shift
+    if [[ "${1:-}" == info && -n "${FAKE_SUDO_DOCKER_INFO_STATUS:-}" ]]; then
+      export FAKE_DOCKER_INFO_STATUS="${FAKE_SUDO_DOCKER_INFO_STATUS}"
+    fi
     exec docker "$@"
     ;;
   *)
@@ -124,6 +130,37 @@ fi
 grep -Fq 'dk container setup --yes' "${TMP_DIR}/missing.out" || \
   fail "missing Docker error did not explain explicit setup"
 
+: > "${DOCKER_LOG}"
+export DEVKIT_CONTAINER_INSTALL_MARKER="${TMP_DIR}/install-in-progress"
+touch "${DEVKIT_CONTAINER_INSTALL_MARKER}"
+devkit-container list
+grep -Fqx 'ARG=ps' "${DOCKER_LOG}" || \
+  fail "healthy Docker was blocked by a stale installation marker"
+rm -f "${DEVKIT_CONTAINER_INSTALL_MARKER}"
+unset DEVKIT_CONTAINER_INSTALL_MARKER
+
+: > "${DOCKER_LOG}"
+export FAKE_DOCKER_INFO_STATUS=1
+if devkit-container list >"${TMP_DIR}/unresponsive.out" 2>&1; then
+  fail "unresponsive Docker daemon should require setup"
+fi
+unset FAKE_DOCKER_INFO_STATUS
+grep -Fq 'daemon is not responding' "${TMP_DIR}/unresponsive.out" || \
+  fail "unresponsive Docker error did not describe the daemon failure"
+grep -Fq 'dk container setup --yes' "${TMP_DIR}/unresponsive.out" || \
+  fail "unresponsive Docker error did not explain recovery"
+
+: > "${DOCKER_LOG}"
+export FAKE_DOCKER_INFO_STATUS=1
+export FAKE_SUDO_DOCKER_INFO_STATUS=0
+devkit-container list
+unset FAKE_DOCKER_INFO_STATUS
+unset FAKE_SUDO_DOCKER_INFO_STATUS
+grep -Fqx 'SUDO_ARG=docker' "${DOCKER_LOG}" || \
+  fail "Docker health check did not fall back to passwordless sudo"
+grep -Fqx 'ARG=ps' "${DOCKER_LOG}" || \
+  fail "sudo-accessible Docker daemon was treated as unavailable"
+
 devkit-container-install-docker() {
   printf 'INSTALL_REQUESTED\n' >> "${DOCKER_LOG}"
 }
@@ -154,8 +191,8 @@ grep -Fq 'data["insecure-registries"]' "${ROOT_DIR}/scripts/devkit-container-rem
   fail "installer does not configure the scoped SDK registry"
 grep -Fq '.sima-sdk-install-in-progress' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
   fail "installer does not preserve retry state after an interrupted installation"
-grep -Fq 'Docker setup is incomplete on the DevKit.' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
-  fail "container preflight does not resume an incomplete Docker installation"
+grep -Fq 'daemon is not responding' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+  fail "container preflight does not detect an unusable Docker daemon"
 grep -Fq 'containerd_entries' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
   fail "containerd migration is not resumable"
 grep -Fq 'Resuming an interrupted Docker installation.' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
@@ -187,8 +224,8 @@ resolved="$(devkit-container-image-ref localhost:5050/team/hello-neat:develop)"
 devkit-container deploy localhost:5050/team/hello-neat:develop \
   --name hello-neat --network host -- /app --label "two words" \
   '; touch "$INJECTION_MARKER"; #' '$(touch "$INJECTION_MARKER")' ""
-[[ "$(grep -c '^BEGIN$' "${DOCKER_LOG}")" == "5" ]] || \
-  fail "deploy should configure the registry, then check Docker, pull, inspect, and run"
+[[ "$(grep -c '^BEGIN$' "${DOCKER_LOG}")" == "7" ]] || \
+  fail "deploy should configure the registry, health-check Docker, pull, inspect, and run"
 grep -Fqx 'ARG=pull' "${DOCKER_LOG}" || fail "deploy did not pull"
 grep -Fqx 'ARG=inspect' "${DOCKER_LOG}" || fail "deploy did not inspect image architecture"
 grep -Fqx 'ARG=192.0.2.10:5050/team/hello-neat:develop' "${DOCKER_LOG}" || \
@@ -218,7 +255,7 @@ grep -Fqx 'STDIN=keyboard input' "${DOCKER_LOG}" || \
 
 : > "${DOCKER_LOG}"
 devkit-container run hello-neat:develop --rm
-[[ "$(grep -c '^BEGIN$' "${DOCKER_LOG}")" == "3" ]] || \
+[[ "$(grep -c '^BEGIN$' "${DOCKER_LOG}")" == "4" ]] || \
   fail "run should check Docker, inspect, and start without an explicit pull"
 if grep -Fqx 'ARG=pull' "${DOCKER_LOG}"; then
   fail "run unexpectedly pulled the image"
