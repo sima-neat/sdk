@@ -999,6 +999,13 @@ EOF
       echo "Workspace sync is not active. 'dk shell' can still be used over SSH."
       ;;
   esac
+
+  echo ""
+  if ! command -v insight-network-test >/dev/null 2>&1; then
+    echo "Insight reverse path : test helper is not installed" >&2
+    return 1
+  fi
+  insight-network-test
 }
 
 devkit-local-sync-scope() {

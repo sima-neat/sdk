@@ -188,6 +188,15 @@ Run an executable or Python application from the DevKit:
 dk /workspace/app-binary-or-dot-py-file
 ```
 
+Check the paired DevKit and its reverse network path to Insight:
+
+```bash
+dk status
+```
+
+In addition to the SSH and workspace status, this checks that the DevKit can
+reach Insight over TCP and that Insight receives a UDP metadata probe.
+
 Build and push an ARM64 container image from the SDK, then download and run it
 on the paired DevKit:
 
