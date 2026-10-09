@@ -40,8 +40,39 @@ fi
 if [[ "${1:-}" == "info" && "${FAKE_DOCKER_INFO_STATUS:-0}" != "0" ]]; then
   exit "${FAKE_DOCKER_INFO_STATUS}"
 fi
+if [[ "${1:-}" == "info" && "${2:-}" == "--format" ]]; then
+  printf '/data/docker\n'
+fi
 EOF
 chmod +x "${TMP_DIR}/bin/docker"
+
+cat > "${TMP_DIR}/bin/mountpoint" <<'EOF'
+#!/usr/bin/env bash
+[[ "$*" == *"/var/lib/containerd"* ]]
+EOF
+chmod +x "${TMP_DIR}/bin/mountpoint"
+
+cat > "${TMP_DIR}/bin/findmnt" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+field=""
+target=""
+while (( $# > 0 )); do
+  case "$1" in
+    -o) field="$2"; shift 2 ;;
+    --target) target="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "${field}:${target}" in
+  TARGET:/data/containerd) printf '/data\n' ;;
+  FSROOT:/data/containerd) printf '/\n' ;;
+  FSROOT:/var/lib/containerd) printf '/containerd\n' ;;
+  MAJ:MIN:/data/containerd|MAJ:MIN:/var/lib/containerd) printf '1:1\n' ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "${TMP_DIR}/bin/findmnt"
 
 cat > "${TMP_DIR}/bin/sudo" <<'EOF'
 #!/usr/bin/env bash
@@ -52,6 +83,13 @@ fi
 printf 'SUDO_ARG=%s\n' "$@" >> "${DOCKER_LOG:?}"
 case "${1:-}" in
   true|usermod|systemctl) exit 0 ;;
+  test)
+    shift
+    test "$@"
+    ;;
+  mkdir|mv|rm)
+    exec "$@"
+    ;;
   python3)
     cat >/dev/null
     printf 'unchanged\n'
@@ -132,12 +170,31 @@ grep -Fq 'dk container setup --yes' "${TMP_DIR}/missing.out" || \
 
 : > "${DOCKER_LOG}"
 export DEVKIT_CONTAINER_INSTALL_MARKER="${TMP_DIR}/install-in-progress"
+export DEVKIT_CONTAINER_ELXR_MIRROR="${TMP_DIR}/apt/sources.list.d/0000mirror.list"
+export DEVKIT_CONTAINER_DISABLED_ELXR_MIRROR="${TMP_DIR}/apt-disabled/0000mirror.list"
+mkdir -p "$(dirname "${DEVKIT_CONTAINER_DISABLED_ELXR_MIRROR}")"
+printf 'deb mock mirror\n' > "${DEVKIT_CONTAINER_DISABLED_ELXR_MIRROR}"
 touch "${DEVKIT_CONTAINER_INSTALL_MARKER}"
-devkit-container list
-grep -Fqx 'ARG=ps' "${DOCKER_LOG}" || \
-  fail "healthy Docker was blocked by a stale installation marker"
-rm -f "${DEVKIT_CONTAINER_INSTALL_MARKER}"
+if devkit-container list >"${TMP_DIR}/incomplete.out" 2>&1; then
+  fail "an incomplete installation marker should require setup"
+fi
+grep -Fq 'Docker setup is incomplete' "${TMP_DIR}/incomplete.out" || \
+  fail "incomplete setup was not reported"
+setup_output="$(devkit-container setup --yes 2>&1)"
+[[ ! -e "${DEVKIT_CONTAINER_INSTALL_MARKER}" ]] || \
+  fail "completed setup did not remove the installation marker"
+[[ -e "${DEVKIT_CONTAINER_ELXR_MIRROR}" ]] || \
+  fail "completed setup did not restore the eLxr package mirror"
+[[ ! -e "${DEVKIT_CONTAINER_DISABLED_ELXR_MIRROR}" ]] || \
+  fail "completed setup left the disabled eLxr package mirror behind"
+grep -Fq 'Completed the interrupted Docker setup without reinstalling packages.' \
+  <<< "${setup_output}" || fail "setup did not report interrupted-install completion"
+if grep -Fqx 'SUDO_ARG=apt-get' "${DOCKER_LOG}"; then
+  fail "healthy Docker with complete storage unexpectedly reinstalled packages"
+fi
 unset DEVKIT_CONTAINER_INSTALL_MARKER
+unset DEVKIT_CONTAINER_ELXR_MIRROR
+unset DEVKIT_CONTAINER_DISABLED_ELXR_MIRROR
 
 : > "${DOCKER_LOG}"
 export FAKE_DOCKER_INFO_STATUS=1
@@ -191,8 +248,8 @@ grep -Fq 'data["insecure-registries"]' "${ROOT_DIR}/scripts/devkit-container-rem
   fail "installer does not configure the scoped SDK registry"
 grep -Fq '.sima-sdk-install-in-progress' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
   fail "installer does not preserve retry state after an interrupted installation"
-grep -Fq 'daemon is not responding' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
-  fail "container preflight does not detect an unusable Docker daemon"
+grep -Fq 'Docker setup is incomplete on the DevKit.' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+  fail "container preflight does not resume an incomplete Docker installation"
 grep -Fq 'containerd_entries' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
   fail "containerd migration is not resumable"
 grep -Fq 'Resuming an interrupted Docker installation.' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
