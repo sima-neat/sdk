@@ -13,6 +13,12 @@ fail() {
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "${tmpdir}"' EXIT
 mkdir -p "${tmpdir}/bin"
+cat > "${tmpdir}/port-map.json" <<'EOF'
+{
+  "mainUI": {"host": 9900},
+  "metadataUDP": {"hostStart": 9100, "hostEnd": 9103}
+}
+EOF
 
 cat > "${tmpdir}/bin/curl" <<'EOF'
 #!/usr/bin/env bash
@@ -42,9 +48,10 @@ if [[ "${url}" == */api/health ]]; then
 fi
 
 if [[ "${url}" == */api/ingest/stats* ]]; then
-  count=4
-  [[ ! -f "${MOCK_PROBE_SENT}" ]] || count=5
-  printf '{"channels":[{"channel":0,"metadata":{"messages_received":%s}}]}\n' "${count}" > "${output_file}"
+  probe_count=0
+  [[ ! -f "${MOCK_PROBE_SENT}" ]] || probe_count=1
+  printf '{"channels":[{"channel":0,"metadata":{"active":true,"messages_received":5}},{"channel":3,"metadata":{"active":false,"messages_received":%s}}]}\n' \
+    "${probe_count}" > "${output_file}"
   exit 0
 fi
 
@@ -55,8 +62,15 @@ cat > "${tmpdir}/bin/ssh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 cat >/dev/null
-touch "${MOCK_PROBE_SENT}"
-echo 'TCP PASS: DevKit reached Insight at https://192.0.2.1:9900/api/health.'
+calls=0
+[[ ! -f "${MOCK_SSH_CALLS}" ]] || calls="$(<"${MOCK_SSH_CALLS}")"
+calls=$((calls + 1))
+printf '%s\n' "${calls}" > "${MOCK_SSH_CALLS}"
+if (( calls == 1 )); then
+  echo 'TCP PASS: DevKit reached Insight at https://192.0.2.1:9900/api/health.'
+elif [[ "${MOCK_DROP_PROBE:-0}" != 1 ]]; then
+  touch "${MOCK_PROBE_SENT}"
+fi
 EOF
 
 chmod +x "${tmpdir}/bin/curl" "${tmpdir}/bin/ssh"
@@ -64,6 +78,8 @@ chmod +x "${tmpdir}/bin/curl" "${tmpdir}/bin/ssh"
 output="$({
   PATH="${tmpdir}/bin:${PATH}" \
   MOCK_PROBE_SENT="${tmpdir}/probe-sent" \
+  MOCK_SSH_CALLS="${tmpdir}/ssh-calls" \
+  INSIGHT_PORT_MAP_FILE="${tmpdir}/port-map.json" \
   DEVKIT_SYNC_DEVKIT_IP=192.0.2.2 \
   DEVKIT_SYNC_DEVKIT_USER=sima \
   DEVKIT_SYNC_DEVKIT_PORT=22 \
@@ -74,8 +90,37 @@ output="$({
 grep -Fq 'TCP PASS: DevKit reached Insight at https://192.0.2.1:9900/api/health.' <<< "${output}" || \
   fail "success output did not include the TCP result: ${output}"
 
-grep -Fq 'UDP PASS: Insight received the DevKit probe on port 9100 (4 -> 5 messages).' <<< "${output}" || \
+grep -Fq 'UDP PASS: Insight received the DevKit probe on port 9103 (0 -> 1 messages).' <<< "${output}" || \
   fail "success output did not include the counter change: ${output}"
+
+rm -f "${tmpdir}/probe-sent" "${tmpdir}/ssh-calls"
+if PATH="${tmpdir}/bin:${PATH}" \
+  MOCK_PROBE_SENT="${tmpdir}/probe-sent" \
+  MOCK_SSH_CALLS="${tmpdir}/ssh-calls" \
+  MOCK_DROP_PROBE=1 \
+  INSIGHT_PORT_MAP_FILE="${tmpdir}/port-map.json" \
+  DEVKIT_SYNC_DEVKIT_IP=192.0.2.2 \
+  CONTAINER_HOST_IP=192.0.2.1 \
+    "${SCRIPT}" >"${tmpdir}/dropped-probe.out" 2>&1; then
+  fail "unrelated channel traffic should not satisfy a dropped UDP probe"
+fi
+
+grep -Fq 'UDP FAIL: Insight did not observe the DevKit probe on port 9103.' \
+  "${tmpdir}/dropped-probe.out" || fail "dropped probe failure was not reported"
+
+rm -f "${tmpdir}/probe-sent" "${tmpdir}/ssh-calls"
+if PATH="${tmpdir}/bin:${PATH}" \
+  MOCK_PROBE_SENT="${tmpdir}/probe-sent" \
+  MOCK_SSH_CALLS="${tmpdir}/ssh-calls" \
+  INSIGHT_PORT_MAP_FILE="${tmpdir}/port-map.json" \
+  DEVKIT_SYNC_DEVKIT_IP=192.0.2.2 \
+  CONTAINER_HOST_IP=192.0.2.1 \
+    "${SCRIPT}" 0 >"${tmpdir}/active-channel.out" 2>&1; then
+  fail "active metadata channel should not be used for an isolated probe"
+fi
+
+grep -Fq 'Channel 0 is receiving metadata' "${tmpdir}/active-channel.out" || \
+  fail "active channel failure was not explained"
 
 if PATH="${tmpdir}/bin:${PATH}" \
   DEVKIT_SYNC_DEVKIT_IP=192.0.2.2 \
