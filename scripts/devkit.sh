@@ -1143,16 +1143,17 @@ devkit-container-install-docker() {
 
   if [[ "${assume_yes}" != 1 ]]; then
     if [[ ! -t 0 || ! -t 1 || ! -e /dev/tty ]]; then
-      echo "Docker is not installed on the DevKit." >&2
-      echo "Run 'dk container setup --yes' to approve the Modalix Docker installation." >&2
+      echo "Docker is not ready on the DevKit." >&2
+      echo "Run 'dk container setup --yes' to approve Modalix Docker setup." >&2
       return 2
     fi
     cat >/dev/tty <<'EOF'
-Docker is required to run SDK-built images on the DevKit.
-This will install Docker CE, store Docker and containerd data under /data,
-enable the services, and add the DevKit user to the docker group.
+Docker setup is required to run SDK-built images on the DevKit.
+This will reuse a working Docker installation when possible. Otherwise it will
+install Docker CE, store Docker and containerd data under /data, enable the
+services, and add the DevKit user to the docker group.
 EOF
-    printf 'Install Docker on the DevKit now? [y/N]: ' >/dev/tty
+    printf 'Set up Docker on the DevKit now? [y/N]: ' >/dev/tty
     IFS= read -r answer </dev/tty
     case "${answer}" in
       y|Y|yes|YES|Yes) ;;

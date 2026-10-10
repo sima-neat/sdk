@@ -37,8 +37,50 @@ fi
 if [[ "${1:-}" == "run" && "${FAKE_DOCKER_RUN_STATUS:-0}" != "0" ]]; then
   exit "${FAKE_DOCKER_RUN_STATUS}"
 fi
+if [[ "${1:-}" == "info" && "${FAKE_DOCKER_INFO_STATUS:-0}" != "0" ]]; then
+  exit "${FAKE_DOCKER_INFO_STATUS}"
+fi
+if [[ "${1:-}" == "info" && "${2:-}" == "--format" ]]; then
+  printf '/data/docker\n'
+fi
 EOF
 chmod +x "${TMP_DIR}/bin/docker"
+
+cat > "${TMP_DIR}/bin/mountpoint" <<'EOF'
+#!/usr/bin/env bash
+[[ "${FAKE_CONTAINERD_MOUNT_READY:-1}" == 1 ]] || exit 1
+[[ "$*" == *"/var/lib/containerd"* ]]
+EOF
+chmod +x "${TMP_DIR}/bin/mountpoint"
+
+cat > "${TMP_DIR}/bin/dpkg" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == --print-architecture ]] || exit 1
+printf '%s\n' "${FAKE_DPKG_ARCHITECTURE:-arm64}"
+EOF
+chmod +x "${TMP_DIR}/bin/dpkg"
+
+cat > "${TMP_DIR}/bin/findmnt" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+field=""
+target=""
+while (( $# > 0 )); do
+  case "$1" in
+    -o) field="$2"; shift 2 ;;
+    --target) target="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "${field}:${target}" in
+  TARGET:/data/containerd) printf '/data\n' ;;
+  FSROOT:/data/containerd) printf '/\n' ;;
+  FSROOT:/var/lib/containerd) printf '/containerd\n' ;;
+  MAJ:MIN:/data/containerd|MAJ:MIN:/var/lib/containerd) printf '1:1\n' ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "${TMP_DIR}/bin/findmnt"
 
 cat > "${TMP_DIR}/bin/sudo" <<'EOF'
 #!/usr/bin/env bash
@@ -49,12 +91,22 @@ fi
 printf 'SUDO_ARG=%s\n' "$@" >> "${DOCKER_LOG:?}"
 case "${1:-}" in
   true|usermod|systemctl) exit 0 ;;
+  test)
+    shift
+    test "$@"
+    ;;
+  mkdir|mv|rm)
+    exec "$@"
+    ;;
   python3)
     cat >/dev/null
     printf 'unchanged\n'
     ;;
   docker)
     shift
+    if [[ "${1:-}" == info && -n "${FAKE_SUDO_DOCKER_INFO_STATUS:-}" ]]; then
+      export FAKE_DOCKER_INFO_STATUS="${FAKE_SUDO_DOCKER_INFO_STATUS}"
+    fi
     exec docker "$@"
     ;;
   *)
@@ -124,6 +176,71 @@ fi
 grep -Fq 'dk container setup --yes' "${TMP_DIR}/missing.out" || \
   fail "missing Docker error did not explain explicit setup"
 
+: > "${DOCKER_LOG}"
+export DEVKIT_CONTAINER_INSTALL_MARKER="${TMP_DIR}/install-in-progress"
+export DEVKIT_CONTAINER_ELXR_MIRROR="${TMP_DIR}/apt/sources.list.d/0000mirror.list"
+export DEVKIT_CONTAINER_DISABLED_ELXR_MIRROR="${TMP_DIR}/apt-disabled/0000mirror.list"
+mkdir -p "$(dirname "${DEVKIT_CONTAINER_DISABLED_ELXR_MIRROR}")"
+printf 'deb mock mirror\n' > "${DEVKIT_CONTAINER_DISABLED_ELXR_MIRROR}"
+touch "${DEVKIT_CONTAINER_INSTALL_MARKER}"
+if devkit-container list >"${TMP_DIR}/incomplete.out" 2>&1; then
+  fail "an incomplete installation marker should require setup"
+fi
+grep -Fq 'Docker setup is incomplete' "${TMP_DIR}/incomplete.out" || \
+  fail "incomplete setup was not reported"
+setup_output="$(devkit-container setup --yes 2>&1)"
+[[ ! -e "${DEVKIT_CONTAINER_INSTALL_MARKER}" ]] || \
+  fail "completed setup did not remove the installation marker"
+[[ -e "${DEVKIT_CONTAINER_ELXR_MIRROR}" ]] || \
+  fail "completed setup did not restore the eLxr package mirror"
+[[ ! -e "${DEVKIT_CONTAINER_DISABLED_ELXR_MIRROR}" ]] || \
+  fail "completed setup left the disabled eLxr package mirror behind"
+grep -Fq 'Completed the interrupted Docker setup without reinstalling packages.' \
+  <<< "${setup_output}" || fail "setup did not report interrupted-install completion"
+if grep -Fqx 'SUDO_ARG=apt-get' "${DOCKER_LOG}"; then
+  fail "healthy Docker with complete storage unexpectedly reinstalled packages"
+fi
+
+touch "${DEVKIT_CONTAINER_INSTALL_MARKER}"
+export FAKE_CONTAINERD_MOUNT_READY=0
+export FAKE_DPKG_ARCHITECTURE=unsupported
+if devkit-container setup --yes >"${TMP_DIR}/incomplete-storage.out" 2>&1; then
+  fail "healthy Docker with incomplete storage should resume installation"
+fi
+grep -Fq 'Docker installation is supported only on an ARM64 Modalix DevKit; found unsupported.' \
+  "${TMP_DIR}/incomplete-storage.out" || \
+  fail "incomplete storage did not re-enter the Docker installer"
+[[ -e "${DEVKIT_CONTAINER_INSTALL_MARKER}" ]] || \
+  fail "failed resumed installation removed the installation marker"
+rm -f "${DEVKIT_CONTAINER_INSTALL_MARKER}"
+unset FAKE_CONTAINERD_MOUNT_READY
+unset FAKE_DPKG_ARCHITECTURE
+unset DEVKIT_CONTAINER_INSTALL_MARKER
+unset DEVKIT_CONTAINER_ELXR_MIRROR
+unset DEVKIT_CONTAINER_DISABLED_ELXR_MIRROR
+
+: > "${DOCKER_LOG}"
+export FAKE_DOCKER_INFO_STATUS=1
+if devkit-container list >"${TMP_DIR}/unresponsive.out" 2>&1; then
+  fail "unresponsive Docker daemon should require setup"
+fi
+unset FAKE_DOCKER_INFO_STATUS
+grep -Fq 'daemon is not responding' "${TMP_DIR}/unresponsive.out" || \
+  fail "unresponsive Docker error did not describe the daemon failure"
+grep -Fq 'dk container setup --yes' "${TMP_DIR}/unresponsive.out" || \
+  fail "unresponsive Docker error did not explain recovery"
+
+: > "${DOCKER_LOG}"
+export FAKE_DOCKER_INFO_STATUS=1
+export FAKE_SUDO_DOCKER_INFO_STATUS=0
+devkit-container list
+unset FAKE_DOCKER_INFO_STATUS
+unset FAKE_SUDO_DOCKER_INFO_STATUS
+grep -Fqx 'SUDO_ARG=docker' "${DOCKER_LOG}" || \
+  fail "Docker health check did not fall back to passwordless sudo"
+grep -Fqx 'ARG=ps' "${DOCKER_LOG}" || \
+  fail "sudo-accessible Docker daemon was treated as unavailable"
+
 devkit-container-install-docker() {
   printf 'INSTALL_REQUESTED\n' >> "${DOCKER_LOG}"
 }
@@ -187,8 +304,8 @@ resolved="$(devkit-container-image-ref localhost:5050/team/hello-neat:develop)"
 devkit-container deploy localhost:5050/team/hello-neat:develop \
   --name hello-neat --network host -- /app --label "two words" \
   '; touch "$INJECTION_MARKER"; #' '$(touch "$INJECTION_MARKER")' ""
-[[ "$(grep -c '^BEGIN$' "${DOCKER_LOG}")" == "5" ]] || \
-  fail "deploy should configure the registry, then check Docker, pull, inspect, and run"
+[[ "$(grep -c '^BEGIN$' "${DOCKER_LOG}")" == "7" ]] || \
+  fail "deploy should configure the registry, health-check Docker, pull, inspect, and run"
 grep -Fqx 'ARG=pull' "${DOCKER_LOG}" || fail "deploy did not pull"
 grep -Fqx 'ARG=inspect' "${DOCKER_LOG}" || fail "deploy did not inspect image architecture"
 grep -Fqx 'ARG=192.0.2.10:5050/team/hello-neat:develop' "${DOCKER_LOG}" || \
@@ -218,7 +335,7 @@ grep -Fqx 'STDIN=keyboard input' "${DOCKER_LOG}" || \
 
 : > "${DOCKER_LOG}"
 devkit-container run hello-neat:develop --rm
-[[ "$(grep -c '^BEGIN$' "${DOCKER_LOG}")" == "3" ]] || \
+[[ "$(grep -c '^BEGIN$' "${DOCKER_LOG}")" == "4" ]] || \
   fail "run should check Docker, inspect, and start without an explicit pull"
 if grep -Fqx 'ARG=pull' "${DOCKER_LOG}"; then
   fail "run unexpectedly pulled the image"

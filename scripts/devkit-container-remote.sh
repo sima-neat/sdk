@@ -4,6 +4,55 @@ set -euo pipefail
 action="${1:?missing container action}"
 shift
 
+install_marker="${DEVKIT_CONTAINER_INSTALL_MARKER:-/etc/docker/.sima-sdk-install-in-progress}"
+elxr_mirror="${DEVKIT_CONTAINER_ELXR_MIRROR:-/etc/apt/sources.list.d/0000mirror.list}"
+disabled_elxr_mirror="${DEVKIT_CONTAINER_DISABLED_ELXR_MIRROR:-/root/apt-disabled/0000mirror.list}"
+
+docker_is_usable() {
+  command -v docker >/dev/null 2>&1 || return 1
+  if docker info >/dev/null 2>&1; then
+    return 0
+  fi
+  command -v sudo >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1
+}
+
+containerd_bind_mount_ready() {
+  local backing_root=""
+  local backing_target=""
+  local containerd_data_path=/data/containerd
+  local expected_root=""
+  local relative_path=""
+
+  backing_target="$(findmnt -n -o TARGET --target "${containerd_data_path}")" || return 1
+  backing_root="$(findmnt -n -o FSROOT --target "${containerd_data_path}")" || return 1
+  if [[ "${containerd_data_path}" == "${backing_target}" ]]; then
+    relative_path=""
+  elif [[ "${containerd_data_path}" == "${backing_target}"/* ]]; then
+    relative_path="${containerd_data_path#"${backing_target}"}"
+  else
+    return 1
+  fi
+  expected_root="${backing_root%/}${relative_path}"
+  [[ -n "${expected_root}" ]] || expected_root=/
+
+  mountpoint -q /var/lib/containerd && \
+    [[ "$(findmnt -n -o FSROOT --target /var/lib/containerd)" == "${expected_root}" ]] && \
+    [[ "$(findmnt -n -o MAJ:MIN --target /var/lib/containerd)" == \
+       "$(findmnt -n -o MAJ:MIN --target /data/containerd)" ]]
+}
+
+docker_install_postconditions_ready() {
+  local docker_root=""
+  if docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)"; then
+    :
+  elif command -v sudo >/dev/null 2>&1; then
+    docker_root="$(sudo -n docker info --format '{{.DockerRootDir}}' 2>/dev/null)" || return 1
+  else
+    return 1
+  fi
+  [[ "${docker_root}" == /data/docker ]] && containerd_bind_mount_ready
+}
+
 configure_container_registry() {
   local registry="${1:-}"
   local changed=""
@@ -87,11 +136,28 @@ configure_docker_access() {
   echo "Docker is ready on the DevKit. User ${target_user} was added to the docker group."
 }
 
+finalize_interrupted_docker_install() {
+  local target_user=""
+  target_user="$(id -un)"
+  if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
+    echo "Docker setup recovery requires passwordless sudo for ${target_user} on the DevKit." >&2
+    return 2
+  fi
+  if sudo -n test -e "${disabled_elxr_mirror}"; then
+    if sudo -n test -e "${elxr_mirror}"; then
+      echo "Cannot restore ${elxr_mirror}: ${disabled_elxr_mirror} also exists." >&2
+      return 2
+    fi
+    sudo -n mkdir -p "$(dirname "${elxr_mirror}")"
+    sudo -n mv "${disabled_elxr_mirror}" "${elxr_mirror}"
+  fi
+  configure_docker_access
+  sudo -n rm -f "${install_marker}"
+  echo "Completed the interrupted Docker setup without reinstalling packages."
+}
+
 install_docker() (
   local architecture=""
-  local mirror=/etc/apt/sources.list.d/0000mirror.list
-  local disabled_mirror=/root/apt-disabled/0000mirror.list
-  local install_marker=/etc/docker/.sima-sdk-install-in-progress
   local install_phase=""
   local mirror_moved=0
   local services_stopped=0
@@ -124,35 +190,11 @@ install_docker() (
   fi
 
   restore_elxr_mirror() {
-    if [[ "${mirror_moved}" == 1 ]] && sudo -n test -e "${disabled_mirror}" && \
-       ! sudo -n test -e "${mirror}"; then
-      sudo -n mkdir -p "$(dirname "${mirror}")"
-      sudo -n mv "${disabled_mirror}" "${mirror}"
+    if [[ "${mirror_moved}" == 1 ]] && sudo -n test -e "${disabled_elxr_mirror}" && \
+       ! sudo -n test -e "${elxr_mirror}"; then
+      sudo -n mkdir -p "$(dirname "${elxr_mirror}")"
+      sudo -n mv "${disabled_elxr_mirror}" "${elxr_mirror}"
     fi
-  }
-  containerd_bind_mount_ready() {
-    local backing_root=""
-    local backing_target=""
-    local containerd_data_path=/data/containerd
-    local expected_root=""
-    local relative_path=""
-
-    backing_target="$(findmnt -n -o TARGET --target "${containerd_data_path}")" || return 1
-    backing_root="$(findmnt -n -o FSROOT --target "${containerd_data_path}")" || return 1
-    if [[ "${containerd_data_path}" == "${backing_target}" ]]; then
-      relative_path=""
-    elif [[ "${containerd_data_path}" == "${backing_target}"/* ]]; then
-      relative_path="${containerd_data_path#"${backing_target}"}"
-    else
-      return 1
-    fi
-    expected_root="${backing_root%/}${relative_path}"
-    [[ -n "${expected_root}" ]] || expected_root=/
-
-    mountpoint -q /var/lib/containerd && \
-      [[ "$(findmnt -n -o FSROOT --target /var/lib/containerd)" == "${expected_root}" ]] && \
-      [[ "$(findmnt -n -o MAJ:MIN --target /var/lib/containerd)" == \
-         "$(findmnt -n -o MAJ:MIN --target /data/containerd)" ]]
   }
   cleanup_install() {
     restore_elxr_mirror
@@ -178,16 +220,16 @@ install_docker() (
     install_phase=started
     printf '%s\n' "${install_phase}" | sudo -n tee "${install_marker}" >/dev/null
   fi
-  if sudo -n test -e "${disabled_mirror}" && ! sudo -n test -e "${mirror}"; then
+  if sudo -n test -e "${disabled_elxr_mirror}" && ! sudo -n test -e "${elxr_mirror}"; then
     mirror_moved=1
     echo "Resuming with the eLxr package mirror temporarily disabled."
-  elif sudo -n test -e "${mirror}"; then
-    sudo -n mkdir -p "$(dirname "${disabled_mirror}")"
-    if sudo -n test -e "${disabled_mirror}"; then
-      echo "Cannot disable ${mirror}: ${disabled_mirror} already exists." >&2
+  elif sudo -n test -e "${elxr_mirror}"; then
+    sudo -n mkdir -p "$(dirname "${disabled_elxr_mirror}")"
+    if sudo -n test -e "${disabled_elxr_mirror}"; then
+      echo "Cannot disable ${elxr_mirror}: ${disabled_elxr_mirror} already exists." >&2
       return 2
     fi
-    sudo -n mv "${mirror}" "${disabled_mirror}"
+    sudo -n mv "${elxr_mirror}" "${disabled_elxr_mirror}"
     mirror_moved=1
   fi
 
@@ -342,8 +384,15 @@ PY
 
 if [[ "${action}" == setup ]]; then
   registry="${1:-}"
-  if ! command -v docker >/dev/null 2>&1 || \
-     [[ -e /etc/docker/.sima-sdk-install-in-progress ]]; then
+  if [[ -e "${install_marker}" ]]; then
+    if docker_install_postconditions_ready; then
+      finalize_interrupted_docker_install
+    else
+      install_docker
+    fi
+  elif docker_is_usable; then
+    configure_docker_access
+  elif ! command -v docker >/dev/null 2>&1; then
     install_docker
   else
     configure_docker_access
@@ -353,12 +402,13 @@ if [[ "${action}" == setup ]]; then
 fi
 
 if [[ "${action}" == docker-check ]]; then
-  if command -v docker >/dev/null 2>&1 && \
-     [[ ! -e /etc/docker/.sima-sdk-install-in-progress ]]; then
+  if docker_is_usable && [[ ! -e "${install_marker}" ]]; then
     exit 0
   fi
-  if command -v docker >/dev/null 2>&1; then
+  if [[ -e "${install_marker}" ]]; then
     echo "Docker setup is incomplete on the DevKit." >&2
+  elif command -v docker >/dev/null 2>&1; then
+    echo "Docker is installed on the DevKit, but the daemon is not responding." >&2
   else
     echo "Docker is not installed on the DevKit." >&2
   fi
