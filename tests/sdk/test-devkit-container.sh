@@ -48,9 +48,17 @@ chmod +x "${TMP_DIR}/bin/docker"
 
 cat > "${TMP_DIR}/bin/mountpoint" <<'EOF'
 #!/usr/bin/env bash
+[[ "${FAKE_CONTAINERD_MOUNT_READY:-1}" == 1 ]] || exit 1
 [[ "$*" == *"/var/lib/containerd"* ]]
 EOF
 chmod +x "${TMP_DIR}/bin/mountpoint"
+
+cat > "${TMP_DIR}/bin/dpkg" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == --print-architecture ]] || exit 1
+printf '%s\n' "${FAKE_DPKG_ARCHITECTURE:-arm64}"
+EOF
+chmod +x "${TMP_DIR}/bin/dpkg"
 
 cat > "${TMP_DIR}/bin/findmnt" <<'EOF'
 #!/usr/bin/env bash
@@ -192,6 +200,21 @@ grep -Fq 'Completed the interrupted Docker setup without reinstalling packages.'
 if grep -Fqx 'SUDO_ARG=apt-get' "${DOCKER_LOG}"; then
   fail "healthy Docker with complete storage unexpectedly reinstalled packages"
 fi
+
+touch "${DEVKIT_CONTAINER_INSTALL_MARKER}"
+export FAKE_CONTAINERD_MOUNT_READY=0
+export FAKE_DPKG_ARCHITECTURE=unsupported
+if devkit-container setup --yes >"${TMP_DIR}/incomplete-storage.out" 2>&1; then
+  fail "healthy Docker with incomplete storage should resume installation"
+fi
+grep -Fq 'Docker installation is supported only on an ARM64 Modalix DevKit; found unsupported.' \
+  "${TMP_DIR}/incomplete-storage.out" || \
+  fail "incomplete storage did not re-enter the Docker installer"
+[[ -e "${DEVKIT_CONTAINER_INSTALL_MARKER}" ]] || \
+  fail "failed resumed installation removed the installation marker"
+rm -f "${DEVKIT_CONTAINER_INSTALL_MARKER}"
+unset FAKE_CONTAINERD_MOUNT_READY
+unset FAKE_DPKG_ARCHITECTURE
 unset DEVKIT_CONTAINER_INSTALL_MARKER
 unset DEVKIT_CONTAINER_ELXR_MIRROR
 unset DEVKIT_CONTAINER_DISABLED_ELXR_MIRROR
