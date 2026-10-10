@@ -226,7 +226,7 @@ replacing the index or pruning old builds.
 
 Only directory names matching `3.0.0_daily_<channel>_B<number>` are eligible.
 Completed builds are ordered by numeric build number, newest first (with directory
-name as a deterministic tie breaker). The latest 7 completed builds are kept
+name as a deterministic tie breaker). The latest 21 completed builds are kept
 across channels; pending uploads do not evict them.
 Successfully mirrored builds remain eligible if Artifactory removes them.
 Each directory must contain a `.wic`, `.img`, or `.iso` image; WIC/IMG gzip,
@@ -285,7 +285,7 @@ lines and bucket prefixes are untouched. Multipart uploads are aborted by the SD
 on ordinary transfer failures. Count retention is owned by this workflow, not
 Vulcan's generic branch artifact cleanup.
 
-A failed run can temporarily leave more than 7 directories in S3. The previous
+A failed run can temporarily leave more than 21 directories in S3. The previous
 index remains usable until the new index is published; a failure during pruning
 leaves the new index usable and the next successful run retries cleanup.
 Consumers should refresh the index when an old selection is no longer available.
@@ -299,8 +299,8 @@ The index is unchanged on a no-op run and contains:
 - `schema_version`: `1`.
 - `generated_at`: UTC ISO 8601 publication timestamp.
 - `platform`: `modalix`; `version_prefix`: `3.0.0_daily_`.
-- `bucket`, `prefix`, and `retention_count` (`7`).
-- `builds`: newest-first array, with at most 7 entries.
+- `bucket`, `prefix`, and `retention_count` (`21`).
+- `builds`: newest-first array, with at most 21 entries.
 - Each build: `name`, numeric `build_number`, `source_url`, and `files`.
 - Each file: relative `path`, S3 `key`, `s3_uri`, byte `size`, and `sha256`.
 
@@ -470,7 +470,7 @@ copied, and this workflow does not install the certificate onto boards.
 ## Firmware sysroot package availability
 
 After image publication, the workflow checks the internal daily package index
-first and the external daily index second for each of the seven retained image
+first and the external daily index second for each of the 21 retained image
 builds. Matching requires the exact platform release and build number: a 3.0.0
 B1371 image requires a `3.0.0~git<timestamp>.<commit>-1371` palette package.
 Adjacent builds and other releases do not qualify.
