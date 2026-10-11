@@ -191,6 +191,9 @@ def test_new_repository_cache_fetches_remote_tracking_refs(monkeypatch, tmp_path
         repository, "fetch", "--prune", "--no-tags", "origin",
         "+refs/heads/*:refs/remotes/origin/*",
     )
+    assert commands[2] == (
+        repository, "remote", "set-head", "origin", "--auto",
+    )
 
 
 def test_snapshot_uses_refreshed_remote_first_parent(monkeypatch, tmp_path):
@@ -212,6 +215,33 @@ def test_snapshot_uses_refreshed_remote_first_parent(monkeypatch, tmp_path):
     assert calls == [
         ("resolve", "refs/remotes/origin/develop"),
         ("git", "rev-list", "-1", "--first-parent", "--before=2026-10-03T01:21:59Z", "b" * 40),
+    ]
+
+
+def test_default_snapshot_uses_advertised_remote_head(monkeypatch, tmp_path):
+    calls = []
+
+    def run(_repository, *arguments, **_kwargs):
+        calls.append(("git", *arguments))
+        return "refs/remotes/origin/main\n"
+
+    def snapshot(_repository, source_ref, timestamp):
+        calls.append(("snapshot", source_ref, timestamp))
+        return "a" * 40
+
+    monkeypatch.setattr(report, "run_git", run)
+    monkeypatch.setattr(report, "resolve_snapshot", snapshot)
+
+    assert report.resolve_default_snapshot(
+        tmp_path, "2026-10-03T01:21:59Z"
+    ) == "a" * 40
+    assert calls == [
+        ("git", "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"),
+        (
+            "snapshot",
+            "refs/remotes/origin/main",
+            "2026-10-03T01:21:59Z",
+        ),
     ]
 
 
@@ -321,6 +351,28 @@ def test_jenkins_timeout_degrades_to_unavailable_provenance(tmp_path):
 
     assert section["comparison"]["relationship"] == "unavailable"
     assert section["resolution_note"] == "Jenkins provenance could not be read: TimeoutExpired."
+
+
+def test_ordinary_debian_revision_does_not_query_jenkins(tmp_path):
+    class UnexpectedJenkins:
+        def source_commit(self, *_args):
+            raise AssertionError("ordinary Debian revision queried Jenkins")
+
+    change = report.ManifestChange(
+        "ordinary-package", "1.2.3-1",
+        "ordinary-package", "1.2.3-2",
+        "https://bitbucket.org/sima-ai/simaai-linux",
+    )
+
+    section = report.collect_section(
+        change, tmp_path, UnexpectedJenkins(), "modalix",
+    )
+
+    assert section["provenance"] is None
+    assert section["comparison"]["relationship"] == "unavailable"
+    assert section["resolution_note"] == (
+        "The package versions do not contain resolvable source revisions."
+    )
 
 
 def test_replay_cli_reads_published_manifest_from_s3(monkeypatch, tmp_path):
