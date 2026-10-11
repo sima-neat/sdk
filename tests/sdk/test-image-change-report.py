@@ -1,4 +1,4 @@
-"""Package source map and image manifest report behavior."""
+"""Image manifest source-report behavior."""
 
 import importlib.util
 import json
@@ -8,39 +8,12 @@ import types
 from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
-MAP_PATH = ROOT / "scripts/debian-package-source-map.json"
 spec = importlib.util.spec_from_file_location(
     "image_change_report", ROOT / "scripts/generate-image-change-report.py"
 )
 report = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = report
 spec.loader.exec_module(report)
-
-
-def source_map():
-    return json.loads(MAP_PATH.read_text(encoding="utf-8"))
-
-
-def expanded_sources(data):
-    return [{**data["defaults"], **source} for source in data["sources"]]
-
-
-def test_source_map_is_compact_runtime_configuration():
-    data = source_map()
-    assert data["schema_version"] == 2
-    assert set(data) == {"schema_version", "services", "defaults", "sources"}
-    assert data["defaults"] == {
-        "source_ref": "develop",
-        "version_provenance": "git_suffix",
-    }
-    serialized = MAP_PATH.read_text(encoding="utf-8")
-    assert serialized.count("https://jenkins.eng.sima.ai") == 1
-    assert "pre_release_build" not in serialized
-    assert "sima-ai/" not in "\n".join(
-        source.get("repository", "") for source in data["sources"]
-    )
-    forbidden = {"source_config", "jenkins_job", "note"}
-    assert not any(forbidden.intersection(source) for source in data["sources"])
 
 
 def test_workflow_generates_reports_fail_open_and_passes_them_to_slack():
@@ -67,35 +40,52 @@ def test_workflow_generates_reports_fail_open_and_passes_them_to_slack():
     triggers = workflow.get("on", workflow.get(True))
     assert triggers["workflow_dispatch"]["inputs"]["replay_image_build"]["default"] == ""
     assert workflow["jobs"]["sync"]["env"]["REPLAY_IMAGE_BUILD"] == "${{ inputs.replay_image_build || '' }}"
+    assert not (ROOT / "scripts/debian-package-source-map.json").exists()
 
 
-def test_defaults_expand_internal_and_external_repositories():
-    data = source_map()
-    sources = expanded_sources(data)
-    cvu = next(source for source in sources if source.get("repository") == "cvu-sw")
-    cartographer = next(source for source in sources if "cartographer" in source["package_regex"])
-    assert report.repository_name(cvu, data["services"]) == "sima-ai/cvu-sw"
-    assert report.source_url(cvu, data["services"]) == "ssh://git@bitbucket.org/sima-ai/cvu-sw.git"
-    assert report.repository_name(cartographer, data["services"]) == "ros2/cartographer"
-    assert report.source_url(cartographer, data["services"]) == "https://github.com/ros2/cartographer"
+def test_manifest_repository_url_drives_repository_identity_and_clone_transport():
+    url = "https://bitbucket.org/sima-ai/cvu-sw.git"
+    assert report.normalize_repository_url(url) == "https://bitbucket.org/sima-ai/cvu-sw"
+    assert report.repository_name(url) == "sima-ai/cvu-sw"
+    assert report.clone_url(url) == "ssh://git@bitbucket.org/sima-ai/cvu-sw.git"
 
 
-def test_latest_manifest_shape_parses_add_remove_update_and_variant_switch():
+def test_new_manifest_shape_parses_add_remove_and_modify():
+    changes = report.parse_manifest_changes(
+        "m linux-libc-dev 6.18.3-2031 -> 6.18.3-2032 https://bitbucket.org/sima-ai/simaai-linux.git\n"
+        "+ troot-modalix 3.0.0~git.c7fee94 https://bitbucket.org/sima-ai/dvboot.git\n"
+        "- atf-modalix 2.2.0~git.bdf0902 https://bitbucket.org/sima-ai/soc-simaai-atf.git\n"
+    )
+    assert len(changes) == 3
+    assert changes[0].before_package == changes[0].after_package == "linux-libc-dev"
+    assert changes[0].before_version == "6.18.3-2031"
+    assert changes[0].after_version == "6.18.3-2032"
+    assert changes[0].repository_url == "https://bitbucket.org/sima-ai/simaai-linux"
+    assert changes[1].before_package is None
+    assert changes[1].after_package == "troot-modalix"
+    assert changes[2].before_package == "atf-modalix"
+    assert changes[2].after_package is None
+
+
+def test_legacy_manifest_shape_remains_readable_for_replays():
     changes = report.parse_manifest_changes(
         "> atf-modalix 2.2.0~git.bdf0902\n"
-        "atf-modalix 2.2.0~git.bdf0902                         <\n"
+        "atf-modalix 2.2.0~git.bdf0902 <\n"
         "cvu-sw 2.2.0~git.80485fe | cvu-sw 2.2.0~git.8c62f50\n"
-        "troot-modalix 3.0.0~git.13cc855 | troot-modalix-secure 3.0.0~git.13cc855\n"
     )
-    assert len(changes) == 4
-    assert changes[0].before_package is None
-    assert changes[0].after_package == "atf-modalix"
-    assert changes[1].before_package == "atf-modalix"
-    assert changes[1].before_version == "2.2.0~git.bdf0902"
-    assert changes[1].after_package is None
-    assert changes[2].before_package == changes[2].after_package == "cvu-sw"
-    assert changes[3].before_package == "troot-modalix"
-    assert changes[3].after_package == "troot-modalix-secure"
+    assert len(changes) == 3
+    assert all(change.repository_url is None for change in changes)
+
+
+def test_manifest_rejects_non_bitbucket_source_urls():
+    try:
+        report.parse_manifest_changes(
+            "m package 1.0~git.abcdef0 -> 1.1~git.abcdef1 https://example.invalid/repo.git\n"
+        )
+    except ValueError as error:
+        assert "Unsupported manifest repository URL" in str(error)
+    else:
+        raise AssertionError("Untrusted repository host was accepted")
 
 
 def test_removed_package_is_described_in_report(tmp_path):
@@ -103,7 +93,7 @@ def test_removed_package_is_described_in_report(tmp_path):
         "atf-modalix 2.2.0~git.bdf0902                         <\n"
     )[0]
     section = report.collect_section(
-        change, None, tmp_path, object(), "modalix", {}
+        change, tmp_path, object(), "modalix"
     )
     guidance = {
         "risk_level": "unknown",
@@ -116,13 +106,46 @@ def test_removed_package_is_described_in_report(tmp_path):
     rendered = report.render_html("3.0.0_daily_develop_B1859", [section], "Summary", guidance)
 
     assert section["description"] == "This package was removed from the image."
-    assert "atf-modalix → not present" in rendered
+    assert "Removed atf-modalix" in rendered
+    assert "previously bdf0902" in rendered
     assert "This package was removed from the image." in rendered
+
+
+def test_added_package_heading_is_plain_language():
+    section = {
+        "package": "troot-modalix",
+        "before_package": None,
+        "after_package": "troot-modalix",
+        "before": None,
+        "after": "3.0.0~git.c7fee94",
+        "before_hash": None,
+        "after_hash": "c7fee94766fbf89ae92ab262d45b19dd4921d4f0",
+        "description": "This package was added to the image.",
+        "repository": "sima-ai/dvboot",
+        "repository_url": "https://bitbucket.org/sima-ai/dvboot",
+        "source_path": None,
+        "resolution_note": "",
+        "comparison": {"commits": [], "files": [], "truncated": False},
+    }
+    guidance = {
+        "risk_level": "unknown",
+        "risk_rationale": "Review required.",
+        "affected_areas": [],
+        "qa_focus": [],
+        "consumer_guidance": [],
+    }
+
+    rendered = report.render_html("build", [section], "Summary", guidance)
+
+    assert "Added troot-modalix at" in rendered
+    assert "c7fee94766fb" in rendered
+    assert "not present → troot-modalix" not in rendered
 
 
 def test_git_hash_accepts_legacy_and_timestamped_versions():
     assert report.git_hash("2.2.0~git.bdf0902") == "bdf0902"
     assert report.git_hash("3.0.0~git202609120138.aBcDeF0-1371") == "abcdef0"
+    assert report.git_hash("1.4.1~git.c66e7682~git.0bf3ce8d4") == "0bf3ce8d4"
 
 
 def test_package_index_recovers_parent_snapshot_times(tmp_path):
@@ -159,14 +182,9 @@ def test_new_repository_cache_fetches_remote_tracking_refs(monkeypatch, tmp_path
         "run_git",
         lambda repository, *arguments, **_kwargs: commands.append((repository, *arguments)) or "",
     )
-    source = {"repository": "swsoc-elxr"}
-    services = {"bitbucket": {
-        "web_base_url": "https://bitbucket.org",
-        "ssh_base_url": "ssh://git@bitbucket.org",
-        "default_workspace": "sima-ai",
-    }}
-
-    repository = report.ensure_repository(tmp_path, source, services)
+    repository = report.ensure_repository(
+        tmp_path, "https://bitbucket.org/sima-ai/swsoc-elxr"
+    )
 
     assert commands[0][:4] == ["git", "clone", "--bare", "--filter=blob:none"]
     assert commands[1] == (
@@ -197,14 +215,7 @@ def test_snapshot_uses_refreshed_remote_first_parent(monkeypatch, tmp_path):
     ]
 
 
-def test_parent_repository_package_uses_scoped_snapshots(monkeypatch, tmp_path):
-    source = {
-        "package_regex": "^simaai-discovery$",
-        "repository": "swsoc-elxr",
-        "source_ref": "develop",
-        "source_path": "configs/packages/simaai-discovery",
-        "version_provenance": "parent_repository_snapshot",
-    }
+def test_unresolvable_package_commits_fall_back_to_parent_snapshots(monkeypatch, tmp_path):
     packages = tmp_path / "Packages"
     packages.write_text(
         "Package: simaai-discovery\n"
@@ -216,77 +227,67 @@ def test_parent_repository_package_uses_scoped_snapshots(monkeypatch, tmp_path):
     snapshots = []
     comparisons = []
     monkeypatch.setattr(report, "ensure_repository", lambda *_args: tmp_path)
+    monkeypatch.setattr(report, "resolve_commit_if_present", lambda *_args: None)
 
-    def resolve_snapshot(_repository, source_ref, timestamp):
-        snapshots.append((source_ref, timestamp))
+    def resolve_snapshot(_repository, timestamp):
+        snapshots.append(timestamp)
         return "a" * 40
 
-    def compare(_repository, before, after, _web_url, source_path):
-        comparisons.append((before, after, source_path))
+    def compare(_repository, before, after, web_url):
+        comparisons.append((before, after, web_url))
         return {"relationship": "same", "commits": [], "files": [], "truncated": False}
 
-    monkeypatch.setattr(report, "resolve_snapshot", resolve_snapshot)
+    monkeypatch.setattr(report, "resolve_default_snapshot", resolve_snapshot)
     monkeypatch.setattr(report, "git_comparison", compare)
     section = report.collect_section(
         report.ManifestChange(
             "simaai-discovery", "3.0.0~git.1758321",
             "simaai-discovery", "3.0.0~git.5ae04ba",
+            "https://bitbucket.org/sima-ai/swsoc-elxr",
         ),
-        source,
         tmp_path,
         object(),
         "modalix",
-        {"bitbucket": {
-            "web_base_url": "https://bitbucket.org",
-            "ssh_base_url": "ssh://git@bitbucket.org",
-            "default_workspace": "sima-ai",
-        }},
         report.PackageVersionIndex(packages),
     )
 
     assert snapshots == [
-        ("develop", "2026-10-02T01:21:59Z"),
-        ("develop", "2026-10-03T01:21:59Z"),
+        "2026-10-02T01:21:59Z",
+        "2026-10-03T01:21:59Z",
     ]
-    assert comparisons == [("a" * 40, "a" * 40, source["source_path"])]
+    assert comparisons == [
+        ("a" * 40, "a" * 40, "https://bitbucket.org/sima-ai/swsoc-elxr")
+    ]
     assert section["comparison"]["relationship"] == "same"
-    assert section["source_path"] == "configs/packages/simaai-discovery"
+    assert section["source_path"] is None
+    assert section["provenance"] == "parent_repository_snapshot"
     assert "package build timestamp" in section["resolution_note"]
 
 
-def test_every_package_rule_has_a_unique_mapping_for_known_manifest_packages():
-    data = source_map()
-    sources = expanded_sources(data)
+def test_each_manifest_row_carries_its_source_repository():
     changes = report.parse_manifest_changes(
-        "cvu-sw 2.2.0~git.80485fe | cvu-sw 2.2.0~git.8c62f50\n"
-        "linux-image-6.18.3-modalix 6.18.3-1833 | linux-image-6.18.3-modalix 6.18.3-1847\n"
-        "u-boot-modalix 2.2.0~git.365112fdb3 | u-boot-modalix-secure 2.2.0~git.365112fdb3\n"
+        "m cvu-sw 2.2.0~git.80485fe -> 2.2.0~git.8c62f50 https://bitbucket.org/sima-ai/cvu-sw.git\n"
+        "m linux-image-6.18.3-modalix 6.18.3-1833 -> 6.18.3-1847 https://bitbucket.org/sima-ai/simaai-linux.git\n"
+        "+ u-boot-modalix-secure 2.2.0~git.365112fdb3 https://bitbucket.org/sima-ai/sima-ai-uboot.git\n"
     )
-    mapped = [report.matching_source(change, sources) for change in changes]
-    assert [item["repository"] for item in mapped] == [
-        "cvu-sw", "simaai-linux", "sima-ai-uboot"
+    assert [report.repository_name(change.repository_url) for change in changes] == [
+        "sima-ai/cvu-sw", "sima-ai/simaai-linux", "sima-ai/sima-ai-uboot"
     ]
-    assert mapped[0]["version_provenance"] == "git_suffix"
-    assert mapped[1]["version_provenance"] == "jenkins_build_number"
 
 
-def test_pinned_source_ref_is_used_when_package_version_has_no_git_hash(monkeypatch, tmp_path):
-    source = {
-        "package_regex": "^g2o$",
-        "repository_url": "https://example.invalid/g2o",
-        "source_ref": "debian/0_20230806-5",
-        "version_provenance": "pinned_git",
-    }
-    change = report.ManifestChange("g2o", "0~20230806-4", "g2o", "0~20230806-5")
-    resolved = "a" * 40
+def test_direct_manifest_git_revisions_are_resolved(monkeypatch, tmp_path):
+    change = report.ManifestChange(
+        "cvu-sw", "2.2.0~git.abcdef0", "cvu-sw", "2.2.0~git.abcdef1",
+        "https://bitbucket.org/sima-ai/cvu-sw",
+    )
     revisions = []
     monkeypatch.setattr(report, "ensure_repository", lambda *_args: tmp_path)
 
     def resolve(_repository, revision):
         revisions.append(revision)
-        return resolved
+        return ("a" if revision == "abcdef0" else "b") * 40
 
-    monkeypatch.setattr(report, "resolve_commit", resolve)
+    monkeypatch.setattr(report, "resolve_commit_if_present", resolve)
     monkeypatch.setattr(
         report,
         "git_comparison",
@@ -294,13 +295,12 @@ def test_pinned_source_ref_is_used_when_package_version_has_no_git_hash(monkeypa
     )
 
     section = report.collect_section(
-        change, source, tmp_path, object(), "modalix",
-        {"bitbucket": {"web_base_url": "https://bitbucket.org", "ssh_base_url": "ssh://git@bitbucket.org",
-                       "default_workspace": "sima-ai"}},
+        change, tmp_path, object(), "modalix",
     )
 
-    assert revisions == [source["source_ref"], source["source_ref"]]
-    assert section["before_hash"] == section["after_hash"] == resolved
+    assert revisions == ["abcdef0", "abcdef1"]
+    assert section["before_hash"] == "a" * 40
+    assert section["after_hash"] == "b" * 40
     assert section["comparison"]["relationship"] == "same"
 
 
@@ -309,20 +309,14 @@ def test_jenkins_timeout_degrades_to_unavailable_provenance(tmp_path):
         def source_commit(self, *_args):
             raise subprocess.TimeoutExpired("curl", 70)
 
-    source = {
-        "package_regex": "^linux-image-.*$",
-        "repository": "simaai-linux",
-        "version_provenance": "jenkins_build_number",
-    }
     change = report.ManifestChange(
         "linux-image-6.18.3-modalix", "6.18.3-1833",
         "linux-image-6.18.3-modalix", "6.18.3-1847",
+        "https://bitbucket.org/sima-ai/simaai-linux",
     )
 
     section = report.collect_section(
-        change, source, tmp_path, TimedOutJenkins(), "modalix",
-        {"bitbucket": {"web_base_url": "https://bitbucket.org", "ssh_base_url": "ssh://git@bitbucket.org",
-                       "default_workspace": "sima-ai"}},
+        change, tmp_path, TimedOutJenkins(), "modalix",
     )
 
     assert section["comparison"]["relationship"] == "unavailable"
@@ -392,6 +386,31 @@ def test_codex_exec_allows_ephemeral_non_git_report_directory(monkeypatch, tmp_p
     assert "specific, observable validation scenarios" in prompt
     assert "mark the relevant risk as unknown" in prompt
     assert "Start every bullet with a short bold label" in prompt
+
+
+def test_codex_timeout_does_not_echo_untrusted_evidence(monkeypatch, tmp_path, capsys):
+    context = tmp_path / "context.json"
+    context.write_text(json.dumps({
+        "packages": [{"key": "package-transition", "description": "SECRET-EVIDENCE"}]
+    }))
+    work_dir = tmp_path / "codex"
+    work_dir.mkdir()
+
+    def run(command, **_kwargs):
+        if command == ["codex", "exec", "--help"]:
+            return types.SimpleNamespace(
+                returncode=0,
+                stdout="--output-schema --output-last-message",
+                stderr="",
+            )
+        raise subprocess.TimeoutExpired(command, 7)
+
+    monkeypatch.setattr(report.subprocess, "run", run)
+
+    assert report.codex_enrich(context, work_dir, 7) is None
+    error = capsys.readouterr().err
+    assert error == "Codex summary unavailable: timed out after 7 seconds\n"
+    assert "SECRET-EVIDENCE" not in error
 
 
 def test_release_guidance_is_rendered_and_escaped():
