@@ -33,6 +33,9 @@ GIT_VERSION_RE = re.compile(
 TIMESTAMPED_GIT_VERSION_RE = re.compile(
     r"~git(?P<timestamp>[0-9]{12})[.](?P<hash>[0-9a-fA-F]{7,40})-(?P<build>[0-9]+)(?:\b|\Z)"
 )
+JENKINS_BUILD_PACKAGE_RE = re.compile(
+    r"(?:linux-(?:modalix|davinci)|linux-(?:headers|image)-[^/]+-(?:modalix|davinci)|linux-libc-dev)\Z"
+)
 JIRA_RE = re.compile(r"\b[A-Z][A-Z0-9]+-[0-9]+\b")
 JIRA_PROJECT_KEYS = {"SOCSW", "SWMLA"}
 JIRA_BASE_URL = "https://sima-ai.atlassian.net/browse/"
@@ -42,6 +45,8 @@ MAX_CODEX_CONTEXT_BYTES = 250_000
 MAX_SLACK_SUMMARY = 1400
 MAX_GUIDANCE_ITEMS = 8
 MAX_GUIDANCE_ITEM_LENGTH = 500
+JENKINS_BASE_URL = "https://jenkins.eng.sima.ai"
+JENKINS_BUILDER_PATH = "/job/soc-jobs/job/elxr-builder/"
 _FETCHED_REPOSITORIES: set[Path] = set()
 
 
@@ -51,6 +56,7 @@ class ManifestChange:
     before_version: str | None
     after_package: str | None
     after_version: str | None
+    repository_url: str | None = None
 
     @property
     def package(self) -> str:
@@ -75,7 +81,34 @@ def parse_manifest_changes(text: str) -> list[ManifestChange]:
         if not line:
             continue
         before_package = before_version = after_package = after_version = None
-        if "|" in line:
+        repository_url = None
+        current = re.fullmatch(
+            r"(?P<action>[m+-])\s+(?P<package>\S+)\s+(?P<before>\S+)"
+            r"(?:\s+->\s+(?P<after>\S+))?\s+(?P<url>https://\S+)",
+            line,
+        )
+        if current:
+            action = current.group("action")
+            package = current.group("package")
+            before = current.group("before")
+            after = current.group("after")
+            repository_url = normalize_repository_url(current.group("url"))
+            if action == "m":
+                if not after:
+                    raise ValueError(
+                        f"Modified manifestChanges line {line_number} has no new version: {raw!r}"
+                    )
+                before_package = after_package = package
+                before_version, after_version = before, after
+            elif after:
+                raise ValueError(
+                    f"Added/removed manifestChanges line {line_number} has an unexpected new version: {raw!r}"
+                )
+            elif action == "+":
+                after_package, after_version = package, before
+            else:
+                before_package, before_version = package, before
+        elif "|" in line:
             left, right = line.split("|", 1)
             before_package, before_version = split_package_version(left)
             after_package, after_version = split_package_version(right)
@@ -89,7 +122,15 @@ def parse_manifest_changes(text: str) -> list[ManifestChange]:
             before_package, before_version = split_package_version(line[1:])
         else:
             raise ValueError(f"Unsupported manifestChanges line {line_number}: {raw!r}")
-        changes.append(ManifestChange(before_package, before_version, after_package, after_version))
+        changes.append(
+            ManifestChange(
+                before_package,
+                before_version,
+                after_package,
+                after_version,
+                repository_url,
+            )
+        )
     return changes
 
 
@@ -97,28 +138,47 @@ def package_without_architecture(value: str | None) -> str | None:
     return value.split(":", 1)[0] if value else None
 
 
-def matching_source(change: ManifestChange, sources: list[dict[str, Any]]) -> dict[str, Any] | None:
-    names = {
-        package_without_architecture(change.before_package),
-        package_without_architecture(change.after_package),
-    } - {None}
-    matches = [source for source in sources if any(re.fullmatch(source["package_regex"], name) for name in names)]
-    if not matches:
-        return None
-    repositories = {match.get("repository") for match in matches}
-    if len(repositories) > 1:
-        raise ValueError(f"Ambiguous package source mapping for {sorted(names)}")
-    return matches[0]
+def normalize_repository_url(value: str) -> str:
+    parsed = urllib.parse.urlparse(value)
+    path = parsed.path.strip("/").removesuffix(".git")
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "bitbucket.org"
+        or parsed.username
+        or parsed.password
+        or parsed.port
+        or parsed.query
+        or parsed.fragment
+        or len(path.split("/")) != 2
+    ):
+        raise ValueError(f"Unsupported manifest repository URL: {value!r}")
+    return f"https://bitbucket.org/{path}"
 
 
 def git_hash(version: str | None) -> str | None:
-    match = GIT_VERSION_RE.search(version or "")
-    return match.group(1).lower() if match else None
+    matches = GIT_VERSION_RE.findall(version or "")
+    # Some packages encode both a packaging revision and the actual upstream
+    # source revision. The repository URL in manifestChanges.txt identifies the
+    # upstream repository, whose revision is the final ~git component.
+    return matches[-1].lower() if matches else None
 
 
 def package_build_number(version: str | None) -> int | None:
     match = re.search(r"-([0-9]+)(?:[+~].*)?\Z", version or "")
     return int(match.group(1)) if match else None
+
+
+def uses_jenkins_build_number(change: ManifestChange) -> bool:
+    """Identify build-number versions without a package-to-repository map."""
+    packages = {
+        package_without_architecture(change.before_package),
+        package_without_architecture(change.after_package),
+    } - {None}
+    return (
+        repository_name(change.repository_url) == "sima-ai/simaai-linux"
+        and bool(packages)
+        and all(JENKINS_BUILD_PACKAGE_RE.fullmatch(package) for package in packages)
+    )
 
 
 class PackageVersionIndex:
@@ -221,40 +281,20 @@ def run_git(repository: Path, *arguments: str, check: bool = True) -> str:
     return process.stdout
 
 
-def repository_name(source: dict[str, Any], services: dict[str, Any]) -> str | None:
-    repository = source.get("repository")
-    if not repository and source.get("repository_url"):
-        parsed = urllib.parse.urlparse(str(source["repository_url"]))
-        return parsed.path.strip("/").removesuffix(".git") or parsed.hostname
-    if not repository:
+def repository_name(repository_url: str | None) -> str | None:
+    if not repository_url:
         return None
-    if source.get("repository_url") or "/" in repository:
-        return str(repository)
-    workspace = services["bitbucket"]["default_workspace"]
-    return f"{workspace}/{repository}"
+    return urllib.parse.urlparse(repository_url).path.strip("/").removesuffix(".git")
 
 
-def source_url(source: dict[str, Any], services: dict[str, Any]) -> str | None:
-    if source.get("repository_url"):
-        return str(source["repository_url"])
-    repository = repository_name(source, services)
-    base = services["bitbucket"]["ssh_base_url"].rstrip("/")
-    return f"{base}/{repository}.git" if repository else None
+def clone_url(repository_url: str) -> str:
+    normalized = normalize_repository_url(repository_url)
+    path = urllib.parse.urlparse(normalized).path.strip("/")
+    return f"ssh://git@bitbucket.org/{path}.git"
 
 
-def repository_web_url(source: dict[str, Any], services: dict[str, Any]) -> str | None:
-    url = source.get("repository_url")
-    if url:
-        return str(url).removesuffix(".git")
-    repository = repository_name(source, services)
-    base = services["bitbucket"]["web_base_url"].rstrip("/")
-    return f"{base}/{repository}" if repository else None
-
-
-def ensure_repository(cache_root: Path, source: dict[str, Any], services: dict[str, Any]) -> Path:
-    url = source_url(source, services)
-    if not url:
-        raise ValueError("No source repository is defined")
+def ensure_repository(cache_root: Path, repository_url: str) -> Path:
+    url = clone_url(repository_url)
     cache_root.mkdir(parents=True, exist_ok=True)
     repository = cache_root / hashlib.sha256(url.encode()).hexdigest()
     if repository in _FETCHED_REPOSITORIES:
@@ -274,6 +314,9 @@ def ensure_repository(cache_root: Path, source: dict[str, Any], services: dict[s
     # refs so snapshot resolution never falls back to a stale local branch.
     run_git(repository, "fetch", "--prune", "--no-tags", "origin",
             "+refs/heads/*:refs/remotes/origin/*")
+    # Refresh origin/HEAD so timestamp-based provenance follows the repository's
+    # advertised default branch instead of guessing a conventional branch name.
+    run_git(repository, "remote", "set-head", "origin", "--auto")
     _FETCHED_REPOSITORIES.add(repository)
     return repository
 
@@ -297,6 +340,13 @@ def resolve_commit(repository: Path, revision: str | None) -> str | None:
     return matches[0]
 
 
+def resolve_commit_if_present(repository: Path, revision: str | None) -> str | None:
+    try:
+        return resolve_commit(repository, revision)
+    except ValueError:
+        return None
+
+
 def commit_link(web_url: str | None, commit: str) -> str | None:
     if not web_url:
         return None
@@ -308,12 +358,30 @@ def commit_link(web_url: str | None, commit: str) -> str | None:
 def resolve_snapshot(repository: Path, source_ref: str, timestamp: str | None) -> str | None:
     if not timestamp:
         return None
-    revision = resolve_commit(repository, f"refs/remotes/origin/{source_ref}")
+    revision_ref = (
+        source_ref
+        if source_ref.startswith("refs/")
+        else f"refs/remotes/origin/{source_ref}"
+    )
+    revision = resolve_commit(repository, revision_ref)
     if not revision:
         return None
     resolved = run_git(repository, "rev-list", "-1", "--first-parent",
                        f"--before={timestamp}", revision).strip()
     return resolved if re.fullmatch(r"[0-9a-f]{40}", resolved) else None
+
+
+def resolve_default_snapshot(repository: Path, timestamp: str | None) -> str | None:
+    source_ref = run_git(
+        repository,
+        "symbolic-ref",
+        "--quiet",
+        "refs/remotes/origin/HEAD",
+        check=False,
+    ).strip()
+    if not re.fullmatch(r"refs/remotes/origin/[^\s]+", source_ref):
+        raise ValueError("Repository default branch could not be resolved")
+    return resolve_snapshot(repository, source_ref, timestamp)
 
 
 def git_comparison(repository: Path, before: str | None, after: str | None,
@@ -382,36 +450,38 @@ def deterministic_description(section: dict[str, Any]) -> str:
     return section.get("resolution_note") or "The package changed, but an exact source comparison was not available."
 
 
-def collect_section(change: ManifestChange, source: dict[str, Any] | None, cache_root: Path,
-                    jenkins: Jenkins, platform: str, services: dict[str, Any],
+def collect_section(change: ManifestChange, cache_root: Path, jenkins: Jenkins,
+                    platform: str,
                     package_index: PackageVersionIndex | None = None) -> dict[str, Any]:
-    provenance = source.get("version_provenance") if source else None
     before_hash, after_hash = git_hash(change.before_version), git_hash(change.after_version)
+    provenance = "git_suffix" if before_hash or after_hash else None
     resolution_note = ""
-    if provenance in {"pinned_git", "pinned_git_with_elxr_overlay"}:
-        pinned_ref = source.get("source_ref") if source else None
-        before_hash = pinned_ref if change.before_version else None
-        after_hash = pinned_ref if change.after_version else None
-        if not pinned_ref:
-            resolution_note = "The pinned source mapping does not define a source ref."
-    elif provenance == "jenkins_build_number":
+
+    # Versions without embedded Git revisions normally carry the eLxr builder
+    # number. Resolve those revisions from Jenkins without maintaining a
+    # package-to-job map; the package name (with the existing kernel convention)
+    # identifies the builder in the console log.
+    if not before_hash and change.before_version:
+        before_build = package_build_number(change.before_version)
+    else:
+        before_build = None
+    if not after_hash and change.after_version:
+        after_build = package_build_number(change.after_version)
+    else:
+        after_build = None
+    if (before_build or after_build) and uses_jenkins_build_number(change):
+        provenance = "jenkins_build_number"
         try:
-            before_build = package_build_number(change.before_version)
-            after_build = package_build_number(change.after_version)
-            before_hash = jenkins.source_commit(before_build, change.package, platform) if before_build else None
-            after_hash = jenkins.source_commit(after_build, change.package, platform) if after_build else None
+            before_hash = (
+                jenkins.source_commit(before_build, change.package, platform)
+                if before_build else before_hash
+            )
+            after_hash = (
+                jenkins.source_commit(after_build, change.package, platform)
+                if after_build else after_hash
+            )
         except (OSError, subprocess.SubprocessError, urllib.error.URLError, RuntimeError) as error:
             resolution_note = f"Jenkins provenance could not be read: {type(error).__name__}."
-    elif provenance == "parent_repository_snapshot":
-        before_hash = after_hash = None
-        resolution_note = "The package index did not contain enough provenance to resolve the parent repository snapshots."
-    elif provenance not in {"git_suffix", "pinned_git", "legacy_package"}:
-        if source and source.get("note"):
-            resolution_note = str(source["note"])
-        elif not source:
-            resolution_note = "No package-to-source mapping is available."
-        else:
-            resolution_note = "This package version does not encode a source commit."
 
     section: dict[str, Any] = {
         "key": change.key,
@@ -422,43 +492,58 @@ def collect_section(change: ManifestChange, source: dict[str, Any] | None, cache
         "after": change.after_version,
         "before_hash": before_hash,
         "after_hash": after_hash,
-        "repository": repository_name(source, services) if source else None,
-        "repository_url": repository_web_url(source, services) if source else None,
-        "source_path": source.get("source_path") if source else None,
+        "repository": repository_name(change.repository_url),
+        "repository_url": change.repository_url,
+        "source_path": None,
         "provenance": provenance,
         "resolution_note": resolution_note,
         "comparison": {"relationship": "unavailable", "commits": [], "files": [], "truncated": False},
     }
-    snapshots = (None, None)
-    if provenance == "parent_repository_snapshot":
-        snapshots = (
-            package_snapshot_time(package_index, change.before_package, change.before_version),
-            package_snapshot_time(package_index, change.after_package, change.after_version),
+    snapshots = (
+        package_snapshot_time(package_index, change.before_package, change.before_version),
+        package_snapshot_time(package_index, change.after_package, change.after_version),
+    )
+    if not change.repository_url:
+        section["resolution_note"] = (
+            "This legacy manifest row does not identify a source repository."
         )
-    if source and source_url(source, services) and (before_hash or after_hash or any(snapshots)):
+    elif before_hash or after_hash or any(snapshots):
         try:
-            repository = ensure_repository(cache_root, source, services)
+            repository = ensure_repository(cache_root, change.repository_url)
+            before_full = resolve_commit_if_present(repository, before_hash)
+            after_full = resolve_commit_if_present(repository, after_hash)
+
+            # Some packages embed a temporary packaging commit that does not
+            # exist in their listed parent repository. The package index retains
+            # the full timestamped version, allowing a mapping-free fallback to
+            # the parent repository snapshot current at build time.
+            if change.before_version and not before_full and snapshots[0]:
+                before_full = resolve_default_snapshot(repository, snapshots[0])
+                provenance = "parent_repository_snapshot"
+            if change.after_version and not after_full and snapshots[1]:
+                after_full = resolve_default_snapshot(repository, snapshots[1])
+                provenance = "parent_repository_snapshot"
+            if (change.before_version and not before_full) or (
+                change.after_version and not after_full
+            ):
+                raise ValueError("Source revision could not be resolved")
             if provenance == "parent_repository_snapshot":
-                source_ref = str(source.get("source_ref", "develop"))
-                before_full = resolve_snapshot(repository, source_ref, snapshots[0])
-                after_full = resolve_snapshot(repository, source_ref, snapshots[1])
-                if (change.before_version and not before_full) or (change.after_version and not after_full):
-                    raise ValueError("Parent repository snapshot could not be resolved")
                 resolution_note = (
-                    "Resolved to the parent repository revision current at the package build timestamp."
+                    "Resolved to the listed repository revision current at the package build timestamp."
                 )
-            else:
-                before_full = resolve_commit(repository, before_hash)
-                after_full = resolve_commit(repository, after_hash)
             section["before_hash"] = before_full
             section["after_hash"] = after_full
+            section["provenance"] = provenance
             section["comparison"] = git_comparison(
                 repository, before_full, after_full, section["repository_url"],
-                source.get("source_path"),
             )
             section["resolution_note"] = resolution_note
         except (OSError, subprocess.SubprocessError, RuntimeError, ValueError) as error:
             section["resolution_note"] = f"Source comparison unavailable: {type(error).__name__}: {error}"
+    else:
+        section["resolution_note"] = (
+            resolution_note or "The package versions do not contain resolvable source revisions."
+        )
     section["description"] = deterministic_description(section)
     return section
 
@@ -593,6 +678,9 @@ END UNTRUSTED CHANGE EVIDENCE
                   f"{process.stderr.strip()[:500]}", file=sys.stderr)
             return None
         result = json.loads(output_path.read_text(encoding="utf-8"))
+    except subprocess.TimeoutExpired:
+        print(f"Codex summary unavailable: timed out after {timeout} seconds", file=sys.stderr)
+        return None
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
         print(f"Codex summary unavailable: {type(error).__name__}: {error}", file=sys.stderr)
         return None
@@ -745,11 +833,30 @@ h1{font-size:1.7rem}h2{font-size:1.18rem;margin:0}h3{font-size:1rem;margin:.9rem
             continue
         before = display_revision(section.get("before"), section.get("before_hash"))
         after = display_revision(section.get("after"), section.get("after_hash"))
-        name = section["package"]
-        if section.get("before_package") != section.get("after_package"):
-            name = f"{section.get('before_package') or 'not present'} → {section.get('after_package') or 'not present'}"
         parts.append("<section class=\"package\">")
-        parts.append(f"<h2>{esc(name)}: <span class=\"hash\">{esc(before)} → {esc(after)}</span></h2>")
+        before_package = section.get("before_package")
+        after_package = section.get("after_package")
+        if not before_package and after_package:
+            heading = (
+                f"Added {esc(after_package)} at "
+                f'<span class="hash">{esc(after)}</span>'
+            )
+        elif before_package and not after_package:
+            heading = (
+                f"Removed {esc(before_package)} "
+                f'(<span class="hash">previously {esc(before)}</span>)'
+            )
+        elif before_package != after_package:
+            heading = (
+                f"{esc(before_package)} → {esc(after_package)}: "
+                f'<span class="hash">{esc(before)} → {esc(after)}</span>'
+            )
+        else:
+            heading = (
+                f"{esc(section['package'])}: "
+                f'<span class="hash">{esc(before)} → {esc(after)}</span>'
+            )
+        parts.append(f"<h2>{heading}</h2>")
         parts.append(f"<p>{esc(section['description'])}</p>")
         if section.get("repository"):
             url = section.get("repository_url")
@@ -793,22 +900,21 @@ def read_s3_manifest(s3: Any, build: str) -> str:
     return s3.get_object(Bucket=BUCKET, Key=candidates[0])["Body"].read().decode("utf-8")
 
 
-def generate(build: str, manifest_text: str, source_map: dict[str, Any], output_dir: Path,
+def generate(build: str, manifest_text: str, output_dir: Path,
              cache_root: Path, codex_timeout: int, jenkins: Jenkins,
              package_index: PackageVersionIndex | None = None) -> tuple[Path, Path, Path]:
     match = BUILD_RE.fullmatch(build)
     if not match:
         raise ValueError(f"Invalid daily image build: {build}")
     changes = parse_manifest_changes(manifest_text)
-    services = source_map["services"]
-    defaults = source_map.get("defaults", {})
-    sources = [{**defaults, **source} for source in source_map["sources"]]
-    sections = [collect_section(change, matching_source(change, sources), cache_root, jenkins,
-                                "modalix", services, package_index) for change in changes]
+    sections = [
+        collect_section(change, cache_root, jenkins, "modalix", package_index)
+        for change in changes
+    ]
     output_dir.mkdir(parents=True, exist_ok=True)
     context_path = output_dir / f"{build}.json"
-    jenkins_url = (services["jenkins"]["base_url"].rstrip("/") + "/" +
-                   services["jenkins"]["elxr_builder_path"].strip("/") +
+    jenkins_url = (JENKINS_BASE_URL.rstrip("/") + "/" +
+                   JENKINS_BUILDER_PATH.strip("/") +
                    f"/{match.group(1)}/")
     context = {"schema_version": 1, "build": build, "jenkins_url": jenkins_url, "packages": sections}
     encoded = (json.dumps(context, indent=2) + "\n").encode()
@@ -842,7 +948,6 @@ def main() -> int:
     parser.add_argument("--replay-build", help="Regenerate one already-published image build from S3")
     parser.add_argument("--build", help="One image build, for local fixture generation")
     parser.add_argument("--manifest", type=Path, help="Local manifestChanges.txt, used with --build")
-    parser.add_argument("--source-map", type=Path, default=Path(__file__).with_name("debian-package-source-map.json"))
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--evidence-dir", type=Path, help="Optional second copy for workflow artifacts")
     parser.add_argument("--cache-root", type=Path, required=True)
@@ -854,12 +959,7 @@ def main() -> int:
         parser.error("--build and --manifest must be used together")
     if sum((bool(args.image_report), bool(args.replay_build), bool(args.build))) != 1:
         parser.error("provide exactly one of --image-report, --replay-build, or --build with --manifest")
-    source_map = json.loads(args.source_map.read_text(encoding="utf-8"))
-    if source_map.get("schema_version") != 2:
-        raise ValueError("Unsupported package source map schema")
-    services = source_map["services"]
-    jenkins = Jenkins(services["jenkins"]["base_url"],
-                      services["jenkins"]["elxr_builder_path"])
+    jenkins = Jenkins(JENKINS_BASE_URL, JENKINS_BUILDER_PATH)
     package_index = PackageVersionIndex(args.package_index)
     if args.build:
         builds = [(args.build, args.manifest.read_text(encoding="utf-8"))]
@@ -879,7 +979,7 @@ def main() -> int:
         s3 = s3_client()
         builds = [(name, read_s3_manifest(s3, name)) for name in names]
     for build, manifest_text in builds:
-        paths = generate(build, manifest_text, source_map, args.output_dir, args.cache_root,
+        paths = generate(build, manifest_text, args.output_dir, args.cache_root,
                          args.codex_timeout, jenkins, package_index)
         if args.evidence_dir:
             args.evidence_dir.mkdir(parents=True, exist_ok=True)
