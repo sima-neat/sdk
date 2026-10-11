@@ -351,26 +351,21 @@ Each daily device image version links to its Jenkins console, using the numeric
 `https://jenkins.eng.sima.ai/job/soc-jobs/job/elxr-builder/1295/console`).
 The GitHub workflow link is also retained.
 
-### Device image source mapping
+### Device image source provenance
 
-[`scripts/debian-package-source-map.json`](../scripts/debian-package-source-map.json)
-is compact runtime configuration for image change reports. Shared Bitbucket and
-Jenkins locations are defined once under `services`; common source behavior is
-defined under `defaults`. Package rules contain only a package matcher, a
-repository slug, and overrides needed for non-default hosting or provenance.
-The map deliberately contains no example builds, captured revisions, package
-definition paths, or repeated Jenkins URLs.
+Current `manifestChanges.txt` rows identify the operation (`+`, `-`, or `m`),
+package, version transition, and canonical Bitbucket repository URL. Image
+change reports use that URL directly; the SDK no longer maintains a separate
+package-to-repository or package-to-Jenkins map.
 
-The default `git_suffix` provenance resolves the hash embedded in a Debian
-version. `jenkins_build_number` resolves build-number-only versions through the
-configured eLxr builder. `parent_repository_snapshot` handles packages assembled
-from paths in eLxr configuration repositories: it recovers their complete
-timestamped versions from the mirrored Debian index and compares the parent
-repository revisions current at those build timestamps, scoped to the configured
-package path, instead of treating the temporary packaging commit as source
-provenance.
-A rule without `repository` explicitly means no canonical Git source is
-available for comparison.
+Hashes embedded in Debian versions are resolved in the listed repository.
+Build-number-only versions are correlated with the eLxr builder using the
+package name recorded by the manifest. For packages assembled from a parent
+configuration repository, the reporter can recover the complete timestamped
+version from the mirrored Debian index and compare the listed repository's
+revision at each package build time. Legacy manifests remain replayable, but
+their rows have no repository URL and therefore produce package-level change
+descriptions without source comparisons.
 
 When a newly mirrored image contains `manifestChanges.txt`, the workflow writes
 the normalized evidence, a bounded Slack overview, and a self-contained HTML
@@ -385,7 +380,8 @@ guidance for SDK consumers. The Slack overview carries only the highest-value
 points; the complete guidance remains in the HTML report. Missing source evidence
 must be reported as uncertainty rather than inferred behavior.
 
-The runner needs a Bitbucket-authorized SSH identity; the workflow loads
+The runner needs a Bitbucket-authorized SSH identity; HTTPS repository URLs from
+the manifest are converted to Bitbucket SSH clone URLs, and the workflow loads
 Bitbucket Cloud's published host keys into an isolated known-hosts file. Jenkins
 build-number provenance additionally requires `JENKINS_USERNAME` (or the legacy
 `JENKINS_USER`) as a GitHub variable or secret, plus the `JENKINS_API_TOKEN`
