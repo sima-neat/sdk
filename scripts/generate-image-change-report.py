@@ -33,6 +33,9 @@ GIT_VERSION_RE = re.compile(
 TIMESTAMPED_GIT_VERSION_RE = re.compile(
     r"~git(?P<timestamp>[0-9]{12})[.](?P<hash>[0-9a-fA-F]{7,40})-(?P<build>[0-9]+)(?:\b|\Z)"
 )
+JENKINS_BUILD_PACKAGE_RE = re.compile(
+    r"(?:linux-(?:modalix|davinci)|linux-(?:headers|image)-[^/]+-(?:modalix|davinci)|linux-libc-dev)\Z"
+)
 JIRA_RE = re.compile(r"\b[A-Z][A-Z0-9]+-[0-9]+\b")
 JIRA_PROJECT_KEYS = {"SOCSW", "SWMLA"}
 JIRA_BASE_URL = "https://sima-ai.atlassian.net/browse/"
@@ -163,6 +166,19 @@ def git_hash(version: str | None) -> str | None:
 def package_build_number(version: str | None) -> int | None:
     match = re.search(r"-([0-9]+)(?:[+~].*)?\Z", version or "")
     return int(match.group(1)) if match else None
+
+
+def uses_jenkins_build_number(change: ManifestChange) -> bool:
+    """Identify build-number versions without a package-to-repository map."""
+    packages = {
+        package_without_architecture(change.before_package),
+        package_without_architecture(change.after_package),
+    } - {None}
+    return (
+        repository_name(change.repository_url) == "sima-ai/simaai-linux"
+        and bool(packages)
+        and all(JENKINS_BUILD_PACKAGE_RE.fullmatch(package) for package in packages)
+    )
 
 
 class PackageVersionIndex:
@@ -298,6 +314,9 @@ def ensure_repository(cache_root: Path, repository_url: str) -> Path:
     # refs so snapshot resolution never falls back to a stale local branch.
     run_git(repository, "fetch", "--prune", "--no-tags", "origin",
             "+refs/heads/*:refs/remotes/origin/*")
+    # Refresh origin/HEAD so timestamp-based provenance follows the repository's
+    # advertised default branch instead of guessing a conventional branch name.
+    run_git(repository, "remote", "set-head", "origin", "--auto")
     _FETCHED_REPOSITORIES.add(repository)
     return repository
 
@@ -339,7 +358,12 @@ def commit_link(web_url: str | None, commit: str) -> str | None:
 def resolve_snapshot(repository: Path, source_ref: str, timestamp: str | None) -> str | None:
     if not timestamp:
         return None
-    revision = resolve_commit(repository, f"refs/remotes/origin/{source_ref}")
+    revision_ref = (
+        source_ref
+        if source_ref.startswith("refs/")
+        else f"refs/remotes/origin/{source_ref}"
+    )
+    revision = resolve_commit(repository, revision_ref)
     if not revision:
         return None
     resolved = run_git(repository, "rev-list", "-1", "--first-parent",
@@ -348,14 +372,16 @@ def resolve_snapshot(repository: Path, source_ref: str, timestamp: str | None) -
 
 
 def resolve_default_snapshot(repository: Path, timestamp: str | None) -> str | None:
-    for source_ref in ("develop", "main", "master"):
-        try:
-            resolved = resolve_snapshot(repository, source_ref, timestamp)
-        except ValueError:
-            resolved = None
-        if resolved:
-            return resolved
-    return None
+    source_ref = run_git(
+        repository,
+        "symbolic-ref",
+        "--quiet",
+        "refs/remotes/origin/HEAD",
+        check=False,
+    ).strip()
+    if not re.fullmatch(r"refs/remotes/origin/[^\s]+", source_ref):
+        raise ValueError("Repository default branch could not be resolved")
+    return resolve_snapshot(repository, source_ref, timestamp)
 
 
 def git_comparison(repository: Path, before: str | None, after: str | None,
@@ -443,7 +469,7 @@ def collect_section(change: ManifestChange, cache_root: Path, jenkins: Jenkins,
         after_build = package_build_number(change.after_version)
     else:
         after_build = None
-    if before_build or after_build:
+    if (before_build or after_build) and uses_jenkins_build_number(change):
         provenance = "jenkins_build_number"
         try:
             before_hash = (
