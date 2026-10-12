@@ -25,8 +25,6 @@ export SDK_DEPS_MANIFEST="${ROOT_DIR}/deps/manifest.json"
 [[ "$(neat_dependency_ref apps)" == "v0.5.1" ]]
 [[ "$(neat_dependency_ref insight)" == "v0.0.8" ]]
 [[ "$(neat_dependency_ref sima-cli)" == "v2.1.18" ]]
-[[ "$(neat_manifest_value platform-version)" == "3.0.0" ]]
-[[ "$(neat_manifest_value sysroot-version platform-version)" == "3.0.0~git202610110507.18e02ce-2038" ]]
 
 git_repo="${TMP_DIR}/git-source"
 git init --quiet "${git_repo}"

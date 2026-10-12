@@ -16,13 +16,22 @@ dpkg_command="${DPKG_COMMAND:-dpkg}"
 curl_command="${CURL_COMMAND:-curl}"
 
 if [[ -z "${stable_base_sdk_version}" ]]; then
-  # shellcheck disable=SC1091
-  source "${script_dir}/neat-deps.sh"
-  stable_base_sdk_version="$(SDK_DEPS_MANIFEST="${manifest_path}" neat_manifest_value platform-version)"
-  manifest_sysroot_version="$(SDK_DEPS_MANIFEST="${manifest_path}" neat_manifest_value sysroot-version platform-version)"
-else
-  # Explicit test/release overrides retain the historical single-selector behavior.
-  manifest_sysroot_version="${stable_base_sdk_version}"
+  command -v python3 >/dev/null 2>&1 || {
+    echo "resolve-platform-config: python3 is required to read ${manifest_path}" >&2
+    exit 1
+  }
+  stable_base_sdk_version="$(
+    python3 - "${manifest_path}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as manifest_file:
+    value = json.load(manifest_file).get("platform-version", "")
+if not value:
+    raise SystemExit("deps manifest does not define platform-version")
+print(value)
+PY
+  )"
 fi
 
 die() {
@@ -51,9 +60,9 @@ if [[ -z "${pre_release_base}" ]]; then
     emit release "" "${stable_base_sdk_version}"
     exit 0
   fi
-  # Development refs use the manifest's exact sysroot cohort. The product
-  # platform line remains separate for protected release refs above.
-  pre_release_base="${manifest_sysroot_version}"
+  # Development refs follow the manifest's platform line without duplicating
+  # that version in workflow configuration. Protected refs remain stable above.
+  pre_release_base="${stable_base_sdk_version}"
 fi
 
 case "${pre_release_base}" in
