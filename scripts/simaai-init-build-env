@@ -8,7 +8,18 @@
 
 # Select the instruction set explicitly and tune scheduling for Cortex-A65.
 # -mcpu also selects ISA features, which conflicts with this -march on GCC 14.
-BOARD=$1
+BOARD=${1:-}
+TOOLCHAIN=${2:-default}
+export SIMA_SDK_DEFAULT_PATH="${SIMA_SDK_DEFAULT_PATH:-${PATH}}"
+
+if [ "${TOOLCHAIN}" != "default" ] && [ "${TOOLCHAIN}" != "gcc16" ]; then
+	echo "Usage: source simaai-init-build-env <modalix|davinci> [default|gcc16]" >&2
+	return 2 2>/dev/null || exit 2
+fi
+if [ "${TOOLCHAIN}" = "gcc16" ] && [ "${BOARD}" != "modalix" ]; then
+	echo "The GCC 16 toolchain is qualified only with the Modalix sysroot." >&2
+	return 2 2>/dev/null || exit 2
+fi
 
     if [ "${BOARD}" = "davinci" ]; then
 	echo "Setting up build environment for davinci..."
@@ -25,13 +36,28 @@ elif [ "${BOARD}" = "modalix" ]; then
 	export CXXFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=${SYSROOT}"
 	export CPPFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=${SYSROOT}"
 else
-	echo "Usage: source simaai-init-build-env <modalix|davinci>"
+	echo "Usage: source simaai-init-build-env <modalix|davinci> [default|gcc16]" >&2
+	return 2 2>/dev/null || exit 2
 fi
 
 export CROSS_COMPILE="aarch64-linux-gnu-"
-# Generic compiler names are pinned to the image's selected toolchain version.
-export CC="${CROSS_COMPILE}gcc"
-export CXX="${CROSS_COMPILE}g++"
+if [ "${TOOLCHAIN}" = "gcc16" ]; then
+	export SIMA_GCC16_ROOT="${SIMA_GCC16_ROOT:-/opt/toolchain/gcc-16.2.0-aarch64-linux-gnu}"
+	if [ ! -x "${SIMA_GCC16_ROOT}/bin/${CROSS_COMPILE}gcc" ] || \
+	   [ ! -x "${SIMA_GCC16_ROOT}/bin/${CROSS_COMPILE}g++" ]; then
+		echo "GCC 16 toolchain is incomplete under ${SIMA_GCC16_ROOT}." >&2
+		return 1 2>/dev/null || exit 1
+	fi
+	export PATH="${SIMA_GCC16_ROOT}/bin:${SIMA_SDK_DEFAULT_PATH}"
+	export CC="${SIMA_GCC16_ROOT}/bin/${CROSS_COMPILE}gcc"
+	export CXX="${SIMA_GCC16_ROOT}/bin/${CROSS_COMPILE}g++"
+else
+	unset SIMA_GCC16_ROOT
+	export PATH="${SIMA_SDK_DEFAULT_PATH}"
+	# Generic compiler names are pinned to the image's selected toolchain version.
+	export CC="${CROSS_COMPILE}gcc"
+	export CXX="${CROSS_COMPILE}g++"
+fi
 export LD="${CROSS_COMPILE}ld"
 export STRIP="${CROSS_COMPILE}strip"
 export OBJDUMP="${CROSS_COMPILE}objdump"
@@ -41,12 +67,18 @@ export LDFLAGS="--sysroot=${SYSROOT} -L${SYSROOT}/usr/lib/aarch64-linux-gnu -L${
 export PKG_CONFIG_SYSROOT_DIR="${SYSROOT}"
 export PKG_CONFIG_LIBDIR="${SYSROOT}/usr/lib/aarch64-linux-gnu/pkgconfig:${SYSROOT}/usr/lib/pkgconfig:${SYSROOT}/usr/share/pkgconfig"
 unset PKG_CONFIG_PATH
-export CFLAGS="${CFLAGS} -I${SYSROOT}/usr/include -I${SYSROOT}/usr/include/simaai"
-export CXXFLAGS="${CXXFLAGS} -I${SYSROOT}/usr/include -I${SYSROOT}/usr/include/simaai"
-export CPPFLAGS="${CPPFLAGS} -I${SYSROOT}/usr/include -I${SYSROOT}/usr/include/simaai"
+if [ "${TOOLCHAIN}" = "default" ]; then
+	export CFLAGS="${CFLAGS} -I${SYSROOT}/usr/include -I${SYSROOT}/usr/include/simaai"
+	export CXXFLAGS="${CXXFLAGS} -I${SYSROOT}/usr/include -I${SYSROOT}/usr/include/simaai"
+	export CPPFLAGS="${CPPFLAGS} -I${SYSROOT}/usr/include -I${SYSROOT}/usr/include/simaai"
+fi
 export CMAKE_LIBRARY_PATH="${SYSROOT}/usr/lib:${SYSROOT}/usr/lib/aarch64-linux-gnu:${SYSROOT}/usr/lib/aarch64-linux-gnu/blas:${SYSROOT}/usr/lib/aarch64-linux-gnu/lapack"
 export OpenCV_DIR="${SYSROOT}/usr/lib/aarch64-linux-gnu/cmake/opencv4"
 export CODEC_INCLUDE_DIRS="${SYSROOT}/usr/include/simaai/codec"
 export RUSTUP_HOME=/opt/toolchain/rust
 export CARGO_HOME=/opt/toolchain/rust
-export PATH=/opt/toolchain/rust/bin:${PATH}
+if [ "${TOOLCHAIN}" = "gcc16" ]; then
+	export PATH="${SIMA_GCC16_ROOT}/bin:/opt/toolchain/rust/bin:${SIMA_SDK_DEFAULT_PATH}"
+else
+	export PATH="/opt/toolchain/rust/bin:${SIMA_SDK_DEFAULT_PATH}"
+fi
