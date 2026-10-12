@@ -29,6 +29,10 @@ container after `sima-cli sdk setup -y -n` starts it.
   resolve overlay package aliases without writing under the system APT paths.
 - `test-sysroot-progress.py` verifies package download/cache and extraction
   progress summaries used by `sysroot update`.
+- `test-code-server-launcher.sh` verifies the code-server launcher contract,
+  password handling, OpenVSCode environment compatibility aliases, explicit
+  unauthenticated mode, TLS fail-closed behavior, supervision disablement, and
+  the pinned/checksummed Dockerfile installation.
 - `neat-status/` validates the `neat --json` assembly/status contract.
 - `insight-video-routing/` downloads a small H.264 video, streams it from the
   runner into the SDK container's published Insight video UDP port with

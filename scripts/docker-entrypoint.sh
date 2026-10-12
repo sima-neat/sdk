@@ -32,16 +32,17 @@ configure_supervisor_program() {
   fi
 }
 
-if [[ ( "${NEAT_INSIGHT_SUPERVISED:-1}" != "0" || "${OPENVSCODE_SERVER_SUPERVISED:-1}" != "0" ) ]] && command -v supervisord >/dev/null 2>&1; then
+code_server_supervised="${CODE_SERVER_SUPERVISED:-${OPENVSCODE_SERVER_SUPERVISED:-1}}"
+if [[ ( "${NEAT_INSIGHT_SUPERVISED:-1}" != "0" || "${code_server_supervised}" != "0" ) ]] && command -v supervisord >/dev/null 2>&1; then
   mkdir -p /tmp/supervisor /var/log/supervisor
   configure_supervisor_program \
     "${NEAT_INSIGHT_SUPERVISED:-1}" \
     /etc/supervisor/conf.available/neat-insight.conf \
     /etc/supervisor/conf.d/neat-insight.conf
   configure_supervisor_program \
-    "${OPENVSCODE_SERVER_SUPERVISED:-1}" \
-    /etc/supervisor/conf.available/openvscode.conf \
-    /etc/supervisor/conf.d/openvscode.conf
+    "${code_server_supervised}" \
+    /etc/supervisor/conf.available/code-server.conf \
+    /etc/supervisor/conf.d/code-server.conf
   if ! supervisorctl status >/dev/null 2>&1; then
     supervisord -c /etc/supervisor/supervisord.conf
   fi

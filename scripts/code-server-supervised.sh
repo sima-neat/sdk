@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "${OPENVSCODE_SERVER_SUPERVISED:-1}" == "0" ]]; then
-  echo "OpenVSCode Server supervision disabled by OPENVSCODE_SERVER_SUPERVISED=0"
+supervised="${CODE_SERVER_SUPERVISED:-${OPENVSCODE_SERVER_SUPERVISED:-1}}"
+if [[ "${supervised}" == "0" ]]; then
+  echo "code-server supervision disabled by CODE_SERVER_SUPERVISED=0"
   exit 0
 fi
 
-workspace="${OPENVSCODE_WORKSPACE:-/workspace}"
-target_user="${OPENVSCODE_SERVER_USER:-}"
+workspace="${CODE_SERVER_WORKSPACE:-${OPENVSCODE_WORKSPACE:-/workspace}}"
+target_user="${CODE_SERVER_USER:-${OPENVSCODE_SERVER_USER:-}}"
 
 if [[ -z "${target_user}" || "${target_user}" == "root" ]]; then
   exec /usr/local/bin/sima-code "${workspace}"
 fi
 
-wait_seconds="${OPENVSCODE_SERVER_USER_WAIT_SECONDS:-60}"
+wait_seconds="${CODE_SERVER_USER_WAIT_SECONDS:-${OPENVSCODE_SERVER_USER_WAIT_SECONDS:-60}}"
 deadline=$((SECONDS + wait_seconds))
 home_dir=""
 shell_path=""
@@ -30,7 +31,7 @@ while (( SECONDS < deadline )); do
 done
 
 if [[ -z "${home_dir}" || ! -d "${home_dir}" ]]; then
-  echo "OpenVSCode Server user '${target_user}' was not configured within ${wait_seconds}s; starting as root." >&2
+  echo "code-server user '${target_user}' was not configured within ${wait_seconds}s; starting as root." >&2
   exec /usr/local/bin/sima-code "${workspace}"
 fi
 
@@ -57,5 +58,5 @@ if command -v sudo >/dev/null 2>&1; then
     /usr/local/bin/sima-code "${workspace}"
 fi
 
-echo "Neither runuser nor sudo is available; starting OpenVSCode Server as root." >&2
+echo "Neither runuser nor sudo is available; starting code-server as root." >&2
 exec /usr/local/bin/sima-code "${workspace}"

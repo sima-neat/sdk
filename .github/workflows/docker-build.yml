@@ -86,6 +86,7 @@ jobs:
           tests/sdk/test-install-neat-resources.sh
           tests/sdk/test-build-script.sh
           tests/sdk/test-insight-network-test.sh
+          tests/sdk/test-code-server-launcher.sh
 
       - name: Set up Docker Buildx
         id: buildx
