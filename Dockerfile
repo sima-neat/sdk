@@ -72,6 +72,7 @@ RUN apt-get update --allow-releaseinfo-change && \
     apt-get install -y --no-install-recommends \
       vim \
       make \
+      binutils \
       cmake \
       debian-archive-keyring \
       default-jre-headless \
