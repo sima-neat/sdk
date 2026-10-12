@@ -17,6 +17,35 @@ neat_deps_manifest_path() {
   fi
 }
 
+neat_manifest_value() {
+  local key="$1"
+  local fallback_key="${2:-}"
+  local manifest
+
+  manifest="$(neat_deps_manifest_path)"
+  python3 - "${manifest}" "${key}" "${fallback_key}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest_path = Path(sys.argv[1])
+key, fallback_key = sys.argv[2:4]
+if not manifest_path.exists():
+    raise SystemExit(f"ERROR: dependency manifest not found: {manifest_path}")
+
+data = json.loads(manifest_path.read_text(encoding="utf-8"))
+value = data.get(key)
+if value is None and fallback_key:
+    value = data.get(fallback_key)
+if not isinstance(value, str) or not value.strip():
+    suffix = f" or fallback {fallback_key!r}" if fallback_key else ""
+    raise SystemExit(
+        f"ERROR: {manifest_path} must define non-empty string {key!r}{suffix}."
+    )
+print(value.strip())
+PY
+}
+
 neat_dependency_target() {
   local key="$1"
   local repo="$2"

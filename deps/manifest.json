@@ -11,5 +11,6 @@
   "insight": {
     "ref": "v0.0.8"
   },
-  "platform-version": "3.0.0"
+  "platform-version": "3.0.0",
+  "sysroot-version": "3.0.0~git202610110507.18e02ce-2038"
 }

@@ -88,10 +88,25 @@ for protected_ref in main release-3.0; do
   grep -Fxq 'base_sdk_version=3.0.0' <<< "${stable}" || fail "${protected_ref} stable version was incorrect"
 done
 
-floating="$(STABLE_BASE_SDK_VERSION='' PRE_RELEASE_BASE='' GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop run_resolver)"
+floating="$(STABLE_BASE_SDK_VERSION='' PRE_RELEASE_BASE=3.0.0 GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop run_resolver)"
 grep -Fxq 'sdk_apt_channel=daily' <<< "${floating}" || fail "pre-release channel was not selected"
 grep -Fxq 'requested_pre_release_base=3.0.0' <<< "${floating}" || fail "manifest platform version was not selected"
 grep -Fxq 'base_sdk_version=3.0.0~git202609090314.abcdef0-4460' <<< "${floating}" || fail "floating selector did not choose the newest Debian version"
+
+cat > "${tmpdir}/PinnedPackages" <<'EOF'
+Package: simaai-palette-modalix
+Version: 3.0.0~git202610110507.18e02ce-2038
+Architecture: arm64
+
+Package: simaai-palette-modalix
+Version: 3.0.0~git202610120120.e793b5f-2040
+Architecture: arm64
+EOF
+manifest_pinned="$(STABLE_BASE_SDK_VERSION='' PRE_RELEASE_BASE='' PRE_RELEASE_PACKAGES_FILE="${tmpdir}/PinnedPackages" GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop run_resolver)"
+grep -Fxq 'requested_pre_release_base=3.0.0~git202610110507.18e02ce-2038' <<< "${manifest_pinned}" || \
+  fail "manifest sysroot version was not selected"
+grep -Fxq 'base_sdk_version=3.0.0~git202610110507.18e02ce-2038' <<< "${manifest_pinned}" || \
+  fail "manifest sysroot version did not remain pinned"
 
 tag_stable="$(PRE_RELEASE_BASE='' GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v3.0.0 run_resolver)"
 grep -Fxq 'sdk_apt_channel=release' <<< "${tag_stable}" || fail "tag did not select the stable channel"

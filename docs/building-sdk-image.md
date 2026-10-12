@@ -119,11 +119,13 @@ the Docker build, so a new branch artifact invalidates the cached installation l
 
 ## Platform 3.0 package selection
 
-`build.sh` defaults to platform `3.0.0`, the `daily` APT channel, and the
-`debian:trixie` GCC 14 toolchain. It resolves the floating platform base to an
-exact mirrored `3.0.0~gitTIMESTAMP.COMMIT-BUILD` revision before building.
-Dockerfile-only builds perform the same resolution and record the exact version.
-Local resolution requires `curl`, `gzip`, Python 3, and `dpkg`.
+`build.sh` defaults to the source-controlled `sysroot-version` in
+`deps/manifest.json`, the `daily` APT channel, and the `debian:trixie` GCC 14
+toolchain. The Platform 3.0 product contract remains recorded separately as
+`platform-version`. Dockerfile-only builds use the same exact sysroot revision.
+An explicit floating `BASE_SDK_VERSION=3.0.0` still resolves the newest mirrored
+`3.0.0~gitTIMESTAMP.COMMIT-BUILD` revision before building and requires `curl`,
+`gzip`, Python 3, and `dpkg`.
 
 CI resolves the version once for both architectures. Use the workflow's platform
 selector to pin a specific daily revision. Floating selectors are rejected on
@@ -153,10 +155,10 @@ NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 3.0.0
 
 ## Platform 3.0 preparation branch
 
-Pushes to `3.0.0-prep` default to the floating `3.0.0` platform selector.
-The workflow resolves it once to an exact mirrored Palette `~git` version and
-passes the same version to both host-architecture builds. A manual Platform
-selector overrides this default and can pin a full `3.0.0~gitTIMESTAMP.COMMIT-BUILD`.
+Development pushes default to the exact `sysroot-version` recorded in
+`deps/manifest.json`, and CI passes that revision to both host-architecture
+builds. A manual Platform selector overrides this default and may select either
+the floating `3.0.0` line or a full `3.0.0~gitTIMESTAMP.COMMIT-BUILD` revision.
 
 Daily builds resolve development packages together with the platform sysroot,
 using Debian 13 package names and Python 3.13. The development package set
@@ -189,7 +191,7 @@ For a local build with a known mirrored version:
 
 ```bash
 SDK_APT_CHANNEL=daily \
-BASE_SDK_VERSION=3.0.0~git202609090513.9e68a68-1218 \
+BASE_SDK_VERSION=3.0.0~git202610110507.18e02ce-2038 \
 REQUESTED_PRE_RELEASE_BASE=3.0.0 \
 ./build.sh sdk-3.0.0-prep local
 ```

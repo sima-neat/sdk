@@ -14,8 +14,14 @@ MINIMAL_IMAGE="${MINIMAL_IMAGE:-0}"
 SDK_PKG_LIST="${SDK_PKG_LIST:-}"
 SDK_BASE_IMAGE="${SDK_BASE_IMAGE:-ubuntu:24.04}"
 DOCKER_PLATFORM="${DOCKER_PLATFORM:-}"
-BASE_SDK_VERSION="${BASE_SDK_VERSION:-3.0.0}"
 SDK_APT_CHANNEL="${SDK_APT_CHANNEL:-daily}"
+if [[ -z "${BASE_SDK_VERSION:-}" ]]; then
+  if [[ "${SDK_APT_CHANNEL}" == daily ]]; then
+    BASE_SDK_VERSION="$(neat_manifest_value sysroot-version platform-version)"
+  else
+    BASE_SDK_VERSION="$(neat_manifest_value platform-version)"
+  fi
+fi
 SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE:-debian:trixie}"
 REQUESTED_PRE_RELEASE_BASE="${REQUESTED_PRE_RELEASE_BASE:-}"
 NEAT_BRANCH="${NEAT_BRANCH:-main}"

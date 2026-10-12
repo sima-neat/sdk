@@ -161,14 +161,14 @@ assert_arg NEAT_CORE_SOURCE_REF=
 assert_arg 'NEAT_CORE_SOURCE_REASON=platform-only SDK does not bundle Core'
 assert_arg NEAT_APPS_SOURCE_REF=
 
-# The unconfigured build helper must select a real 3.0 daily revision and omit Core.
+# The unconfigured build helper must select the manifest-pinned daily sysroot and omit Core.
 cat > "${TMP_DIR}/Packages" <<'EOF'
 Package: simaai-palette-modalix
-Version: 3.0.0~git202609090314.abcdef0-1211
+Version: 3.0.0~git202610110507.18e02ce-2038
 Architecture: all
 
 Package: simaai-palette-modalix
-Version: 3.0.0~git202609090314.abcdef0-1218
+Version: 3.0.0~git202610120120.e793b5f-2040
 Architecture: all
 EOF
 env -u SDK_APT_CHANNEL -u BASE_SDK_VERSION \
@@ -178,6 +178,6 @@ env -u SDK_APT_CHANNEL -u BASE_SDK_VERSION \
   BUILDX_OUTPUT=load "${ROOT_DIR}/build.sh" example/sdk default-daily
 assert_arg SDK_APT_CHANNEL=daily
 assert_arg SDK_CROSS_TOOLCHAIN_IMAGE=debian:trixie
-assert_arg BASE_SDK_VERSION=3.0.0~git202609090314.abcdef0-1218
+assert_arg BASE_SDK_VERSION=3.0.0~git202610110507.18e02ce-2038
 assert_arg NEAT_CORE_SOURCE_REF=
 assert_arg SDK_PKG_LIST=libpgm-dev
