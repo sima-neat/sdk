@@ -474,6 +474,23 @@ copy_insight_port_map_to_devkit() {
   return 0
 }
 
+devkit_host_nfs_available() {
+  case "${DEVKIT_HOST_NFS_AVAILABLE:-1}" in
+    0|false|FALSE|no|NO|off|OFF) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+devkit_host_export_info_ready() {
+  local host_ip="${1:-}"
+  local host_export="${2:-}"
+
+  if ! devkit_host_nfs_available; then
+    return 0
+  fi
+  [[ -n "${host_ip}" && -n "${host_export}" ]]
+}
+
 if [[ "${DEVKIT_SH_FUNCTIONS_ONLY:-0}" == "1" ]]; then
   return 0
 fi
@@ -488,6 +505,12 @@ _DEFAULT_MOUNT_PATH="${DEVKIT_SYNC_MOUNT_PATH:-/workspace}"
 _LOCAL_WORKSPACE_ROOT="${DEVKIT_SYNC_LOCAL_ROOT:-/workspace}"
 _RSYNC_REMOTE_ROOT="${DEVKIT_RSYNC_REMOTE_ROOT:-/workspace-rsync}"
 _RSYNC_HELPER="${DEVKIT_RSYNC_HELPER:-/usr/local/bin/devkit-sync-rsync.sh}"
+
+if devkit_host_nfs_available; then
+  export DEVKIT_HOST_NFS_AVAILABLE=1
+else
+  export DEVKIT_HOST_NFS_AVAILABLE=0
+fi
 
 devkit_sync_noninteractive() {
   case "${DEVKIT_SYNC_NONINTERACTIVE:-}" in
@@ -517,7 +540,7 @@ devkit_sync_default_password() {
   return 1
 }
 
-if [[ -z "${_HOST_IP}" || -z "${_HOST_EXPORT_PATH}" ]]; then
+if ! devkit_host_export_info_ready "${_HOST_IP}" "${_HOST_EXPORT_PATH}"; then
   echo "Missing host export info in environment." >&2
   echo "Expected NFS_SERVER_HOST_IP and DEVKIT_HOST_EXPORT_PATH from SDK setup." >&2
   return 1
@@ -546,8 +569,12 @@ EOF
 
 printf "\nDevKit NFS client setup\n"
 printf "DevKit: %s@%s:%s\n" "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"
-printf "Host export: %s:%s\n" "${_HOST_IP}" "${_HOST_EXPORT_PATH}"
-printf "Reminder: NFS workspace is shared bi-directionally.\n\n"
+if devkit_host_nfs_available; then
+  printf "Host export: %s:%s\n" "${_HOST_IP}" "${_HOST_EXPORT_PATH}"
+  printf "Reminder: NFS workspace is shared bi-directionally.\n\n"
+else
+  printf "Host export: unavailable; rsync fallback requested.\n\n"
+fi
 
 if devkit_sync_noninteractive; then
   _MOUNT_POINT="${_DEFAULT_MOUNT_PATH}"
@@ -681,9 +708,14 @@ if ! sync_neat_framework_to_devkit "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_
   return 1
 fi
 
-echo "Configuring remote NFS mount..."
 _NFS_CONFIGURED=0
-if ! ssh -T -p "${_DEVKIT_PORT}" -o BatchMode=yes -o ConnectTimeout=8 "${_DEVKIT_USER}@${_DEVKIT_IP}" bash -s -- "${_HOST_IP}" "${_HOST_EXPORT_PATH}" "${_MOUNT_POINT}" "${_NFS_OPTS}" "${_DEVKIT_USER}" <<'EOS'
+_HOST_NFS_UNAVAILABLE=0
+if ! devkit_host_nfs_available; then
+  _HOST_NFS_UNAVAILABLE=1
+  printf "%bWARNING:%b host NFS export is unavailable; skipping the DevKit NFS mount.\n" "${_c_warn}" "${_c_reset}" >&2
+else
+  echo "Configuring remote NFS mount..."
+  if ! ssh -T -p "${_DEVKIT_PORT}" -o BatchMode=yes -o ConnectTimeout=8 "${_DEVKIT_USER}@${_DEVKIT_IP}" bash -s -- "${_HOST_IP}" "${_HOST_EXPORT_PATH}" "${_MOUNT_POINT}" "${_NFS_OPTS}" "${_DEVKIT_USER}" <<'EOS'
 set -euo pipefail
 host_ip="$1"
 host_export="$2"
@@ -819,13 +851,14 @@ if command -v git >/dev/null 2>&1; then
   echo "[devkit] git safe.directory configured for ${remote_user}: ${mount_point} and ${mount_point}/*"
 fi
 EOS
-then
-  printf "%bERROR: DevKit NFS workspace setup was not successful.%b\n" "${_c_error}" "${_c_reset}" >&2
-  echo "Failed to configure NFS mount on ${_DEVKIT_USER}@${_DEVKIT_IP}." >&2
-  echo "SSH is configured, so the SDK will continue and keep dk shell available." >&2
-  echo "Hint: ensure ${_DEVKIT_USER} has passwordless sudo, or rerun as root: source devkit.sh ${_DEVKIT_IP} root ${_DEVKIT_PORT}" >&2
-else
-  _NFS_CONFIGURED=1
+  then
+    printf "%bERROR: DevKit NFS workspace setup was not successful.%b\n" "${_c_error}" "${_c_reset}" >&2
+    echo "Failed to configure NFS mount on ${_DEVKIT_USER}@${_DEVKIT_IP}." >&2
+    echo "SSH is configured, so the SDK will continue and keep dk shell available." >&2
+    echo "Hint: ensure ${_DEVKIT_USER} has passwordless sudo, or rerun as root: source devkit.sh ${_DEVKIT_IP} root ${_DEVKIT_PORT}" >&2
+  else
+    _NFS_CONFIGURED=1
+  fi
 fi
 
 _SYNC_METHOD="none"
@@ -839,19 +872,31 @@ else
     OFF|off|0|false|FALSE|no|NO)
       _SYNC_METHOD="none"
       _ACTIVE_REMOTE_ROOT="${_RSYNC_REMOTE_ROOT}"
-      _SYNC_HINT="NFS failed and rsync fallback is disabled by DEVKIT_RSYNC_FALLBACK=${DEVKIT_RSYNC_FALLBACK}."
+      if [[ "${_HOST_NFS_UNAVAILABLE}" == "1" ]]; then
+        _SYNC_HINT="Host NFS export is unavailable and rsync fallback is disabled by DEVKIT_RSYNC_FALLBACK=${DEVKIT_RSYNC_FALLBACK}."
+      else
+        _SYNC_HINT="NFS failed and rsync fallback is disabled by DEVKIT_RSYNC_FALLBACK=${DEVKIT_RSYNC_FALLBACK}."
+      fi
       printf "%bWARNING:%b rsync fallback disabled; only dk shell will be available.\n" "${_c_warn}" "${_c_reset}" >&2
       ;;
     *)
       if [[ -x "${_RSYNC_HELPER}" ]] && "${_RSYNC_HELPER}" setup --devkit "${_DEVKIT_IP}" --user "${_DEVKIT_USER}" --port "${_DEVKIT_PORT}" --local "${_LOCAL_WORKSPACE_ROOT}" --remote "${_RSYNC_REMOTE_ROOT}"; then
         _SYNC_METHOD="rsync"
         _ACTIVE_REMOTE_ROOT="${_RSYNC_REMOTE_ROOT}"
-        _SYNC_HINT="NFS failed; using rsync-over-SSH fallback."
+        if [[ "${_HOST_NFS_UNAVAILABLE}" == "1" ]]; then
+          _SYNC_HINT="Host NFS export is unavailable; using rsync-over-SSH fallback."
+        else
+          _SYNC_HINT="NFS failed; using rsync-over-SSH fallback."
+        fi
         printf "%bWARNING:%b using rsync fallback: %s -> %s@%s:%s\n" "${_c_warn}" "${_c_reset}" "${_LOCAL_WORKSPACE_ROOT}" "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_RSYNC_REMOTE_ROOT}" >&2
       else
         _SYNC_METHOD="none"
         _ACTIVE_REMOTE_ROOT="${_RSYNC_REMOTE_ROOT}"
-        _SYNC_HINT="NFS failed and rsync fallback setup was not available."
+        if [[ "${_HOST_NFS_UNAVAILABLE}" == "1" ]]; then
+          _SYNC_HINT="Host NFS export is unavailable and rsync fallback setup failed."
+        else
+          _SYNC_HINT="NFS failed and rsync fallback setup was not available."
+        fi
         printf "%bWARNING:%b rsync fallback setup failed; only dk shell will be available.\n" "${_c_warn}" "${_c_reset}" >&2
       fi
       ;;
@@ -1433,6 +1478,7 @@ __devkit_persist_export() {
   __devkit_persist_export DEVKIT_SYNC_DEVKIT_PORT
   __devkit_persist_export DEVKIT_RSYNC_REMOTE_ROOT
   __devkit_persist_export DEVKIT_RSYNC_HELPER
+  __devkit_persist_export DEVKIT_HOST_NFS_AVAILABLE
   __devkit_persist_export DEVKIT_SYNC_HINT
   __devkit_persist_export SDK_RELEASE_REF
   __devkit_persist_export SDK_PROMPT_REF
