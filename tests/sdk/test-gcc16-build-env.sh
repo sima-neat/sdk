@@ -23,19 +23,35 @@ done
   test "${CC}" = "${gcc16_root}/bin/aarch64-linux-gnu-gcc"
   test "${CXX}" = "${gcc16_root}/bin/aarch64-linux-gnu-g++"
   test "${CROSS_COMPILE}" = aarch64-linux-gnu-
-  test "${PATH%%:*}" = "${gcc16_root}/bin"
+  case ":${PATH}:" in
+    *":${gcc16_root}/bin:"*) ;;
+    *) exit 1 ;;
+  esac
   case " ${CXXFLAGS} " in
     *" -I${SYSROOT}/usr/include "*) exit 1 ;;
   esac
 
+  venv_bin="${tmpdir}/venv/bin"
+  mkdir -p "${venv_bin}"
+  export PATH="${venv_bin}:${PATH}"
+
   # Re-sourcing the default environment must remove the alternate compiler
-  # prefix instead of leaving GCC16 selected through PATH.
+  # prefix without discarding tools added after container startup.
   source "${ENV_SCRIPT}" modalix >/dev/null
   test "${CC}" = aarch64-linux-gnu-gcc
   test "${CXX}" = aarch64-linux-gnu-g++
   test -z "${SIMA_GCC16_ROOT:-}"
+  test "${PATH%%:*}" = "${venv_bin}"
   case ":${PATH}:" in
     *":${gcc16_root}/bin:"*) exit 1 ;;
+  esac
+
+  export SIMA_GCC16_ROOT="${gcc16_root}"
+  source "${ENV_SCRIPT}" modalix gcc16 >/dev/null
+  test "${PATH%%:*}" = "${gcc16_root}/bin"
+  case ":${PATH}:" in
+    *":${venv_bin}:"*) ;;
+    *) exit 1 ;;
   esac
 )
 

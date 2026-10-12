@@ -10,7 +10,46 @@
 # -mcpu also selects ISA features, which conflicts with this -march on GCC 14.
 BOARD=${1:-}
 TOOLCHAIN=${2:-default}
-export SIMA_SDK_DEFAULT_PATH="${SIMA_SDK_DEFAULT_PATH:-${PATH}}"
+
+_simaai_remove_path_entry() {
+	_simaai_remove=$1
+	_simaai_remaining=${PATH}
+	_simaai_new_path=
+	_simaai_first=1
+	while [ -n "${_simaai_remaining}" ]; do
+		case "${_simaai_remaining}" in
+			*:*)
+				_simaai_entry=${_simaai_remaining%%:*}
+				_simaai_remaining=${_simaai_remaining#*:}
+				;;
+			*)
+				_simaai_entry=${_simaai_remaining}
+				_simaai_remaining=
+				;;
+		esac
+		if [ "${_simaai_entry}" = "${_simaai_remove}" ]; then
+			continue
+		fi
+		if [ "${_simaai_first}" = 1 ]; then
+			_simaai_new_path=${_simaai_entry}
+			_simaai_first=0
+		else
+			_simaai_new_path="${_simaai_new_path}:${_simaai_entry}"
+		fi
+	done
+	export PATH="${_simaai_new_path}"
+}
+
+# Re-sourcing the environment switches only the compiler. Preserve virtualenvs
+# and any other tools added to PATH after the container entrypoint ran.
+if [ -n "${SIMA_SDK_ACTIVE_GCC16_BIN:-}" ]; then
+	_simaai_remove_path_entry "${SIMA_SDK_ACTIVE_GCC16_BIN}"
+fi
+if [ -n "${SIMA_GCC16_ROOT:-}" ]; then
+	_simaai_remove_path_entry "${SIMA_GCC16_ROOT}/bin"
+fi
+_simaai_remove_path_entry /opt/toolchain/gcc-16.2.0-aarch64-linux-gnu/bin
+unset SIMA_SDK_ACTIVE_GCC16_BIN
 
 if [ "${TOOLCHAIN}" != "default" ] && [ "${TOOLCHAIN}" != "gcc16" ]; then
 	echo "Usage: source simaai-init-build-env <modalix|davinci> [default|gcc16]" >&2
@@ -48,12 +87,12 @@ if [ "${TOOLCHAIN}" = "gcc16" ]; then
 		echo "GCC 16 toolchain is incomplete under ${SIMA_GCC16_ROOT}." >&2
 		return 1 2>/dev/null || exit 1
 	fi
-	export PATH="${SIMA_GCC16_ROOT}/bin:${SIMA_SDK_DEFAULT_PATH}"
+	export SIMA_SDK_ACTIVE_GCC16_BIN="${SIMA_GCC16_ROOT}/bin"
+	export PATH="${SIMA_SDK_ACTIVE_GCC16_BIN}:${PATH}"
 	export CC="${SIMA_GCC16_ROOT}/bin/${CROSS_COMPILE}gcc"
 	export CXX="${SIMA_GCC16_ROOT}/bin/${CROSS_COMPILE}g++"
 else
 	unset SIMA_GCC16_ROOT
-	export PATH="${SIMA_SDK_DEFAULT_PATH}"
 	# Generic compiler names are pinned to the image's selected toolchain version.
 	export CC="${CROSS_COMPILE}gcc"
 	export CXX="${CROSS_COMPILE}g++"
@@ -77,8 +116,10 @@ export OpenCV_DIR="${SYSROOT}/usr/lib/aarch64-linux-gnu/cmake/opencv4"
 export CODEC_INCLUDE_DIRS="${SYSROOT}/usr/include/simaai/codec"
 export RUSTUP_HOME=/opt/toolchain/rust
 export CARGO_HOME=/opt/toolchain/rust
-if [ "${TOOLCHAIN}" = "gcc16" ]; then
-	export PATH="${SIMA_GCC16_ROOT}/bin:/opt/toolchain/rust/bin:${SIMA_SDK_DEFAULT_PATH}"
-else
-	export PATH="/opt/toolchain/rust/bin:${SIMA_SDK_DEFAULT_PATH}"
-fi
+case ":${PATH}:" in
+	*:/opt/toolchain/rust/bin:*) ;;
+	*) export PATH="/opt/toolchain/rust/bin:${PATH}" ;;
+esac
+
+unset _simaai_remove _simaai_remaining _simaai_new_path _simaai_first _simaai_entry
+unset -f _simaai_remove_path_entry 2>/dev/null || true
