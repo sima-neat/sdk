@@ -10,7 +10,7 @@ COPY scripts/install-cross-toolchain.sh /usr/local/bin/install-cross-toolchain.s
 RUN chmod 755 /usr/local/bin/install-cross-toolchain.sh && \
     install-cross-toolchain.sh
 
-FROM ${SDK_BASE_IMAGE}
+FROM ${SDK_BASE_IMAGE} AS sdk-platform
 
 ARG SDK_PKG_LIST
 ARG BASE_SDK_VERSION=3.0.0
@@ -215,6 +215,7 @@ COPY scripts/install-rustup.sh /usr/local/bin/install-rustup.sh
 COPY scripts/install-sima-cli.sh /usr/local/bin/install-sima-cli.sh
 COPY scripts/sima-code.sh /usr/local/bin/sima-code
 COPY scripts/setup-sdk-sysroot.sh /usr/local/bin/setup-sdk-sysroot.sh
+COPY scripts/install-gcc16-toolchain.sh /usr/local/bin/install-gcc16-toolchain.sh
 COPY scripts/validate-sysroot-package-versions.sh /usr/local/bin/validate-sysroot-package-versions.sh
 RUN chmod 755 /opt/bin/simaai-init-build-env \
               /opt/bin/simaai_setup_sdk.py \
@@ -222,6 +223,7 @@ RUN chmod 755 /opt/bin/simaai-init-build-env \
               /usr/local/bin/install-sima-cli.sh \
               /usr/local/bin/sima-code \
               /usr/local/bin/setup-sdk-sysroot.sh \
+              /usr/local/bin/install-gcc16-toolchain.sh \
               /usr/local/bin/validate-sysroot-package-versions.sh
 
 # Ensure images expose a docker group so downstream setup scripts can
@@ -254,6 +256,26 @@ RUN if [ "${SDK_APT_CHANNEL}" = daily ] && [ "${MINIMAL_IMAGE}" != 1 ]; then \
       aarch64-linux-gnu-readelf -h /tmp/agate-smoke | grep -q AArch64 && \
       rm -f /tmp/agate-smoke.cpp /tmp/agate-smoke; \
     fi
+
+# GCC 16 is a complete alternate compiler installation, not part of the
+# Modalix target sysroot. Build it in an isolated stage so bootstrap packages
+# and source trees do not increase the published SDK image.
+FROM sdk-platform AS gcc16-toolchain
+RUN apt-get update --allow-releaseinfo-change && \
+    apt-get install -y --no-install-recommends gcc g++ xz-utils && \
+    rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,id=sima-sdk-gcc16-v1,target=/var/cache/sima-sdk-gcc16,sharing=locked \
+    GCC16_BUILD_CACHE=/var/cache/sima-sdk-gcc16 \
+    /usr/local/bin/install-gcc16-toolchain.sh --jobs 4
+
+FROM sdk-platform
+COPY --from=gcc16-toolchain \
+  /opt/toolchain/gcc-16.2.0-aarch64-linux-gnu/ \
+  /opt/toolchain/gcc-16.2.0-aarch64-linux-gnu/
+RUN /usr/local/bin/install-gcc16-toolchain.sh --verify-only && \
+    bash -c 'source /opt/bin/simaai-init-build-env modalix gcc16 >/dev/null && \
+      test "$($CC -dumpfullversion -dumpversion)" = 16.2.0 && \
+      test "$($CXX -dumpmachine)" = aarch64-linux-gnu'
 
 # sima-cli uses /etc/sdk-release to distinguish a Palette SDK from a generic
 # Linux host. Keep this build-time marker stable so dependency layers are not
