@@ -22,7 +22,9 @@ ARG NEAT_VERSION=latest
 ARG NEAT_CORE_TARGET=
 ARG NEAT_INSIGHT_BRANCH=
 ARG NEAT_INSIGHT_VERSION=
-ARG OPENVSCODE_SERVER_VERSION=openvscode-server-v1.109.5
+ARG CODE_SERVER_VERSION=4.140.0
+ARG CODE_SERVER_SHA256_AMD64=864c5d01c808ade57e4d12c708717be7a187219fded60428f263b9e2da9f6b48
+ARG CODE_SERVER_SHA256_ARM64=ae4b07153f2037b06d24749bc8004221fcbf3ffe317038401be0452f541bf200
 ARG CODEX_CLI_VERSION=0.153.4
 ARG DOCKER_CLI_VERSION=29.8.2
 ARG DOCKER_BUILDX_VERSION=0.37.2
@@ -34,16 +36,14 @@ ENV SDK_PKG_LIST="\
 ENV NEAT_INSIGHT_VENV_DIR=/opt/neat-insight/venv
 ENV NEAT_INSIGHT_PORT=9900
 ENV NEAT_INSIGHT_SUPERVISED=1
-ENV OPENVSCODE_SERVER_DIR=/opt/openvscode-server
-ENV OPENVSCODE_SERVER_PORT=9999
-ENV OPENVSCODE_SERVER_HTTPS_PORT=10000
-ENV OPENVSCODE_SERVER_SUPERVISED=1
+ENV CODE_SERVER_DIR=/opt/code-server
+ENV CODE_SERVER_VERSION=${CODE_SERVER_VERSION}
 ENV PIP_DEFAULT_TIMEOUT=120
 ENV SDK_APT_CHANNEL=${SDK_APT_CHANNEL}
 ENV PIP_RETRIES=10
 ENV RUSTUP_HOME=/opt/toolchain/rust
 ENV CARGO_HOME=/opt/toolchain/rust
-ENV PATH="${OPENVSCODE_SERVER_DIR}/bin:${NEAT_INSIGHT_VENV_DIR}/bin:${CARGO_HOME}/bin:${PATH}"
+ENV PATH="${CODE_SERVER_DIR}/bin:${NEAT_INSIGHT_VENV_DIR}/bin:${CARGO_HOME}/bin:${PATH}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -156,19 +156,20 @@ RUN set -eux; \
 
 RUN set -eux; \
     case "$(dpkg --print-architecture)" in \
-      amd64) openvscode_arch="x64" ;; \
-      arm64) openvscode_arch="arm64" ;; \
-      armhf) openvscode_arch="armhf" ;; \
-      *) echo "Unsupported OpenVSCode Server architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+      amd64) code_server_arch="amd64"; code_server_sha256="${CODE_SERVER_SHA256_AMD64}" ;; \
+      arm64) code_server_arch="arm64"; code_server_sha256="${CODE_SERVER_SHA256_ARM64}" ;; \
+      *) echo "Unsupported code-server architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
     esac; \
-    openvscode_archive="${OPENVSCODE_SERVER_VERSION}-linux-${openvscode_arch}.tar.gz"; \
+    code_server_archive="code-server-${CODE_SERVER_VERSION}-linux-${code_server_arch}.tar.gz"; \
     curl -fsSL --retry 3 --retry-delay 2 \
-      "https://github.com/gitpod-io/openvscode-server/releases/download/${OPENVSCODE_SERVER_VERSION}/${openvscode_archive}" \
-      -o "/tmp/${openvscode_archive}"; \
-    mkdir -p "${OPENVSCODE_SERVER_DIR}"; \
-    tar -xzf "/tmp/${openvscode_archive}" -C "${OPENVSCODE_SERVER_DIR}" --strip-components=1; \
-    rm -f "/tmp/${openvscode_archive}"; \
-    chmod -R a+rX "${OPENVSCODE_SERVER_DIR}"
+      "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/${code_server_archive}" \
+      -o "/tmp/${code_server_archive}"; \
+    echo "${code_server_sha256}  /tmp/${code_server_archive}" | sha256sum -c -; \
+    mkdir -p "${CODE_SERVER_DIR}"; \
+    tar -xzf "/tmp/${code_server_archive}" -C "${CODE_SERVER_DIR}" --strip-components=1; \
+    rm -f "/tmp/${code_server_archive}"; \
+    chmod -R a+rX "${CODE_SERVER_DIR}"; \
+    "${CODE_SERVER_DIR}/bin/code-server" --config /dev/null --version
 
 COPY --from=cross-toolchain /opt/cross-toolchain/ /
 COPY --from=cross-toolchain /opt/cross-toolchain/ /opt/sdk-cross-toolchain/
@@ -276,12 +277,12 @@ COPY scripts/neat-deps.sh /usr/local/bin/neat-deps.sh
 COPY deps/manifest.json /usr/local/share/sima-sdk/deps/manifest.json
 COPY config/sysroot-overlay.conf /usr/local/share/sima-sdk/sysroot-overlay.conf
 COPY config/supervisor-neat-insight.conf /etc/supervisor/conf.available/neat-insight.conf
-COPY config/supervisor-openvscode.conf /etc/supervisor/conf.available/openvscode.conf
+COPY config/supervisor-code-server.conf /etc/supervisor/conf.available/code-server.conf
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY scripts/insight-admin.sh /usr/local/bin/insight-admin
 COPY scripts/neat-insight-supervised.sh /usr/local/bin/neat-insight-supervised
 COPY scripts/insight-network-test.sh /usr/local/bin/insight-network-test
-COPY scripts/openvscode-supervised.sh /usr/local/bin/openvscode-supervised
+COPY scripts/code-server-supervised.sh /usr/local/bin/code-server-supervised
 COPY scripts/devkit.sh /usr/local/bin/devkit.sh
 COPY scripts/devkit-container-remote.sh /usr/local/libexec/sima-sdk/devkit-container-remote.sh
 COPY scripts/devkit-sync-rsync.sh /usr/local/bin/devkit-sync-rsync.sh
@@ -293,7 +294,7 @@ RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/insight-admin && \
     chmod 755 /usr/local/bin/neat-insight-supervised && \
     chmod 755 /usr/local/bin/insight-network-test && \
-    chmod 755 /usr/local/bin/openvscode-supervised && \
+    chmod 755 /usr/local/bin/code-server-supervised && \
     ln -sf /usr/local/bin/insight-admin /usr/local/bin/install-neat-insight && \
     chmod 755 /usr/local/bin/devkit.sh && \
     chmod 755 /usr/local/libexec/sima-sdk/devkit-container-remote.sh && \
@@ -346,7 +347,8 @@ ENV SDK_PROMPT_HOSTNAME="neat-sdk-${SDK_RELEASE_REF}"
 LABEL org.opencontainers.image.source="https://github.com/sima-neat/sdk" \
       org.opencontainers.image.revision="${SDK_GIT_HASH}" \
       org.opencontainers.image.version="${SDK_RELEASE_REF}" \
-      com.sima.sdk.platform.version="${BASE_SDK_VERSION}"
+      com.sima.sdk.platform.version="${BASE_SDK_VERSION}" \
+      com.sima.sdk.code-ui="code-server-v1"
 
 COPY scripts/write-sdk-release.sh /usr/local/bin/write-sdk-release.sh
 RUN chmod 755 /usr/local/bin/write-sdk-release.sh && \

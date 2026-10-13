@@ -156,7 +156,7 @@ The build environment is configured automatically when the container starts. To 
 source /opt/bin/simaai-init-build-env modalix
 ```
 
-The browser-based VS Code server starts automatically with the SDK container. Full Neat SDK containers keep the HTTP editor endpoint on port `9999` for reverse proxies such as an AWS ALB, and also expose a local HTTPS endpoint using the SDK certificate mounted at `/sdk-cert`. Open the `codeUI` URL printed by `sima-cli sdk setup`; browsers may require trusting the local certificate before loading editor webviews.
+The browser-based VS Code environment is provided by code-server and starts automatically with the SDK container. Full Neat SDK containers keep the HTTP editor endpoint on port `9999` for trusted reverse proxies such as an AWS ALB, and also expose a local HTTPS endpoint using the SDK certificate mounted at `/sdk-cert`. Open the credential-free `codeUI` URL printed by `sima-cli sdk setup`, then sign in with the generated password shown by the CLI. Browsers may require trusting the local certificate before loading editor webviews.
 
 To start it manually if supervision is disabled:
 
@@ -164,7 +164,17 @@ To start it manually if supervision is disabled:
 sima-code
 ```
 
-By default, it serves `/workspace` and runs as the SDK user configured by `sima-cli sdk setup`. Set `OPENVSCODE_SERVER_TOKEN` before the container starts if the port is exposed beyond a trusted local machine. Set `OPENVSCODE_SERVER_CERT` and `OPENVSCODE_SERVER_CERT_KEY` to override the HTTPS certificate files, or mount `/sdk-cert/neat-sdk.pem` and `/sdk-cert/neat-sdk-key.pem`. Set `OPENVSCODE_SERVER_HTTPS_PORT` to change the HTTPS listener port. Set `OPENVSCODE_SERVER_SUPERVISED=0` to disable automatic startup.
+By default, it serves `/workspace`, requires password authentication, and runs as the SDK user configured by `sima-cli sdk setup`. Set `CODE_SERVER_PASSWORD` before the container starts when launching it without `sima-cli`; a strong temporary password is generated and printed otherwise. Set `CODE_SERVER_CERT` and `CODE_SERVER_CERT_KEY` to override the HTTPS certificate files, or mount `/sdk-cert/neat-sdk.pem` and `/sdk-cert/neat-sdk-key.pem`. Set `CODE_SERVER_HTTPS_PORT` to change the HTTPS listener port. Set `CODE_SERVER_SUPERVISED=0` to disable automatic startup. `CODE_SERVER_WITHOUT_PASSWORD=1` is available only for explicitly trusted local development and must not be used when either endpoint is remotely reachable.
+
+code-server stores its user data under `~/.local/share/code-server` by default. Override that location with `CODE_SERVER_USER_DATA_DIR` or set `CODE_SERVER_EXTENSIONS_DIR` for extensions. During the migration, the launcher also accepts the former `OPENVSCODE_*` variables so current `sima-cli` releases can start a new SDK image; new automation should use the `CODE_SERVER_*` names.
+
+For diagnostics inside the container:
+
+```bash
+supervisorctl status code-server
+curl -fsS http://127.0.0.1:9999/healthz
+tail -n 100 /var/log/supervisor/code-server.err.log
+```
 
 ## Pair With A DevKit
 
