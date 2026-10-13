@@ -56,7 +56,12 @@ server_args=(
 
 password="${CODE_SERVER_PASSWORD:-${OPENVSCODE_SERVER_TOKEN:-}}"
 without_password="${CODE_SERVER_WITHOUT_PASSWORD:-${OPENVSCODE_SERVER_WITHOUT_TOKEN:-0}}"
-if [[ -z "${password}" && "${without_password}" != "1" ]]; then
+if [[ "${without_password}" == "1" ]]; then
+  # An upstream-authenticated gateway such as Arthas may still use launch tooling
+  # that injects a password. The explicit no-password mode must take precedence.
+  unset PASSWORD
+  server_args+=(--auth none)
+elif [[ -z "${password}" ]]; then
   if command -v python3 >/dev/null 2>&1; then
     password="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
   elif command -v openssl >/dev/null 2>&1; then
@@ -66,13 +71,11 @@ if [[ -z "${password}" && "${without_password}" != "1" ]]; then
     exit 1
   fi
   generated_password=1
-fi
-
-if [[ -n "${password}" ]]; then
   export PASSWORD="${password}"
   server_args+=(--auth password)
-elif [[ "${without_password}" == "1" ]]; then
-  server_args+=(--auth none)
+else
+  export PASSWORD="${password}"
+  server_args+=(--auth password)
 fi
 
 if [[ -n "${cert_file}" || -n "${cert_key_file}" ]]; then

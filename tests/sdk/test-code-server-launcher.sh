@@ -69,12 +69,17 @@ CAPTURE_PASSWORD="${capture_password}" \
 grep -Fx -- '[::1]:9999' "${capture_args}"
 
 CODE_SERVER_WITHOUT_PASSWORD=1 \
+CODE_SERVER_PASSWORD="ignored-by-explicit-no-password-mode" \
 CODE_SERVER_DIR="${fake_dir}" \
 CODE_SERVER_USER_DATA_DIR="${data_dir}" \
 CAPTURE_ARGS="${capture_args}" \
 CAPTURE_PASSWORD="${capture_password}" \
   "${launcher}" /workspace
 grep -Fx -- 'none' "${capture_args}"
+if grep -Fx -- 'password' "${capture_args}"; then
+  echo "Explicit no-password mode must override an injected password" >&2
+  exit 1
+fi
 test ! -s "${capture_password}"
 
 if CODE_SERVER_DIR="${fake_dir}" \
