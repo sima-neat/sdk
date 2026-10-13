@@ -56,6 +56,7 @@ jobs:
           tests/sdk/test-sysroot-package-version-validator.sh
           python3 tests/sdk/test-sysroot-progress.py
           /usr/bin/python3 tests/sdk/test-daily-sysroot.py
+          /usr/bin/python3 tests/sdk/test-gcc16.py
 
   build:
     name: Build on ${{ matrix.arch }}

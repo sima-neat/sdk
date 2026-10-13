@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/sima-neat/kernels",
+  "commit": "e8e6cb10fa7f89d03be7893fdcd39d993b07db67",
+  "path": "tools/ensure_gcc16.py",
+  "sha256": "dae6207c54d78827d028358fab37dd1cb8fd24453ff170adcf7d084eb3d601ab",
+  "license": "Apache-2.0",
+  "version": "16.2.0"
+}

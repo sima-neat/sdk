@@ -14,7 +14,10 @@
 This repository packages the SiMa.ai Neat SDK as a Docker image for `x86_64` and `arm64` Linux hosts.
 
 This branch builds the platform-only SDK for eLxr 3.0.0 daily builds, with an
-Agate/Trixie ARM64 sysroot and GCC 14. Matching Neat Core packages are not yet bundled.
+Agate/Trixie ARM64 sysroot and GCC 14 as its default compiler. An isolated
+GCC 16.2.0 compiler is preinstalled for Kernels at `$SIMA_GCC16_ROOT`; selecting it
+does not replace the SDK's default compiler. Matching Neat Core packages are not
+yet bundled.
 
 The main user workflow is:
 

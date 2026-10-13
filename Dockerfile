@@ -70,6 +70,9 @@ RUN apt-get update --allow-releaseinfo-change && \
       vim \
       make \
       cmake \
+      build-essential \
+      binutils \
+      clang \
       debian-archive-keyring \
       default-jre-headless \
       pkgconf \
@@ -204,6 +207,15 @@ RUN --mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,shari
     rm -f /tmp/cross-smoke.cpp /tmp/cross-smoke-cxx && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /tmp/*
+
+# Provision after the final target sysroot. Ordinary Kernels builds verify this
+# immutable image layer instead of bootstrapping GCC in each fresh container.
+COPY scripts/vendor/gcc16/ /usr/local/share/sima-sdk/gcc16-installer/
+COPY scripts/install-gcc16.py /usr/local/bin/install-gcc16.py
+RUN python3 /usr/local/bin/install-gcc16.py \
+      --vendor /usr/local/share/sima-sdk/gcc16-installer && \
+    rm -f /opt/toolchain/gcc16/gcc-16.2.0.tar.xz
+ENV SIMA_GCC16_ROOT=/opt/toolchain/gcc16/aarch64
 
 # Exercise the target libc/linker layout, not only the compiler's own sysroot.
 RUN if [ "${SDK_APT_CHANNEL}" = daily ] && [ "${MINIMAL_IMAGE}" != 1 ]; then \
