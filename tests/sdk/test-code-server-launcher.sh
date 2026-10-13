@@ -59,6 +59,15 @@ grep -Fx -- '127.0.0.2:19100' "${capture_args}"
 grep -Fx -- '/legacy-workspace' "${capture_args}"
 test "$(cat "${capture_password}")" = "legacy-password"
 
+CODE_SERVER_PASSWORD="ipv6-password" \
+CODE_SERVER_HOST="::1" \
+CODE_SERVER_DIR="${fake_dir}" \
+CODE_SERVER_USER_DATA_DIR="${data_dir}" \
+CAPTURE_ARGS="${capture_args}" \
+CAPTURE_PASSWORD="${capture_password}" \
+  "${launcher}" /workspace
+grep -Fx -- '[::1]:9999' "${capture_args}"
+
 CODE_SERVER_WITHOUT_PASSWORD=1 \
 CODE_SERVER_DIR="${fake_dir}" \
 CODE_SERVER_USER_DATA_DIR="${data_dir}" \
@@ -82,10 +91,16 @@ grep -F "code-server HTTPS cert/key not found" "${tmpdir}/err"
 
 CODE_SERVER_SUPERVISED=0 "${supervised_launcher}" >"${tmpdir}/supervised-out"
 grep -F "code-server supervision disabled" "${tmpdir}/supervised-out"
+OPENVSCODE_SERVER_SUPERVISED=0 "${supervised_launcher}" >"${tmpdir}/legacy-supervised-out"
+grep -F "code-server supervision disabled" "${tmpdir}/legacy-supervised-out"
 
 grep -F 'ARG CODE_SERVER_VERSION=' "${repo_root}/Dockerfile"
 grep -F 'sha256sum -c -' "${repo_root}/Dockerfile"
 grep -F 'com.sima.sdk.code-ui="code-server-v1"' "${repo_root}/Dockerfile"
+if grep -Eq '^ENV CODE_SERVER_(PORT|HTTPS_PORT|SUPERVISED)=' "${repo_root}/Dockerfile"; then
+  echo "Dockerfile defaults mask legacy OpenVSCode overrides" >&2
+  exit 1
+fi
 if rg -n '/opt/openvscode-server|gitpod-io/openvscode-server' "${repo_root}/Dockerfile"; then
   echo "Dockerfile still references OpenVSCode" >&2
   exit 1

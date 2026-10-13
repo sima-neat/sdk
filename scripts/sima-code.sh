@@ -11,6 +11,19 @@ cert_key_file="${CODE_SERVER_CERT_KEY:-${OPENVSCODE_SERVER_CERT_KEY:-}}"
 tls_enabled=0
 generated_password=0
 
+format_host_port() {
+  local address="$1"
+  local address_port="$2"
+
+  if [[ "${address}" == \[*\] ]]; then
+    printf '%s:%s' "${address}" "${address_port}"
+  elif [[ "${address}" == *:* ]]; then
+    printf '[%s]:%s' "${address}" "${address_port}"
+  else
+    printf '%s:%s' "${address}" "${address_port}"
+  fi
+}
+
 if user_entry="$(getent passwd "$(id -u)" 2>/dev/null)"; then
   current_user="$(printf '%s' "${user_entry}" | cut -d: -f1)"
   current_home="$(printf '%s' "${user_entry}" | cut -d: -f6)"
@@ -34,7 +47,7 @@ mkdir -p "${data_dir}" "${extensions_dir}"
 
 server_args=(
   --config /dev/null
-  --bind-addr "${host}:${port}"
+  --bind-addr "$(format_host_port "${host}" "${port}")"
   --extensions-dir "${extensions_dir}"
   --user-data-dir "${data_dir}"
   --disable-telemetry
@@ -85,6 +98,8 @@ if [[ "${generated_password}" == "1" ]]; then
   fi
   if [[ "${display_host}" == "0.0.0.0" || "${display_host}" == "::" ]]; then
     display_host="localhost"
+  elif [[ "${display_host}" == *:* && "${display_host}" != \[*\] ]]; then
+    display_host="[${display_host}]"
   fi
   echo "Generated a temporary code-server password for this process." >&2
   echo "Open the Code UI at: ${display_scheme}://${display_host}:${display_port}/?folder=/workspace" >&2
