@@ -323,12 +323,32 @@ test_code_server() {
   local actual_version auth_secret backend_user http_status https_status
   local cookie_jar="${WORK_DIR}/code-server.cookies"
 
-  test -x /opt/code-server/bin/code-server
-  test ! -e /opt/openvscode-server/bin/openvscode-server
+  if [[ ! -x /opt/code-server/bin/code-server ]]; then
+    echo "code-server executable is missing from /opt/code-server/bin/code-server." >&2
+    return 1
+  fi
+  if [[ -e /opt/openvscode-server/bin/openvscode-server ]]; then
+    echo "Legacy OpenVSCode Server is still present in the SDK image." >&2
+    return 1
+  fi
   actual_version="$(/opt/code-server/bin/code-server --config /dev/null --version | head -n 1)"
-  test "${actual_version}" = "${CODE_SERVER_VERSION}"
+  if [[ "${actual_version%% *}" != "${CODE_SERVER_VERSION}" ]]; then
+    echo "Unexpected code-server version: expected ${CODE_SERVER_VERSION}, got ${actual_version}." >&2
+    return 1
+  fi
 
-  supervisorctl status code-server | grep -F RUNNING
+  for _ in $(seq 1 30); do
+    if supervisorctl status code-server | grep -Fq RUNNING; then
+      break
+    fi
+    sleep 1
+  done
+  if ! supervisorctl status code-server | grep -F RUNNING; then
+    echo "code-server did not reach the supervisor RUNNING state." >&2
+    tail -n 100 /var/log/supervisor/code-server.log 2>/dev/null || true
+    tail -n 100 /var/log/supervisor/code-server.err.log 2>/dev/null || true
+    return 1
+  fi
   for _ in $(seq 1 30); do
     if curl -fsS http://127.0.0.1:9999/healthz | grep -Fq '"status":'; then
       break
