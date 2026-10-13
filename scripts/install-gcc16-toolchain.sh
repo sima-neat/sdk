@@ -69,7 +69,7 @@ fi
 verify_toolchain() {
   local cc="${prefix}/bin/${TARGET}-gcc"
   local cxx="${prefix}/bin/${TARGET}-g++"
-  local version target libstdcxx libgcc work
+  local version target libstdcxx libgcc internal work
 
   for driver in "${cc}" "${cxx}"; do
     if [[ ! -x "${driver}" ]]; then
@@ -98,6 +98,21 @@ verify_toolchain() {
     "${TARGET}-readelf" -h "${runtime}" | grep -q 'AArch64'
   done
 
+  for internal in \
+    "${prefix}/libexec/gcc/${TARGET}/${GCC_VERSION}/cc1" \
+    "${prefix}/libexec/gcc/${TARGET}/${GCC_VERSION}/cc1plus" \
+    "${prefix}/libexec/gcc/${TARGET}/${GCC_VERSION}/lto1" \
+    "${prefix}/bin/${TARGET}-lto-dump"; do
+    if [[ ! -x "${internal}" ]]; then
+      echo "GCC16 internal executable is missing: ${internal}" >&2
+      return 1
+    fi
+    if file -b "${internal}" | grep -q 'not stripped'; then
+      echo "GCC16 internal executable still contains debug symbols: ${internal}" >&2
+      return 1
+    fi
+  done
+
   work="$(mktemp -d)"
   trap 'rm -rf "${work}"' RETURN
   cat > "${work}/probe.cpp" <<'EOF'
@@ -110,7 +125,7 @@ int main(int argc, char **) {
   return std::stoi(std::to_string(values.front())) != argc;
 }
 EOF
-  "${cxx}" -std=c++20 --sysroot="${sysroot}" "${work}/probe.cpp" -o "${work}/probe"
+  "${cxx}" -std=c++20 -flto --sysroot="${sysroot}" "${work}/probe.cpp" -o "${work}/probe"
   "${TARGET}-readelf" -h "${work}/probe" | grep -q 'AArch64'
   rm -rf "${work}"
   trap - RETURN
@@ -175,7 +190,10 @@ mkdir -p "${object_dir}"
       --enable-default-pie
   make -j"${jobs}"
   staging="${build_root}/stage"
-  make install DESTDIR="${staging}"
+  # Release SDK images do not need debug symbols for GCC itself. Keep the
+  # compiler fully functional, including LTO and target runtime archives, while
+  # using GCC's install target to strip host executables and shared libraries.
+  make install-strip DESTDIR="${staging}"
   installed="${staging}${prefix}"
   if [[ ! -d "${installed}" ]]; then
     echo "GCC16 staged prefix is missing: ${installed}" >&2
