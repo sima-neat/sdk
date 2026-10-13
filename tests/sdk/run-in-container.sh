@@ -359,7 +359,13 @@ test_code_server() {
 
   backend_user="${CODE_SERVER_USER:-${OPENVSCODE_SERVER_USER:-}}"
   if [[ -n "${backend_user}" ]]; then
-    ps -o user= -C node | grep -Fx "${backend_user}"
+    if ! pgrep -u "${backend_user}" -f '/opt/code-server' >/dev/null; then
+      echo "No code-server process is running as ${backend_user}." >&2
+      # Include the owning user in diagnostics; pgrep alone cannot show it.
+      # shellcheck disable=SC2009
+      ps -eo user=,pid=,args= | grep -F '/opt/code-server' >&2 || true
+      return 1
+    fi
   fi
 
   http_status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:9999/)"
