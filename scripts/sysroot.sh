@@ -11,6 +11,7 @@ SDK_RELEASE_FILE="${SDK_RELEASE_FILE:-/etc/sdk-release}"
 PRE_RELEASE_REPOSITORY="${SYSROOT_PRE_RELEASE_REPOSITORY:-https://debian.neat.sima.ai/pre-release}"
 PRE_RELEASE_ANCHOR_PACKAGE="${PRE_RELEASE_ANCHOR_PACKAGE:-simaai-palette-modalix}"
 PLATFORM_PATTERNS_FILE="${PLATFORM_PACKAGE_PATTERNS_FILE:-/usr/local/share/sima-sdk/platform-package-patterns.txt}"
+PACKAGE_ARCHIVE_INDEX=".sysroot-package-archives.tsv"
 apt_cache_options=()
 overlay_apt_workdir=""
 
@@ -523,37 +524,33 @@ refresh_tracked_manifests() {
   local sysroot="$1"
   local arch="$2"
   local debdir="$3"
-  local root workdir manifest package package_arch candidate target matched
+  local root workdir manifest package package_arch candidate target matched index generated_index
 
   root="$(manifest_root "${sysroot}")"
   # A newly built SDK has no per-package manifests until the user installs a
   # package with `sysroot install`.  That is a successful no-op, not an error.
   [[ -d "${root}" ]] || return 0
   workdir="$(mktemp -d)"
+  index="${debdir}/${PACKAGE_ARCHIVE_INDEX}"
+  generated_index="${workdir}/package-archives.tsv"
+  if [[ ! -s "${index}" ]]; then
+    find "${debdir}" -maxdepth 1 -type f -name '*.deb' -print0 |
+      while IFS= read -r -d '' candidate; do
+        # shellcheck disable=SC2016 # dpkg-deb expands control-field placeholders.
+        dpkg-deb --show --showformat='${Package}\t${Architecture}\t' "${candidate}"
+        printf '%s\n' "${candidate##*/}"
+      done > "${generated_index}"
+    index="${generated_index}"
+  fi
   while IFS= read -r -d '' manifest; do
     package="$(awk -F ': ' '$1 == "Package" { print $2; exit }' "${manifest}")"
     package_arch="$(awk -F ': ' '$1 == "Architecture" { print $2; exit }' "${manifest}")"
-    matched=""
-    for candidate in \
-      "${debdir}/${package}:${package_arch}.deb" \
-      "${debdir}/${package}.deb"; do
-      if [[ -f "${candidate}" ]] && \
-         [[ "$(dpkg-deb -f "${candidate}" Package)" == "${package}" ]] && \
-         [[ "$(dpkg-deb -f "${candidate}" Architecture)" == "${package_arch}" ]]; then
-        matched="${candidate}"
-        break
-      fi
-    done
-    if [[ -z "${matched}" ]]; then
-      while IFS= read -r -d '' candidate; do
-        if [[ "$(dpkg-deb -f "${candidate}" Package)" == "${package}" ]] && \
-           [[ "$(dpkg-deb -f "${candidate}" Architecture)" == "${package_arch}" ]]; then
-          matched="${candidate}"
-          break
-        fi
-      done < <(find "${debdir}" -maxdepth 1 -type f -name '*.deb' -print0)
-    fi
+    matched="$(awk -F '\t' -v package="${package}" -v architecture="${package_arch}" \
+      '$1 == package && $2 == architecture { print $3; exit }' "${index}")"
     if [[ -n "${matched}" ]]; then
+      [[ "${matched}" != */* ]] || die "invalid package archive index entry: ${matched}"
+      matched="${debdir}/${matched}"
+      [[ -f "${matched}" ]] || die "indexed package archive is missing: ${matched}"
       target="${workdir}/${package}:${package_arch}.deb"
       ln "${matched}" "${target}" 2>/dev/null || ln -s "${matched}" "${target}"
     fi
@@ -912,7 +909,7 @@ apply_sysroot_update() {
   local platform_revision="$2"
   local previous_revision="$3"
   local channel="$4" repository="$5"
-  local download_dir build_revision="${platform_revision##*~pre}"
+  local download_dir build_revision="${platform_revision##*~pre}" phase_start
 
   [[ -x "${PLATFORM_SETUP}" ]] || die "platform sysroot setup command is unavailable: ${PLATFORM_SETUP}"
   download_dir="${SYSROOT_UPDATE_DOWNLOAD_DIR:-/tmp/modalix-overlay-${platform_revision}}"
@@ -938,6 +935,8 @@ apply_sysroot_update() {
       "${sysroot}" "${platform_base}" "${previous_revision}" "${platform_revision}" "updating" "${channel}" "${repository}"
   fi
   echo "Resolving and validating the complete ${platform_revision} package cohort..."
+  mkdir -p "${download_dir}"
+  rm -f "${download_dir}/${PACKAGE_ARCHIVE_INDEX}"
   if ! SYSROOT="${sysroot}" \
     SYSROOT_UPDATE_DOWNLOAD_DIR="${download_dir}" \
     SDK_APT_CHANNEL="${channel}" \
@@ -959,15 +958,21 @@ apply_sysroot_update() {
   if [[ "${channel}" == daily ]]; then
     "${INSTALLER}" "${sysroot}" --finalize-only
   fi
+  phase_start="${SECONDS}"
   if [[ ! -s "$(sysroot_inventory_path "${sysroot}")" ]]; then
     write_package_inventory "${sysroot}" "${download_dir}"
   fi
+  echo "Sysroot post-processing: package inventory completed in $((SECONDS - phase_start))s."
+  phase_start="${SECONDS}"
   merge_tracked_manifests_into_inventory "${sysroot}"
   refresh_tracked_manifests "${sysroot}" "${arch}" "${download_dir}"
+  echo "Sysroot post-processing: tracked manifests completed in $((SECONDS - phase_start))s."
+  phase_start="${SECONDS}"
   write_overlay_metadata "${sysroot}" "${platform_base}" "${platform_revision}" "${channel}" "${repository}"
   # Package extraction preserves archive modes. Updates run as root, but the
   # resulting SDK sysroot must remain consumable by non-root builds.
   chmod -R a+rX "${sysroot}"
+  echo "Sysroot post-processing: permissions completed in $((SECONDS - phase_start))s."
   if [[ "${channel}" == daily ]]; then
     validate_staged_sysroot "${sysroot}"
     requested_packages > "${sysroot}/var/lib/sima-sdk/requested-packages"

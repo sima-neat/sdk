@@ -167,6 +167,11 @@ with tempfile.TemporaryDirectory() as temporary:
         "alpha\tarm64\t1.2.3\t/usr/include,/usr/lib/aarch64-linux-gnu\n"
         "beta\tall\t4.5.6\t/usr/share\n"
     )
+    archive_index = downloads / module.PACKAGE_ARCHIVE_INDEX
+    assert archive_index.read_text(encoding="utf-8") == (
+        "alpha\tarm64\talpha.deb\n"
+        "beta\tall\tbeta.deb\n"
+    )
 
     cached_deb = downloads / "alpha.deb"
     cache_metadata = {

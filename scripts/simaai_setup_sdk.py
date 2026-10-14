@@ -82,6 +82,8 @@ HOST_DISTRIBUTION_SITES = {
     "security.ubuntu.com",
 }
 
+PACKAGE_ARCHIVE_INDEX = ".sysroot-package-archives.tsv"
+
 
 def rewrite_config_paths(data, old, new):
     """Replace config paths without rewriting an already-prefixed value."""
@@ -485,6 +487,7 @@ def write_sysroot_package_inventory(download_dir, sysroot):
             architecture,
             version,
             package_payload_locations(deb_path),
+            os.path.basename(deb_path),
         )
 
     entries = {}
@@ -492,11 +495,13 @@ def write_sysroot_package_inventory(download_dir, sysroot):
         max_workers=min(DOWNLOAD_WORKERS, len(deb_paths))
     ) as executor:
         inspected = executor.map(inspect_package, deb_paths)
-    for package, architecture, version, locations in inspected:
+    archive_entries = {}
+    for package, architecture, version, locations, filename in inspected:
         entries[(package, architecture)] = (
             version,
             locations,
         )
+        archive_entries[(package, architecture)] = filename
 
     inventory_dir = os.path.join(sysroot, "var/lib/sima-sdk")
     inventory = os.path.join(inventory_dir, "sysroot-packages.tsv")
@@ -506,6 +511,12 @@ def write_sysroot_package_inventory(download_dir, sysroot):
         for (package, architecture), (version, locations) in sorted(entries.items()):
             wf.write(f"{package}\t{architecture}\t{version}\t{locations}\n")
     os.replace(temporary, inventory)
+    archive_index = os.path.join(download_dir, PACKAGE_ARCHIVE_INDEX)
+    temporary_archive_index = f"{archive_index}.tmp"
+    with open(temporary_archive_index, "wt", encoding="utf-8") as wf:
+        for (package, architecture), filename in sorted(archive_entries.items()):
+            wf.write(f"{package}\t{architecture}\t{filename}\n")
+    os.replace(temporary_archive_index, archive_index)
     with open(os.path.join(inventory_dir, "packages.sha256"), "w") as manifest:
         for deb_path in deb_paths:
             digest = hashlib.sha256()

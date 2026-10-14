@@ -94,6 +94,13 @@ Description: sysroot update test fixture
 CONTROL
 printf '%s\n' "${revision}" > "${package_root}/usr/lib/aarch64-linux-gnu/sysroot-update-test.txt"
 dpkg-deb --build "${package_root}" "${download_dir}/simaai-palette-modalix_${revision}_arm64.deb" >/dev/null
+if [[ "${SYSROOT_UPDATE_TEST_SKIP_ARCHIVE_INDEX:-0}" != "1" ]]; then
+  printf 'simaai-palette-modalix\tarm64\t%s\n' \
+    "simaai-palette-modalix_${revision}_arm64.deb" > \
+    "${download_dir}/.sysroot-package-archives.tsv"
+  # The indexed fast path must not reopen unrelated cohort archives.
+  : > "${download_dir}/unindexed-invalid.deb"
+fi
 if [[ "${SYSROOT_UPDATE_TEST_FAIL:-0}" == "1" ]]; then
   exit 42
 fi
@@ -206,7 +213,7 @@ mkdir -p "${fresh_sysroot}/var/lib/sima-sdk"
 printf 'base-sdk-package\tarm64\t1.0.0\t/usr/lib\n' > \
   "${fresh_sysroot}/var/lib/sima-sdk/sysroot-packages.tsv"
 fresh_update_output="$(
-  env "${common_env[@]}" SYSROOT="${fresh_sysroot}" \
+  env "${common_env[@]}" SYSROOT="${fresh_sysroot}" SYSROOT_UPDATE_TEST_SKIP_ARCHIVE_INDEX=1 \
     "${SYSROOT_COMMAND}" update 3.0.0~pre4593
 )"
 grep -Fq 'Sysroot overlay is active at 3.0.0~pre4593' <<< "${fresh_update_output}" || \
@@ -234,6 +241,10 @@ grep -Fq 'sysroot overlay state is incomplete' "${tmpdir}/err" || \
 update_output="$(run_sysroot update 3.0.0~pre4617)"
 grep -Fq 'Sysroot overlay is active at 3.0.0~pre4617' <<< "${update_output}" || \
   fail "exact update did not activate the overlay"
+for phase in 'package inventory' 'tracked manifests' 'permissions'; do
+  grep -Eq "Sysroot post-processing: ${phase} completed in [0-9]+s\." <<< "${update_output}" || \
+    fail "update did not report ${phase} timing"
+done
 grep -Fxq '3.0.0~pre4617' "${tmpdir}/sysroot/usr/lib/aarch64-linux-gnu/sysroot-update-test.txt" || \
   fail "platform setup did not update the sysroot"
 [[ "$(stat -c '%a' "${tmpdir}/sysroot/usr/include/simaai")" == "755" ]] || \
@@ -257,6 +268,7 @@ grep -Fxq 'Version: 3.0.0~pre4617' \
   fail "update did not refresh an existing tracked package manifest"
 grep -Fxq $'3.0.0~pre4617\t0\t4617' "${tmpdir}/setup.log" || \
   fail "actual update did not constrain dependencies to the selected build cohort"
+rm -f "${tmpdir}/downloads/unindexed-invalid.deb"
 mkdir -p "${tmpdir}/bin"
 cat > "${tmpdir}/fake-installer" <<'EOF'
 #!/usr/bin/env bash
