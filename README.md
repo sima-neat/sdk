@@ -156,6 +156,22 @@ The build environment is configured automatically when the container starts. To 
 source /opt/bin/simaai-init-build-env modalix
 ```
 
+The default environment selects the SDK's platform compiler. Builds that
+require the qualified GCC 16 C++ toolchain can select the bundled alternate
+compiler explicitly:
+
+```bash
+source /opt/bin/simaai-init-build-env modalix gcc16
+```
+
+This preserves `SYSROOT=/opt/toolchain/aarch64/modalix` for target C headers
+and platform libraries while exporting `SIMA_GCC16_ROOT`, `CC`, and `CXX` from
+the complete GCC 16.2 installation under
+`/opt/toolchain/gcc-16.2.0-aarch64-linux-gnu`. GCC 16 owns its matching C++
+headers, `libstdc++`, and `libgcc`; the compiler installation is deliberately
+kept outside the platform sysroot. Applications must deploy a compatible
+target `libstdc++.so.6` runtime or package their required runtime closure.
+
 The browser-based VS Code environment is provided by code-server and starts automatically with the SDK container. Full Neat SDK containers keep the HTTP editor endpoint on port `9999` for trusted reverse proxies such as an AWS ALB, and also expose a local HTTPS endpoint using the SDK certificate mounted at `/sdk-cert`. Open the credential-free `codeUI` URL printed by `sima-cli sdk setup`, then sign in with the generated password shown by the CLI. Browsers may require trusting the local certificate before loading editor webviews.
 
 To start it manually if supervision is disabled:

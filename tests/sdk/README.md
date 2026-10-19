@@ -16,6 +16,9 @@ container after `sima-cli sdk setup -y -n` starts it.
 - `test-resolve-platform-config.sh`, `test-write-sdk-release.sh`, and
   `test-devkit-platform-profile.sh` cover pre-release selection, image
   provenance, protected release refs, and intentional Core-sync skipping.
+- `test-gcc16-build-env.sh` validates the opt-in GCC 16 environment selector,
+  compiler-prefix/sysroot separation, legacy default behavior, and installer
+  command syntax.
 - `test-devkit-container.sh` covers registry-address translation, lazy and
   resumable DevKit Docker setup, fresh-shell helper persistence, and the
   `dk container` pull, deploy, run, and lifecycle command forwarding.
