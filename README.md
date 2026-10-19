@@ -184,6 +184,8 @@ By default, it serves `/workspace`, requires password authentication, and runs a
 
 For a one-click experience behind an authenticated gateway such as Arthas, set `CODE_SERVER_WITHOUT_PASSWORD=1`. This explicit setting takes precedence if launch tooling also injects `CODE_SERVER_PASSWORD`. The gateway must authenticate and authorize every request, proxy WebSocket upgrades, and be the only network path to code-server; do not expose either code-server port directly. The same option may be used for explicitly trusted local development, but must not be used on a remotely reachable endpoint without such a gateway.
 
+Rollout requires a `sima-cli` release containing [code-server support (#293)](https://github.com/sima-neat/sima-cli/pull/293). Publish that CLI release, update the `sima-cli.ref` pin in `deps/manifest.json` from `v2.1.18`, and install the release on SDK hosts before distributing the new SDK image: older CLIs pass legacy environment variables but still show token URLs and use OpenVSCode extension/service paths. The image smoke workflow installs `sima-cli` from PyPI, so it also needs the updated published release. The updated CLI retains support for older OpenVSCode SDK images.
+
 code-server stores its user data under `~/.local/share/code-server` by default. Override that location with `CODE_SERVER_USER_DATA_DIR` or set `CODE_SERVER_EXTENSIONS_DIR` for extensions. During the migration, the launcher also accepts the former `OPENVSCODE_*` variables so current `sima-cli` releases can start a new SDK image; new automation should use the `CODE_SERVER_*` names.
 
 For diagnostics inside the container:
