@@ -171,6 +171,15 @@ RUN set -eux; \
     chmod -R a+rX "${CODE_SERVER_DIR}"; \
     "${CODE_SERVER_DIR}/bin/code-server" --config /dev/null --version
 
+# Bundle our own extension from this SDK revision; setup copies it per user offline.
+COPY vscode-extension/package.json vscode-extension/LICENSE /opt/sima-neat/vscode-extension/
+COPY vscode-extension/src/ /opt/sima-neat/vscode-extension/src/
+COPY vscode-extension/media/ /opt/sima-neat/vscode-extension/media/
+COPY vscode-extension/themes/ /opt/sima-neat/vscode-extension/themes/
+COPY scripts/install-neat-vscode-extension.py /usr/local/bin/sima-install-neat-extension
+RUN chmod 755 /usr/local/bin/sima-install-neat-extension && \
+    chmod -R a+rX /opt/sima-neat/vscode-extension
+
 COPY --from=cross-toolchain /opt/cross-toolchain/ /
 COPY --from=cross-toolchain /opt/cross-toolchain/ /opt/sdk-cross-toolchain/
 COPY scripts/pin-cross-toolchain.sh /usr/local/bin/pin-cross-toolchain.sh
