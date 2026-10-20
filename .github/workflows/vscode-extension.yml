@@ -44,6 +44,11 @@ jobs:
       - name: Test bundled extension setup
         run: python3 -m unittest discover -s tests -p test_bundled_neat_extension.py
 
+      - name: Test session control helper and branding
+        run: |
+          python3 tests/sdk/test-session-time-helper.py
+          python3 -m unittest discover -s tests -p test_code_server_branding.py
+
       - name: Test VS Code extension
         working-directory: vscode-extension
         run: npm test
