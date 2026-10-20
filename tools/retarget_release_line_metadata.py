@@ -19,6 +19,7 @@ import argparse
 import hashlib
 import json
 import re
+import shlex
 import subprocess
 import tempfile
 from pathlib import Path
@@ -86,6 +87,13 @@ def retarget_metadata_resource(metadata_path: Path, image_resource: str) -> None
 
     if not replaced:
         raise SystemExit("metadata.json does not contain a ghcr:sima-neat/sdk:* resource")
+
+    # New packages bind setup to the downloaded image; keep that binding in sync.
+    # Legacy installers did not forward arguments and have no --image binding.
+    command = shlex.split(metadata["installation"]["script"])
+    if "--image" in command:
+        command[command.index("--image") + 1] = "ghcr.io/" + image_resource.removeprefix("ghcr:")
+        metadata["installation"]["script"] = shlex.join(command)
 
     metadata["resources"] = updated_resources
     write_json(metadata_path, metadata, indent=4)

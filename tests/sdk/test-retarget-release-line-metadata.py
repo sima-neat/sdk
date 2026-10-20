@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import shlex
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -26,6 +27,8 @@ class RetargetTests(unittest.TestCase):
                     name: {
                         "resources": ["install_sdk_stub.sh", "ghcr:sima-neat/sdk:release-2.1"],
                         "installation": {"script": "./install_sdk_stub.sh" + (
+                            " --image ghcr.io/sima-neat/sdk:release-2.1" if studio else ""
+                        ) + (
                             " --edgematic-studio" if name != "metadata.json" else ""
                         )},
                     }
@@ -67,7 +70,13 @@ class RetargetTests(unittest.TestCase):
                 for name in names:
                     promoted = json.loads(uploaded[name])
                     self.assertEqual(promoted["resources"], ["install_sdk_stub.sh", args.image_resource])
-                    self.assertEqual(promoted["installation"], metadata[name]["installation"])
+                    if studio:
+                        command = shlex.split(promoted["installation"]["script"])
+                        self.assertEqual(command[command.index("--image") + 1],
+                                         "ghcr.io/sima-neat/sdk:v2.1.3.3")
+                        self.assertEqual("--edgematic-studio" in command, name != "metadata.json")
+                    else:
+                        self.assertEqual(promoted["installation"], metadata[name]["installation"])
                     entry = next(a for a in promoted_manifest["artifacts"] if a["path"] == name)
                     self.assertEqual(entry["size"], len(uploaded[name]))
                     self.assertEqual(entry["sha256"], hashlib.sha256(uploaded[name]).hexdigest())

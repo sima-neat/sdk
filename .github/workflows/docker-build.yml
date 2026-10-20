@@ -686,6 +686,12 @@ jobs:
           python -m pip install sima-cli
           SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli --version
 
+      - name: Test SDK install package handoff
+        run: |
+          source .venv/bin/activate
+          python tests/sdk/test-prepare-sdk-package.py
+          python tests/sdk/test-retarget-release-line-metadata.py
+
       - name: Prepare SDK install stub package
         run: |
           set -euo pipefail
