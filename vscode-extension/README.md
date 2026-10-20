@@ -5,8 +5,10 @@ Experimental VS Code extension scaffold for SiMa Neat SDK workspaces.
 ## Features
 
 - Adds a SiMa Neat activity bar container.
-- Shows a Neat webview panel with SDK-oriented placeholder content.
 - Opens Insight using the current URL reported by `neat --json`.
+- Initializes the browser editor menu bar to always visible (`window.menuBarVisibility: visible`) when no explicit user/workspace value exists. Users can change it afterward; desktop VS Code preferences are untouched.
+- Shows a Neat webview panel with SDK controls.
+- Supports opt-in, host-controlled expiration reminders for Arthas; ordinary local environments remain silent.
 - Adds Developer Portal Login/Logout controls that store tokens in the same `~/.sima-cli/.tokens.json` cache used by `sima-cli`.
 - Contributes `SiMa Neat Light` and `SiMa Neat Dark` themes.
 
@@ -44,3 +46,117 @@ sima-cli neat install sdk/vscode-extension@vscode-integration-pr:latest
 ```
 
 Use the target branch in place of `vscode-integration-pr` when installing from another branch.
+
+## Host-controlled session countdown
+
+See the [Arthas integrator guide](../docs/arthas-session-expiration.md) for the
+control contract, lifecycle, transport, and acceptance checks. This feature is
+opt-in: no control file means no footer, banner, or reminder notification.
+Installing the extension does not create a deadline.
+
+The extension polls `/run/sima-neat/session.json` once per second in the
+extension host. Set `NEAT_SESSION_FILE` in the server environment before startup
+to use another absolute path. Run the extension in the SDK/server environment.
+No file means no countdown.
+
+From the Docker host, set or replace the remaining time:
+
+```bash
+python3 tools/neat-session-time.py ghcr.io-sima-neat-sdk-develop-latest --minutes 30
+python3 tools/neat-session-time.py ghcr.io-sima-neat-sdk-develop-latest --minutes 5
+python3 tools/neat-session-time.py ghcr.io-sima-neat-sdk-develop-latest --minutes 0
+python3 tools/neat-session-time.py ghcr.io-sima-neat-sdk-develop-latest --clear
+```
+
+The helper requires Docker access and Python 3 on both sides. It writes a
+root-owned, readable file atomically. For an orchestrator integration, write
+`{"expiresAt":"2026-10-20T18:00:00Z"}` with the actual absolute deadline, using
+an atomic rename in the same directory. Use `{"expiresAt":null}` or remove the
+file to clear it. A directory mounted read-only into the container is another
+option; mount the directory rather than one file when using atomic replacement.
+Host and container clocks must agree. This is an advisory UI, not access control
+or environment shutdown enforcement.
+
+The status bar shows a live countdown; clicking it opens a prominent banner at
+the top of the Neat panel. Warnings appear at five minutes, one minute, and
+expiration (once per stage per deadline, per editor window). Changing the deadline
+resets warnings. Expiration stays visible until the host clears or extends it.
+Reloading the editor reads the same absolute deadline, without resetting time.
+Malformed/unreadable updates retain the last valid deadline and log to **Neat
+Session Time**. VS Code has no public extension API for a full-width workbench
+banner; this uses the supported status bar, notifications, and Neat webview.
+
+After installing an updated VSIX, reload existing editor windows. To run tests:
+
+```bash
+node --test vscode-extension/test/*.test.js
+```
+
+### Exact expiration and host-selected presentation
+
+The host can independently select the deadline and display mode:
+
+```json
+{"expiresAt":"2026-10-21T18:00:00-07:00","display":"quiet"}
+```
+
+| `display` | Behavior |
+| --- | --- |
+| `quiet` | Plain expiration date/time in UTC, without highlight or notifications. Past deadlines say “Expired” but remain quiet. |
+| `warning` | Highlighted countdown and one warning notification when selected. |
+| `urgent` | Red countdown and one error notification when selected. |
+| `auto` (default) | Countdown with automatic five-minute, one-minute, and expiration warnings. |
+
+Explicit modes never escalate automatically. The host owns the reminder policy.
+Changing modes resets notification deduplication; rewriting identical state does
+not repeat notifications. Existing notifications already delivered by VS Code
+may remain in its notification center. Reloading an editor resets deduplication.
+
+```bash
+# Exact timestamp must include Z or a timezone offset.
+python3 tools/neat-session-time.py ghcr.io-sima-neat-sdk-develop-latest \
+  --expires-at '2026-10-21T18:00:00-07:00' --display quiet
+
+# Change presentation while preserving the same expiration.
+python3 tools/neat-session-time.py ghcr.io-sima-neat-sdk-develop-latest --display warning
+python3 tools/neat-session-time.py ghcr.io-sima-neat-sdk-develop-latest --display urgent
+python3 tools/neat-session-time.py ghcr.io-sima-neat-sdk-develop-latest --display quiet
+```
+
+The JSON file is the control interface; no listening HTTP service is added.
+Direct writers submit the complete state. The helper supports display-only
+updates by reading the current deadline; use a single host controller to avoid
+concurrent read/modify/write conflicts. Setting a new deadline without
+`--display` selects the default `auto` mode.
+
+### Blinking footer highlight
+
+Add `"blink":true` to the JSON state to blink the status-bar warning/error
+background (one second on, one second off). Text remains visible throughout;
+the Neat panel does not blink. Blinking defaults to off and has no visual effect
+in `quiet` mode or while `auto` has normal severity. Toggling blink alone does
+not repeat notifications. Presentation-only updates preserve the blink setting;
+a new deadline resets it to off unless `--blink` is specified.
+
+```bash
+# Start a new demo, including its deadline.
+python3 tools/neat-session-time.py ghcr.io-sima-neat-sdk-develop-latest --minutes 30 --display warning --blink
+# For an already-configured deadline, --display warning --blink is sufficient.
+python3 tools/neat-session-time.py ghcr.io-sima-neat-sdk-develop-latest --no-blink
+```
+
+The blinking footer defaults to red. Set `"blinkColor":"amber"` (or `"red"`)
+in the control file, or use `--blink-color amber`. This changes only the blink
+highlight, not notification severity or the panel. It does not enable blinking
+by itself. Color-only updates preserve the deadline and do not repeat alerts.
+With blinking disabled, the steady highlight follows the display severity.
+VS Code supports only error and warning backgrounds for individual status items;
+red/amber select those theme colors, so the exact shade depends on the theme.
+Arbitrary CSS or hex colors are unsupported.
+
+```bash
+python3 tools/neat-session-time.py ghcr.io-sima-neat-sdk-develop-latest \
+  --minutes 30 --display warning --blink --blink-color red
+# Change an existing session's blinking color without changing its deadline:
+python3 tools/neat-session-time.py ghcr.io-sima-neat-sdk-develop-latest --blink-color amber
+```

@@ -1,4 +1,5 @@
 const vscode = require("vscode");
+const { SessionTime } = require("./session-time");
 const { execFile } = require("child_process");
 const fs = require("fs");
 const https = require("https");
@@ -49,7 +50,9 @@ class NeatPanelProvider {
 
     this.disposables.push(
       webviewView.webview.onDidReceiveMessage(async (message) => {
-        if (message.command === "cloneSamples") {
+        if (message.command === "sessionTimeReady") {
+          this.updateSessionTime(this.sessionState);
+        } else if (message.command === "cloneSamples") {
           try {
             await cloneSamples();
           } catch (error) {
@@ -92,6 +95,12 @@ class NeatPanelProvider {
     );
 
     await this.refresh();
+    this.updateSessionTime(this.sessionState);
+  }
+
+  updateSessionTime(state) {
+    this.sessionState = state;
+    this.webviewView?.webview.postMessage({ command: "sessionTime", state });
   }
 
   async refresh() {
@@ -118,8 +127,27 @@ class NeatPanelProvider {
   }
 }
 
-function activate(context) {
+async function activate(context) {
+  // Application-scoped settings cannot use contributes.configurationDefaults.
+  // Seed the web user's preference only if they have not selected one.
+  if (vscode.env.uiKind === vscode.UIKind.Web) {
+    try {
+      const config = vscode.workspace.getConfiguration("window");
+      const menu = config.inspect("menuBarVisibility");
+      if (menu && menu.globalValue === undefined && menu.workspaceValue === undefined && menu.workspaceFolderValue === undefined) {
+        await config.update("menuBarVisibility", "visible", vscode.ConfigurationTarget.Global);
+      }
+    } catch (error) {
+      console.warn("Neat: unable to initialize the menu bar preference", error);
+    }
+  }
+
   const provider = new NeatPanelProvider(context.extensionUri);
+  context.subscriptions.push(new SessionTime(
+    vscode,
+    process.env.NEAT_SESSION_FILE || "/run/sima-neat/session.json",
+    (state) => provider.updateSessionTime(state)
+  ));
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("simaNeat.panel", provider),
@@ -1005,6 +1033,18 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
       font-family: var(--vscode-font-family);
     }
 
+    #session-banner {
+      border: 2px solid var(--vscode-focusBorder);
+      border-radius: 6px; padding: 16px; margin-bottom: 16px;
+      background: var(--vscode-editor-background);
+    }
+    #session-banner.quiet { border-color: transparent; padding: 0; background: transparent; }
+    #session-banner.quiet #session-time { font-size: 13px; font-weight: 400; }
+    #session-banner.quiet strong, #session-banner.quiet #session-detail { display: none; }
+    #session-banner.warning { border-color: var(--vscode-editorWarning-foreground); }
+    #session-banner.error { border-color: var(--vscode-editorError-foreground); }
+    #session-time { display: block; font-size: 24px; font-weight: 700; margin: 8px 0; font-variant-numeric: tabular-nums; }
+    #session-detail { margin: 0; }
     .masthead {
       display: grid;
       grid-template-columns: 56px 1fr;
@@ -1207,6 +1247,11 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
   </style>
 </head>
 <body>
+  <section id="session-banner" hidden aria-label="Environment time remaining">
+    <strong>ENVIRONMENT SESSION</strong>
+    <span id="session-time"></span>
+    <p id="session-detail"></p>
+  </section>
   <div class="masthead">
     <img class="logo" src="${logoUri}" alt="SiMa.ai">
     <div>
@@ -1271,6 +1316,16 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
   </div>
   <script>
     const vscode = acquireVsCodeApi();
+    window.addEventListener("message", ({ data }) => {
+      if (data.command !== "sessionTime") return;
+      const banner = document.getElementById("session-banner");
+      banner.hidden = !data.state;
+      if (!data.state) return;
+      banner.className = data.state.display === "quiet" ? "quiet" : data.state.severity;
+      document.getElementById("session-time").textContent = data.state.text;
+      document.getElementById("session-detail").textContent = data.state.detail;
+    });
+    vscode.postMessage({ command: "sessionTimeReady" });
     const cloneButton = document.getElementById("cloneSamples");
     cloneButton?.addEventListener("click", () => {
       cloneButton.disabled = true;
