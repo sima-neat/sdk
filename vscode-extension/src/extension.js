@@ -1,4 +1,5 @@
 const vscode = require("vscode");
+const { registerGettingStarted } = require("./getting-started");
 const { modelRegistryAvailable } = require("./sdk-capabilities");
 let modelsEnabled = false;
 const { registerModels } = require("./model-registry");
@@ -133,6 +134,7 @@ class NeatPanelProvider {
 }
 
 async function activate(context) {
+  await registerGettingStarted(vscode, context);
   modelsEnabled = await modelRegistryAvailable();
   await vscode.commands.executeCommand("setContext", "simaNeat.modelRegistryAvailable", modelsEnabled);
   registerModels(vscode, context, resolveSimaCliExecutable, modelsEnabled);

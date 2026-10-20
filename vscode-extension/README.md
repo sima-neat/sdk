@@ -199,3 +199,13 @@ and removes its incomplete folder. Model contents are never executed.
 Requires an SDK with `sima-cli models list/download --stg --json`, Python 3.9+,
 and network access to the staging registry and artifact download endpoints.
 This initial integration uses `develop` only; it does not compile or deploy models.
+
+### Getting Started tab
+
+The default startup editor is empty instead of the stock Welcome page. On the
+first browser-editor launch with no restored tabs or explicit `workbench.startupEditor`
+preference, Neat opens <https://developer.sima.ai/software/getting-started/> in the
+built-in Simple Browser. Subsequent launches preserve the normal editor session.
+Use **SiMa Neat: Getting Started** from the Command Palette to reopen the page.
+The documentation requires internet access; the Simple Browser toolbar can also
+open it in an external browser.
