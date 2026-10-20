@@ -69,6 +69,8 @@ input, button { font:inherit; }
 """
 WORKBENCH_CSS = FONT_CSS + '\n.monaco-workbench { font-family:Roboto,"Helvetica Neue",sans-serif !important; }\n'
 WORKBENCH_CSS += '\n.monaco-workbench .statusbar-item[id$=".simaNeat.brand"] > .statusbar-item-label::before { content:""; display:inline-block; width:69px; height:16px; margin-right:6px; background:transparent url("sima-logo.png?v=transparent") center / contain no-repeat; border-radius:2px; flex-shrink:0; }\n'
+# Recolor only the wordmark at render time, preserving the multicolor symbol.
+WORKBENCH_CSS += '\n.monaco-workbench .statusbar-item[id$=".simaNeat.brand"] > .statusbar-item-label { position:relative; }\n.monaco-workbench .statusbar-item[id$=".simaNeat.brand"] > .statusbar-item-label::after { content:""; position:absolute; left:5px; top:50%; transform:translateY(-50%); width:69px; height:16px; background:#fff; mask:url("sima-logo.png?v=transparent") center / contain no-repeat; clip-path:inset(0 0 0 29%); pointer-events:none; }\n'
 logo = args.icon.parent / 'sima-logo.png'
 if not logo.is_file():
     parser.error(f'Missing SiMa logo: {logo}')
