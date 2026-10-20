@@ -40,20 +40,17 @@ layout causes a visible failure rather than silently retaining stock branding.
 ## Login page
 
 The helper also brands the sign-in page with the Neat icon, SiMa.ai name, and
-password guidance. For local SDK containers created by sima-cli, run
-`sima-cli sdk neat printenv CODE_SERVER_PASSWORD` on the Docker host. This prints
-the configured container-environment credential in the host terminal. If the
-launcher generated the password instead, use the latest `Password:` entry in its
-startup output. For supervised containers:
+password guidance for local SDK setup. The page first directs users to the
+password shown in the CLI output after SDK setup. If they cannot find it, it
+shows one command to run in a terminal on their computer:
 
 ```bash
-docker exec <sdk-container> tail -n 40 /var/log/supervisor/code-server.err.log
+sima-cli sdk neat printenv CODE_SERVER_PASSWORD
 ```
 
-For a direct launch, check the launching terminal. The login page explains both
-paths and never embeds a credential. Hosted users are directed to their
-provider. Reapplying branding refreshes the password guidance and header icon,
-including when the supplied icon changes.
+Users paste the printed password into the sign-in field. The page never embeds
+a credential. Reapplying branding refreshes the password guidance and header
+icon, including when the supplied icon changes.
 
 The upstream login form, error rendering, proxy-path fields, and authentication
 remain intact. Styles are served locally under the existing content security
