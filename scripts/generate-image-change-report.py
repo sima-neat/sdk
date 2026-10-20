@@ -14,6 +14,7 @@ import json
 import netrc
 import os
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -26,7 +27,7 @@ from typing import Any
 
 BUCKET = "sima-neat-artifacts-production"
 PREFIX = "daily-platform-images/"
-BUILD_RE = re.compile(r"3[.]0[.]0_daily_[A-Za-z0-9_-]+_B([0-9]+)\Z")
+BUILD_RE = runpy.run_path(str(Path(__file__).with_name('platform-builds.py')))['BUILD']
 GIT_VERSION_RE = re.compile(
     r"(?:~|[.+-])git(?:[0-9]{12})?[.]([0-9a-fA-F]{7,40})(?:\b|\Z)"
 )
@@ -892,9 +893,15 @@ h1{font-size:1.7rem}h2{font-size:1.18rem;margin:0}h3{font-size:1rem;margin:.9rem
     return "\n".join(parts)
 
 
+class MissingChangeManifest(ValueError):
+    """Published firmware does not include source-change evidence."""
+
+
 def read_s3_manifest(s3: Any, build: str) -> str:
     manifest = json.loads(s3.get_object(Bucket=BUCKET, Key=f"{PREFIX}{build}/manifest.json")["Body"].read())
     candidates = [item["key"] for item in manifest.get("files", []) if Path(item.get("path", "")).name == "manifestChanges.txt"]
+    if not candidates:
+        raise MissingChangeManifest(f"No manifestChanges.txt in {build}; source report unavailable")
     if len(candidates) != 1:
         raise ValueError(f"Expected one manifestChanges.txt in {build}, found {len(candidates)}")
     return s3.get_object(Bucket=BUCKET, Key=candidates[0])["Body"].read().decode("utf-8")
@@ -954,6 +961,7 @@ def main() -> int:
     parser.add_argument("--package-index", type=Path,
                         help="Debian Packages or Packages.gz used to recover complete build provenance")
     parser.add_argument("--codex-timeout", type=int, default=300)
+    parser.add_argument("--master-package-index", type=Path, help="Master Agate Packages index")
     args = parser.parse_args()
     if bool(args.build) != bool(args.manifest):
         parser.error("--build and --manifest must be used together")
@@ -977,10 +985,16 @@ def main() -> int:
             return 0
         from mirror_aws import s3_client
         s3 = s3_client()
-        builds = [(name, read_s3_manifest(s3, name)) for name in names]
+        builds = []
+        for name in names:
+            try:
+                builds.append((name, read_s3_manifest(s3, name)))
+            except MissingChangeManifest as exc:
+                print(str(exc), flush=True)
+    master_index = PackageVersionIndex(args.master_package_index)
     for build, manifest_text in builds:
         paths = generate(build, manifest_text, args.output_dir, args.cache_root,
-                         args.codex_timeout, jenkins, package_index)
+                         args.codex_timeout, jenkins, master_index if "_pre-release_master_" in build else package_index)
         if args.evidence_dir:
             args.evidence_dir.mkdir(parents=True, exist_ok=True)
             for path in paths:

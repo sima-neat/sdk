@@ -15,7 +15,7 @@ KINDS = {'apt': 'APT', 'packages': 'APT package changes', 'images': 'Device imag
 TABLE_CELL_LIMIT = 2000
 TABLE_TEXT_LIMIT = 10000
 TABLE_CELL_OVERFLOW = '… (see workflow report)'
-IMAGE_BUILD_RE = re.compile(r'3[.]0[.]0_daily_[A-Za-z0-9_-]+_B[0-9]+')
+IMAGE_BUILD_RE = runpy.run_path(str(Path(__file__).with_name('platform-builds.py')))['BUILD']
 
 
 def save_state(path, state):
@@ -42,7 +42,7 @@ def sysroot_events(report):
     for item in report.get('builds', []):
         internal, external = item['internal']['status'], item['external']['status']
         if external == 'available':
-            detail = '✅ Matching external platform package set is available.'
+            detail = '✅ External anchor and exact dependencies are available; unpinned dependencies are not verified.'
         elif external == 'unknown':
             detail = '❔ External mirror check failed; availability is unknown.'
         elif internal == 'available':
@@ -90,8 +90,8 @@ def collect(apt, images, readiness=None):
 
 def format_version(kind, version):
     label = html.escape(version, quote=False)
-    match = re.fullmatch(r'3\.0\.0_daily_develop_B([0-9]+)', version)
-    if kind == 'images' and match:
+    match = IMAGE_BUILD_RE.fullmatch(version)
+    if kind == 'images' and match and ('_daily_develop_' in version or '_pre-release_master_' in version):
         url = f'https://jenkins.eng.sima.ai/job/soc-jobs/job/elxr-builder/{match.group(1)}/console'
         return f'<{url}|{label}>'
     return label
@@ -268,6 +268,7 @@ def replay_image_notification(build, run_url, send, report_dir):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apt-report', type=Path)
+    parser.add_argument('--master-apt-report', type=Path)
     parser.add_argument('--image-report', type=Path)
     parser.add_argument('--state', type=Path, required=True)
     parser.add_argument('--sysroot-report', type=Path)
@@ -275,7 +276,7 @@ def main():
     parser.add_argument('--replay-image-build')
     args = parser.parse_args()
     if args.replay_image_build:
-        if args.apt_report or args.image_report or args.sysroot_report:
+        if args.apt_report or args.master_apt_report or args.image_report or args.sysroot_report:
             parser.error('--replay-image-build cannot be combined with mirror result inputs')
         versions = None
     else:
@@ -283,6 +284,10 @@ def main():
             parser.error('--apt-report and --image-report are required for normal notifications')
         versions = collect(load_report(args.apt_report), load_report(args.image_report),
                            load_report(args.sysroot_report) if args.sysroot_report else None)
+        if args.master_apt_report:
+            master = collect(load_report(args.master_apt_report), {})
+            for kind, entries in master.items():
+                versions.setdefault(kind, []).extend(f'[master] {entry}' for entry in entries)
     sender = runpy.run_path(str(Path(__file__).with_name('post-debian-mirror-summary.py')))
     post, upload = sender['post_message'], sender['upload_file']
 

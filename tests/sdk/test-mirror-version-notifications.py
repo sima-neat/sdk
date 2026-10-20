@@ -389,7 +389,7 @@ def test_readiness_rechecks_unchanged_images_and_notifies_transitions(tmp_path):
     ready = m.collect({}, images, readiness(external='available'))
     m.notify(state, ready, NEXT_RUN, send)
     assert send.call_count == 2
-    assert 'Matching external platform package set is available' in send.call_args.args[0]
+    assert 'External anchor and exact dependencies are available' in send.call_args.args[0]
     # Availability can regress; don't suppress a previously seen state forever.
     m.notify(state, waiting, NEXT_RUN, send)
     assert send.call_count == 3
@@ -414,3 +414,23 @@ def test_readiness_preview_and_unknown_are_not_availability():
     assert 'sysroots' not in m.collect({}, {'result': 'Validated only'}, readiness())
     assert 'unknown' in m.sysroot_events(readiness(external='unknown'))[0]
     assert 'wait for synchronization' not in m.sysroot_events(readiness(internal='unknown'))[0]
+
+
+def test_master_image_links_and_change_attachments(tmp_path):
+    build = '3.0.0_pre-release_master_B2254'
+    assert '/2254/console|' in m.format_version('images', build)
+    (tmp_path / f'{build}.html').write_text('report')
+    attachments, _ = m.image_change_artifacts([{'kind': 'images', 'version': build}], tmp_path)
+    assert attachments == [tmp_path / f'{build}.html']
+
+
+def test_workflow_keeps_master_publication_and_reports_independent():
+    workflow = yaml.safe_load((ROOT / '.github/workflows/sync-debian-pre-release-mirror.yml').read_text())
+    steps = workflow['jobs']['sync']['steps']
+    master = next(s for s in steps if s['name'] == 'Synchronize and validate master pre-release mirror')
+    assert master['env']['DEBIAN_MIRROR_CHANNEL'] == 'pre-release'
+    assert "!cancelled()" in master['if'] and "master_credentials.outcome" in master['if']
+    assert 'master-debian-mirror-sync' in master['env']['DEBIAN_MIRROR_REPORT_DIR']
+    assert '--publish' in master['run'] and 'inputs.publish' in master['run']
+    notify = next(s for s in steps if s['name'] == 'Notify Slack of new APT and device image versions')
+    assert '--master-apt-report out/master-debian-mirror-sync/mirror-sync-result.json' in notify['run']

@@ -11,6 +11,7 @@ import gzip
 import hashlib
 import json
 import re
+import runpy
 import subprocess
 from functools import lru_cache
 from pathlib import Path
@@ -21,7 +22,8 @@ EXTERNAL = 'https://debian.neat.sima.ai/daily'
 INDEX = 'non-free/binary-arm64/Packages.gz'
 ANCHOR = 'simaai-palette-modalix'
 LIMIT = 128 * 1024 * 1024
-IMAGE = re.compile(r'(3\.0\.0)_daily_[A-Za-z0-9_-]+_B([0-9]+)\Z')
+BUILD_MODEL = runpy.run_path(str(Path(__file__).with_name('platform-builds.py')))
+IMAGE = BUILD_MODEL['BUILD']
 RELATION = re.compile(r'([a-z0-9][a-z0-9+.-]*)(?::(?:any|native|arm64))?\s*(?:\((<<|<=|=|>=|>>)\s*([^()\s]+)\))?\Z')
 
 
@@ -97,8 +99,10 @@ def available(records, image):
     match = IMAGE.fullmatch(image)
     if not match:
         return {'status': 'unknown', 'reason': 'Unrecognized firmware version'}
-    release, build = match.groups()
+    release, build = '3.0.0', match[1]
     version_re = re.compile(re.escape(release) + r'~git[0-9]+\.[A-Za-z0-9]+-' + re.escape(build) + r'\Z')
+    if BUILD_MODEL['channel'](image) == 'pre-release':
+        version_re = re.compile(re.escape(f'{release}~pre{build}') + r'\Z')
     anchors = [p for p in records if p['Package'] == ANCHOR and version_re.fullmatch(p['Version'])]
     if not anchors:
         return {'status': 'missing', 'reason': 'Exact release/build palette package is absent'}
@@ -141,16 +145,25 @@ def check(images, reader=read_index):
     results = {name: {'image': name} for name in images}
     # Keep both observations independent: external can still be ready if the
     # internal service is unavailable or has already pruned an older build.
-    for label, url in (('internal', INTERNAL), ('external', EXTERNAL)):
+    cache = {}
+    for name, item in results.items():
         try:
-            records = reader(url)
-        except Exception:
-            for item in results.values():
-                item[label] = {'status': 'unknown', 'reason': 'Repository could not be checked'}
+            channel = BUILD_MODEL['channel'](name)
+        except ValueError:
+            item.update({label: {'status': 'unknown', 'reason': 'Unrecognized firmware version'} for label in ('internal', 'external')})
             continue
-        for name, item in results.items():
+        for label, base in (('internal', INTERNAL), ('external', EXTERNAL)):
+            url = base.rsplit('/', 1)[0] + '/' + channel
+            if url not in cache:
+                try:
+                    cache[url] = reader(url)
+                except Exception:
+                    cache[url] = None
+            if cache[url] is None:
+                item[label] = {'status': 'unknown', 'reason': 'Repository could not be checked'}
+                continue
             try:
-                item[label] = available(records, name)
+                item[label] = available(cache[url], name)
             except ValueError:
                 item[label] = {'status': 'unknown', 'reason': 'Package metadata or Debian version comparison could not be evaluated'}
     return {'schema_version': 1, 'scope': 'anchor-and-exact-dependency-index-availability',
