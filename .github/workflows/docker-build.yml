@@ -111,7 +111,18 @@ jobs:
             sdk-debs-v1-${{ runner.os }}-${{ needs.resolve-platform-config.outputs.base_sdk_version }}-
             sdk-debs-v1-${{ runner.os }}-
 
-      - name: Inject SDK Debian package cache into BuildKit
+      # GCC's mount retains its checksum-validated source archive; the compiled
+      # toolchain is reused through the registry layer cache. Keep host caches
+      # separate and scope them to the installer inputs.
+      - name: Restore GCC source cache
+        uses: actions/cache@v4
+        with:
+          path: .buildkit-cache/sima-sdk-gcc16
+          key: sdk-gcc16-v1-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/install-gcc16-toolchain.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            sdk-gcc16-v1-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('scripts/install-gcc16-toolchain.sh') }}-
+
+      - name: Inject SDK download caches into BuildKit
         uses: reproducible-containers/buildkit-cache-dance@5de31fc1534ed8789e63d41ea933c5df9944a261 # v3.1.0
         with:
           cache-map: |
@@ -119,6 +130,11 @@ jobs:
               ".buildkit-cache/sima-sdk-debs": {
                 "target": "/var/cache/sima-sdk-debs",
                 "id": "sima-sdk-debs-v1",
+                "sharing": "locked"
+              },
+              ".buildkit-cache/sima-sdk-gcc16": {
+                "target": "/var/cache/sima-sdk-gcc16",
+                "id": "sima-sdk-gcc16-v1",
                 "sharing": "locked"
               }
             }

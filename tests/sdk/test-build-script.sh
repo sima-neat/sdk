@@ -102,6 +102,23 @@ fi
 dockerfile="${ROOT_DIR}/Dockerfile"
 workflow="${ROOT_DIR}/.github/workflows/docker-build.yml"
 readme="${ROOT_DIR}/README.md"
+# Editor inputs, including build ARGs, must stay outside the GCC parent stage.
+python3 - "${dockerfile}" <<'PYTEST'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text()
+platform, final = source.rsplit("FROM sdk-platform\n", 1)
+for editor_input in (
+    "ARG CODE_SERVER_",
+    "ENV CODE_SERVER_VERSION=",
+    "COPY vscode-extension/",
+    "COPY tools/brand_code_server.py",
+    "COPY scripts/install-neat-vscode-extension.py",
+):
+    assert editor_input not in platform, f"Editor input invalidates GCC: {editor_input}"
+    assert editor_input in final, f"Editor input missing from final image: {editor_input}"
+PYTEST
 grep -Fq '      binutils \' "${dockerfile}"
 grep -Eq '^ARG CODEX_CLI_VERSION=[0-9]+[.][0-9]+[.][0-9]+$' "${dockerfile}"
 grep -Eq '^ARG DOCKER_CLI_VERSION=[0-9]+[.][0-9]+[.][0-9]+$' "${dockerfile}"
