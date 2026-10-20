@@ -383,6 +383,35 @@ grep -Fq 'neat-sdk-test-overlay-2-1-2-pre4617' <<< "${prompt_output}" || \
 [[ ! -e "${tmpdir}/apt/sources/pre-release.list" ]] || fail "temporary APT source was not cleaned up"
 [[ ! -e "${tmpdir}/apt/preferences/pre-release.pref" ]] || fail "temporary APT preferences were not cleaned up"
 
+# Package mutation is governed by channel, not the platform major alone.
+mutation_root="${tmpdir}/mutation-sysroot"
+mkdir -p "${mutation_root}/var/lib/sima-sdk/sysroot-packages" "${mutation_root}/usr/lib"
+printf 'fixture\n' > "${mutation_root}/usr/lib/fixture"
+cat > "${mutation_root}/var/lib/sima-sdk/sysroot-packages/fixture_arm64.manifest" <<'EOF'
+Package: fixture
+Architecture: arm64
+Version: 1.0
+
+usr/lib/fixture
+EOF
+for channel_base in 'release 3.0.0' 'pre-release 2.1.2' 'daily 3.0.0' 'daily 2.1.2' 'pre-release 3.0.0'; do
+  read -r mutation_channel mutation_base <<< "${channel_base}"
+  printf 'Platform Channel = %s\nPlatform Base = %s\n' "${mutation_channel}" "${mutation_base}" > "${tmpdir}/mutation-sdk-release"
+  for operation in install remove; do
+    if env "${common_env[@]}" SYSROOT="${mutation_root}" \
+      SDK_RELEASE_FILE="${tmpdir}/mutation-sdk-release" \
+      "${SYSROOT_COMMAND}" "${operation}" fixture:arm64 --dry-run > "${tmpdir}/mutation-output" 2>&1; then
+      [[ "${channel_base}" == 'release 3.0.0' || "${channel_base}" == 'pre-release 2.1.2' ]] || \
+        fail "${operation} accepted whole-directory channel ${channel_base}"
+    else
+      [[ "${channel_base}" == 'daily '* || "${channel_base}" == 'pre-release 3.0.0' ]] || \
+        fail "${operation} rejected mutable channel ${channel_base}: $(cat "${tmpdir}/mutation-output")"
+      grep -Fq 'SDK_PKG_LIST' "${tmpdir}/mutation-output" || fail 'unexpected mutation rejection'
+    fi
+  done
+done
+[[ "$(cat "${mutation_root}/usr/lib/fixture")" == fixture ]] || fail 'dry run mutated the fixture'
+
 # Exercise daily routing with the same installer fixture and transaction checks.
 sed -i -e 's/Platform Base = 2.1.2/Platform Base = 3.0.0/' -e 's/Platform Channel = pre-release/Platform Channel = daily/' \
   -e 's@https://debian.neat.sima.ai/pre-release@https://debian.neat.sima.ai/daily@' \
@@ -460,7 +489,7 @@ fi
 [[ "$(stat -c %i "${tmpdir}/sysroot")" == "${before}" ]]
 setsid env "${common_env[@]}" SYSROOT_UPDATE_TEST_FAIL=interrupt "${SYSROOT_COMMAND}" update "${daily_revision}" &
 updater=$!
-for attempt in {1..100}; do
+for _ in {1..100}; do
   [[ ! -e "${tmpdir}/setup.log.ready" ]] || break
   sleep 0.02
 done
