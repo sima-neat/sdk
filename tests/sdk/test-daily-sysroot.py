@@ -30,6 +30,17 @@ class DailySelectionTest(unittest.TestCase):
         self.assertIs(module.daily_candidate([future, older], PLATFORM), older)
         self.assertIsNone(module.daily_candidate([future], PLATFORM))
 
+    def test_master_cohort_does_not_select_develop_or_future_packages(self):
+        daily = candidate('2.2.0~git202610190000.abcdef0-2254')
+        future = candidate('2.2.0~pre2263')
+        selected = candidate('2.2.0~pre2254')
+        older = candidate('2.2.0~pre2240')
+        self.assertIs(module.daily_candidate([daily, future, selected, older], '3.0.0~pre2254'), selected)
+        self.assertIsNone(module.daily_candidate([daily, future], '3.0.0~pre2254'))
+        self.assertIsNone(module.daily_candidate([selected], PLATFORM))
+        headers = candidate('6.18.3-2254')
+        self.assertIs(module.daily_candidate([headers], '3.0.0~pre2254'), headers)
+
     def test_all_package_native_cache_key_without_host_arch_fallback(self):
         all_package = SimpleNamespace(architecture="all")
         host_package = SimpleNamespace(architecture="amd64")

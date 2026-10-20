@@ -135,6 +135,7 @@ if [[ "${SDK_APT_CHANNEL}" == daily && "${BASE_SDK_VERSION}" != *~git* ]]; then
   platform_config="$(PRE_RELEASE_BASE="${BASE_SDK_VERSION}" \
     STABLE_BASE_SDK_VERSION="${BASE_SDK_VERSION}" \
     "${SCRIPT_DIR}/scripts/resolve-platform-config.sh")"
+  SDK_APT_CHANNEL="$(printf '%s\n' "${platform_config}" | sed -n 's/^sdk_apt_channel=//p')"
   REQUESTED_PRE_RELEASE_BASE="${BASE_SDK_VERSION}"
   BASE_SDK_VERSION="$(printf '%s\n' "${platform_config}" | sed -n 's/^base_sdk_version=//p')"
   [[ -n "${BASE_SDK_VERSION}" ]] || { echo "Platform version resolution failed" >&2; exit 1; }

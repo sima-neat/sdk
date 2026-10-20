@@ -90,7 +90,11 @@ version_suffix=pre
 if [[ "${platform_base}" == 3.* ]]; then
   channel=daily
   version_suffix=git
-  release_url="${release_url:-https://debian.neat.sima.ai/daily/dists/agate/Release}"
+  if [[ "${pre_release_base}" == *~pre* ]]; then
+    channel=pre-release
+    version_suffix=pre
+  fi
+  release_url="${release_url:-https://debian.neat.sima.ai/${channel}/dists/agate/Release}"
 else
   release_url="${release_url:-https://debian.neat.sima.ai/pre-release/dists/bookworm/Release}"
 fi

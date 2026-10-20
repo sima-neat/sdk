@@ -93,7 +93,7 @@ pool_upload_line="$(grep -nF 's3 sync "${REPOSITORY}/pool/' "${sync_script}" | c
 by_hash_upload_line="$(grep -nF 's3 sync "${PUBLISH_DISTS}/' "${sync_script}" | head -n 1 | cut -d: -f1)"
 # shellcheck disable=SC2016
 release_upload_line="$(grep -nF 'aws s3 cp "${PUBLISH_DISTS}/${SUITE}/Release"' "${sync_script}" | cut -d: -f1)"
-manifest_upload_line="$(grep -n 'daily/.mirror/agate/publication.json' "${sync_script}" | tail -n 1 | cut -d: -f1)"
+manifest_upload_line="$(grep -n '/.mirror/agate/publication.json' "${sync_script}" | tail -n 1 | cut -d: -f1)"
 publication_upload_line="$(grep -nF 'aws s3 cp "${PUBLICATION_JSON}"' "${sync_script}" | cut -d: -f1)"
 publication_time_line="$(grep -nF 'publication_time="$(date -u' "${sync_script}" | head -n 1 | cut -d: -f1)"
 report_write_line="$(grep -nF 'write_change_report "${result}"' "${sync_script}" | head -n 1 | cut -d: -f1)"

@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       pre_release_base:
-        description: Optional platform selector (for example, 3.0.0 or an exact 3.0.0~git timestamp/commit/build version)
+        description: Platform selector (3.0.0 for develop, exact ~git version, or 3.0.0~pre2254 for master)
         required: false
         type: string
 
