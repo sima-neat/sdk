@@ -43,7 +43,14 @@ page.feed(html)
 assert page.password and page.post, 'Missing password login form'
 styles = [url for url in page.styles if url.endswith('/neat-login.css')]
 assert len(styles) == 1, 'Missing login stylesheet'
-assert b'.neat-brand' in fetch(urljoin(BASE, styles[0])), 'Login stylesheet not served'
+css_url = urljoin(BASE, styles[0])
+css = fetch(css_url)
+assert b'.neat-brand' in css, 'Login stylesheet not served'
+for family in ['roboto', 'ibm-plex-mono']:
+    for weight in [400, 500, 700]:
+        font = f'{family}-latin-{weight}-normal.woff2'
+        assert font.encode() in css, f'Missing font declaration: {font}'
+        assert fetch(urljoin(css_url, font)).startswith(b'wOF2'), f'Font not served: {font}'
 icons = [url for url in page.icons if '/neat-favicon-' in url]
 assert len(icons) == 1, 'Missing Neat logo'
 assert fetch(urljoin(BASE, icons[0])) == Path('/opt/sima-neat/vscode-extension/media/neat-logo.png').read_bytes(), 'Served logo differs from bundled Neat icon'

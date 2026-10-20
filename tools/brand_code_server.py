@@ -47,6 +47,31 @@ LOGIN_CSS = """
 .login-form .field .password { min-width:0; }
 .login-form .field .submit { margin-left:0; }
 """
+FONT_CSS = "\n".join(
+    f'@font-face {{ font-family:"{family}"; font-style:normal; font-weight:{weight}; font-display:swap; src:url("{slug}-latin-{weight}-normal.woff2") format("woff2"); }}'
+    for family, slug in [('Roboto', 'roboto'), ('IBM Plex Mono', 'ibm-plex-mono')]
+    for weight in [400, 500, 700]
+)
+LOGIN_CSS = FONT_CSS + LOGIN_CSS + """
+:root { color-scheme:light dark; --neat-canvas:light-dark(#f5f5f7,#171a1d); --neat-surface:light-dark(#ffffff,#252a2e); --neat-ink:light-dark(#0b1220,#edf0ec); --neat-muted:light-dark(#5f6972,#adb7b8); --neat-line:light-dark(#dfe3e6,#323a3d); }
+body { background:var(--neat-canvas); color:var(--neat-ink); font-family:Roboto,"Helvetica Neue",sans-serif; }
+.card-box { background:var(--neat-surface); color:var(--neat-ink); border:1px solid var(--neat-line); box-shadow:none; }
+.card-box .header { border-color:var(--neat-line); }
+.card-box .sub { color:var(--neat-muted); }
+input, button { font:inherit; }
+.login-form .field .password { background:var(--neat-canvas); color:var(--neat-ink); border-color:var(--neat-line); }
+.login-form .field .password:focus { outline:2px solid #5998DD; }
+.login-form .field .submit { background:#5998DD; color:#0b1220; }
+.login-form .field .submit:hover { background:#75abe5; }
+.neat-help { border-color:var(--neat-line); }
+.neat-help pre { background:var(--neat-canvas); }
+.neat-help code { font-family:"IBM Plex Mono",monospace; }
+"""
+WORKBENCH_CSS = FONT_CSS + '\n.monaco-workbench { font-family:Roboto,"Helvetica Neue",sans-serif !important; }\n'
+font_dir = args.icon.parent / 'fonts'
+font_files = list(font_dir.glob('*.woff2')) + list(font_dir.glob('*-LICENSE'))
+if len(list(font_dir.glob('*.woff2'))) != 6:
+    parser.error(f'Expected six bundled fonts in {font_dir}')
 updates = []
 # Validate all upstream templates before changing files; fail visibly on layout drift.
 if not media.is_dir():
@@ -79,8 +104,18 @@ for template in templates:
             if updated.count(old) != 1:
                 parser.error(f'Unsupported login template: expected one {old!r}')
             updated = updated.replace(old, new, 1)
+    if template == templates[-1] and 'neat-workbench.css' not in updated:
+        if updated.count('</head>') != 1:
+            parser.error(f'Expected one head element in {template}')
+        favicon_url = re.search(r'href="([^"]*' + re.escape(name) + r')"', updated)[1]
+        css_url = favicon_url.rsplit('/', 1)[0] + '/neat-workbench.css'
+        updated = updated.replace('</head>', f'<link rel="stylesheet" href="{css_url}" />\n</head>')
     updates.append((template, updated))
 (media / "neat-login.css").write_text(LOGIN_CSS)
+(media / "neat-workbench.css").write_text(WORKBENCH_CSS)
+for font in font_files:
+    shutil.copyfile(font, media / font.name)
+    (media / font.name).chmod(0o644)
 shutil.copyfile(args.icon, media / name)
 (media / name).chmod(0o644)
 for template, updated in updates:

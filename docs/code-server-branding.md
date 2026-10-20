@@ -22,6 +22,7 @@ For a container, copy the helper and PNG into it and supply an explicit source:
 ```bash
 docker cp tools/brand_code_server.py CONTAINER:/tmp/brand_code_server.py
 docker cp vscode-extension/media/neat-logo.png CONTAINER:/tmp/neat-favicon.png
+docker cp vscode-extension/media/fonts CONTAINER:/tmp/fonts
 docker exec --user 0 CONTAINER python3 /tmp/brand_code_server.py \
   --server-dir /opt/code-server --icon /tmp/neat-favicon.png
 ```
@@ -52,3 +53,24 @@ Palette Neat branding, password guidance, login form, and served CSS/logo assets
 The test fixture is not installed; the helper modifies the real code-server page
 at image build time. Existing containers must be recreated from a published
 image containing the change to receive it.
+
+## Shared SiMa palette and typography
+
+The login and editor styling follows Models PR #334 (commit
+`fae1993d488ed0823ddb3d3674be92ea35f2f87d`): SiMa blue `#5998DD`, green
+`#2A9C4F`, teal `#C0E8DB`, purple `#D1CEE6`, and orange `#D26728`, with
+neutral light/dark surfaces. Text accents use darker variants where needed for
+readability on light backgrounds.
+
+Roboto styles the code-server UI; IBM Plex Mono styles code and terminals.
+Latin fonts and their licenses are bundled under `vscode-extension/media/fonts`
+and served locally, without external font requests. Other scripts use fallback
+fonts. The helper adds a local stylesheet to the installed workbench because
+VS Code color themes cannot set the workbench font.
+
+The extension contributes SiMa Neat Light as its default theme, SiMa Neat Dark
+as the preferred dark theme, and IBM Plex Mono as the editor/terminal font.
+Explicit user or workspace settings override these defaults. The login page
+follows the browser's light/dark preference independently of the editor theme.
+Desktop VS Code users need the fonts installed locally; bundled web fonts are
+loaded by the SDK's code-server pages.
