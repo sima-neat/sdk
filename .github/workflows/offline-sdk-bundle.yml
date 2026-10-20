@@ -1,5 +1,7 @@
 name: Build SDK Offline Bundle
 
+run-name: Build SDK Offline Bundle — ${{ github.event.workflow_run.head_branch || github.ref_name }}${{ github.event_name == 'workflow_dispatch' && format(' — {0}', inputs.package_version || inputs.image_ref) || '' }}
+
 on:
   workflow_run:
     workflows:
