@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify generated install commands work after downloads lose executable mode.
+"""Verify downloaded packages select their own image and work without executable mode.
 
 Requires sima-cli on PATH, as does tools/prepare_s3_artifacts.sh.
 """
@@ -37,6 +37,7 @@ class PackageTests(unittest.TestCase):
                 ("metadata-edgematic-studio.json", ["--edgematic-studio"]),
             ]:
                 metadata = json.loads((package / name).read_text())
+                self.assertIn("ghcr:sima-neat/sdk:develop", metadata["resources"])
                 for pairing in (False, True):
                     with self.subTest(metadata=name, pairing=pairing):
                         result = subprocess.run(
@@ -49,7 +50,7 @@ class PackageTests(unittest.TestCase):
                         expected = ["sdk", "setup"]
                         if pairing:
                             expected += ["--devkit", "10.0.0.244"]
-                        self.assertEqual(log.read_text().splitlines(), expected + studio_args)
+                        self.assertEqual(log.read_text().splitlines(), expected + ["--image", "ghcr.io/sima-neat/sdk:develop"] + studio_args)
 
 
 if __name__ == "__main__":
