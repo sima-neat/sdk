@@ -138,7 +138,9 @@ sudo codex update
 The update remains in the current container. Recreating the container restores
 the version bundled with the SDK image.
 
-An experimental VS Code extension scaffold lives in `vscode-extension/`. It adds a SiMa Neat activity bar panel and light/dark themes for SDK workspace experiments.
+The Neat VS Code extension lives in `vscode-extension/`. It adds a SiMa Neat activity bar panel and light/dark themes. SDK assembly bundles its runtime files at `/opt/sima-neat/vscode-extension`. Updated sima-cli setup runs `sima-install-neat-extension` as the mapped SDK user to copy and register this bundled version in that user's code-server extensions directory, without a prompt or download. Repeated setup preserves other extensions and refreshes Neat when the bundled contents change.
+
+Codex and Claude extensions remain optional downloads during sima-cli setup. Set `SDK_SKIP_CODING_AGENT_INSTALL=1` in the host environment to bypass their prompts and installation, even with `--all-extensions`; Neat still installs automatically. On code-server, Codex defaults to the latest available release unless an exact version is explicitly requested. This setting does not remove existing extensions or the Codex CLI included in the SDK image.
 
 You can run Docker directly for low-level debugging:
 
