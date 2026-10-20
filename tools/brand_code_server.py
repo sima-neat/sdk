@@ -27,9 +27,12 @@ LOGIN_HEADER = """<div class="neat-brand"><img src="{{CS_STATIC_BASE}}/src/brows
           <div class="sub">Sign in to start building with SiMa Neat.</div>"""
 LOGIN_HELP = """<section class="neat-help" aria-labelledby="neat-password-help">
             <h2 id="neat-password-help">Find your password</h2>
-            <p>For a local SDK, run this in a terminal on the computer running Docker:</p>
+            <p>For a local SDK created by sima-cli, run this in a terminal on the computer running Docker:</p>
             <pre><code>sima-cli sdk neat printenv CODE_SERVER_PASSWORD</code></pre>
             <p>Copy the printed password into the field above. If you have several SDK containers, select the one for this environment.</p>
+            <p>If that command returns no password, the launcher may have generated one at startup. Read the latest <code>Password:</code> entry in its startup output. For a supervised SDK container, run:</p>
+            <pre><code>docker exec &lt;sdk-container&gt; tail -n 40 /var/log/supervisor/code-server.err.log</code></pre>
+            <p>Replace <code>&lt;sdk-container&gt;</code> with this environment's container name. If you launched code-server directly, check the terminal where you started it.</p>
             <p class="neat-hosted">Using a hosted environment? Use the password supplied by your environment provider, or contact your administrator.</p>
           </section>"""
 LOGIN_CSS = """
@@ -110,6 +113,18 @@ for template in templates:
             if updated.count(old) != 1:
                 parser.error(f'Unsupported login template: expected one {old!r}')
             updated = updated.replace(old, new, 1)
+    if template == templates[0]:
+        # Refresh existing branded pages too, including when the icon hash changes.
+        updated, headers = re.subn(
+            r'(<div class="neat-brand"><img src="[^"]*/src/browser/media/)neat-favicon-[a-f0-9]+\.png',
+            lambda match: match[1] + name, updated)
+        if headers != 1:
+            parser.error(f'Expected one branded header icon in {template}; found {headers}')
+        updated, help_sections = re.subn(
+            r'<section class="neat-help" aria-labelledby="neat-password-help">.*?</section>',
+            lambda match: LOGIN_HELP, updated, flags=re.S)
+        if help_sections != 1:
+            parser.error(f'Expected one password help section in {template}; found {help_sections}')
     if template == templates[-1] and 'neat-workbench.css' not in updated:
         if updated.count('</head>') != 1:
             parser.error(f'Expected one head element in {template}')

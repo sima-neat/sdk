@@ -1,5 +1,6 @@
 """Validate favicon replacement and fail-before-write behavior for image builds."""
 import hashlib
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -36,6 +37,9 @@ class BrandingTest(unittest.TestCase):
                 self.assertIn('pwa-icon-192.png', html)
             self.assertIn('sima-cli sdk neat printenv CODE_SERVER_PASSWORD', first[0])
             self.assertIn('name="password"', first[0])
+            self.assertIn('launcher may have generated one', first[0])
+            self.assertIn('docker exec &lt;sdk-container&gt; tail -n 40 /var/log/supervisor/code-server.err.log', first[0])
+            self.assertIn('terminal where you started it', first[0])
             self.assertIn('{{ERROR}}', first[0])
             self.assertIn('neat-workbench.css', first[-1])
             for font in (ICON.parent / 'fonts').glob('*.woff2'):
@@ -44,6 +48,26 @@ class BrandingTest(unittest.TestCase):
             self.assertNotIn('{{PASSWORD_MSG}}', first[0])
             subprocess.run(command, check=True, capture_output=True)
             self.assertEqual(first, [(root / name).read_text() for name in TEMPLATES])
+            # A changed icon must refresh the header, not only the favicon links.
+            assets = root / 'replacement-assets'
+            shutil.copytree(ICON.parent, assets)
+            replacement = assets / ICON.name
+            replacement.write_bytes(ICON.read_bytes() + b'changed-test-asset')
+            changed = command[:-1] + [str(replacement)]
+            subprocess.run(changed, check=True, capture_output=True)
+            new_name = 'neat-favicon-' + hashlib.sha256(replacement.read_bytes()).hexdigest()[:12] + '.png'
+            for index, template in enumerate(TEMPLATES):
+                html = (root / template).read_text()
+                self.assertNotIn(expected, html)
+                self.assertEqual(html.count(new_name), 3 if index == 0 else 2)
+            (media / expected).unlink()
+            self.assertTrue((media / new_name).is_file())
+            # Older branded pages also receive updated password guidance.
+            login = root / TEMPLATES[0]
+            login.write_text(login.read_text().replace('launcher may have generated one', 'OLD GUIDANCE'))
+            subprocess.run(changed, check=True, capture_output=True)
+            self.assertNotIn('OLD GUIDANCE', login.read_text())
+            self.assertIn('launcher may have generated one', login.read_text())
             (root / TEMPLATES[-1]).write_text('<html>upstream changed</html>')
             (root / TEMPLATES[0]).write_text((ROOT / "tests/fixtures/code-server-login.html").read_text())
             result = subprocess.run(command, capture_output=True, text=True)
