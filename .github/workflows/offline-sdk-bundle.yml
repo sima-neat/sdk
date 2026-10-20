@@ -94,7 +94,8 @@ jobs:
             package_version="${INPUT_PACKAGE_VERSION:-${tag}}"
             package_release="${INPUT_PACKAGE_RELEASE:-${GITHUB_SHA}}"
           elif [[ "${EVENT_NAME}" == "workflow_run" ]]; then
-            if [[ "${WORKFLOW_RUN_CONCLUSION}" != "success" || "${WORKFLOW_RUN_EVENT}" != "push" ]]; then
+            if [[ "${WORKFLOW_RUN_CONCLUSION}" != "success" ||
+                  ( "${WORKFLOW_RUN_EVENT}" != "push" && "${WORKFLOW_RUN_EVENT}" != "workflow_dispatch" ) ]]; then
               echo "Skipping offline bundle: Docker workflow conclusion=${WORKFLOW_RUN_CONCLUSION}, event=${WORKFLOW_RUN_EVENT}."
               should_publish=false
               image_ref=""
