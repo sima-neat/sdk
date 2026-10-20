@@ -2,6 +2,9 @@ name: Test daily platform image mirror
 on:
   pull_request:
     paths:
+      - scripts/platform-builds.py
+      - scripts/generate-image-change-report.py
+      - tests/sdk/test-image-change-report.py
       - scripts/check-firmware-sysroots.py
       - tests/sdk/test-firmware-sysroots.py
       - scripts/sync-daily-platform-images.py
@@ -27,4 +30,4 @@ jobs:
         with:
           python-version: '3.10'
       - run: python -m pip install 'boto3==1.43.91' 'moto[s3]==5.2.3' 'pytest==9.1.1' 'PyYAML==6.0.3'
-      - run: python -m pytest -q tests/sdk/test-firmware-sysroots.py tests/sdk/test-swupdate-certificate.py tests/sdk/test-daily-platform-images.py tests/sdk/test-mirror-version-notifications.py tests/sdk/test-mirror-aws.py
+      - run: python -m pytest -q tests/sdk/test-firmware-sysroots.py tests/sdk/test-swupdate-certificate.py tests/sdk/test-daily-platform-images.py tests/sdk/test-mirror-version-notifications.py tests/sdk/test-mirror-aws.py tests/sdk/test-image-change-report.py

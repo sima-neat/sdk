@@ -148,3 +148,17 @@ def test_comparisons_are_cached_and_literal_equality_is_fast(monkeypatch):
     assert m.versions_equal('1.0-0', '1.0')
     run.assert_called_once()
     m.versions_equal.cache_clear()
+
+
+def test_master_uses_exact_pre_build_and_separate_indexes():
+    master = '3.0.0_pre-release_master_B2254'
+    assert m.available([package(version='3.0.0~pre2254')], master)['status'] == 'available'
+    assert m.available([package(version='3.0.0~pre22540')], master)['status'] == 'missing'
+    assert m.available([package(version='3.0.0~git202610190000.abcdef-2254')], master)['status'] == 'missing'
+    calls = []
+    def reader(url):
+        calls.append(url)
+        return [package(version='3.0.0~pre2254')] if url.endswith('/pre-release') else [package()]
+    report = m.check([IMAGE, master], reader)
+    assert len(calls) == 4
+    assert all(item[where]['status'] == 'available' for item in report['builds'] for where in ('internal', 'external'))

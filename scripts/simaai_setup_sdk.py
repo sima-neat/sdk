@@ -525,7 +525,8 @@ def daily_candidate(candidates, platform_version, requested_version="", relation
     """
     import apt_pkg
 
-    build = int(platform_version.rsplit("-", 1)[1])
+    master = "~pre" in platform_version
+    build = int(platform_version.rsplit("~pre" if master else "-", 1)[1])
     daily = []
     debian = []
     for candidate in candidates:
@@ -533,7 +534,10 @@ def daily_candidate(candidates, platform_version, requested_version="", relation
             continue
         origins = candidate.origins
         if any(origin.site == "debian.neat.sima.ai" and origin.codename == "agate" for origin in origins):
-            revision = re.search(r"-([0-9]+)$", candidate.version)
+            revision = re.search(r"~pre([0-9]+)$" if master else r"-([0-9]+)$", candidate.version)
+            # Kernel packages retain a plain numeric Debian revision on master.
+            if master and "~" not in candidate.version:
+                revision = re.search(r"-([0-9]+)$", candidate.version)
             if revision and int(revision[1]) <= build:
                 daily.append(candidate)
         elif any(origin.site in {"deb.debian.org", "security.debian.org"}
@@ -544,7 +548,8 @@ def daily_candidate(candidates, platform_version, requested_version="", relation
 
 
 def main(pkg_name, version, libc_ver, dldir, installdir):
-    daily_channel = os.environ.get("SDK_APT_CHANNEL") == "daily"
+    daily_channel = (os.environ.get("SDK_APT_CHANNEL") == "daily" or
+                     (os.environ.get("SDK_APT_CHANNEL") == "pre-release" and version.startswith("3.")))
     # packages that are to be ignored
     blacklist = {
         "m4-mla-modalix:armhf": "",

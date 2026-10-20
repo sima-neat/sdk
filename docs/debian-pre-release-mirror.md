@@ -224,7 +224,8 @@ redirects. Missing authentication, an empty source listing, checksum errors, or 
 previously published builds fail the step without
 replacing the index or pruning old builds.
 
-Only directory names matching `3.0.0_daily_<channel>_B<number>` are eligible.
+Directory names matching `3.0.0_daily_<channel>_B<number>` or
+`3.0.0_pre-release_master_B<number>` are eligible.
 Completed builds are ordered by numeric build number, newest first (with directory
 name as a deterministic tie breaker). The latest 21 completed builds are kept
 across channels; pending uploads do not evict them.
@@ -495,3 +496,39 @@ retries failed Slack sends; a later external-ready observation triggers an updat
 The first check seeds notifications for all retained builds. Preview runs do not
 publish availability notifications. A `firmware-sysroot-readiness` workflow artifact
 retains the observations and dependency gaps for three days.
+
+## Master 3.0 channel
+
+The scheduled workflow also mirrors `deb/pre-release`, suite `agate`, to
+`https://debian.neat.sima.ai/pre-release/dists/agate`. It preserves the older
+Bookworm indexes. Set `DEBIAN_MIRROR_CHANNEL=pre-release` to preview or publish
+this channel with the same script. Its cache and lock live beneath
+`$DEBIAN_MIRROR_WORK_ROOT/pre-release`; publication state lives under
+`pre-release/.mirror/agate/`. Both APT steps run even if the other fails.
+Master synchronization results are uploaded separately and included in immediate
+version notifications. The existing daily digest remains scoped to the daily
+APT result artifact.
+
+Image discovery also accepts `3.0.0_pre-release_master_B<number>`. Master and
+develop compete for **21 total completed builds**, ordered by numeric build
+number with the full name as tie breaker. There is no per-channel quota. The
+existing `daily-platform-images/` URLs and schema-v1 index remain in use;
+`version_prefix` is now `3.0.0_`. APT retention follows upstream indexes, not
+this image count. The publisher IAM policy must permit deletion under both
+`3.0.0_daily_*` and `3.0.0_pre-release_master_B*` before deploying this change.
+
+For a master SDK build, select an exact version such as `3.0.0~pre2254` through
+`pre_release_base` in the Docker workflow, or locally:
+
+```bash
+SDK_APT_CHANNEL=pre-release BASE_SDK_VERSION=3.0.0~pre2254 ./build.sh
+```
+
+Master 3.x uses Agate/Trixie, the complete sysroot replacement path, and
+pre-release component versions no newer than the requested build. Floating
+3.x selection continues to use develop. A master SDK accepts exact `~preN`
+updates within its channel; switching channels requires rebuilding the SDK.
+The readiness report checks the anchor and exact dependency pins only. Master
+has unpinned dependencies, so this is not evidence of firmware/sysroot package
+identity. Images lacking `manifestChanges.txt` still publish and notify, but
+source-change reports are skipped rather than inferred from unrelated builds.

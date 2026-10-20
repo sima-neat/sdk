@@ -194,3 +194,12 @@ grep -Fxq 'sdk_apt_channel=daily' <<< "${pinned_daily}" || fail "daily channel n
 grep -Fxq 'base_sdk_version=3.0.0~git202609090513.9e68a68-1218' <<< "${pinned_daily}" || fail "daily version changed"
 
 echo "platform config resolver tests passed"
+
+cat > "${tmpdir}/MasterPackages" <<'EOF'
+Package: simaai-palette-modalix
+Version: 3.0.0~pre2254
+Architecture: all
+EOF
+master="$(PRE_RELEASE_PACKAGES_FILE="${tmpdir}/MasterPackages" PRE_RELEASE_BASE='3.0.0~pre2254' GITHUB_REF_NAME=develop run_resolver)"
+grep -Fxq 'sdk_apt_channel=pre-release' <<< "${master}" || fail 'Master did not select pre-release'
+grep -Fxq 'base_sdk_version=3.0.0~pre2254' <<< "${master}" || fail 'Master version was not pinned'

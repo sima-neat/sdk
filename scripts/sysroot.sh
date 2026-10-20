@@ -922,7 +922,7 @@ apply_sysroot_update() {
   update_overlay_pending=0
   local active_sysroot="${sysroot}"
   trap cleanup_update_transaction EXIT
-  if [[ "${channel}" == daily ]]; then
+  if [[ "${channel}" == daily || ( "${channel}" == pre-release && "${platform_base}" == 3.* ) ]]; then
     [[ -x "${INSTALLER}" ]] || die "sysroot finalizer is unavailable: ${INSTALLER}"
     build_revision=""
     if [[ "${dry_run}" != 1 ]]; then
@@ -945,7 +945,7 @@ apply_sysroot_update() {
     SIMAAI_VALIDATE_TARGET_ORIGIN=1 \
     SIMAAI_SETUP_DOWNLOAD_ONLY="${dry_run}" \
     "${PLATFORM_SETUP}" "${platform_revision}" "${SDK_PKG_LIST:-}"; then
-    if [[ "${dry_run}" != "1" && "${channel}" != daily ]]; then
+    if [[ "${dry_run}" != "1" && "${platform_base}" != 3.* ]]; then
       echo "${program_name}: update failed while extracting packages; recreate the SDK container to guarantee a clean sysroot." >&2
     fi
     return 1
@@ -956,7 +956,7 @@ apply_sysroot_update() {
     return
   fi
 
-  if [[ "${channel}" == daily ]]; then
+  if [[ "${channel}" == daily || ( "${channel}" == pre-release && "${platform_base}" == 3.* ) ]]; then
     "${INSTALLER}" "${sysroot}" --finalize-only
   fi
   if [[ ! -s "$(sysroot_inventory_path "${sysroot}")" ]]; then
@@ -968,7 +968,7 @@ apply_sysroot_update() {
   # Package extraction preserves archive modes. Updates run as root, but the
   # resulting SDK sysroot must remain consumable by non-root builds.
   chmod -R a+rX "${sysroot}"
-  if [[ "${channel}" == daily ]]; then
+  if [[ "${channel}" == daily || ( "${channel}" == pre-release && "${platform_base}" == 3.* ) ]]; then
     validate_staged_sysroot "${sysroot}"
     requested_packages > "${sysroot}/var/lib/sima-sdk/requested-packages"
     chmod -R a+rX,a-w "${sysroot}"
@@ -1069,9 +1069,9 @@ cmd_update() {
   channel="$(read_release_field "${SDK_RELEASE_FILE}" "Platform Channel")"
   repository="${PRE_RELEASE_REPOSITORY}"
   revision_pattern='^([0-9]+\.[0-9]+\.[0-9]+)~pre[0-9]+$'
-  if [[ "${channel}" == daily ]]; then
+  if [[ "${channel}" == daily || ( "${channel}" == pre-release && "${platform_base}" == 3.* ) ]]; then
     [[ "${update_latest}" == 0 && ${#args[@]} -eq 1 ]] || \
-      die "daily updates require an exact X.Y.Z~gitTIMESTAMP.COMMIT-BUILD version"
+      die "Agate updates require an exact daily ~gitTIMESTAMP.COMMIT-BUILD or master ~preBUILD version in the SDK channel"
     lock_updates
     if [[ "${dry_run}" == 1 ]]; then
       /usr/bin/python3 "${DIRECTORY_HELPER}" check "${sysroot}"
@@ -1080,7 +1080,9 @@ cmd_update() {
     fi
     echo "Stop builds before updating; reconfigure them after the update."
     repository="$(read_release_field "${SDK_RELEASE_FILE}" "Platform Repository")"
-    revision_pattern='^([0-9]+\.[0-9]+\.[0-9]+)~git[0-9]{12}\.[0-9a-f]+-[0-9]+$'
+    if [[ "${channel}" == daily ]]; then
+      revision_pattern='^([0-9]+\.[0-9]+\.[0-9]+)~git[0-9]{12}\.[0-9a-f]+-[0-9]+$'
+    fi
     # The daily installer validates this exact version against the APT cache.
     available_versions=("${args[0]}")
   else
@@ -1147,7 +1149,7 @@ EOF
     current_state="$(read_release_field "$(sysroot_overlay_path "${sysroot}")" "Overlay State")"
   fi
   if [[ "${current_state}" == "active" && "${current_revision}" == "${target_revision}" ]] &&
-    { [[ "${channel}" != daily ]] || cmp -s <(requested_packages) "${sysroot}/var/lib/sima-sdk/requested-packages"; }; then
+    { [[ "${platform_base}" != 3.* ]] || cmp -s <(requested_packages) "${sysroot}/var/lib/sima-sdk/requested-packages"; }; then
     echo "Sysroot is already at ${target_revision}; no changes are required."
     return
   fi
@@ -1167,7 +1169,7 @@ EOF
 }
 
 cmd_install() {
-  if [[ "$(read_release_field "${SDK_RELEASE_FILE}" "Platform Channel" || true)" == daily ]]; then
+  if [[ "$(read_release_field "${SDK_RELEASE_FILE}" "Platform Base" || true)" == 3.* ]]; then
     die "For the 3.0 daily SDK, rebuild with BASE_SDK_VERSION and SDK_PKG_LIST to change the sysroot."
   fi
   local -a resolved normalized
@@ -1251,7 +1253,7 @@ remove_empty_parents() {
 }
 
 cmd_remove() {
-  [[ "$(read_release_field "${SDK_RELEASE_FILE}" "Platform Channel")" != daily ]] || die "daily sysroots are replaced as a whole; select development packages with SDK_PKG_LIST during update"
+  [[ "$(read_release_field "${SDK_RELEASE_FILE}" "Platform Base")" != 3.* ]] || die "daily sysroots are replaced as a whole; select development packages with SDK_PKG_LIST during update"
   local -a manifests
   local root pkg normalized base pkg_arch manifest all_manifest
 
