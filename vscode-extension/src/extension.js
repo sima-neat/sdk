@@ -142,6 +142,15 @@ async function activate(context) {
     }
   }
 
+  const brand = vscode.window.createStatusBarItem("simaNeat.brand", vscode.StatusBarAlignment.Left, 1000);
+  brand.name = "SiMa Palette Neat SDK";
+  brand.text = "SiMa Palette Neat SDK";
+  brand.tooltip = "Open the SiMa Neat panel";
+  brand.accessibilityInformation = { label: "SiMa Palette Neat SDK. Open the Neat panel." };
+  brand.command = "simaNeat.showPanel";
+  brand.show();
+  context.subscriptions.push(brand);
+
   const provider = new NeatPanelProvider(context.extensionUri);
   context.subscriptions.push(new SessionTime(
     vscode,

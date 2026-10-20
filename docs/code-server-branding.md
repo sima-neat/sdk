@@ -23,6 +23,7 @@ For a container, copy the helper and PNG into it and supply an explicit source:
 docker cp tools/brand_code_server.py CONTAINER:/tmp/brand_code_server.py
 docker cp vscode-extension/media/neat-logo.png CONTAINER:/tmp/neat-favicon.png
 docker cp vscode-extension/media/fonts CONTAINER:/tmp/fonts
+docker cp vscode-extension/media/sima-logo.png CONTAINER:/tmp/sima-logo.png
 docker exec --user 0 CONTAINER python3 /tmp/brand_code_server.py \
   --server-dir /opt/code-server --icon /tmp/neat-favicon.png
 ```
@@ -74,3 +75,8 @@ Explicit user or workspace settings override these defaults. The login page
 follows the browser's light/dark preference independently of the editor theme.
 Desktop VS Code users need the fonts installed locally; bundled web fonts are
 loaded by the SDK's code-server pages.
+
+The extension always shows “SiMa Palette Neat SDK” in the left status bar.
+Clicking it opens the Neat panel. In code-server, the bundled workbench stylesheet
+adds the SiMa logo beside the label; desktop VS Code shows the text alone.
+This branding item is independent of the optional session-expiration indicator.
