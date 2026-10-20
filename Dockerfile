@@ -22,9 +22,6 @@ ARG NEAT_VERSION=latest
 ARG NEAT_CORE_TARGET=
 ARG NEAT_INSIGHT_BRANCH=
 ARG NEAT_INSIGHT_VERSION=
-ARG CODE_SERVER_VERSION=4.140.0
-ARG CODE_SERVER_SHA256_AMD64=864c5d01c808ade57e4d12c708717be7a187219fded60428f263b9e2da9f6b48
-ARG CODE_SERVER_SHA256_ARM64=ae4b07153f2037b06d24749bc8004221fcbf3ffe317038401be0452f541bf200
 ARG CODEX_CLI_VERSION=0.153.4
 ARG DOCKER_CLI_VERSION=29.8.2
 ARG DOCKER_BUILDX_VERSION=0.37.2
@@ -37,7 +34,6 @@ ENV NEAT_INSIGHT_VENV_DIR=/opt/neat-insight/venv
 ENV NEAT_INSIGHT_PORT=9900
 ENV NEAT_INSIGHT_SUPERVISED=1
 ENV CODE_SERVER_DIR=/opt/code-server
-ENV CODE_SERVER_VERSION=${CODE_SERVER_VERSION}
 ENV PIP_DEFAULT_TIMEOUT=120
 ENV SDK_APT_CHANNEL=${SDK_APT_CHANNEL}
 ENV PIP_RETRIES=10
@@ -153,37 +149,6 @@ RUN set -eux; \
     test "$(docker --version | awk '{print $3}' | tr -d ',')" = "${DOCKER_CLI_VERSION}"; \
     docker buildx version | grep -F "v${DOCKER_BUILDX_VERSION}"; \
     rm -rf /tmp/docker "/tmp/${docker_archive}"
-
-RUN set -eux; \
-    case "$(dpkg --print-architecture)" in \
-      amd64) code_server_arch="amd64"; code_server_sha256="${CODE_SERVER_SHA256_AMD64}" ;; \
-      arm64) code_server_arch="arm64"; code_server_sha256="${CODE_SERVER_SHA256_ARM64}" ;; \
-      *) echo "Unsupported code-server architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
-    esac; \
-    code_server_archive="code-server-${CODE_SERVER_VERSION}-linux-${code_server_arch}.tar.gz"; \
-    curl -fsSL --retry 3 --retry-delay 2 \
-      "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/${code_server_archive}" \
-      -o "/tmp/${code_server_archive}"; \
-    echo "${code_server_sha256}  /tmp/${code_server_archive}" | sha256sum -c -; \
-    mkdir -p "${CODE_SERVER_DIR}"; \
-    tar -xzf "/tmp/${code_server_archive}" -C "${CODE_SERVER_DIR}" --strip-components=1; \
-    rm -f "/tmp/${code_server_archive}"; \
-    chmod -R a+rX "${CODE_SERVER_DIR}"; \
-    "${CODE_SERVER_DIR}/bin/code-server" --config /dev/null --version
-
-# Bundle our own extension from this SDK revision; setup copies it per user offline.
-COPY vscode-extension/package.json vscode-extension/LICENSE /opt/sima-neat/vscode-extension/
-COPY vscode-extension/src/ /opt/sima-neat/vscode-extension/src/
-COPY vscode-extension/media/ /opt/sima-neat/vscode-extension/media/
-COPY vscode-extension/themes/ /opt/sima-neat/vscode-extension/themes/
-# Brand the installed login page and browser icons before publishing the image.
-# No test fixtures are copied into the runtime installation.
-COPY tools/brand_code_server.py /usr/local/bin/sima-brand-code-server
-RUN python3 /usr/local/bin/sima-brand-code-server --server-dir "${CODE_SERVER_DIR}" \
-    --icon /opt/sima-neat/vscode-extension/media/neat-logo.png
-COPY scripts/install-neat-vscode-extension.py /usr/local/bin/sima-install-neat-extension
-RUN chmod 755 /usr/local/bin/sima-install-neat-extension && \
-    chmod -R a+rX /opt/sima-neat/vscode-extension
 
 COPY --from=cross-toolchain /opt/cross-toolchain/ /
 COPY --from=cross-toolchain /opt/cross-toolchain/ /opt/sdk-cross-toolchain/
@@ -352,6 +317,43 @@ RUN chmod 755 /etc/profile.d/neat-sdk-prompt.sh \
               /etc/profile.d/pkg-config-sysroot.sh
 
 WORKDIR /workspace
+
+# Editor changes must not invalidate the platform sysroot or GCC compilation.
+ARG CODE_SERVER_VERSION=4.140.0
+ARG CODE_SERVER_SHA256_AMD64=864c5d01c808ade57e4d12c708717be7a187219fded60428f263b9e2da9f6b48
+ARG CODE_SERVER_SHA256_ARM64=ae4b07153f2037b06d24749bc8004221fcbf3ffe317038401be0452f541bf200
+ENV CODE_SERVER_VERSION=${CODE_SERVER_VERSION}
+
+RUN set -eux; \
+    case "$(dpkg --print-architecture)" in \
+      amd64) code_server_arch="amd64"; code_server_sha256="${CODE_SERVER_SHA256_AMD64}" ;; \
+      arm64) code_server_arch="arm64"; code_server_sha256="${CODE_SERVER_SHA256_ARM64}" ;; \
+      *) echo "Unsupported code-server architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac; \
+    code_server_archive="code-server-${CODE_SERVER_VERSION}-linux-${code_server_arch}.tar.gz"; \
+    curl -fsSL --retry 3 --retry-delay 2 \
+      "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/${code_server_archive}" \
+      -o "/tmp/${code_server_archive}"; \
+    echo "${code_server_sha256}  /tmp/${code_server_archive}" | sha256sum -c -; \
+    mkdir -p "${CODE_SERVER_DIR}"; \
+    tar -xzf "/tmp/${code_server_archive}" -C "${CODE_SERVER_DIR}" --strip-components=1; \
+    rm -f "/tmp/${code_server_archive}"; \
+    chmod -R a+rX "${CODE_SERVER_DIR}"; \
+    "${CODE_SERVER_DIR}/bin/code-server" --config /dev/null --version
+
+# Bundle our own extension from this SDK revision; setup copies it per user offline.
+COPY vscode-extension/package.json vscode-extension/LICENSE /opt/sima-neat/vscode-extension/
+COPY vscode-extension/src/ /opt/sima-neat/vscode-extension/src/
+COPY vscode-extension/media/ /opt/sima-neat/vscode-extension/media/
+COPY vscode-extension/themes/ /opt/sima-neat/vscode-extension/themes/
+# Brand the installed login page and browser icons before publishing the image.
+# No test fixtures are copied into the runtime installation.
+COPY tools/brand_code_server.py /usr/local/bin/sima-brand-code-server
+RUN python3 /usr/local/bin/sima-brand-code-server --server-dir "${CODE_SERVER_DIR}" \
+    --icon /opt/sima-neat/vscode-extension/media/neat-logo.png
+COPY scripts/install-neat-vscode-extension.py /usr/local/bin/sima-install-neat-extension
+RUN chmod 755 /usr/local/bin/sima-install-neat-extension && \
+    chmod -R a+rX /opt/sima-neat/vscode-extension
 
 # Preinstall Neat Framework and resources
 COPY scripts/install-neat-resources.sh /usr/local/bin/install-neat-resources.sh
