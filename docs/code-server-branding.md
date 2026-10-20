@@ -76,7 +76,7 @@ follows the browser's light/dark preference independently of the editor theme.
 Desktop VS Code users need the fonts installed locally; bundled web fonts are
 loaded by the SDK's code-server pages.
 
-The extension always shows “SiMa Palette Neat SDK” in the left status bar.
+The extension always shows “Palette Neat SDK” in the left status bar.
 Clicking it opens the Neat panel. In code-server, the bundled workbench stylesheet
 adds the SiMa logo beside the label; desktop VS Code shows the text alone.
 This branding item is independent of the optional session-expiration indicator.
