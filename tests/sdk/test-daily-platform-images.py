@@ -491,3 +491,27 @@ def test_index_publication_retry_reports_new_build_without_reupload(s3, tmp_path
     assert json.loads(report.read_text())['copied_versions'] == [name(2)]
     mirror(source, s3, True, report_path=report)
     assert json.loads(report.read_text())['copied_versions'] == []
+
+
+def test_master_and_develop_share_retention_and_pruning(s3):
+    master = lambda n: f'3.0.0_pre-release_master_B{n}'
+    source = Source(range(1, 21))
+    source.names.add(master(21))
+    mirror(source, s3, True)
+    old = m.PREFIX + name(1) + '/image.wic.gz'
+    source.names.add(master(22))
+    result = mirror(source, s3, True)
+    assert len(result['builds']) == 21
+    assert [b['name'] for b in result['builds'][:2]] == [master(22), master(21)]
+    assert old not in {o['Key'] for o in s3.list_object_versions(Bucket=m.BUCKET).get('Versions', [])}
+    # All 21 slots can later be occupied by develop, including pruning master.
+    mirror(Source(range(30, 51)), s3, True)
+    assert m.existing_builds(s3) == {name(n) for n in range(30, 51)}
+
+
+def test_master_discovery_excludes_unrelated_prerelease_branches():
+    source = artifactory()
+    names = ['3.0.0_pre-release_master_B2254', '3.0.0_pre-release_feature_B2255',
+             '3.1.0_pre-release_master_B2256']
+    source.info = lambda path: {'children': [{'uri': '/' + n, 'folder': True} for n in names]}
+    assert source.builds() == {names[0]}

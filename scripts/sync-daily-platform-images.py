@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import shutil
 import tempfile
 import time
@@ -19,7 +20,7 @@ SOURCE = 'https://artifacts.eng.sima.ai/artifactory'
 ROOT = 'soc-images/elxr/bsp/modalix'
 BUCKET = 'sima-neat-artifacts-production'
 PREFIX = 'daily-platform-images/'
-BUILD = re.compile(r'3\.0\.0_daily_[A-Za-z0-9_-]+_B([0-9]+)\Z')
+BUILD = runpy.run_path(str(Path(__file__).with_name('platform-builds.py')))['BUILD']
 IMAGES = ('.wic', '.wic.gz', '.wic.xz', '.wic.zst', '.img', '.img.gz', '.img.xz', '.img.zst', '.iso')
 KEEP = 21
 
@@ -195,7 +196,7 @@ def existing_builds(s3):
 def prune(s3, retained):
     # Materialize before deleting so version pagination cannot skip objects.
     doomed = []
-    for page in s3.get_paginator('list_object_versions').paginate(Bucket=BUCKET, Prefix=PREFIX + '3.0.0_daily_'):
+    for page in s3.get_paginator('list_object_versions').paginate(Bucket=BUCKET, Prefix=PREFIX + '3.0.0_'):
         for obj in page.get('Versions', []) + page.get('DeleteMarkers', []):
             name = obj['Key'][len(PREFIX):].split('/')[0]
             if BUILD.fullmatch(name) and name not in retained:
@@ -216,7 +217,7 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
         readiness = BuildReadiness(work_root)
     upstream = source.builds()
     if not upstream:
-        raise ValueError('No 3.0.0 daily builds found; refusing publication and deletion')
+        raise ValueError('No 3.0.0 supported platform builds found; refusing publication and deletion')
     stored = existing_builds(s3)
     # Keep successful builds even if Artifactory has already removed them.
     manifests = {name: read_json(s3, f'{PREFIX}{name}/manifest.json') for name in stored}
@@ -281,7 +282,7 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
                 })
                 copied_versions.add(name)
         builds.append(manifest)
-    index = {'schema_version': 1, 'platform': 'modalix', 'version_prefix': '3.0.0_daily_',
+    index = {'schema_version': 1, 'platform': 'modalix', 'version_prefix': '3.0.0_',
              'bucket': BUCKET, 'prefix': PREFIX, 'retention_count': KEEP, 'builds': builds}
     if publish:
         # A directory can gain supporting files during a long transfer. Recheck

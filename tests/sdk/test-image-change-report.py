@@ -536,3 +536,21 @@ def test_html_omits_package_with_identical_resolved_commits():
     rendered = report.render_html("build", [section], "Summary", guidance)
 
     assert "rebuild-only-package" not in rendered
+
+
+def test_missing_master_change_manifest_does_not_block_develop(monkeypatch, tmp_path):
+    master, daily = '3.0.0_pre-release_master_B2254', '3.0.0_daily_develop_B2255'
+    image_report = tmp_path / 'images.json'
+    image_report.write_text(json.dumps({'result': 'Published', 'copied_versions': [master, daily]}))
+    monkeypatch.setitem(sys.modules, 'mirror_aws', types.SimpleNamespace(s3_client=lambda: object()))
+    def manifest(client, name):
+        if name == master:
+            raise report.MissingChangeManifest('No source changes')
+        return '> package 1.0~git.abcdef0\n'
+    monkeypatch.setattr(report, 'read_s3_manifest', manifest)
+    generated = []
+    monkeypatch.setattr(report, 'generate', lambda name, *_: generated.append(name) or ())
+    monkeypatch.setattr(sys, 'argv', ['report', '--image-report', str(image_report),
+        '--output-dir', str(tmp_path), '--cache-root', str(tmp_path)])
+    assert report.main() == 0
+    assert generated == [daily]

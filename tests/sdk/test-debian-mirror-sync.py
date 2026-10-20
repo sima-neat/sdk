@@ -27,14 +27,16 @@ with (root / "calls").open("a") as log:
     log.write(json.dumps([name, *args]) + "\n")
 if name in ("flock", "getent"):
     sys.exit(0)
+channel = os.environ.get("DEBIAN_MIRROR_CHANNEL", "daily")
+work = root / "work" / ("pre-release" if channel == "pre-release" else "")
 if name == "curl":
-    assert args[-1] == "http://sw-web.eng.sima.ai/deb/daily/dists/agate/InRelease"
+    assert args[-1] == f"http://sw-web.eng.sima.ai/deb/{channel}/dists/agate/InRelease"
     shutil.copyfile(root / "fixture/dists/agate/InRelease", args[args.index("--output") + 1])
 elif name == "apt-mirror2":
     config = Path(args[0]).read_text()
-    assert "deb [ arch=arm64 by-hash=no ] http://sw-web.eng.sima.ai/deb/daily agate non-free" in config
-    assert f"set mirror_path {root}/work/agate\n" in config
-    shutil.copytree(root / "fixture", root / "work/agate/repository", dirs_exist_ok=True)
+    assert f"deb [ arch=arm64 by-hash=no ] http://sw-web.eng.sima.ai/deb/{channel} agate non-free" in config
+    assert f"set mirror_path {work}/agate\n" in config
+    shutil.copytree(root / "fixture", work / "agate/repository", dirs_exist_ok=True)
 elif name == "aws":
     def local(value):
         if value.startswith("s3://bucket/"):
@@ -136,6 +138,19 @@ class MirrorSyncTest(unittest.TestCase):
         (self.root / "calls").write_text("")
         self.assertEqual(self.run_sync("--publish")["result"], "No change")
         self.assertFalse(any(c[0] == "apt-mirror2" or c[:3] == ["aws", "s3", "sync"] for c in self.calls()))
+
+    def test_master_isolated_publication_and_no_change(self):
+        self.run_sync("--publish")
+        daily = (self.root / "s3/daily/dists/agate/Release").read_bytes()
+        self.env["DEBIAN_MIRROR_CHANNEL"] = "pre-release"
+        report = self.run_sync("--publish")
+        self.assertEqual(report["source"]["url"], "http://sw-web.eng.sima.ai/deb/pre-release")
+        self.assertFalse(report["changes"]["baseline_available"])
+        self.assertTrue((self.root / "s3/pre-release/dists/agate/Release").is_file())
+        self.assertEqual((self.root / "s3/daily/dists/agate/Release").read_bytes(), daily)
+        self.assertEqual(self.run_sync("--publish")["result"], "No change")
+        self.assertTrue((self.root / "work/pre-release/agate/repository").is_dir())
+        self.assertEqual(json.loads((self.root / "s3/pre-release/.mirror/publication.json").read_text())["source"]["inrelease_sha256"], "old-bookworm")
 
     def test_validation_only_does_not_publish(self):
         report = self.run_sync()
