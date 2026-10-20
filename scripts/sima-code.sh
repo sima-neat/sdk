@@ -52,6 +52,7 @@ server_args=(
   --user-data-dir "${data_dir}"
   --disable-telemetry
   --disable-update-check
+  --disable-workspace-trust
 )
 
 password="${CODE_SERVER_PASSWORD:-${OPENVSCODE_SERVER_TOKEN:-}}"

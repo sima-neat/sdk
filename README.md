@@ -190,6 +190,8 @@ For a one-click experience behind an authenticated gateway such as Arthas, set `
 
 Rollout requires a `sima-cli` release containing [code-server support (#293)](https://github.com/sima-neat/sima-cli/pull/293). Publish that CLI release, update the `sima-cli.ref` pin in `deps/manifest.json` from `v2.1.18`, and install the release on SDK hosts before distributing the new SDK image: older CLIs pass legacy environment variables but still show token URLs and use OpenVSCode extension/service paths. The image smoke workflow installs `sima-cli` from PyPI, so it also needs the updated published release. The updated CLI retains support for older OpenVSCode SDK images. Install Core containing [neat status support (#1107)](https://github.com/sima-neat/core/pull/1107) to retrieve the password again with `neat` or `neat --json`; the password is supplied through `CODE_SERVER_PASSWORD` in the SDK container environment.
 
+The SDK launcher disables Workspace Trust with `--disable-workspace-trust` on every start. Folders opened in this SDK editor have full features enabled without Restricted Mode or a trust prompt, including tasks and extensions that can execute workspace code.
+
 code-server stores its user data under `~/.local/share/code-server` by default. Override that location with `CODE_SERVER_USER_DATA_DIR` or set `CODE_SERVER_EXTENSIONS_DIR` for extensions. During the migration, the launcher also accepts the former `OPENVSCODE_*` variables so current `sima-cli` releases can start a new SDK image; new automation should use the `CODE_SERVER_*` names.
 
 For diagnostics inside the container:
