@@ -32,6 +32,11 @@
       {
         "command": "simaNeat.showPanel",
         "title": "SiMa Neat: Show Panel"
+      },
+      {
+        "command": "simaNeat.browseModels",
+        "title": "SiMa Neat: Browse Models (develop)",
+        "enablement": "simaNeat.modelRegistryAvailable"
       }
     ],
     "viewsContainers": {
@@ -70,6 +75,14 @@
       "workbench.preferredDarkColorTheme": "SiMa Neat Dark",
       "editor.fontFamily": "'IBM Plex Mono', monospace",
       "terminal.integrated.fontFamily": "'IBM Plex Mono', monospace"
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "simaNeat.browseModels",
+          "when": "simaNeat.modelRegistryAvailable"
+        }
+      ]
     }
   }
 }

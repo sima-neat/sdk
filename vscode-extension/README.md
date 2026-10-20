@@ -160,3 +160,42 @@ python3 tools/neat-session-time.py ghcr.io-sima-neat-sdk-develop-latest \
 # Change an existing session's blinking color without changing its deadline:
 python3 tools/neat-session-time.py ghcr.io-sima-neat-sdk-develop-latest --blink-color amber
 ```
+
+## Browse model builds
+
+Model Registry is available only on SDK 3.0 or newer, including 3.0 pre-release
+and daily builds. The Models button and command are hidden on older SDKs or
+when `/etc/sdk-release` cannot identify a supported platform version.
+
+Choose **Models** in the Neat panel or run **SiMa Neat: Browse Models (develop)**
+from the Command Palette. Search existing staging registry builds by model name,
+variant, description, task, or license. After selecting a model, choose an action (downloads and source copies then ask for a destination workspace):
+
+- **Show Model Card** opens the staging Model Registry inside VSCode, with the
+  selected model, variant, and `develop` branch in the URL. No files are downloaded.
+- **Download prebuilt artifact** downloads the existing build for the selected variant.
+- **Copy model source folder** copies `models/<model>` from the current `develop`
+  branch of `sima-neat/models`, including its definition, README, and scripts.
+  This source revision can differ from the prebuilt artifact's revision. Source
+  lands in `models/<model>-source-<unique suffix>/contents/models/<model>`;
+  `registry-source.json` records the repository and exact commit. Requires Git
+  and GitHub read access for that repository. The extension uses VSCode's GitHub
+  sign-in and asks permission to use your account on first use. Signing into
+  GitHub only in a browser or on the host does not sign into the SDK's VSCode.
+  The session is passed only to Git processes, never saved in model files or Git
+  configuration. If access is denied, verify repository access and organization
+  SSO authorization for that account. No Git metadata, dependencies outside the model folder,
+  or build outputs are copied. Scripts are not executed.
+
+Downloads use the SDK's `sima-cli models` commands and checksum verification.
+The current existing build for that model/variant on `develop` is downloaded
+into a new `models/<model>-<variant>-<unique suffix>` folder. No existing model
+folder is overwritten. ZIP and tar packages are unpacked into `contents/` for review;
+directory packages and individual model artifacts are kept as downloaded.
+`registry-download.json` records the CLI's downloaded build and artifact details.
+The folder is revealed in Explorer when complete. Cancel aborts the operation
+and removes its incomplete folder. Model contents are never executed.
+
+Requires an SDK with `sima-cli models list/download --stg --json`, Python 3.9+,
+and network access to the staging registry and artifact download endpoints.
+This initial integration uses `develop` only; it does not compile or deploy models.
