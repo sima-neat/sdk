@@ -371,6 +371,8 @@ test_code_server() {
   http_status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:9999/)"
   test "${http_status}" = "302"
 
+  python3 "${ROOT_DIR}/check-code-server-login.py"
+
   auth_secret="${CODE_SERVER_PASSWORD:-${OPENVSCODE_SERVER_TOKEN:-}}"
   test -n "${auth_secret}"
   http_status="$(curl -sS -o /dev/null -c "${cookie_jar}" -w '%{http_code}' \

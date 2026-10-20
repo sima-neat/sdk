@@ -46,6 +46,7 @@ jobs:
 
       - name: Test session control helper and branding
         run: |
+          python3 tests/test_unpack_model.py
           python3 tests/sdk/test-session-time-helper.py
           python3 -m unittest discover -s tests -p test_code_server_branding.py
 

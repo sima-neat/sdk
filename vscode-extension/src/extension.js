@@ -1,4 +1,7 @@
 const vscode = require("vscode");
+const { modelRegistryAvailable } = require("./sdk-capabilities");
+let modelsEnabled = false;
+const { registerModels } = require("./model-registry");
 const { SessionTime } = require("./session-time");
 const { execFile } = require("child_process");
 const fs = require("fs");
@@ -84,6 +87,8 @@ class NeatPanelProvider {
           } finally {
             await this.refresh();
           }
+        } else if (message.command === "browseModels") {
+          await vscode.commands.executeCommand("simaNeat.browseModels");
         } else if (message.command === "openDocumentation") {
           await vscode.env.openExternal(vscode.Uri.parse("https://developer.sima.ai/software"));
         } else if (message.command === "openInsight") {
@@ -128,6 +133,9 @@ class NeatPanelProvider {
 }
 
 async function activate(context) {
+  modelsEnabled = await modelRegistryAvailable();
+  await vscode.commands.executeCommand("setContext", "simaNeat.modelRegistryAvailable", modelsEnabled);
+  registerModels(vscode, context, resolveSimaCliExecutable, modelsEnabled);
   // Application-scoped settings cannot use contributes.configurationDefaults.
   // Seed the web user's preference only if they have not selected one.
   if (vscode.env.uiKind === vscode.UIKind.Web) {
@@ -141,6 +149,15 @@ async function activate(context) {
       console.warn("Neat: unable to initialize the menu bar preference", error);
     }
   }
+
+  const brand = vscode.window.createStatusBarItem("simaNeat.brand", vscode.StatusBarAlignment.Left, Number.MAX_SAFE_INTEGER);
+  brand.name = "Palette Neat SDK";
+  brand.text = "Palette Neat SDK";
+  brand.tooltip = "Open the SiMa Neat panel";
+  brand.accessibilityInformation = { label: "Palette Neat SDK. Open the Neat panel." };
+  brand.command = "simaNeat.showPanel";
+  brand.show();
+  context.subscriptions.push(brand);
 
   const provider = new NeatPanelProvider(context.extensionUri);
   context.subscriptions.push(new SessionTime(
@@ -1260,6 +1277,7 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
     </div>
   </div>
   <div class="quick-links">
+    ${modelsEnabled ? actionButton("browseModels", "repo", "Models", "Browse develop builds and download model files", false) : ""}
     ${actionButton("openDocumentation", "docs", "Documentation", "developer.sima.ai/software", true)}
     ${actionButton("openInsight", "eye", "Insight", "Open detected Insight web UI", true)}
   </div>

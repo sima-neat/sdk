@@ -176,6 +176,8 @@ COPY vscode-extension/package.json vscode-extension/LICENSE /opt/sima-neat/vscod
 COPY vscode-extension/src/ /opt/sima-neat/vscode-extension/src/
 COPY vscode-extension/media/ /opt/sima-neat/vscode-extension/media/
 COPY vscode-extension/themes/ /opt/sima-neat/vscode-extension/themes/
+# Brand the installed login page and browser icons before publishing the image.
+# No test fixtures are copied into the runtime installation.
 COPY tools/brand_code_server.py /usr/local/bin/sima-brand-code-server
 RUN python3 /usr/local/bin/sima-brand-code-server --server-dir "${CODE_SERVER_DIR}" \
     --icon /opt/sima-neat/vscode-extension/media/neat-logo.png

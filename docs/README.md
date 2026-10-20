@@ -9,5 +9,6 @@ Advanced topics:
 - [Use the DevKit NFS workspace](devkit-workspace.md)
 - [Build kernel, U-Boot, and device-tree artifacts](building-software.md)
 - [Install BSP artifacts on a board](installing-artifacts.md)
+- [Integrate the SDK with Arthas](arthas-integration.md)
 - [Integrate Arthas environment expiration reminders](arthas-session-expiration.md)
 - [Brand the code-server browser favicon](code-server-branding.md)

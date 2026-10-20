@@ -1,5 +1,8 @@
 # Arthas integration: environment expiration reminders
 
+For provisioning, gateway authentication, and editor defaults, start with the
+[general Arthas SDK integration guide](arthas-integration.md).
+
 ## Status and scope
 
 Tracking issue: [sima-neat/sdk#265](https://github.com/sima-neat/sdk/issues/265).
