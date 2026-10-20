@@ -1,4 +1,4 @@
-# Neat favicon for code-server
+# SiMa Neat branding for code-server
 
 The browser favicon is served by code-server, independently of the Neat VS Code
 extension. Use the extension's existing 256 × 256 PNG as the shared source:
@@ -34,3 +34,15 @@ The SDK Dockerfile runs this helper after installing code-server and copying the
 bundled extension icon, making branding reproducible in newly built images.
 Reapply after an in-place code-server upgrade. An unsupported upstream template
 layout causes a visible failure rather than silently retaining stock branding.
+
+## Login page
+
+The helper also brands the sign-in page with the Neat icon, SiMa.ai name, and
+password guidance. For local SDK containers created by sima-cli, run
+`sima-cli sdk neat printenv CODE_SERVER_PASSWORD` on the Docker host. This prints
+the credential in the host terminal; the login page never embeds it. Hosted
+users are directed to their environment provider.
+
+The upstream login form, error rendering, proxy-path fields, and authentication
+remain intact. Styles are served locally under the existing content security
+policy, and browser zoom remains enabled.

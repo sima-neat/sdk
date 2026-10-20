@@ -24,24 +24,28 @@ class BrandingTest(unittest.TestCase):
             for name in TEMPLATES:
                 p = root / name
                 p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_text(HTML)
+                p.write_text((ROOT / "tests/fixtures/code-server-login.html").read_text() if name == TEMPLATES[0] else HTML)
             command = [sys.executable, str(ROOT / 'tools/brand_code_server.py'), '--server-dir', str(root), '--icon', str(ICON)]
             subprocess.run(command, check=True, capture_output=True)
             expected = 'neat-favicon-' + hashlib.sha256(ICON.read_bytes()).hexdigest()[:12] + '.png'
             self.assertEqual((media / expected).read_bytes(), ICON.read_bytes())
             first = [(root / name).read_text() for name in TEMPLATES]
-            for html in first:
-                self.assertEqual(html.count(expected), 2)
+            for index, html in enumerate(first):
+                self.assertEqual(html.count(expected), 3 if index == 0 else 2)
                 self.assertEqual(html.count('type="image/png"'), 2)
                 self.assertIn('pwa-icon-192.png', html)
+            self.assertIn('sima-cli sdk neat printenv CODE_SERVER_PASSWORD', first[0])
+            self.assertIn('name="password"', first[0])
+            self.assertIn('{{ERROR}}', first[0])
+            self.assertNotIn('{{PASSWORD_MSG}}', first[0])
             subprocess.run(command, check=True, capture_output=True)
             self.assertEqual(first, [(root / name).read_text() for name in TEMPLATES])
             (root / TEMPLATES[-1]).write_text('<html>upstream changed</html>')
-            (root / TEMPLATES[0]).write_text(HTML)
+            (root / TEMPLATES[0]).write_text((ROOT / "tests/fixtures/code-server-login.html").read_text())
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('Expected two favicon links', result.stderr)
-            self.assertEqual((root / TEMPLATES[0]).read_text(), HTML)
+            self.assertEqual((root / TEMPLATES[0]).read_text(), (ROOT / "tests/fixtures/code-server-login.html").read_text())
 
 
 if __name__ == '__main__':
