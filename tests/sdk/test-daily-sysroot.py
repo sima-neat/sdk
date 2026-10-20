@@ -163,7 +163,7 @@ class DailySelectionTest(unittest.TestCase):
                                     env={**os.environ, "SDK_RELEASE_FILE": str(metadata)},
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("rebuild with BASE_SDK_VERSION and SDK_PKG_LIST", result.stderr)
+            self.assertIn("select development packages with SDK_PKG_LIST during update or rebuild", result.stderr)
 
     def test_wrapper_keeps_kernel_version_and_extra_packages_separate(self):
         with tempfile.TemporaryDirectory() as directory:
