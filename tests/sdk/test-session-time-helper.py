@@ -41,6 +41,36 @@ class SessionHelperTests(unittest.TestCase):
             runpy.run_path(str(HELPER), run_name='__main__')
             self.assertEqual(json.loads(run.call_args.args[0][-1]), {'blinkColor': 'amber'})
 
+    def test_rejects_unsupported_timezone_offsets_before_docker(self):
+        for timestamp in ('2026-10-21T18:00:00+01:02:03',
+                          '2026-10-21T18:00:00-01:02:03',
+                          '2026-10-21T18:00:00+01:02:03.5',
+                          '2026-10-21T18:00:00+01:02.5',
+                          '2026-10-21T18:00:00',
+                          '2026-10-21T18:00:00+0102'):
+            with self.subTest(timestamp=timestamp), patch.object(sys, 'argv', [str(HELPER), 'test-container', '--expires-at', timestamp]), patch('subprocess.run') as run, contextlib.redirect_stderr(io.StringIO()) as stderr:
+                with self.assertRaises(SystemExit) as error:
+                    runpy.run_path(str(HELPER), run_name='__main__')
+                self.assertEqual(error.exception.code, 2)
+                self.assertIn('Invalid --expires-at', stderr.getvalue())
+                self.assertIn('HH:MM', stderr.getvalue())
+                run.assert_not_called()
+
+    def test_supported_timestamps_emit_extension_parseable_deadlines(self):
+        for timestamp in ('2026-10-21T18:00:00Z',
+                          '2026-10-21T18:00:00+01:02',
+                          '2026-10-21T18:00:00-07:00',
+                          '2026-10-21T18:00:00.123456Z',
+                          '2026-10-21T18:00+01:02'):
+            with self.subTest(timestamp=timestamp), patch.object(sys, 'argv', [str(HELPER), 'test-container', '--expires-at', timestamp]), patch('subprocess.run') as run, contextlib.redirect_stdout(io.StringIO()):
+                runpy.run_path(str(HELPER), run_name='__main__')
+                payload = run.call_args.args[0][-1]
+            result = subprocess.run(['node', '-e',
+                                     "const {parseDeadline}=require(process.argv[1]); console.log(parseDeadline(process.argv[2]));",
+                                     str(HELPER.parents[1] / 'vscode-extension/src/session-time.js'), payload],
+                                    capture_output=True, text=True, check=True)
+            self.assertGreater(int(result.stdout), 0)
+
     def test_docker_failure_exits_without_traceback(self):
         with patch.object(sys, 'argv', [str(HELPER), 'test-container', '--display', 'warning']), patch('subprocess.run', side_effect=subprocess.CalledProcessError(1, 'docker')), contextlib.redirect_stderr(io.StringIO()) as stderr:
             with self.assertRaises(SystemExit) as error:

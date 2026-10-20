@@ -3,6 +3,7 @@
 import argparse
 import datetime
 import json
+import re
 import subprocess
 import sys
 
@@ -29,6 +30,9 @@ if args.clear:
     update['expiresAt'] = None
 elif args.expires_at:
     try:
+        # Keep CLI input within the extension/JavaScript timestamp grammar.
+        if not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})', args.expires_at):
+            raise ValueError('Use YYYY-MM-DDTHH:MM[:SS[.fraction]] with Z or a ±HH:MM timezone offset')
         deadline = datetime.datetime.fromisoformat(args.expires_at.replace('Z', '+00:00'))
         if deadline.tzinfo is None:
             raise ValueError('Timezone is required')

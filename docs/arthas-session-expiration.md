@@ -61,7 +61,7 @@ Write a complete JSON object, UTF-8, no larger than 4 KiB:
 
 | Field | Values and default |
 | --- | --- |
-| `expiresAt` | Required ISO date/time including `Z` or a numeric timezone offset. `null` clears the display. Use valid calendar dates. |
+| `expiresAt` | Required ISO date/time including `Z` or a `±HH:MM` timezone offset (no offset seconds). `null` clears the display. Use valid calendar dates. |
 | `display` | Optional: `quiet`, `warning`, `urgent`, or `auto`. Defaults to `auto`. |
 | `blink` | Optional boolean, defaults to `false`. Blinks only a highlighted footer background. |
 | `blinkColor` | Optional `red` (default) or `amber`. Selects the footer blink highlight independently of display severity. |
