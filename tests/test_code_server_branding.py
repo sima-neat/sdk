@@ -37,9 +37,9 @@ class BrandingTest(unittest.TestCase):
                 self.assertIn('pwa-icon-192.png', html)
             self.assertIn('sima-cli sdk neat printenv CODE_SERVER_PASSWORD', first[0])
             self.assertIn('name="password"', first[0])
-            self.assertIn('launcher may have generated one', first[0])
-            self.assertIn('docker exec &lt;sdk-container&gt; tail -n 40 /var/log/supervisor/code-server.err.log', first[0])
-            self.assertIn('terminal where you started it', first[0])
+            self.assertIn('Paste the password above to sign in.', first[0])
+            self.assertNotIn('docker exec', first[0])
+            self.assertNotIn('hosted environment', first[0])
             self.assertIn('{{ERROR}}', first[0])
             self.assertIn('neat-workbench.css', first[-1])
             for font in (ICON.parent / 'fonts').glob('*.woff2'):
@@ -64,10 +64,10 @@ class BrandingTest(unittest.TestCase):
             self.assertTrue((media / new_name).is_file())
             # Older branded pages also receive updated password guidance.
             login = root / TEMPLATES[0]
-            login.write_text(login.read_text().replace('launcher may have generated one', 'OLD GUIDANCE'))
+            login.write_text(login.read_text().replace('Paste the password above to sign in.', 'OLD GUIDANCE'))
             subprocess.run(changed, check=True, capture_output=True)
             self.assertNotIn('OLD GUIDANCE', login.read_text())
-            self.assertIn('launcher may have generated one', login.read_text())
+            self.assertIn('Paste the password above to sign in.', login.read_text())
             (root / TEMPLATES[-1]).write_text('<html>upstream changed</html>')
             (root / TEMPLATES[0]).write_text((ROOT / "tests/fixtures/code-server-login.html").read_text())
             result = subprocess.run(command, capture_output=True, text=True)

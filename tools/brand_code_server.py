@@ -27,13 +27,10 @@ LOGIN_HEADER = """<div class="neat-brand"><img src="{{CS_STATIC_BASE}}/src/brows
           <div class="sub">Sign in to start building with SiMa Neat.</div>"""
 LOGIN_HELP = """<section class="neat-help" aria-labelledby="neat-password-help">
             <h2 id="neat-password-help">Find your password</h2>
-            <p>For a local SDK created by sima-cli, run this in a terminal on the computer running Docker:</p>
+            <p>Your password is shown in the CLI output after SDK setup.</p>
+            <p>Can’t find it? Run this command in a terminal on your computer:</p>
             <pre><code>sima-cli sdk neat printenv CODE_SERVER_PASSWORD</code></pre>
-            <p>Copy the printed password into the field above. If you have several SDK containers, select the one for this environment.</p>
-            <p>If that command returns no password, the launcher may have generated one at startup. Read the latest <code>Password:</code> entry in its startup output. For a supervised SDK container, run:</p>
-            <pre><code>docker exec &lt;sdk-container&gt; tail -n 40 /var/log/supervisor/code-server.err.log</code></pre>
-            <p>Replace <code>&lt;sdk-container&gt;</code> with this environment's container name. If you launched code-server directly, check the terminal where you started it.</p>
-            <p class="neat-hosted">Using a hosted environment? Use the password supplied by your environment provider, or contact your administrator.</p>
+            <p>Paste the password above to sign in.</p>
           </section>"""
 LOGIN_CSS = """
 .card-box { max-width: 720px; width: calc(100% - 32px); }
@@ -44,7 +41,6 @@ LOGIN_CSS = """
 .neat-help h2 { font-size:18px; margin:0 0 12px; }
 .neat-help p { margin:12px 0; }
 .neat-help pre { padding:16px; background:light-dark(#eef2f6,#121e2b); overflow-wrap:anywhere; white-space:pre-wrap; font-size:14px; }
-.neat-hosted { font-size:14px; }
 .login-form label { margin-bottom:8px; font-weight:600; }
 .login-form .field { gap:12px; }
 .login-form .field .password { min-width:0; }
