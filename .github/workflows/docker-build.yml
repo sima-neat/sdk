@@ -87,6 +87,7 @@ jobs:
           tests/sdk/test-build-script.sh
           tests/sdk/test-gcc16-build-env.sh
           tests/sdk/test-insight-network-test.sh
+          tests/sdk/test-code-server-launcher.sh
 
       - name: Set up Docker Buildx
         id: buildx

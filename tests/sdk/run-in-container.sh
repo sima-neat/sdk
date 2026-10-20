@@ -319,6 +319,72 @@ test_hello_neat_python() {
   echo "Skipping Python runtime example; pyneat is validated on the DevKit side."
 }
 
+test_code_server() {
+  local actual_version auth_secret backend_user http_status https_status
+  local cookie_jar="${WORK_DIR}/code-server.cookies"
+
+  if [[ ! -x /opt/code-server/bin/code-server ]]; then
+    echo "code-server executable is missing from /opt/code-server/bin/code-server." >&2
+    return 1
+  fi
+  if [[ -e /opt/openvscode-server/bin/openvscode-server ]]; then
+    echo "Legacy OpenVSCode Server is still present in the SDK image." >&2
+    return 1
+  fi
+  actual_version="$(/opt/code-server/bin/code-server --config /dev/null --version | head -n 1)"
+  if [[ "${actual_version%% *}" != "${CODE_SERVER_VERSION}" ]]; then
+    echo "Unexpected code-server version: expected ${CODE_SERVER_VERSION}, got ${actual_version}." >&2
+    return 1
+  fi
+
+  for _ in $(seq 1 30); do
+    if supervisorctl status code-server | grep -Fq RUNNING; then
+      break
+    fi
+    sleep 1
+  done
+  if ! supervisorctl status code-server | grep -F RUNNING; then
+    echo "code-server did not reach the supervisor RUNNING state." >&2
+    tail -n 100 /var/log/supervisor/code-server.log 2>/dev/null || true
+    tail -n 100 /var/log/supervisor/code-server.err.log 2>/dev/null || true
+    return 1
+  fi
+  for _ in $(seq 1 30); do
+    if curl -fsS http://127.0.0.1:9999/healthz | grep -Fq '"status":'; then
+      break
+    fi
+    sleep 1
+  done
+  curl -fsS http://127.0.0.1:9999/healthz | grep -F '"status":'
+
+  backend_user="${CODE_SERVER_USER:-${OPENVSCODE_SERVER_USER:-}}"
+  if [[ -n "${backend_user}" ]]; then
+    if ! pgrep -u "${backend_user}" -f '/opt/code-server' >/dev/null; then
+      echo "No code-server process is running as ${backend_user}." >&2
+      # Include the owning user in diagnostics; pgrep alone cannot show it.
+      # shellcheck disable=SC2009
+      ps -eo user=,pid=,args= | grep -F '/opt/code-server' >&2 || true
+      return 1
+    fi
+  fi
+
+  http_status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:9999/)"
+  test "${http_status}" = "302"
+
+  auth_secret="${CODE_SERVER_PASSWORD:-${OPENVSCODE_SERVER_TOKEN:-}}"
+  test -n "${auth_secret}"
+  http_status="$(curl -sS -o /dev/null -c "${cookie_jar}" -w '%{http_code}' \
+    --data-urlencode "password=${auth_secret}" http://127.0.0.1:9999/login)"
+  test "${http_status}" = "302"
+  curl -fsS -b "${cookie_jar}" 'http://127.0.0.1:9999/?folder=/workspace' >/dev/null
+
+  if [[ -f /sdk-cert/neat-sdk.pem && -f /sdk-cert/neat-sdk-key.pem ]]; then
+    https_status="$(curl -ksS -o /dev/null -w '%{http_code}' https://127.0.0.1:10000/healthz)"
+    test "${https_status}" = "200"
+    curl -kfsS https://127.0.0.1:10000/healthz | grep -F '"status":'
+  fi
+}
+
 sdk_release_value() {
   local key="$1"
   awk -F= -v key="${key}" '
@@ -391,6 +457,7 @@ cp -a "${HELLO_SRC}/." "${HELLO_WORK}/"
 cp -a "${REPRESENTATIVE_SRC}/." "${REPRESENTATIVE_WORK}/"
 
 run_test "Initialized SDK compiler flags" test_initialized_compiler_flags
+run_test "code-server browser IDE" test_code_server
 
 if [[ -r "${SDK_RELEASE_FILE}" ]] && [[ "$(sdk_release_value "SDK Profile")" == "platform-cross" ]]; then
   run_test "Core-less SDK profile" test_platform_cross_profile

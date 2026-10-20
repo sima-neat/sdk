@@ -9,7 +9,7 @@ fi
 
 remote_root=/tmp/neat-sdk-smoke-tests/container-build
 image="neat-sdk-buildx-smoke:${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
-remote_user="$(docker exec "${container_id}" printenv OPENVSCODE_SERVER_USER 2>/dev/null || true)"
+remote_user="$(docker exec "${container_id}" printenv CODE_SERVER_USER 2>/dev/null || true)"
 remote_user="${remote_user:-root}"
 
 cleanup() {

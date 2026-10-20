@@ -20,8 +20,8 @@ trap cleanup EXIT
 
 docker run -d --name "${container_name}" \
   -e NEAT_INSIGHT_SUPERVISED=0 \
-  -e OPENVSCODE_SERVER_SUPERVISED=0 \
-  -e OPENVSCODE_SERVER_USER="${remote_user}" \
+  -e CODE_SERVER_SUPERVISED=0 \
+  -e CODE_SERVER_USER="${remote_user}" \
   -e DOCKER_HOST=unix:///var/run/docker.sock \
   -v /var/run/docker.sock:/var/run/docker.sock \
   "${image_ref}" sleep infinity >/dev/null

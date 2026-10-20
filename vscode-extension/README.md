@@ -25,7 +25,7 @@ invalid, the extension falls back to `insight.webUiUrl` from `neat --json`.
 
 ## Development
 
-Open this directory in VS Code or OpenVSCode Server and run the extension host.
+Open this directory in VS Code or code-server and run the extension host.
 
 The extension is intentionally dependency-free for now. It uses plain JavaScript and VS Code contribution points so the first iteration stays small.
 

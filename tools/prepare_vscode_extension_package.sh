@@ -10,7 +10,7 @@ Usage: tools/prepare_vscode_extension_package.sh \
 
 Builds the SiMa Neat VS Code extension VSIX and Vulcan/sima-cli package
 metadata. The package is compatible with Palette SDK containers and installs
-the extension by invoking the available VS Code or OpenVSCode Server CLI.
+the extension by invoking the available VS Code, code-server, or OpenVSCode Server CLI.
 USAGE
 }
 
