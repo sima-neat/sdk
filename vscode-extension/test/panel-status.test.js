@@ -102,3 +102,29 @@ test('updated section buttons use delegated handlers and preserve other sections
   handlers.click({target:{closest:()=>({id:'refreshStatus',dataset:{}})}});
   assert.equal(sent.at(-1).command, 'refreshStatus');
 });
+
+test('interactive login Python helper is not constrained by the status probe deadline', async () => {
+  const source = fs.readFileSync(require.resolve('../src/extension'), 'utf8');
+  const calls = [];
+  let finishImport;
+  const context = {
+    SIMA_CLI_PYTHON_CANDIDATE_PATHS: ['/fallback/python'],
+    resolveSimaCliPythonExecutable: async () => '/sdk/python',
+    execFilePromise: (file, args, options) => {
+      calls.push({file, args, options});
+      return new Promise(resolve => {finishImport = resolve;});
+    }
+  };
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('async function execPythonSnippet('),
+    source.indexOf('async function resolveSimaCliExecutable(')), context);
+  const pending = context.execPythonSnippet('import slow_auth; print("ready")');
+  await tick();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].file, '/sdk/python');
+  assert.equal(calls[0].options.timeout, undefined);
+  assert.equal(calls[0].options.killSignal, undefined);
+  finishImport('ready');
+  assert.equal(await pending, 'ready');
+  assert.equal(calls.length, 1);
+});

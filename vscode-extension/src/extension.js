@@ -744,7 +744,9 @@ async function execPythonSnippet(script) {
   const errors = [];
   for (const pythonExecutable of candidates) {
     try {
-      return await execFilePromise(pythonExecutable, ["-c", script], { timeout: 5000, killSignal: "SIGKILL" }, { showError: false });
+      // Interactive login may need a cold Python import on a slow SDK filesystem.
+      // This is not a panel status probe; preserve its action lifetime.
+      return await execFilePromise(pythonExecutable, ["-c", script], {}, { showError: false });
     } catch (error) {
       errors.push(`${pythonExecutable}: ${error.message}`);
     }
