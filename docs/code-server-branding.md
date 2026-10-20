@@ -46,3 +46,9 @@ users are directed to their environment provider.
 The upstream login form, error rendering, proxy-path fields, and authentication
 remain intact. Styles are served locally under the existing content security
 policy, and browser zoom remains enabled.
+
+Image publication smoke tests fetch `/login` after SDK setup and check the
+Palette Neat branding, password guidance, login form, and served CSS/logo assets.
+The test fixture is not installed; the helper modifies the real code-server page
+at image build time. Existing containers must be recreated from a published
+image containing the change to receive it.
