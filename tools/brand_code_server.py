@@ -68,7 +68,7 @@ input, button { font:inherit; }
 .neat-help code { font-family:"IBM Plex Mono",monospace; }
 """
 WORKBENCH_CSS = FONT_CSS + '\n.monaco-workbench { font-family:Roboto,"Helvetica Neue",sans-serif !important; }\n'
-WORKBENCH_CSS += '\n.monaco-workbench .statusbar-item[id$=".simaNeat.brand"] > .statusbar-item-label::before { content:""; display:inline-block; width:69px; height:16px; margin-right:6px; background:#fff url("sima-logo.png") center / contain no-repeat; border-radius:2px; flex-shrink:0; }\n'
+WORKBENCH_CSS += '\n.monaco-workbench .statusbar-item[id$=".simaNeat.brand"] > .statusbar-item-label::before { content:""; display:inline-block; width:69px; height:16px; margin-right:6px; background:transparent url("sima-logo.png?v=transparent") center / contain no-repeat; border-radius:2px; flex-shrink:0; }\n'
 logo = args.icon.parent / 'sima-logo.png'
 if not logo.is_file():
     parser.error(f'Missing SiMa logo: {logo}')
