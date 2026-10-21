@@ -16,6 +16,11 @@
   let userOpened = false;
   details.addEventListener('toggle', () => { if (details.open) userOpened = true; });
   let enabled = true;
+  let caAvailable = false;
+  let probeState = 'pending';
+  function openHelpOnFailure() {
+    if (probeState === 'failed' && enabled && caAvailable) details.open = true;
+  }
   function hint() {
     if (!enabled) return;
     status.hidden = false;
@@ -30,12 +35,22 @@
     });
     await registration.unregister();
   }
-  const timeout = setTimeout(hint, 6000);
+  const timeout = setTimeout(() => {
+    probeState = 'timeout';
+    hint();
+  }, 6000);
   probe().then(() => {
     clearTimeout(timeout);
+    probeState = 'success';
     status.hidden = true;
     if (!userOpened) details.open = false;
-  }).catch(() => { clearTimeout(timeout); hint(); });
+  }).catch(() => {
+    clearTimeout(timeout);
+    // A late rejection must not unexpectedly expand help after a timeout.
+    if (probeState === 'pending') probeState = 'failed';
+    hint();
+    openHelpOnFailure();
+  });
   // Metadata is optional and never gates password submission or the probe.
   const controller = new AbortController();
   const infoTimeout = setTimeout(() => controller.abort(), 6000);
@@ -44,7 +59,9 @@
     return r.json();
   }).then(info => {
     enabled = info.enabled !== false;
+    caAvailable = info.available === true;
     section.hidden = !enabled;
+    openHelpOnFailure();
     document.getElementById('neat-ca-available').hidden = !info.available;
     document.getElementById('neat-ca-unavailable').hidden = !!info.available;
   }).catch(() => {}).finally(() => clearTimeout(infoTimeout));

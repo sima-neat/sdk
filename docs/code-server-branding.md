@@ -92,7 +92,9 @@ This branding item is independent of the optional session-expiration indicator.
 
 The password page keeps **Certificate help** available and runs a small
 same-origin service-worker probe. Success leaves the instructions collapsed.
-Failure or a six-second timeout displays a neutral troubleshooting hint; neither
+Failure automatically opens help only when an enabled, matching CA download is
+available. A six-second timeout leaves help collapsed, including if the probe
+later fails. Failure and timeout display a neutral troubleshooting hint; neither
 blocks sign-in nor claims to diagnose certificate trust. Manually opened help
 stays open. The probe uses a unique scope beneath `/_neat/probe/`, bypasses the
 script cache, has no fetch handler, and unregisters when registration completes.

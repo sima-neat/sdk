@@ -67,7 +67,7 @@ test('real HTTP download is public, verified, noncached, and excludes keys', asy
   }
 });
 
-function browser(registration, enabled=true) {
+function browser(registration, info=Promise.resolve({available:true,enabled:true})) {
   const elements = new Map();
   function el(id) {
     if (!elements.has(id)) elements.set(id, { hidden:true, open:false, value:'', events:{}, addEventListener(event, cb) { this.events[event]=cb; } });
@@ -81,7 +81,7 @@ function browser(registration, enabled=true) {
     navigator:{platform:'MacIntel',serviceWorker:{register:(url, options) => { calls.push({url,options});return registration; }}},
     window:{isSecureContext:true}, crypto:{randomUUID:()=> 'test'}, URL, AbortController,
     setTimeout: cb => { const id=timers.size+1;timers.set(id,cb);return id; }, clearTimeout:id=>timers.delete(id),
-    fetch:async()=>({ok:true,json:async()=>({available:true,enabled})}),
+    fetch:async()=>({ok:true,json:()=>info}),
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../tools/browser-trust/help.js'),'utf8'), context);
   return {el,timers,calls};
@@ -103,12 +103,12 @@ test('success hides automatic hint, unregisters, and preserves manually opened h
   assert.equal(b.calls[0].options.updateViaCache,'none');
   assert.equal(b.el('neat-ca-download').href,'https://sdk.example.com/user/session/_neat/ca-certificate');
 });
-test('failure offers help without claiming a certificate error',async()=>{
+test('failure opens matching CA help without claiming a certificate error',async()=>{
   const b=browser(Promise.reject(new Error('policy denied')));
   await flush();
   assert.equal(b.el('neat-certificate-status').hidden,false);
   assert.match(b.el('neat-certificate-status').textContent,/Having trouble/);
-  assert.equal(b.el('neat-certificate-details').open,false);
+  assert.equal(b.el('neat-certificate-details').open,true);
 });
 test('timeout is nonblocking and late success cleans up and hides hint',async()=>{
   let resolve;
@@ -120,7 +120,53 @@ test('timeout is nonblocking and late success cleans up and hides hint',async()=
   assert.equal(b.el('neat-certificate-status').hidden,true);
 });
 test('ALB configuration hides local certificate help',async()=>{
-  const b=browser(Promise.resolve({unregister:async()=>true}),false);
+  const b=browser(Promise.resolve({unregister:async()=>true}),Promise.resolve({available:false,enabled:false}));
   await flush();
   assert.equal(b.el('neat-certificate').hidden,true);
+});
+
+test('failure waits for matching CA metadata before opening help',async()=>{
+  let resolveInfo;
+  const b=browser(Promise.reject(new Error('denied')),new Promise(r=>resolveInfo=r));
+  await flush();
+  assert.equal(b.el('neat-certificate-details').open,false);
+  resolveInfo({available:true,enabled:true});
+  await flush();
+  assert.equal(b.el('neat-certificate-details').open,true);
+});
+test('matching CA metadata arriving before failure also opens help',async()=>{
+  let reject;
+  const b=browser(new Promise((_,r)=>reject=r));
+  await flush();
+  assert.equal(b.el('neat-certificate-details').open,false);
+  reject(new Error('denied'));
+  await flush();
+  assert.equal(b.el('neat-certificate-details').open,true);
+});
+test('failure without available enabled CA keeps help collapsed',async()=>{
+  for (const info of [{available:false,enabled:true},{available:true,enabled:false}]) {
+    const b=browser(Promise.reject(new Error('denied')),Promise.resolve(info));
+    await flush();
+    assert.equal(b.el('neat-certificate-details').open,false);
+  }
+});
+test('failed metadata request keeps help collapsed on probe failure',async()=>{
+  const b=browser(Promise.reject(new Error('denied')),Promise.resolve().then(()=>{throw new Error('offline');}));
+  await flush();
+  assert.equal(b.el('neat-certificate-details').open,false);
+});
+test('timeout keeps help collapsed even after late failure and matching metadata',async()=>{
+  let reject,resolveInfo;
+  const b=browser(new Promise((_,r)=>reject=r),new Promise(r=>resolveInfo=r));
+  b.timers.get(1)();
+  assert.equal(b.el('neat-certificate-details').open,false);
+  reject(new Error('late failure'));
+  resolveInfo({available:true,enabled:true});
+  await flush();
+  assert.equal(b.el('neat-certificate-details').open,false);
+});
+test('success leaves help collapsed with matching CA available',async()=>{
+  const b=browser(Promise.resolve({unregister:async()=>true}));
+  await flush();
+  assert.equal(b.el('neat-certificate-details').open,false);
 });
