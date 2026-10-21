@@ -49,8 +49,10 @@ function createAgentManager(vscode) {
         await vscode.commands.executeCommand(
           "workbench.extensions.action.showExtensionsWithIds", [AGENTS[key].id],
         );
+        errors.delete(key);
       } catch {
         errors.set(key, "Unable to open Extensions. Please try again.");
+      } finally {
         notify();
       }
       return;
@@ -80,6 +82,8 @@ function createAgentManager(vscode) {
         if (reload.has(key))
           await vscode.commands.executeCommand("workbench.action.reloadWindow");
       }
+      // A concurrent Manage failure must not survive a successful operation.
+      errors.delete(key);
     } catch {
       errors.set(
         key,
