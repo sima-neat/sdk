@@ -28,7 +28,7 @@ LOGIN_HEADER = """<div class="neat-brand"><img src="{{CS_STATIC_BASE}}/src/brows
 LOGIN_HELP = """<section class="neat-help" aria-labelledby="neat-password-help">
             <h2 id="neat-password-help">Find your password</h2>
             <p>Your password is shown in the CLI output after SDK setup.</p>
-            <p>Can’t find it? Run this command in a terminal on your computer:</p>
+            <p>Can’t find it? Run this command in a terminal on the SDK host:</p>
             <pre><code>sima-cli sdk neat printenv CODE_SERVER_PASSWORD</code></pre>
             <p>Paste the password above to sign in.</p>
           </section>"""
@@ -77,7 +77,20 @@ font_dir = args.icon.parent / 'fonts'
 font_files = list(font_dir.glob('*.woff2')) + list(font_dir.glob('*-LICENSE'))
 if len(list(font_dir.glob('*.woff2'))) != 6:
     parser.error(f'Expected six bundled fonts in {font_dir}')
-updates = []
+trust_assets = Path(__file__).resolve().parent / 'browser-trust'
+trust_html = (trust_assets / 'help.html').read_text()
+trust_js = (trust_assets / 'help.js').read_text()
+trust_routes = (trust_assets / 'routes.cjs').read_text()
+LOGIN_CSS += (trust_assets / 'help.css').read_text()
+route_file = args.server_dir / 'out/node/routes/index.js'
+route_source = route_file.read_text()
+route_hook = 'app.router.disable("x-powered-by");'
+route_import = 'require("./neat-browser-trust.cjs")(app.router);'
+if route_import not in route_source:
+    if route_source.count(route_hook) != 1:
+        parser.error('Unsupported code-server route registration layout')
+    route_source = route_source.replace(route_hook, route_hook + '\n    ' + route_import)
+updates = [(route_file, route_source)]
 # Validate all upstream templates before changing files; fail visibly on layout drift.
 if not media.is_dir():
     parser.error(f'Missing code-server media directory: {media}')
@@ -112,15 +125,28 @@ for template in templates:
     if template == templates[0]:
         # Refresh existing branded pages too, including when the icon hash changes.
         updated, headers = re.subn(
-            r'(<div class="neat-brand"><img src="[^"]*/src/browser/media/)neat-favicon-[a-f0-9]+\.png',
-            lambda match: match[1] + name, updated)
+            r'(<div class="neat-brand"><img src="[^"]*/src/browser/media/)(?:neat-favicon-[a-f0-9]+|sima-logo)\.png',
+            lambda match: match[1] + "sima-logo.png", updated)
         if headers != 1:
             parser.error(f'Expected one branded header icon in {template}; found {headers}')
+        updated = updated.replace('sima-logo.png" alt=""', 'sima-logo.png" alt="SiMa.ai"')
+        updated = updated.replace('<span>SiMa.ai <span class="neat-product">', '<span><span class="neat-product">')
+
         updated, help_sections = re.subn(
             r'<section class="neat-help" aria-labelledby="neat-password-help">.*?</section>',
             lambda match: LOGIN_HELP, updated, flags=re.S)
         if help_sections != 1:
             parser.error(f'Expected one password help section in {template}; found {help_sections}')
+        start, end = '<!-- neat-browser-trust -->', '<!-- /neat-browser-trust -->'
+        block = start + trust_html + '<script src="{{CS_STATIC_BASE}}/src/browser/media/neat-certificate.js" data-base="{{BASE}}" defer></script>' + end
+        if start in updated:
+            updated = re.sub(re.escape(start) + '.*?' + re.escape(end), lambda _: block, updated, flags=re.S)
+        else:
+            updated = updated.replace('</body>', block + '\n</body>')
+        # Place help inside the login content, immediately after password help.
+        updated = updated.replace(block, '')
+        updated = updated.replace(LOGIN_HELP, LOGIN_HELP + block)
+
     if template == templates[-1] and 'neat-workbench.css' not in updated:
         if updated.count('</head>') != 1:
             parser.error(f'Expected one head element in {template}')
@@ -128,6 +154,8 @@ for template in templates:
         css_url = favicon_url.rsplit('/', 1)[0] + '/neat-workbench.css'
         updated = updated.replace('</head>', f'<link rel="stylesheet" href="{css_url}" />\n</head>')
     updates.append((template, updated))
+(media / "neat-certificate.js").write_text(trust_js)
+(route_file.parent / "neat-browser-trust.cjs").write_text(trust_routes)
 (media / "neat-login.css").write_text(LOGIN_CSS)
 (media / "neat-workbench.css").write_text(WORKBENCH_CSS)
 for font in font_files:
