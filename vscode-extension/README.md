@@ -205,7 +205,10 @@ This initial integration uses `develop` only; it does not compile or deploy mode
 The first browser-editor launch with no restored tabs or explicit
 `workbench.startupEditor` preference opens the local Palette Neat landing page.
 The stock Welcome page is disabled by default. Existing startup preferences and
-open editors are preserved. Use **SiMa Neat: Getting Started** to reopen the page.
+open editors are preserved. A stock Welcome tab alone does not suppress the
+landing page if it appears before extension activation. Use **SiMa Neat: Getting
+Started** to reopen the page, including sessions where an earlier extension
+version already skipped onboarding.
 The landing tab and selected task restore across browser reloads.
 
 The page reads SDK version metadata from `/etc/sdk-release`. CPU availability
