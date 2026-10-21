@@ -233,3 +233,22 @@ Quick-access actions open Insight, the Apps repository, the existing Neat model
 browser (SDK 3.0+), the Getting Started documentation, or the Neat sidebar. Remote
 pages and the model catalog require network access; the landing UI itself is
 bundled locally and uses a restrictive webview Content Security Policy.
+
+### Coding agents
+
+The landing page's **Agents** tab installs **OpenAI Codex** (`openai.chatgpt`)
+and **Claude Code** (`anthropic.claude-code`) through the editor's configured
+extension gallery. The editor selects a compatible release and presents any
+publisher-trust prompts; installations are not synced to other editors.
+
+Each agent reports its own installation state. Once available, **Open Codex** or
+**Open Claude Code** opens that extension for account setup. If an installation
+requires an editor restart, the page offers **Reload editor**. Failed or cancelled
+installations can be retried. **Manage in Extensions** opens the selected
+extension for enablement or troubleshooting. Installing an extension does not
+sign in, purchase a plan, or send a coding task to the provider.
+
+Only the two built-in agent identifiers and their predefined actions are
+accepted from the webview. Extension changes made elsewhere in the editor
+update the page while it is open. Network access to the configured gallery is
+required; provider sign-in and service access remain provider-managed.

@@ -9,9 +9,9 @@
 </header>
 <main>
   <div class="eyebrow">Your workspace, connected</div>
-  <h1>From development to device.</h1>
+  <h1>From code to product</h1>
   <p class="intro">
-    Build in your SDK. Run on your DevKit. Everything starts here.
+    Build in the SDK, run on the DevKit, everything starts here
   </p>
   <section
     class="diagram unavailable"
@@ -355,6 +355,34 @@
       ><button
         class="task-tab"
         role="tab"
+        id="tab-agents"
+        aria-controls="task-agents"
+        aria-selected="false"
+        tabindex="-1"
+      >
+        <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+          <path
+            d="M7 10h34v27H7z"
+            fill="#dce8ee"
+            stroke="#507888"
+            stroke-width="1.4"
+          />
+          <path d="M7 17h34" stroke="#507888" />
+          <circle cx="12" cy="13.5" r="1" fill="#507888" />
+          <path
+            d="m17 23-5 4 5 4m14-8 5 4-5 4m-8-9-2 12"
+            stroke="#507888"
+            stroke-width="1.8"
+          />
+          <path
+            d="m38 2 2 5 5 2-5 2-2 5-2-5-5-2 5-2Z"
+            fill="#eab57a"
+            stroke="#a67440"
+          /></svg
+        ><span><strong>Agents</strong><small>Code with AI</small></span></button
+      ><button
+        class="task-tab"
+        role="tab"
         id="tab-docs"
         aria-controls="task-docs"
         aria-selected="false"
@@ -559,6 +587,92 @@
           </div>
         </li>
       </ol>
+    </section>
+    <section
+      class="task-panel agents-panel"
+      role="tabpanel"
+      id="task-agents"
+      aria-labelledby="tab-agents"
+      tabindex="0"
+      hidden
+    >
+      <div class="agents-heading">
+        <div>
+          <div class="eyebrow">Your coding partners</div>
+          <h3>Bring an agent into your workspace.</h3>
+          <p>
+            Install an extension, connect your account, and start building.
+            Choose one or use both.
+          </p>
+        </div>
+        <span class="scope-label">For this SDK</span>
+      </div>
+      <div class="agent-options">
+        <article class="agent-option" data-agent="codex">
+          <div class="agent-title">
+            <span class="agent-symbol codex-symbol" aria-hidden="true"
+              >&gt;_</span
+            >
+            <div>
+              <span class="provider">OPENAI</span>
+              <h4>Codex</h4>
+            </div>
+            <span class="install-status">Checking…</span>
+          </div>
+          <p>
+            Work through code changes, understand your project, and tackle
+            development tasks in your editor.
+          </p>
+          <div class="agent-footer">
+            <button
+              class="task-cta install-agent"
+              disabled
+              data-provider="codex"
+            >
+              Install Codex <span aria-hidden="true">↓</span></button
+            ><span class="agent-next"
+              >Connect your OpenAI account after installation.</span
+            >
+          </div>
+          <div class="agent-progress" role="status" aria-live="polite"></div>
+          <button class="agent-manage" data-agent-manage="codex">
+            Manage in Extensions
+          </button>
+        </article>
+        <article class="agent-option" data-agent="claude">
+          <div class="agent-title">
+            <span class="agent-symbol claude-symbol" aria-hidden="true">✳</span>
+            <div>
+              <span class="provider">ANTHROPIC</span>
+              <h4>Claude Code</h4>
+            </div>
+            <span class="install-status">Checking…</span>
+          </div>
+          <p>
+            Explore your codebase, plan changes, and work through implementation
+            alongside Claude.
+          </p>
+          <div class="agent-footer">
+            <button
+              class="task-cta install-agent"
+              disabled
+              data-provider="claude"
+            >
+              Install Claude Code <span aria-hidden="true">↓</span></button
+            ><span class="agent-next"
+              >Connect your Anthropic account after installation.</span
+            >
+          </div>
+          <div class="agent-progress" role="status" aria-live="polite"></div>
+          <button class="agent-manage" data-agent-manage="claude">
+            Manage in Extensions
+          </button>
+        </article>
+      </div>
+      <div class="agents-note">
+        <span aria-hidden="true">↗</span> After setup, open your agent from the
+        editor sidebar. Account access is managed by each provider.
+      </div>
     </section>
   </section>
   <section class="action">
