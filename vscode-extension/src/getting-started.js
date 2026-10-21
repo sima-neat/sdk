@@ -28,8 +28,14 @@ async function registerGettingStarted(vscode, context, services) {
       startup.workspaceValue,
       startup.workspaceFolderValue,
     ].some((value) => value !== undefined);
-  const hasTabs = vscode.window.tabGroups.all.some(
-    (group) => group.tabs.length > 0,
+  // The built-in Welcome editor can appear before this extension activates.
+  // VS Code exposes it as an unknown tab input. Do not mistake it for restored
+  // user work, but preserve typed editors even if their file is named Welcome.
+  const welcomeLabel = vscode.l10n.t("Welcome");
+  const hasTabs = vscode.window.tabGroups.all.some((group) =>
+    group.tabs.some(
+      (tab) => tab.input !== undefined || tab.label !== welcomeLabel,
+    ),
   );
   // Existing sessions and explicit startup choices take precedence, permanently.
   if (hasPreference || hasTabs) {

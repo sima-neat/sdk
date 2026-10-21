@@ -17,6 +17,7 @@ function fixture({ tabs = [], preference, web = true, fail = false } = {}) {
     },
   };
   const vscode = {
+    l10n: { t: (text) => text },
     UIKind: { Web: 2 },
     ViewColumn: { One: 1 },
     env: { uiKind: web ? 2 : 1, openExternal: async (u) => actions.push(u) },
@@ -148,4 +149,30 @@ test("restores the landing tab after a browser reload", async () => {
   assert.equal(panel.webview.options.enableScripts, true);
   await panel.receive({ type: "ready" });
   assert.equal(panel.message.type, "data");
+});
+
+test("stock Welcome tab does not suppress first browser onboarding", async () => {
+  const f = fixture({ tabs: [{ label: "Welcome", input: undefined }] });
+  await registerGettingStarted(f.vscode, f.context, f.services);
+  assert.equal(f.panels.length, 1);
+  assert.equal(f.state.get("simaNeat.landing.initialized"), true);
+});
+test("Welcome alongside user work or a startup preference stays untouched", async () => {
+  for (const options of [
+    { tabs: [{ label: "Welcome", input: { uri: "file:///Welcome" } }] },
+    { tabs: [{ label: "Welcome" }, { label: "main.py", input: {} }] },
+    { tabs: [{ label: "Welcome" }], preference: "welcomePage" },
+    { tabs: [{ label: "Welcome" }], preference: "none" },
+    { tabs: [{ label: "Other unknown editor" }] },
+  ]) {
+    const f = fixture(options);
+    await registerGettingStarted(f.vscode, f.context, f.services);
+    assert.equal(f.panels.length, 0);
+  }
+});
+test("localized stock Welcome tab also allows onboarding", async () => {
+  const f = fixture({ tabs: [{ label: "Bienvenue" }] });
+  f.vscode.l10n.t = () => "Bienvenue";
+  await registerGettingStarted(f.vscode, f.context, f.services);
+  assert.equal(f.panels.length, 1);
 });
