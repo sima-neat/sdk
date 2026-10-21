@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
-const { registerGettingStarted } = require("../src/getting-started");
+const { registerGettingStarted, workbenchWelcomeLabel } = require("../src/getting-started");
 function fixture({ tabs = [], preference, web = true, fail = false } = {}) {
   const state = new Map(),
     commands = new Map(),
@@ -17,7 +17,6 @@ function fixture({ tabs = [], preference, web = true, fail = false } = {}) {
     },
   };
   const vscode = {
-    l10n: { t: (text) => text },
     UIKind: { Web: 2 },
     ViewColumn: { One: 1 },
     env: { uiKind: web ? 2 : 1, openExternal: async (u) => actions.push(u) },
@@ -170,9 +169,47 @@ test("Welcome alongside user work or a startup preference stays untouched", asyn
     assert.equal(f.panels.length, 0);
   }
 });
-test("localized stock Welcome tab also allows onboarding", async () => {
-  const f = fixture({ tabs: [{ label: "Bienvenue" }] });
-  f.vscode.l10n.t = () => "Bienvenue";
-  await registerGettingStarted(f.vscode, f.context, f.services);
-  assert.equal(f.panels.length, 1);
+test("core language pack supplies Welcome without extension localization", async () => {
+  const fs = require("fs/promises");
+  const os = require("os");
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "neat-nls-"));
+  const previous = process.env.VSCODE_NLS_CONFIG;
+  try {
+    const translationsConfigFile = path.join(dir, "tcf.json");
+    const core = path.join(dir, "main.i18n.json");
+    await fs.writeFile(translationsConfigFile, JSON.stringify({ vscode: core }));
+    await fs.writeFile(core, JSON.stringify({ contents: {
+      "vs/workbench/contrib/welcomeGettingStarted/browser/gettingStartedInput": {
+        getStarted: "Bienvenue",
+      },
+    } }));
+    for (const config of [
+      { languagePack: { translationsConfigFile } },
+      { _translationsConfigFile: translationsConfigFile },
+    ]) {
+      process.env.VSCODE_NLS_CONFIG = JSON.stringify(config);
+      assert.equal(await workbenchWelcomeLabel(), "Bienvenue");
+      const f = fixture({ tabs: [{ label: "Bienvenue" }] });
+      await registerGettingStarted(f.vscode, f.context, f.services);
+      assert.equal(f.panels.length, 1);
+      const userFile = fixture({ tabs: [{ label: "Bienvenue", input: {} }] });
+      await registerGettingStarted(userFile.vscode, userFile.context, userFile.services);
+      assert.equal(userFile.panels.length, 0);
+    }
+    await fs.writeFile(core, JSON.stringify({ contents: {} }));
+    assert.equal(await workbenchWelcomeLabel(), "Welcome");
+    await fs.writeFile(core, "invalid JSON");
+    assert.equal(await workbenchWelcomeLabel(), "Welcome");
+    await fs.unlink(core);
+    assert.equal(await workbenchWelcomeLabel(), "Welcome");
+  } finally {
+    if (previous === undefined) delete process.env.VSCODE_NLS_CONFIG;
+    else process.env.VSCODE_NLS_CONFIG = previous;
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+test("absent or invalid NLS configuration safely uses English", async () => {
+  for (const config of ["", "{}", "invalid JSON", "null"]) {
+    assert.equal(await workbenchWelcomeLabel(config), "Welcome");
+  }
 });
