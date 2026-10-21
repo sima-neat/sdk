@@ -1,0 +1,590 @@
+<header>
+  <div class="brand">
+    <img src="{{LOGO}}" alt="SiMa.ai" /><span>Palette Neat</span>
+  </div>
+  <div class="data-refresh">
+    <span class="eyebrow">Development environment</span
+    ><button class="refresh" id="refresh">Refresh</button>
+  </div>
+</header>
+<main>
+  <div class="eyebrow">Your workspace, connected</div>
+  <h1>From development to device.</h1>
+  <p class="intro">
+    Build in your SDK. Run on your DevKit. Everything starts here.
+  </p>
+  <section
+    class="diagram unavailable"
+    aria-label="SDK and DevKit topology"
+    id="topology"
+  >
+    <article class="node">
+      <div class="illustration">
+        <svg
+          viewBox="0 0 360 225"
+          role="img"
+          aria-label="Illustration of the SDK development environment"
+        >
+          <defs>
+            <pattern
+              id="grid"
+              width="18"
+              height="18"
+              patternUnits="userSpaceOnUse"
+            >
+              <path
+                d="M18 0H0V18"
+                fill="none"
+                stroke="#dfe8f0"
+                stroke-width=".7"
+              />
+            </pattern>
+          </defs>
+          <ellipse cx="179" cy="198" rx="144" ry="18" fill="#e7edf3" />
+          <path
+            d="M24 153 180 213 337 150 180 93Z"
+            fill="url(#grid)"
+            stroke="#cedbe7"
+          />
+          <path
+            d="m69 164 122 39 111-45-122-37Z"
+            fill="#d8e4f0"
+            stroke="#9bb4cc"
+          />
+          <path
+            d="m69 164 0 8 122 40v-9Zm122 39 111-45v8l-111 46Z"
+            fill="#bdcfe1"
+            stroke="#9bb4cc"
+          />
+          <path
+            d="M98 27 275 61v119L98 145Z"
+            fill="#eef5fc"
+            stroke="#426e99"
+            stroke-width="2"
+          />
+          <path
+            d="m98 27 7-5 177 34-7 5Zm177 34 7-5v119l-7 5Z"
+            fill="#a5c0db"
+            stroke="#426e99"
+          />
+          <path d="m108 43 157 30v93l-157-30Z" fill="#203e5d" />
+          <path d="m108 43 157 30v15l-157-30Z" fill="#345776" />
+          <g fill="#94b7da">
+            <circle cx="116" cy="52" r="2" />
+            <circle cx="123" cy="53" r="2" />
+            <circle cx="130" cy="54" r="2" />
+          </g>
+          <path
+            d="m122 77 12 10-12 5m23 3 21 4"
+            stroke="#91c3e7"
+            stroke-width="2.5"
+            fill="none"
+          />
+          <path
+            d="m122 106 59 11m-59-1 92 18m-92-8 71 14"
+            stroke="#6285a6"
+            stroke-width="3"
+          />
+          <path d="m202 109 45 9v34l-45-9Z" fill="#f5aa68" stroke="#e3a068" />
+          <path
+            d="m214 119-5 5 5 7m21-8 5 7-5 4m-10-16-5 18"
+            stroke="#6f411d"
+            fill="none"
+            stroke-width="2"
+          />
+          <path d="m168 158 30 6v17l-30-6Z" fill="#7396b8" />
+          <path d="m143 181 44 9 33-13-43-9Z" fill="#aac1d7" stroke="#7396b8" />
+          <rect
+            x="24"
+            y="49"
+            width="64"
+            height="24"
+            rx="4"
+            fill="#f8fbfe"
+            stroke="#b7cbdf"
+          />
+          <text
+            x="56"
+            y="65"
+            text-anchor="middle"
+            font-family="Neat"
+            font-size="10"
+            fill="#386089"
+          >
+            BUILD
+          </text>
+          <path d="M88 61h7" stroke="#91abc4" />
+        </svg>
+      </div>
+      <div class="nodehead">
+        <h2>SDK environment</h2>
+        <span class="pill" id="sdk-status">Loading</span>
+      </div>
+      <p class="description">
+        Your development and model compilation workspace.
+      </p>
+      <dl class="stats">
+        <div class="row">
+          <dt>SDK version</dt>
+          <dd><span id="sdk-version">Loading…</span></dd>
+        </div>
+        <div class="row">
+          <dt>Platform version</dt>
+          <dd class="mono" id="sdk-platform">Loading…</dd>
+        </div>
+      </dl>
+      <div class="resources">
+        <div>
+          <strong><span id="sdk-cores">—</span> <span>cores</span></strong
+          ><small>Available to SDK</small>
+        </div>
+        <div>
+          <strong id="sdk-memory">—</strong><small>RAM available / limit</small>
+        </div>
+      </div>
+    </article>
+    <div class="connector">
+      <div class="wire"><i id="wireicon">↔</i></div>
+      <div class="connection-label" id="connection">Checking connection</div>
+    </div>
+    <article class="node" id="devkit">
+      <div class="illustration devkit-art">
+        <svg
+          viewBox="0 0 360 225"
+          role="img"
+          aria-label="Illustration of a Modalix DevKit board"
+        >
+          <ellipse cx="183" cy="198" rx="140" ry="18" fill="#e7edf3" />
+          <path
+            d="m33 143 160 61 137-62-160-59Z"
+            fill="#dce7e2"
+            stroke="#bad0c4"
+          />
+          <path
+            d="m51 132 133 51 130-57-135-48Z"
+            fill="#62928a"
+            stroke="#3d7069"
+            stroke-width="2"
+          />
+          <path
+            d="m51 132 0 12 133 51v-12Zm133 51 130-57v12l-130 57Z"
+            fill="#416d67"
+            stroke="#345f58"
+          />
+          <g stroke="#b3cfc0" stroke-width="1.5" fill="none">
+            <path
+              d="m87 132 35 13 30-13m-47-31 32 12-18 9 42 15m53 17 25-11 26 10m-59-46 27-12 34 12m-50 53 25 9 42-19m-115-13-22 10-30-12"
+            />
+          </g>
+          <g fill="#e4ce92" stroke="#335e57">
+            <ellipse cx="67" cy="136" rx="5" ry="2.5" />
+            <ellipse cx="183" cy="181" rx="5" ry="2.5" />
+            <ellipse cx="299" cy="127" rx="5" ry="2.5" />
+            <ellipse cx="179" cy="85" rx="5" ry="2.5" />
+          </g>
+          <path
+            d="m132 100 57 21 56-24-57-20Z"
+            fill="#d6e0e8"
+            stroke="#56717e"
+          />
+          <path
+            d="m132 100v32l57 21v-32Zm57 21 56-24v32l-56 24Z"
+            fill="#7796a4"
+            stroke="#56717e"
+          />
+          <path d="m139 99 49 18 48-21-49-17Z" fill="#afc2ce" />
+          <g stroke="#587581" stroke-width="2" fill="none">
+            <path
+              d="m143 95 45 17 43-19m-81-1 38 15 36-16m-29-5 22 8m-59-6 30 13 29-13m-23-5 16 5m-44-9 22 9 21-9"
+            />
+          </g>
+          <path d="m70 130 27 10v19l-27-10Z" fill="#c8d6e0" stroke="#607e90" />
+          <path d="m74 137 18 7v9l-18-7Z" fill="#263f51" />
+          <path d="m106 144 24 9v18l-24-9Z" fill="#c8d6e0" stroke="#607e90" />
+          <path d="m110 150 16 6v8l-16-6Z" fill="#263f51" />
+          <path d="m256 127 29-12v9l-29 13Z" fill="#2d4e45" />
+          <g fill="#dfbc74">
+            <circle cx="261" cy="125" r="1.5" />
+            <circle cx="267" cy="122" r="1.5" />
+            <circle cx="273" cy="120" r="1.5" />
+            <circle cx="279" cy="117" r="1.5" />
+          </g>
+          <ellipse cx="163" cy="163" rx="4" ry="2" fill="#bbed97" />
+          <rect
+            x="267"
+            y="54"
+            width="62"
+            height="24"
+            rx="4"
+            fill="#f8fbfe"
+            stroke="#b7cbdf"
+          />
+          <text
+            x="298"
+            y="70"
+            text-anchor="middle"
+            font-family="Neat"
+            font-size="10"
+            fill="#386089"
+          >
+            DEPLOY
+          </text>
+          <path
+            d="M282 78v22"
+            fill="none"
+            stroke="#91abc4"
+            stroke-dasharray="3 3"
+          />
+        </svg>
+      </div>
+      <div class="nodehead">
+        <h2>DevKit</h2>
+        <span class="pill"
+          ><span class="dot"></span><span id="status">Checking</span></span
+        >
+      </div>
+      <p class="description" id="dev-description">
+        Your target for deployment and inference.
+      </p>
+      <dl class="stats">
+        <div class="row">
+          <dt>Model</dt>
+          <dd id="model">—</dd>
+        </div>
+        <div class="row">
+          <dt>Software version</dt>
+          <dd class="mono" id="version">—</dd>
+        </div>
+        <div class="row">
+          <dt>Address</dt>
+          <dd class="mono" id="address">—</dd>
+        </div>
+      </dl>
+      <p class="hint" id="hint">Checking the configured DevKit…</p>
+    </article>
+  </section>
+  <section class="quickstart" aria-label="Common tasks">
+    <div class="quick-heading">
+      <h2>What would you like to do?</h2>
+      <p>Choose a starting point.</p>
+    </div>
+    <div class="task-tabs" role="tablist" aria-label="Quick access">
+      <button
+        class="task-tab"
+        role="tab"
+        id="tab-insight"
+        aria-controls="task-insight"
+        aria-selected="true"
+        tabindex="0"
+      >
+        <svg
+          viewBox="0 0 48 48"
+          fill="none"
+          stroke-width="1.4"
+          aria-hidden="true"
+        >
+          <rect
+            x="3"
+            y="6"
+            width="40"
+            height="29"
+            rx="3"
+            fill="#d1e5f5"
+            stroke="#4176a0"
+          />
+          <path d="M3 13h40M17 42h12m-6-7v7" stroke="#4176a0" />
+          <path d="M9 27h6l5-9 6 12 5-7h6" stroke="#4176a0" stroke-width="2" />
+          <circle cx="8" cy="10" r="1" fill="#4176a0" />
+          <circle cx="37" cy="8" r="5" fill="#eaae70" stroke="#a8733d" /></svg
+        ><span
+          ><strong>Insight</strong><small>Observe & debug</small></span
+        ></button
+      ><button
+        class="task-tab"
+        role="tab"
+        id="tab-apps"
+        aria-controls="task-apps"
+        aria-selected="false"
+        tabindex="-1"
+      >
+        <svg
+          viewBox="0 0 48 48"
+          fill="none"
+          stroke-width="1.4"
+          aria-hidden="true"
+        >
+          <path d="M5 10h16l4 5h18v26H5Z" fill="#d8e7e0" stroke="#618878" />
+          <rect
+            x="10"
+            y="6"
+            width="29"
+            height="27"
+            rx="2"
+            fill="#f6faf8"
+            stroke="#618878"
+          />
+          <path
+            d="m20 14-5 5 5 5m9-10 5 5-5 5m-3-12-3 14"
+            stroke="#618878"
+            stroke-width="2"
+          />
+          <path d="M5 24h39l-5 18H2Z" fill="#bcd8ca" stroke="#618878" /></svg
+        ><span><strong>Apps</strong><small>Build & run</small></span></button
+      ><button
+        class="task-tab"
+        role="tab"
+        id="tab-models"
+        aria-controls="task-models"
+        aria-selected="false"
+        tabindex="-1"
+      >
+        <svg
+          viewBox="0 0 48 48"
+          fill="none"
+          stroke-width="1.4"
+          aria-hidden="true"
+        >
+          <path d="m23 3 18 10-18 10L5 13Z" fill="#eadac6" stroke="#9a7750" />
+          <path d="m5 13 18 10v21L5 34Z" fill="#dbc3a3" stroke="#9a7750" />
+          <path d="m23 23 18-10v21L23 44Z" fill="#f0e1cc" stroke="#9a7750" />
+          <path d="m14 8 18 10v11" stroke="#9a7750" />
+          <path d="m10 29 7 4m-7-9 7 4" stroke="#9a7750" /></svg
+        ><span
+          ><strong>Models</strong><small>Find & compile</small></span
+        ></button
+      ><button
+        class="task-tab"
+        role="tab"
+        id="tab-docs"
+        aria-controls="task-docs"
+        aria-selected="false"
+        tabindex="-1"
+      >
+        <svg
+          viewBox="0 0 48 48"
+          fill="none"
+          stroke-width="1.4"
+          aria-hidden="true"
+        >
+          <path
+            d="M24 11C16 5 9 6 3 8v30c7-3 14-2 21 3 7-5 14-6 21-3V8c-7-2-14-3-21 3Z"
+            fill="#dae2f1"
+            stroke="#7283a2"
+          />
+          <path
+            d="M24 11v30M8 15c4-1 8 0 11 2M8 22c4-1 8 0 11 2m10-7c4-2 7-3 11-2m-11 9c4-2 7-3 11-2"
+            stroke="#7283a2"
+          />
+          <path d="M34 6v14l4-3 4 2V7" fill="#efb978" stroke="#b18450" /></svg
+        ><span><strong>Docs</strong><small>Learn & explore</small></span>
+      </button>
+    </div>
+    <section
+      class="task-panel"
+      role="tabpanel"
+      id="task-insight"
+      aria-labelledby="tab-insight"
+      tabindex="0"
+    >
+      <div>
+        <div class="eyebrow">
+          <span id="insight-version">Insight · loading</span>
+        </div>
+        <h3>See what your pipeline is doing.</h3>
+        <p>
+          Bring your streams, inference results, and performance metrics into
+          one view.
+        </p>
+        <button
+          class="task-cta"
+          data-action="insight"
+          id="launch-insight"
+          disabled
+        >
+          Launch Insight ↗</button
+        ><button
+          class="task-url"
+          data-action="insight"
+          id="insight-url"
+          disabled
+        ></button
+        ><span class="insight-note"
+          ><span id="insight-note"
+            >Detecting the Insight launch URL…</span
+          ></span
+        >
+      </div>
+      <ol class="steps">
+        <li>
+          <div>
+            Choose a stream<span>Use a camera or sample media as input.</span>
+          </div>
+        </li>
+        <li>
+          <div>
+            Inspect your results<span
+              >Watch inference output alongside your video.</span
+            >
+          </div>
+        </li>
+        <li>
+          <div>
+            Check performance<span>Review throughput and resource usage.</span>
+          </div>
+        </li>
+      </ol>
+    </section>
+    <section
+      class="task-panel"
+      role="tabpanel"
+      id="task-apps"
+      aria-labelledby="tab-apps"
+      tabindex="0"
+      hidden
+    >
+      <div>
+        <div class="eyebrow">Applications</div>
+        <h3>Start with a working example.</h3>
+        <p>
+          Explore sample applications, bring them into your workspace, and adapt
+          them to your use case.
+        </p>
+        <button class="task-cta" data-action="apps">Explore apps ↗</button>
+      </div>
+      <ol class="steps">
+        <li>
+          <div>
+            Choose an example<span
+              >Find a starting point for your application.</span
+            >
+          </div>
+        </li>
+        <li>
+          <div>
+            Build in the SDK<span
+              >Use the sample’s setup and build instructions.</span
+            >
+          </div>
+        </li>
+        <li>
+          <div>
+            Run on your DevKit<span
+              >Deploy when your target device is connected.</span
+            >
+          </div>
+        </li>
+      </ol>
+    </section>
+    <section
+      class="task-panel"
+      role="tabpanel"
+      id="task-models"
+      aria-labelledby="tab-models"
+      tabindex="0"
+      hidden
+    >
+      <div>
+        <div class="eyebrow">Model workflow</div>
+        <h3>Find the model for your next idea.</h3>
+        <p>
+          Browse available models in Neat, then prepare a model for your target
+          device.
+        </p>
+        <button class="task-cta" data-action="models" id="browse-models">
+          Browse models →
+        </button>
+        <p id="model-availability"></p>
+      </div>
+      <ol class="steps">
+        <li>
+          <div>
+            Explore available models<span
+              >Compare tasks, inputs, and model details.</span
+            >
+          </div>
+        </li>
+        <li>
+          <div>
+            Prepare your model<span
+              >Follow its download and compilation guidance.</span
+            >
+          </div>
+        </li>
+        <li>
+          <div>
+            Integrate into an app<span
+              >Use the prepared model in your pipeline.</span
+            >
+          </div>
+        </li>
+      </ol>
+    </section>
+    <section
+      class="task-panel"
+      role="tabpanel"
+      id="task-docs"
+      aria-labelledby="tab-docs"
+      tabindex="0"
+      hidden
+    >
+      <div>
+        <div class="eyebrow">Getting Started</div>
+        <h3>A clear path from setup to deployment.</h3>
+        <p>
+          Follow the Palette Neat guides at your own pace, from your first
+          workspace to your first application.
+        </p>
+        <button class="task-cta" data-action="docs">
+          Open Getting Started ↗
+        </button>
+      </div>
+      <ol class="steps">
+        <li>
+          <div>
+            Set up your environment<span
+              >Understand the SDK and DevKit workflow.</span
+            >
+          </div>
+        </li>
+        <li>
+          <div>
+            Build your first application<span
+              >Follow a guided example from start to finish.</span
+            >
+          </div>
+        </li>
+        <li>
+          <div>
+            Go deeper<span>Explore model compilation and API references.</span>
+          </div>
+        </li>
+      </ol>
+    </section>
+  </section>
+  <section class="action">
+    <div>
+      <h3>Keep your workspace tools close.</h3>
+      <p>Open the Neat panel for setup, DevKit Sync, and more.</p>
+    </div>
+    <button class="primary" id="open-panel" data-action="panel">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+      >
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M9 4v16M5.5 8h1M5.5 12h1" /></svg
+      >Open Neat panel<span aria-hidden="true">→</span>
+    </button>
+  </section>
+  <div class="foot">
+    <span
+      >Need a hand?
+      <a href="#" data-action="docs">Read the Getting Started guide ↗</a></span
+    ><span>Palette Neat · Build. Compile. Deploy.</span>
+  </div>
+  <div class="load-status" id="load-status" role="status" aria-live="polite">
+    Loading environment details…
+  </div>
+</main>

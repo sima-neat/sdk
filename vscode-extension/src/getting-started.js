@@ -1,17 +1,36 @@
-const GETTING_STARTED_URL = "https://developer.sima.ai/software/getting-started/";
-const FIRST_LAUNCH_KEY = "simaNeat.gettingStarted.initialized";
+const { createLandingPage } = require("./landing-page");
+const FIRST_LAUNCH_KEY = "simaNeat.landing.initialized";
 
-async function registerGettingStarted(vscode, context) {
-  const open = () => vscode.commands.executeCommand("simpleBrowser.show", GETTING_STARTED_URL);
-  context.subscriptions.push(vscode.commands.registerCommand("simaNeat.gettingStarted", open));
+async function registerGettingStarted(vscode, context, services) {
+  const open = createLandingPage(vscode, context, services);
+  context.subscriptions.push(
+    vscode.commands.registerCommand("simaNeat.gettingStarted", () => open()),
+  );
+  context.subscriptions.push(
+    vscode.window.registerWebviewPanelSerializer("simaNeat.landing", {
+      deserializeWebviewPanel: (panel) => open(panel),
+    }),
+  );
 
-  if (vscode.env.uiKind !== vscode.UIKind.Web || context.globalState.get(FIRST_LAUNCH_KEY)) {
+  if (
+    vscode.env.uiKind !== vscode.UIKind.Web ||
+    context.globalState.get(FIRST_LAUNCH_KEY)
+  ) {
     return;
   }
-  const startup = vscode.workspace.getConfiguration("workbench").inspect("startupEditor");
-  const hasPreference = startup && [startup.globalValue, startup.workspaceValue, startup.workspaceFolderValue]
-    .some(value => value !== undefined);
-  const hasTabs = vscode.window.tabGroups.all.some(group => group.tabs.length > 0);
+  const startup = vscode.workspace
+    .getConfiguration("workbench")
+    .inspect("startupEditor");
+  const hasPreference =
+    startup &&
+    [
+      startup.globalValue,
+      startup.workspaceValue,
+      startup.workspaceFolderValue,
+    ].some((value) => value !== undefined);
+  const hasTabs = vscode.window.tabGroups.all.some(
+    (group) => group.tabs.length > 0,
+  );
   // Existing sessions and explicit startup choices take precedence, permanently.
   if (hasPreference || hasTabs) {
     await context.globalState.update(FIRST_LAUNCH_KEY, true);
@@ -26,4 +45,4 @@ async function registerGettingStarted(vscode, context) {
   }
 }
 
-module.exports = { registerGettingStarted, GETTING_STARTED_URL };
+module.exports = { registerGettingStarted };
