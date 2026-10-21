@@ -1,6 +1,5 @@
 const fs = require("fs/promises");
 const { createLandingPage } = require("./landing-page");
-const FIRST_LAUNCH_KEY = "simaNeat.landing.initialized";
 
 // The extension localization API cannot translate core workbench strings.
 // Read the same active core language pack selected by the extension host.
@@ -34,10 +33,7 @@ async function registerGettingStarted(vscode, context, services) {
     }),
   );
 
-  if (
-    vscode.env.uiKind !== vscode.UIKind.Web ||
-    context.globalState.get(FIRST_LAUNCH_KEY)
-  ) {
+  if (vscode.env.uiKind !== vscode.UIKind.Web) {
     return;
   }
   const startup = vscode.workspace
@@ -59,16 +55,13 @@ async function registerGettingStarted(vscode, context, services) {
       (tab) => tab.input !== undefined || tab.label !== welcomeLabel,
     ),
   );
-  // Existing sessions and explicit startup choices take precedence, permanently.
-  if (hasPreference || hasTabs) {
-    await context.globalState.update(FIRST_LAUNCH_KEY, true);
-    return;
-  }
+  // Reconsider each browser launch; an old onboarding marker must not leave
+  // an empty workspace without a start page after an SDK upgrade.
+  if (hasPreference || hasTabs) return;
   try {
     await open();
-    await context.globalState.update(FIRST_LAUNCH_KEY, true);
   } catch (error) {
-    // Leave the first-launch marker unset so the next activation can retry.
+    // The next activation can retry.
     console.warn("Neat: unable to open Getting Started", error);
   }
 }

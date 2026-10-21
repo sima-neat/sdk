@@ -265,47 +265,16 @@
   </section>
   <section class="quickstart" aria-label="Common tasks">
     <div class="quick-heading">
-      <h2>What would you like to do?</h2>
       <p>Choose a starting point.</p>
     </div>
     <div class="task-tabs" role="tablist" aria-label="Quick access">
       <button
         class="task-tab"
         role="tab"
-        id="tab-insight"
-        aria-controls="task-insight"
-        aria-selected="true"
-        tabindex="0"
-      >
-        <svg
-          viewBox="0 0 48 48"
-          fill="none"
-          stroke-width="1.4"
-          aria-hidden="true"
-        >
-          <rect
-            x="3"
-            y="6"
-            width="40"
-            height="29"
-            rx="3"
-            fill="#d1e5f5"
-            stroke="#4176a0"
-          />
-          <path d="M3 13h40M17 42h12m-6-7v7" stroke="#4176a0" />
-          <path d="M9 27h6l5-9 6 12 5-7h6" stroke="#4176a0" stroke-width="2" />
-          <circle cx="8" cy="10" r="1" fill="#4176a0" />
-          <circle cx="37" cy="8" r="5" fill="#eaae70" stroke="#a8733d" /></svg
-        ><span
-          ><strong>Insight</strong><small>Observe & debug</small></span
-        ></button
-      ><button
-        class="task-tab"
-        role="tab"
         id="tab-apps"
         aria-controls="task-apps"
-        aria-selected="false"
-        tabindex="-1"
+        aria-selected="true"
+        tabindex="0"
       >
         <svg
           viewBox="0 0 48 48"
@@ -330,7 +299,8 @@
           />
           <path d="M5 24h39l-5 18H2Z" fill="#bcd8ca" stroke="#618878" /></svg
         ><span><strong>Apps</strong><small>Build & run</small></span></button
-      ><button
+      >
+      <button
         class="task-tab"
         role="tab"
         id="tab-models"
@@ -352,7 +322,39 @@
         ><span
           ><strong>Models</strong><small>Find & compile</small></span
         ></button
-      ><button
+      >
+      <button
+        class="task-tab"
+        role="tab"
+        id="tab-insight"
+        aria-controls="task-insight"
+        aria-selected="false"
+        tabindex="-1"
+      >
+        <svg
+          viewBox="0 0 48 48"
+          fill="none"
+          stroke-width="1.4"
+          aria-hidden="true"
+        >
+          <rect
+            x="3"
+            y="6"
+            width="40"
+            height="29"
+            rx="3"
+            fill="#d1e5f5"
+            stroke="#4176a0"
+          />
+          <path d="M3 13h40M17 42h12m-6-7v7" stroke="#4176a0" />
+          <path d="M9 27h6l5-9 6 12 5-7h6" stroke="#4176a0" stroke-width="2" />
+          <circle cx="8" cy="10" r="1" fill="#4176a0" />
+          <circle cx="37" cy="8" r="5" fill="#eaae70" stroke="#a8733d" /></svg
+        ><span
+          ><strong>Insight</strong><small>Observe & debug</small></span
+        ></button
+      >
+      <button
         class="task-tab"
         role="tab"
         id="tab-agents"
@@ -380,7 +382,8 @@
             stroke="#a67440"
           /></svg
         ><span><strong>Agents</strong><small>Code with AI</small></span></button
-      ><button
+      >
+      <button
         class="task-tab"
         role="tab"
         id="tab-docs"
@@ -413,6 +416,7 @@
       id="task-insight"
       aria-labelledby="tab-insight"
       tabindex="0"
+      hidden
     >
       <div>
         <div class="eyebrow">
@@ -468,7 +472,6 @@
       id="task-apps"
       aria-labelledby="tab-apps"
       tabindex="0"
-      hidden
     >
       <div>
         <div class="eyebrow">Applications</div>

@@ -1270,3 +1270,22 @@ body:not(.vscode-light).vscode-dark .task-panel,
   text-underline-offset: 3px;
   margin-top: 4px;
 }
+
+.install-agent[aria-busy="true"]::before {
+  content: "";
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-right: 0.55em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -0.1em;
+  animation: agent-install-spin 0.8s linear infinite;
+}
+@keyframes agent-install-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .install-agent[aria-busy="true"]::before { animation: none; }
+}

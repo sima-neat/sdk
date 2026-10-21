@@ -43,6 +43,20 @@ function createAgentManager(vscode) {
       !["install", "open", "reload", "manage"].includes(action)
     )
       return;
+    // Management remains available while a large gallery download is pending.
+    if (action === "manage") {
+      try {
+        await vscode.commands.executeCommand(
+          "workbench.extensions.action.showExtensionsWithIds", [AGENTS[key].id],
+        );
+        errors.delete(key);
+      } catch {
+        errors.set(key, "Unable to open Extensions. Please try again.");
+      } finally {
+        notify();
+      }
+      return;
+    }
     if (pending.has(key)) return;
     const agent = AGENTS[key];
     errors.delete(key);
@@ -67,12 +81,9 @@ function createAgentManager(vscode) {
       } else if (action === "reload") {
         if (reload.has(key))
           await vscode.commands.executeCommand("workbench.action.reloadWindow");
-      } else {
-        await vscode.commands.executeCommand(
-          "workbench.extensions.action.showExtensionsWithIds",
-          [agent.id],
-        );
       }
+      // A concurrent Manage failure must not survive a successful operation.
+      errors.delete(key);
     } catch {
       errors.set(
         key,

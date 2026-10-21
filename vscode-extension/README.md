@@ -202,13 +202,13 @@ This initial integration uses `develop` only; it does not compile or deploy mode
 
 ### SDK landing page
 
-The first browser-editor launch with no restored tabs or explicit
+Each browser-editor launch with no restored tabs or explicit
 `workbench.startupEditor` preference opens the local Palette Neat landing page.
 The stock Welcome page is disabled by default. Existing startup preferences and
 open editors are preserved. A stock Welcome tab alone does not suppress the
 landing page if it appears before extension activation. Use **SiMa Neat: Getting
-Started** to reopen the page, including sessions where an earlier extension
-version already skipped onboarding.
+Started** to reopen the page. Earlier one-time onboarding markers no longer
+suppress the page in an otherwise empty editor.
 The landing tab and selected task restore across browser reloads.
 
 The page reads SDK version metadata from `/etc/sdk-release`. CPU availability
@@ -241,7 +241,9 @@ and **Claude Code** (`anthropic.claude-code`) through the editor's configured
 extension gallery. The editor selects a compatible release and presents any
 publisher-trust prompts; installations are not synced to other editors.
 
-Each agent reports its own installation state. Once available, **Open Codex** or
+Each agent reports its own installation state immediately. Gallery downloads
+can take several minutes; publisher prompts appear in the editor. **Manage in
+Extensions** remains available during installation. Once available, **Open Codex** or
 **Open Claude Code** opens that extension for account setup. If an installation
 requires an editor restart, the page offers **Reload editor**. Failed or cancelled
 installations can be retried. **Manage in Extensions** opens the selected
