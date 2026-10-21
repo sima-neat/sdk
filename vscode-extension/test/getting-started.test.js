@@ -17,6 +17,10 @@ function fixture({ tabs = [], preference, web = true, fail = false } = {}) {
     },
   };
   const vscode = {
+    extensions: {
+      getExtension: () => undefined,
+      onDidChange: () => ({ dispose() {} }),
+    },
     UIKind: { Web: 2 },
     ViewColumn: { One: 1 },
     env: { uiKind: web ? 2 : 1, openExternal: async (u) => actions.push(u) },

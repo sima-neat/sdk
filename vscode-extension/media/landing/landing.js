@@ -124,3 +124,81 @@ window.addEventListener("message", ({ data }) => {
   $("refresh").disabled = false;
 });
 vscode.postMessage({ type: "ready" });
+
+const agentNames = { codex: "Codex", claude: "Claude Code" };
+const agentStates = {};
+function renderAgents(states) {
+  for (const [key, name] of Object.entries(agentNames)) {
+    const item = document.querySelector(`[data-agent="${key}"]`);
+    const state = states[key];
+    if (!state || !item) continue;
+    agentStates[key] = state;
+    const button = item.querySelector(".install-agent");
+    const status = item.querySelector(".install-status");
+    const progress = item.querySelector(".agent-progress");
+    const next = item.querySelector(".agent-next");
+    button.disabled = Boolean(state.busy);
+    button.classList.toggle("is-ready", state.status === "installed");
+    status.classList.toggle("ready", state.status === "installed");
+    status.textContent =
+      {
+        installing: "Installing…",
+        installed: "✓ Installed",
+        reload: "Reload needed",
+        available: "Not installed",
+      }[state.status] || "Not installed";
+    button.textContent =
+      state.status === "installing"
+        ? "Installing…"
+        : state.status === "installed"
+          ? state.busy
+            ? "Opening…"
+            : `Open ${name} →`
+          : state.status === "reload"
+            ? "Reload editor"
+            : `Install ${name} ↓`;
+    progress.textContent =
+      state.error ||
+      (state.status === "installing"
+        ? "Installing through the editor. Check notifications for any prompts."
+        : state.status === "reload"
+          ? "Installation finished. Reload to enable the extension; if unavailable, check Extensions."
+          : "");
+    progress.classList.toggle("error", Boolean(state.error));
+    next.textContent =
+      state.status === "installed"
+        ? "Open the extension to connect your account."
+        : `Connect your ${key === "codex" ? "OpenAI" : "Anthropic"} account after installation.`;
+  }
+}
+document.querySelectorAll(".install-agent").forEach((button) => {
+  button.addEventListener("click", () => {
+    const agent = button.dataset.provider;
+    const status = agentStates[agent]?.status;
+    if (!status || status === "installing") return;
+    vscode.postMessage({
+      type: "agent",
+      agent,
+      action:
+        status === "installed"
+          ? "open"
+          : status === "reload"
+            ? "reload"
+            : "install",
+    });
+  });
+});
+document.querySelectorAll("[data-agent-manage]").forEach((button) => {
+  button.addEventListener("click", () =>
+    vscode.postMessage({
+      type: "agent",
+      agent: button.dataset.agentManage,
+      action: "manage",
+    }),
+  );
+});
+window.addEventListener("message", ({ data }) => {
+  if (data.type === "agents") renderAgents(data.value);
+});
+// Announce only after the agent state listener is registered.
+vscode.postMessage({ type: "agents-ready" });

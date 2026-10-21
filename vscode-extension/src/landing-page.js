@@ -1,5 +1,6 @@
 const fs = require("fs/promises");
 const crypto = require("crypto");
+const { createAgentManager } = require("./agents");
 const { loadLandingData } = require("./landing-data");
 function escape(value) {
   return String(value).replace(
@@ -27,6 +28,7 @@ async function landingHtml(vscode, context, webview) {
 }
 function createLandingPage(vscode, context, services) {
   let panel;
+  const agents = createAgentManager(vscode);
   return async function open(restored) {
     if (panel && !restored) {
       panel.reveal();
@@ -74,7 +76,20 @@ function createLandingPage(vscode, context, services) {
         busy = false;
       }
     };
+    const sendAgents = (value) => {
+      if (!disposed)
+        void current.webview.postMessage({ type: "agents", value });
+    };
+    const agentChanges = agents.subscribe(sendAgents);
     const receive = current.webview.onDidReceiveMessage(async (message) => {
+      if (message?.type === "agents-ready") {
+        sendAgents(agents.snapshot());
+        return;
+      }
+      if (message?.type === "agent") {
+        await agents.action(message.agent, message.action);
+        return;
+      }
       if (message?.type === "ready" || message?.type === "refresh") {
         await refresh();
         return;
@@ -115,6 +130,7 @@ function createLandingPage(vscode, context, services) {
     current.onDidDispose(() => {
       disposed = true;
       receive.dispose();
+      agentChanges.dispose();
       if (panel === current) panel = undefined;
     });
     context.subscriptions.push(current);
