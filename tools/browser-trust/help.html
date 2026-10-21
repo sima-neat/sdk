@@ -1,0 +1,25 @@
+<section class="neat-help neat-certificate" id="neat-certificate" aria-label="Browser certificate help">
+  <p id="neat-certificate-status" role="status" hidden></p>
+  <details id="neat-certificate-details">
+    <summary>Certificate help</summary>
+    <p>The editor may open before your browser trusts this SDK’s HTTPS certificate, but extension panels need that trust to load.</p>
+    <div id="neat-ca-available" hidden>
+      <p>Install this public CA certificate on the computer running your browser, not on the remote SDK host.</p>
+      <a id="neat-ca-download" download="sima-sdk-rootCA.pem">Download CA certificate</a>
+      <p class="neat-cert-note">Only install it if you trust the SDK host. This computer will trust certificates issued by that development CA. The download contains no private key.</p>
+      <label for="neat-browser-os">Your browser computer</label>
+      <select id="neat-browser-os"><option value="mac">macOS</option><option value="windows">Windows</option><option value="linux">Linux</option></select>
+      <div data-cert-os="mac">
+        <ol><li>Save <code>sima-sdk-rootCA.pem</code> in Downloads.</li><li>Open <strong>Keychain Access</strong>, select the <strong>System</strong> keychain, and import the file. Double-click the certificate, expand <strong>Trust</strong>, and set <strong>Secure Sockets Layer (SSL)</strong> to <strong>Always Trust</strong>. Close and authenticate.</li><li>Fully quit your browser (⌘Q), reopen this address, and sign in.</li></ol>
+        <details><summary>Use Terminal instead</summary><pre><code>sudo security add-trusted-cert \
+  -d -r trustRoot -p ssl \
+  -k /Library/Keychains/System.keychain \
+  ~/Downloads/sima-sdk-rootCA.pem</code></pre></details>
+      </div>
+      <div data-cert-os="windows" hidden><ol><li>Download the certificate.</li><li>Press <strong>Win + R</strong>, run <code>certmgr.msc</code>, and open <strong>Trusted Root Certification Authorities → Certificates</strong>. Select <strong>Action → All Tasks → Import</strong>, choose the downloaded PEM file (select “All files” if needed), and complete the wizard.</li><li>Close all browser windows, reopen this address, and sign in.</li></ol></div>
+      <div data-cert-os="linux" hidden><ol><li>Download the certificate to your Linux browser computer.</li><li>In Chrome, open <strong>Settings → Privacy and security → Security → Manage certificates</strong>. Import the file as a trusted website authority in the local/custom certificates section. Labels vary by distribution and browser version.</li><li>In Firefox, use <strong>Settings → Privacy & Security → Certificates → View Certificates → Authorities → Import</strong> and enable trust for identifying websites.</li><li>Restart your browser, reopen this address, and sign in.</li></ol></div>
+    </div>
+    <p id="neat-ca-unavailable">Certificate download is unavailable. Ask the SDK administrator for the issuing CA certificate, or use a publicly trusted HTTPS address. Browser policies and network problems can also prevent extension panels from loading.</p>
+    <p class="neat-cert-note">You can still sign in. If certificate trust is already configured, check browser restrictions and network access.</p>
+  </details>
+</section>

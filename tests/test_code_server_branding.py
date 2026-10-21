@@ -22,6 +22,9 @@ class BrandingTest(unittest.TestCase):
             root = Path(tmp)
             media = root / 'src/browser/media'
             media.mkdir(parents=True)
+            routes = root / 'out/node/routes/index.js'
+            routes.parent.mkdir(parents=True)
+            routes.write_text('app.router.disable("x-powered-by");')
             for name in TEMPLATES:
                 p = root / name
                 p.parent.mkdir(parents=True, exist_ok=True)
@@ -32,7 +35,7 @@ class BrandingTest(unittest.TestCase):
             self.assertEqual((media / expected).read_bytes(), ICON.read_bytes())
             first = [(root / name).read_text() for name in TEMPLATES]
             for index, html in enumerate(first):
-                self.assertEqual(html.count(expected), 3 if index == 0 else 2)
+                self.assertEqual(html.count(expected), 2)
                 self.assertEqual(html.count('type="image/png"'), 2)
                 self.assertIn('pwa-icon-192.png', html)
             self.assertIn('sima-cli sdk neat printenv CODE_SERVER_PASSWORD', first[0])
@@ -59,7 +62,7 @@ class BrandingTest(unittest.TestCase):
             for index, template in enumerate(TEMPLATES):
                 html = (root / template).read_text()
                 self.assertNotIn(expected, html)
-                self.assertEqual(html.count(new_name), 3 if index == 0 else 2)
+                self.assertEqual(html.count(new_name), 2)
             (media / expected).unlink()
             self.assertTrue((media / new_name).is_file())
             # Older branded pages also receive updated password guidance.

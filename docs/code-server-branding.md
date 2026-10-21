@@ -87,3 +87,43 @@ The extension always shows “Palette Neat SDK” in the left status bar.
 Clicking it opens the Neat panel. In code-server, the bundled workbench stylesheet
 adds the SiMa logo beside the label; desktop VS Code shows the text alone.
 This branding item is independent of the optional session-expiration indicator.
+
+## Browser certificate help
+
+The password page keeps **Certificate help** available and runs a small
+same-origin service-worker probe. Success leaves the instructions collapsed.
+Failure or a six-second timeout displays a neutral troubleshooting hint; neither
+blocks sign-in nor claims to diagnose certificate trust. Manually opened help
+stays open. The probe uses a unique scope beneath `/_neat/probe/`, bypasses the
+script cache, has no fetch handler, and unregisters when registration completes.
+It does not control the login page or VS Code webviews.
+
+Updated sima-cli setup stages `sima-sdk-rootCA.pem` beside `neat-sdk.pem` after
+verifying the mkcert CA signature. The login server exposes three fixed routes
+before authentication (relative to the deployment base path):
+
+- `/_neat/certificate-info`: availability only, without host filesystem paths.
+- `/_neat/ca-certificate`: a download of the public CA certificate, with no-store
+  caching and an attachment filename. Each request checks the issuing CA,
+  signature, validity dates, and CA constraint against the configured SDK leaf.
+  Missing, invalid, or mismatched files return 404. Private keys and directories
+  are never served; the response is serialized from the parsed certificate.
+- `/_neat/probe/service-worker.js`: a JavaScript probe with a narrow default scope.
+
+For Arthas or another deployment with trusted HTTPS termination, set
+`SIMA_SDK_CERT_HELP=off` in the code-server process environment to hide the local
+CA section and disable the download. Browser trust cannot be inferred from the
+certificate issuer name or an HTTP forwarded header. With older CLI versions or
+a plain self-signed fallback, the page keeps generic help but offers no CA download.
+Installing a downloaded CA remains an explicit user action on the browser computer.
+
+The branding tool also installs the route module into code-server's compiled
+route registration. It validates the expected upstream hook before writing any
+files, and should be rerun after code-server upgrades.
+
+Checks:
+
+```sh
+python3 -m unittest discover -s tests -p test_code_server_branding.py
+node --test tests/test_browser_trust.cjs
+```

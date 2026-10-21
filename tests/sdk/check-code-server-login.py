@@ -51,7 +51,13 @@ for family in ['roboto', 'ibm-plex-mono']:
         font = f'{family}-latin-{weight}-normal.woff2'
         assert font.encode() in css, f'Missing font declaration: {font}'
         assert fetch(urljoin(css_url, font)).startswith(b'wOF2'), f'Font not served: {font}'
-icons = [url for url in page.icons if '/neat-favicon-' in url]
+icons = [url for url in page.icons if '/sima-logo.png' in url]
 assert len(icons) == 1, 'Missing Neat logo'
-assert fetch(urljoin(BASE, icons[0])) == Path('/opt/sima-neat/vscode-extension/media/neat-logo.png').read_bytes(), 'Served logo differs from bundled Neat icon'
+assert fetch(urljoin(BASE, icons[0])) == Path('/opt/sima-neat/vscode-extension/media/sima-logo.png').read_bytes(), 'Served logo differs from bundled Neat icon'
+assert 'Certificate help' in html and 'neat-certificate.js' in html, 'Missing certificate help'
+probe = urljoin(BASE, './_neat/probe/service-worker.js')
+assert b'skipWaiting' in fetch(probe), 'Probe not served before authentication'
+import json
+info = json.loads(fetch(urljoin(BASE, './_neat/certificate-info')))
+assert isinstance(info.get('available'), bool), 'Invalid CA metadata'
 print('Installed SDK serves the branded login page, password form, stylesheet, and Neat logo.')
