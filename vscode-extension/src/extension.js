@@ -1,5 +1,6 @@
 const vscode = require("vscode");
 const { loadStatuses } = require("./panel-status");
+const { registerGettingStarted } = require("./getting-started");
 const { modelRegistryAvailable } = require("./sdk-capabilities");
 let modelsEnabled = false;
 const { registerModels } = require("./model-registry");
@@ -10,7 +11,7 @@ const https = require("https");
 const os = require("os");
 const path = require("path");
 const { URLSearchParams } = require("url");
-const { resolveInsightLaunchUrl } = require("./insight-launcher");
+const { getInsightUrl, readNeatStatus } = require("./landing-data");
 
 const APPS_REPO_URL = "https://github.com/sima-neat/apps";
 const SIMA_CLI_DIR = path.join(os.homedir(), ".sima-cli");
@@ -196,6 +197,9 @@ async function activate(context) {
       await vscode.commands.executeCommand("simaNeat.panel.focus");
     })
   );
+  await registerGettingStarted(vscode, context, {
+    getDevkitConfig: getDevKitSyncConfig, openInsight, modelsEnabled
+  });
 }
 
 function getWorkspaceRoot() {
@@ -475,15 +479,9 @@ async function openInsight() {
 }
 
 async function getInsightWebUiUrl() {
-  return resolveInsightLaunchUrl(async () => {
-    try {
-      const stdout = await execFilePromise("neat", ["--json"], { timeout: 5000, killSignal: "SIGKILL" }, { showError: false });
-      const status = JSON.parse(stdout);
-      return status?.insight?.webUiUrl || "";
-    } catch {
-      return "";
-    }
-  });
+  return getInsightUrl(await readNeatStatus((file, args) =>
+    execFilePromise(file, args, { timeout: 5000, killSignal: "SIGKILL" }, { showError: false })
+  ));
 }
 
 async function getDevKitSyncState() {

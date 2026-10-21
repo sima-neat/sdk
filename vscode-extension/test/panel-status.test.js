@@ -128,3 +128,29 @@ test('interactive login Python helper is not constrained by the status probe dea
   assert.equal(await pending, 'ready');
   assert.equal(calls.length, 1);
 });
+
+// Both sidebar and landing page must keep the shared offline Insight resolver,
+// while sidebar subprocesses retain this PR's hard termination deadline.
+test('sidebar Insight lookup keeps offline resolution and a hard process deadline', async () => {
+  const source = fs.readFileSync(require.resolve('../src/extension'), 'utf8');
+  const {readNeatStatus} = require('../src/landing-data');
+  const calls = [];
+  const context = {
+    readNeatStatus,
+    getInsightUrl: async status => status.insight.webUiUrl,
+    execFilePromise: async (file, args, options, uiOptions) => {
+      calls.push({file, args, options, uiOptions});
+      return JSON.stringify({insight: {webUiUrl: 'http://localhost:9900'}});
+    }
+  };
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('async function getInsightWebUiUrl('),
+    source.indexOf('async function getDevKitSyncState(')), context);
+  assert.equal(await context.getInsightWebUiUrl(), 'http://localhost:9900');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].file, 'neat');
+  assert.deepEqual(calls[0].args, ['--json', '--offline']);
+  assert.equal(calls[0].options.timeout, 5000);
+  assert.equal(calls[0].options.killSignal, 'SIGKILL');
+  assert.equal(calls[0].uiOptions.showError, false);
+});

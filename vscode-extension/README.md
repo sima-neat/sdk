@@ -199,3 +199,37 @@ and removes its incomplete folder. Model contents are never executed.
 Requires an SDK with `sima-cli models list/download --stg --json`, Python 3.9+,
 and network access to the staging registry and artifact download endpoints.
 This initial integration uses `develop` only; it does not compile or deploy models.
+
+### SDK landing page
+
+The first browser-editor launch with no restored tabs or explicit
+`workbench.startupEditor` preference opens the local Palette Neat landing page.
+The stock Welcome page is disabled by default. Existing startup preferences and
+open editors are preserved. A stock Welcome tab alone does not suppress the
+landing page if it appears before extension activation. Use **SiMa Neat: Getting
+Started** to reopen the page, including sessions where an earlier extension
+version already skipped onboarding.
+The landing tab and selected task restore across browser reloads.
+
+The page reads SDK version metadata from `/etc/sdk-release`. CPU availability
+accounts for affinity, cpusets, and cgroup quotas; RAM shows available headroom
+and the visible container limit. **Refresh** reads a new snapshot.
+
+The configured DevKit comes from the same DevKit Sync settings used by the
+Neat panel. A bounded SSH read retrieves `/proc/device-tree/model` and
+`SIMA_BUILD_VERSION` from `/etc/build` or `/etc/buildinfo`. Unconfigured,
+unreachable, and invalid configurations are distinct states; missing metadata
+is shown as unknown. SSH tries keys first, then the standard DevKit password
+through `sshpass` when available. New host keys are accepted; changed host keys
+are rejected. No firmware or device settings are modified.
+
+Insight version comes from `neat --json --offline`, with an installed Python
+package metadata fallback for platform-only SDK images. Both the landing page
+and Neat panel share the launch resolver: `/home/docker/.insight-config/launch-url`
+first, then `neat`'s `insight.webUiUrl`, then the published mainUI port and
+`CONTAINER_HOST_IP` when Core is absent. Missing URLs disable the launch action.
+
+Quick-access actions open Insight, the Apps repository, the existing Neat model
+browser (SDK 3.0+), the Getting Started documentation, or the Neat sidebar. Remote
+pages and the model catalog require network access; the landing UI itself is
+bundled locally and uses a restrictive webview Content Security Policy.
