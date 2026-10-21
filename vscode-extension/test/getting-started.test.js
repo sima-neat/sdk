@@ -82,7 +82,7 @@ function fixture({ tabs = [], preference, web = true, fail = false } = {}) {
   };
   return { vscode, context, services, state, panels, commands, actions };
 }
-test("first browser launch opens a local landing page once; command can reopen it", async () => {
+test("empty browser launches open the landing page even with an old onboarding marker", async () => {
   const f = fixture();
   await registerGettingStarted(f.vscode, f.context, f.services);
   assert.equal(f.panels.length, 1);
@@ -91,8 +91,9 @@ test("first browser launch opens a local landing page once; command can reopen i
     f.panels[0].webview.html,
     /sdk\.example|v1\.8\.0|B2263|DESIGN PREVIEW/,
   );
+  f.state.set("simaNeat.landing.initialized", true);
   await registerGettingStarted(f.vscode, f.context, f.services);
-  assert.equal(f.panels.length, 1);
+  assert.equal(f.panels.length, 2);
   await f.commands.get("simaNeat.gettingStarted")();
   assert.equal(f.panels.length, 2);
 });
@@ -158,7 +159,7 @@ test("stock Welcome tab does not suppress first browser onboarding", async () =>
   const f = fixture({ tabs: [{ label: "Welcome", input: undefined }] });
   await registerGettingStarted(f.vscode, f.context, f.services);
   assert.equal(f.panels.length, 1);
-  assert.equal(f.state.get("simaNeat.landing.initialized"), true);
+  assert.equal(f.state.get("simaNeat.landing.initialized"), undefined);
 });
 test("Welcome alongside user work or a startup preference stays untouched", async () => {
   for (const options of [

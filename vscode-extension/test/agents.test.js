@@ -122,3 +122,17 @@ test("open failures preserve installed state and manage opens the correct extens
     ["openai.chatgpt"],
   ]);
 });
+
+test("manage remains usable during an install without releasing its duplicate guard", async () => {
+  let finish;
+  const h = harness((command) => command === "workbench.extensions.installExtension"
+    ? new Promise(resolve => { finish = resolve; }) : undefined);
+  const install = h.manager.action("codex", "install");
+  await h.manager.action("codex", "manage");
+  assert.deepEqual(h.calls.at(-1), ["workbench.extensions.action.showExtensionsWithIds", ["openai.chatgpt"]]);
+  assert.equal(h.manager.snapshot().codex.status, "installing");
+  await h.manager.action("codex", "install");
+  assert.equal(h.calls.length, 2);
+  finish();
+  await install;
+});
