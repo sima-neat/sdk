@@ -30,18 +30,18 @@ chmod +x "${tmpdir}/bin/ssh"
 
 export PATH="${tmpdir}/bin:${PATH}"
 export SSH_LOG="${tmpdir}/ssh.log"
-export DEVKIT_SUDO_CHECK_TIMEOUT=1
 
 expect_check() {
   local results="$1"
   local expected_status="$2"
   local expected_calls="$3"
+  local probe_timeout="${4:-1}"
   local status=0
   local calls=""
 
   : > "${SSH_LOG}"
   export FAKE_SSH_RESULTS="${results}"
-  check_remote_passwordless_sudo sima 192.0.2.1 22 2>"${tmpdir}/stderr" || status=$?
+  check_remote_passwordless_sudo sima 192.0.2.1 22 "${probe_timeout}" 2>"${tmpdir}/stderr" || status=$?
   calls="$(wc -l < "${SSH_LOG}")"
 
   [[ "${status}" == "${expected_status}" ]] || \
@@ -65,5 +65,7 @@ grep -Fq "timed out after 1s" "${tmpdir}/stderr" || fail "sudo check timeout was
 
 expect_check "255 255" 2 2
 grep -Fq "failed to connect over SSH" "${tmpdir}/stderr" || fail "sudo check SSH failure was not reported"
+
+expect_check "0" 2 0 bogus
 
 echo "devkit sudo check tests passed"

@@ -45,7 +45,7 @@ check_remote_passwordless_sudo() {
   local user="$1"
   local ip="$2"
   local port="$3"
-  local probe_timeout="${DEVKIT_SUDO_CHECK_TIMEOUT:-20}"
+  local probe_timeout="${4:-20}"
   local attempt=""
   local status=0
   local reason=""
@@ -56,6 +56,7 @@ check_remote_passwordless_sudo() {
     case "${status}" in
       0) return 0 ;;
       124) reason="timed out after ${probe_timeout}s" ;;
+      125) return 2 ;;
       255) reason="failed to connect over SSH" ;;
       *) return 1 ;;
     esac
