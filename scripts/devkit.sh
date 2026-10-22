@@ -45,7 +45,24 @@ check_remote_passwordless_sudo() {
   local user="$1"
   local ip="$2"
   local port="$3"
-  ssh -tt -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" "sudo -n true" >/dev/null 2>&1
+  local probe_timeout="${4:-20}"
+  local attempt=""
+  local status=0
+  local reason=""
+
+  for attempt in 1 2; do
+    status=0
+    timeout --foreground "${probe_timeout}" ssh -T -n -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" "sudo -n true" >/dev/null 2>&1 || status=$?
+    case "${status}" in
+      0) return 0 ;;
+      124) reason="timed out after ${probe_timeout}s" ;;
+      125) return 2 ;;
+      255) reason="failed to connect over SSH" ;;
+      *) return 1 ;;
+    esac
+    echo "Passwordless sudo check on ${user}@${ip} ${reason} (attempt ${attempt}/2)." >&2
+  done
+  return 2
 }
 
 sdk_platform_version_from_release_file() {
@@ -608,7 +625,14 @@ if (( _DEVKIT_COMPAT_STATUS != 0 )); then
 fi
 
 if [[ "${_DEVKIT_USER}" != "root" ]]; then
-  if ! check_remote_passwordless_sudo "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"; then
+  _DEVKIT_SUDO_STATUS=0
+  check_remote_passwordless_sudo "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}" || _DEVKIT_SUDO_STATUS=$?
+  if (( _DEVKIT_SUDO_STATUS == 2 )); then
+    echo "Could not determine whether '${_DEVKIT_USER}' has passwordless sudo on ${_DEVKIT_IP}; leaving sudoers unchanged." >&2
+    echo "Hint: rerun setup. If this keeps happening, check the DevKit for a stuck 'sudo -n true' process." >&2
+    return 1
+  fi
+  if (( _DEVKIT_SUDO_STATUS != 0 )); then
     echo ""
     echo "DevKit user '${_DEVKIT_USER}' does not have passwordless sudo."
     echo "This script can apply a one-time sudoers change:"
