@@ -768,7 +768,7 @@ jobs:
     if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v')
     needs: publish-vulcan-install-stub
     runs-on: ubuntu-24.04
-    environment: ${{ vars.VULCAN_ENV || 'production' }}
+    environment: ${{ (vars.VULCAN_ENV || 'production') == 'production' && 'prod' || (vars.VULCAN_ENV || 'production') }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v5

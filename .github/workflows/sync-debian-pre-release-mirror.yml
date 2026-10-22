@@ -44,7 +44,7 @@ concurrency:
 jobs:
   sync:
     name: Validate and optionally publish Agate 3.0 mirror
-    environment: production
+    environment: prod
     runs-on: [self-hosted, Linux, X64, apt-mirror]
     timeout-minutes: 720
     env:
