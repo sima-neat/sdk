@@ -158,13 +158,10 @@ test_daily_development_sysroot() {
   local flags
   test -e "${SYSROOT}/usr/include/python3.13/Python.h"
   test -e "${SYSROOT}/usr/include/httplib.h"
-  test -e "${SYSROOT}/usr/include/simaai/simaai_memory.h"
   test -e "${SYSROOT}/usr/include/simaai/argminmax.h"
   test -e "${SYSROOT}/usr/include/asm-generic/errno.h"
   cat > "${source}" <<'EOF'
 #include <gst/gst.h>
-#include <simaai/simaai_memory.h>
-#include <simaai/sgp_transport.h>
 #include <simaai/simaailog.h>
 #include <opencv2/core.hpp>
 #include <lttng/tracepoint.h>
@@ -190,11 +187,11 @@ pkg_check_modules(GLIB REQUIRED glib-2.0)
 find_library(GLIB_LIBRARY NAMES glib-2.0 HINTS ${GLIB_LIBRARY_DIRS} REQUIRED)
 EOF
   cmake -P "${WORK_DIR}/find-glib.cmake"
-  flags="$(pkg-config --cflags --libs gstreamer-1.0 fmt spdlog opencv4 lttng-ust jsoncpp simaai-memory-lib)"
+  flags="$(pkg-config --cflags --libs gstreamer-1.0 fmt spdlog opencv4 lttng-ust jsoncpp)"
   # pkg-config emits a shell-separated compiler argument list.
   # shellcheck disable=SC2086
   "${CXX:-aarch64-linux-gnu-g++}" --sysroot="${SYSROOT}" \
-    "${source}" $flags -Wl,--no-as-needed -lsimaaimem -Wl,--as-needed -o "${binary}"
+    "${source}" $flags -Wl,--no-as-needed -lMLArt -Wl,--as-needed -o "${binary}"
   file "${binary}" | grep -Eq 'aarch64|ARM aarch64|ARM64'
 }
 
