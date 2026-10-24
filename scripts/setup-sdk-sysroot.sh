@@ -54,7 +54,7 @@ if [[ "${SDK_APT_CHANNEL:-daily}" == daily || ( "${SDK_APT_CHANNEL:-daily}" == p
   daily_packages=(
     a65apps-dev simaai-gst-plugins-dev simaai-heap-dev
     simaai-mlart-modalix-dev simaai-pcie-ep-dev simaai-socpipeline-dev swsoc-video-codec-modalix-dev
-    simaai-memory-lib-dev simaai-log-dev simaai-trace-dev liblttng-ust-dev
+    simaai-log-dev simaai-trace-dev liblttng-ust-dev
     libopencv-dev libjsoncpp-dev cppzmq-dev libarpack2-dev libblas-dev
     libblkid-dev libbsd-dev libcharls-dev libcpp-httplib-dev
     libelf-dev libexpat1-dev libffi-dev libgdal-dev
