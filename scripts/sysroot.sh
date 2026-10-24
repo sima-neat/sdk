@@ -13,6 +13,7 @@ PRE_RELEASE_ANCHOR_PACKAGE="${PRE_RELEASE_ANCHOR_PACKAGE:-simaai-palette-modalix
 PLATFORM_PATTERNS_FILE="${PLATFORM_PACKAGE_PATTERNS_FILE:-/usr/local/share/sima-sdk/platform-package-patterns.txt}"
 apt_cache_options=()
 overlay_apt_workdir=""
+agate_apt_workdir=""
 
 # Agate development channels replace the sysroot as one transaction. Stable
 # releases retain the legacy package install/remove path, including 3.x.
@@ -798,6 +799,38 @@ parse_update_options() {
   fi
 }
 
+# Resolve one Agate channel in a private APT cache. Host/image sources and pins
+# must not leak a daily package into a master sysroot (or vice versa).
+configure_agate_update_apt() {
+  local repository="$1" revision="$2"
+  agate_apt_workdir="$(mktemp -d)"
+  mkdir -p "${agate_apt_workdir}/lists/partial" "${agate_apt_workdir}/empty"
+  chmod 755 "${agate_apt_workdir}" "${agate_apt_workdir}/lists" "${agate_apt_workdir}/lists/partial"
+  cat > "${agate_apt_workdir}/sources.list" <<EOF
+deb [arch=arm64 trusted=yes] ${repository} agate non-free
+deb [arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian trixie main
+deb [arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian trixie-updates main
+deb [arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian-security trixie-security main
+EOF
+  cat > "${agate_apt_workdir}/preferences" <<EOF
+Package: simaai-palette-modalix
+Pin: version ${revision}
+Pin-Priority: 1001
+EOF
+  cat > "${agate_apt_workdir}/apt.conf" <<EOF
+Dir::Etc::sourcelist "${agate_apt_workdir}/sources.list";
+Dir::Etc::sourceparts "${agate_apt_workdir}/empty";
+Dir::Etc::preferences "${agate_apt_workdir}/preferences";
+Dir::Etc::preferencesparts "${agate_apt_workdir}/empty";
+Dir::State::lists "${agate_apt_workdir}/lists";
+Dir::State::status "/dev/null";
+Dir::Cache::pkgcache "";
+Dir::Cache::srcpkgcache "";
+APT::Architecture "arm64";
+EOF
+  export APT_CONFIG="${agate_apt_workdir}/apt.conf"
+}
+
 configure_update_apt() {
   local platform_revision="$1"
   local target_priority="${2:-990}"
@@ -857,6 +890,10 @@ EOF
 }
 
 cleanup_update_apt() {
+  if [[ -n "${agate_apt_workdir}" ]]; then
+    rm -rf "${agate_apt_workdir}"
+    agate_apt_workdir=""
+  fi
   if [[ "${update_source_created:-0}" == "1" ]]; then
     rm -f "${SYSROOT_UPDATE_APT_SOURCE_FILE:-/etc/apt/sources.list.d/00-sima-sdk-sysroot-pre-release.list}"
   fi
@@ -938,6 +975,7 @@ apply_sysroot_update() {
   if uses_directory_replacement "${channel}" "${platform_base}"; then
     [[ -x "${INSTALLER}" ]] || die "sysroot finalizer is unavailable: ${INSTALLER}"
     build_revision=""
+    configure_agate_update_apt "${repository}" "${platform_revision}"
     if [[ "${dry_run}" != 1 ]]; then
       /usr/bin/python3 "${DIRECTORY_HELPER}" prepare "${active_sysroot}"
       sysroot="${active_sysroot}.update/next"
@@ -1084,7 +1122,7 @@ cmd_update() {
   revision_pattern='^([0-9]+\.[0-9]+\.[0-9]+)~pre[0-9]+$'
   if uses_directory_replacement "${channel}" "${platform_base}"; then
     [[ "${update_latest}" == 0 && ${#args[@]} -eq 1 ]] || \
-      die "Agate updates require an exact daily ~gitTIMESTAMP.COMMIT-BUILD or master ~preBUILD version in the SDK channel"
+      die "Agate updates require an exact daily ~gitTIMESTAMP.COMMIT-BUILD or master ~preBUILD version"
     lock_updates
     if [[ "${dry_run}" == 1 ]]; then
       /usr/bin/python3 "${DIRECTORY_HELPER}" check "${sysroot}"
@@ -1092,9 +1130,14 @@ cmd_update() {
       /usr/bin/python3 "${DIRECTORY_HELPER}" recover "${sysroot}"
     fi
     echo "Stop builds before updating; reconfigure them after the update."
-    repository="$(read_release_field "${SDK_RELEASE_FILE}" "Platform Repository")"
-    if [[ "${channel}" == daily ]]; then
+    # The requested exact revision selects the channel, not the image default.
+    if [[ "${args[0]}" == *~git* ]]; then
+      channel=daily
+      repository=https://debian.neat.sima.ai/daily
       revision_pattern='^([0-9]+\.[0-9]+\.[0-9]+)~git[0-9]{12}\.[0-9a-f]+-[0-9]+$'
+    else
+      channel=pre-release
+      repository=https://debian.neat.sima.ai/pre-release
     fi
     # The daily installer validates this exact version against the APT cache.
     available_versions=("${args[0]}")

@@ -61,6 +61,17 @@ printf '%s\t%s\t%s\n' \
   "${SIMAAI_PLATFORM_BUILD_REVISION:-}" >> "${SYSROOT_UPDATE_TEST_LOG:?}"
 if [[ "${SDK_APT_CHANNEL}" == daily || "${revision}" == 3.*~pre* ]]; then
   [[ -z "${SIMAAI_PLATFORM_BUILD_REVISION}" && ! -e "${SYSROOT_UPDATE_APT_PREFERENCES_FILE}" ]]
+  [[ -f "${APT_CONFIG}" ]]
+  apt_root="$(dirname "${APT_CONFIG}")"
+  expected_channel=daily
+  [[ "${revision}" != *~pre* ]] || expected_channel=pre-release
+  [[ "${SDK_APT_CHANNEL}" == "${expected_channel}" ]]
+  grep -Fxq "deb [arch=arm64 trusted=yes] https://debian.neat.sima.ai/${expected_channel} agate non-free" "${apt_root}/sources.list"
+  [[ "$(grep -c ' agate ' "${apt_root}/sources.list")" == 1 ]]
+  grep -Fxq "Dir::Etc::sourceparts \"${apt_root}/empty\";" "${APT_CONFIG}"
+  grep -Fxq "Dir::Etc::preferencesparts \"${apt_root}/empty\";" "${APT_CONFIG}"
+  grep -Fxq "Pin: version ${revision}" "${apt_root}/preferences"
+
 else
   for origin in \
     debian.neat.sima.ai \
@@ -437,7 +448,7 @@ env "${common_env[@]}" SDK_PKG_LIST=liba-dev,libz-dev "${SYSROOT_COMMAND}" updat
 [[ "$(readlink -f "${tmpdir}/sysroot")" == "${initial_generation}" ]]
 echo obsolete > "${initial_generation}/usr/include/obsolete.h"
 daily_revision=3.0.0~git202609120138.dcab8a6-1369
-for invalid in 3.0.0~pre4617 2.2.0~git202609120138.dcab8a6-1369 --latest; do
+for invalid in 3.0.0~preBAD 2.2.0~git202609120138.dcab8a6-1369 --latest; do
   if run_sysroot update "${invalid}" >"${tmpdir}/out" 2>&1; then
     fail "daily update accepted ${invalid}"
   fi
@@ -520,16 +531,30 @@ done
 
 grep -Fxq "prefix=${tmpdir}/sysroot/usr" "${tmpdir}/sysroot/test.pc"
 [[ "$(readlink "${tmpdir}/sysroot/header-link")" == "${tmpdir}/sysroot/usr/include/simaai/stdc-predef.h" ]]
-# Master uses the same whole-directory transaction, with its own exact version.
-sed -i -e 's/Platform Channel = daily/Platform Channel = pre-release/' \
-  -e 's@https://debian.neat.sima.ai/daily@https://debian.neat.sima.ai/pre-release@' "${tmpdir}/sdk-release"
-run_sysroot update 3.0.0~pre2254 --dry-run
-run_sysroot update 3.0.0~pre2254
+# Switch daily -> master -> daily without changing immutable image metadata.
+cp "${tmpdir}/sdk-release" "${tmpdir}/daily-image-metadata"
+before="$(stat -c %i "${tmpdir}/sysroot")"
+run_sysroot update 3.0.0~pre2372 --dry-run
+[[ "$(stat -c %i "${tmpdir}/sysroot")" == "${before}" ]]
+if env "${common_env[@]}" SYSROOT_UPDATE_TEST_FAIL=extract "${SYSROOT_COMMAND}" update 3.0.0~pre2372; then
+  fail 'partial master extraction reported success'
+fi
+[[ "$(stat -c %i "${tmpdir}/sysroot")" == "${before}" ]]
+grep -Fxq 'Platform Channel = daily' "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay"
+run_sysroot update 3.0.0~pre2372
 grep -Fxq 'Platform Channel = pre-release' "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay"
-if run_sysroot update "${daily_revision}"; then fail 'master SDK accepted develop version'; fi
-sed -i -e 's/Platform Channel = pre-release/Platform Channel = daily/' \
-  -e 's@https://debian.neat.sima.ai/pre-release@https://debian.neat.sima.ai/daily@' "${tmpdir}/sdk-release"
+grep -Fxq 'Platform Repository = https://debian.neat.sima.ai/pre-release' "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay"
+run_sysroot rollback
+grep -Fxq 'Platform Channel = daily' "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay"
+run_sysroot update 3.0.0~pre2372
 run_sysroot update "${daily_revision}"
+grep -Fxq 'Platform Channel = daily' "${tmpdir}/sysroot/var/lib/sima-sdk/sysroot-overlay"
+cmp "${tmpdir}/daily-image-metadata" "${tmpdir}/sdk-release"
+# A master image can likewise switch to daily, then back to master.
+sed -i -e 's/Platform Channel = daily/Platform Channel = pre-release/' "${tmpdir}/sdk-release"
+run_sysroot update 3.0.0~pre2372
+run_sysroot update "${daily_revision}"
+sed -i -e 's/Platform Channel = pre-release/Platform Channel = daily/' "${tmpdir}/sdk-release"
 
 # Model interruption after removing the old directory but before activation.
 cp -a "${tmpdir}/sysroot.update/previous" "${tmpdir}/expected-recovery"
