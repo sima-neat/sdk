@@ -203,7 +203,23 @@ sudo sysroot update 3.0.0~git202609070138.4a147cf-1157
 sysroot status
 ```
 
-Daily updates require an exact version with the same platform base. `--dry-run`
+Daily and 3.x pre-release images accept either exact version format with the
+same platform base. `~gitTIMESTAMP.COMMIT-BUILD` selects the daily mirror;
+`~preBUILD` selects the master pre-release mirror. For example:
+
+```bash
+sudo sysroot update 3.0.0~pre2372
+sudo sysroot update 3.0.0~git202609070138.4a147cf-1157
+```
+
+Each update resolves packages using an isolated APT source list and cache for
+that channel plus Debian Trixie. Image-default repositories and package pins do
+not participate. `/etc/sdk-release` stays unchanged; `sysroot status` reports
+the active sysroot revision, and rollback restores the previous generation.
+Stable release images retain their existing update behavior. The default
+development package set includes `appcomplex-dev` only for daily, where that
+package is published; explicitly requested packages still fail if unavailable.
+ `--dry-run`
 resolves packages without modifying the active sysroot. Repeating the active
 revision skips reinstalling only when the requested `SDK_PKG_LIST` is unchanged.
 Changing that list rebuilds the sysroot at the same revision. Both amd64 and

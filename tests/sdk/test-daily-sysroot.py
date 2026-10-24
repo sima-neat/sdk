@@ -184,6 +184,14 @@ class DailySelectionTest(unittest.TestCase):
             self.assertEqual(args[1:4], ["modalix", PLATFORM, "6.18.3-1218"])
             self.assertIn("libgrpc-dev", args[4].split(","))
             self.assertIn("python3-dev", args[4].split(","))
+            self.assertIn("appcomplex-dev", args[4].split(","))
+            env["SDK_APT_CHANNEL"] = "pre-release"
+            subprocess.run(["bash", str(ROOT / "scripts/setup-sdk-sysroot.sh"), "3.0.0~pre2372", "libgrpc-dev"], env=env, check=True)
+            master_args = json.loads(capture.read_text())
+            self.assertNotIn("appcomplex-dev", master_args[4].split(","))
+            self.assertIn("a65apps-dev", master_args[4].split(","))
+            self.assertIn("libgrpc-dev", master_args[4].split(","))
+
 
 
 if __name__ == '__main__':
