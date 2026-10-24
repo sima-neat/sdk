@@ -217,8 +217,8 @@ that channel plus Debian Trixie. Image-default repositories and package pins do
 not participate. `/etc/sdk-release` stays unchanged; `sysroot status` reports
 the active sysroot revision, and rollback restores the previous generation.
 Stable release images retain their existing update behavior. The default
-development package set includes `appcomplex-dev` only for daily, where that
-package is published; explicitly requested packages still fail if unavailable.
+development package set excludes `appcomplex-dev`. It can be explicitly requested
+with `SDK_PKG_LIST` on channels where it is available.
  `--dry-run`
 resolves packages without modifying the active sysroot. Repeating the active
 revision skips reinstalling only when the requested `SDK_PKG_LIST` is unchanged.

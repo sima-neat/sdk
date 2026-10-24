@@ -65,10 +65,6 @@ if [[ "${SDK_APT_CHANNEL:-daily}" == daily || ( "${SDK_APT_CHANNEL:-daily}" == p
     libsuperlu-dev libtiff-dev liburcu-dev libwebp-dev
     python3-dev zlib1g-dev
   )
-  # appcomplex is published only on the daily platform line.
-  if [[ "${SDK_APT_CHANNEL:-daily}" == daily ]]; then
-    daily_packages+=(appcomplex-dev)
-  fi
   sdk_pkg_list="${sdk_pkg_list},$(IFS=,; printf '%s' "${daily_packages[*]}")"
 fi
 
