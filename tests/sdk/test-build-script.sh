@@ -219,3 +219,28 @@ SDK_APT_CHANNEL=daily BASE_SDK_VERSION=3.0.0~pre2372 \
 assert_arg SDK_APT_CHANNEL=pre-release
 assert_arg NEAT_CORE_SOURCE_REF=1111111111111111111111111111111111111111
 assert_arg NEAT_APPS_SOURCE_REF=2222222222222222222222222222222222222222
+
+# Execute the actual build-time marker command without writing to /etc.
+python3 - "${ROOT_DIR}/Dockerfile" <<'PYTEST'
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+source = Path(sys.argv[1]).read_text()
+start = source.index('RUN platform_version=')
+command = source[start + 4:source.index('\n\n', start)].replace('/etc/sdk-release', 'sdk-release')
+with tempfile.TemporaryDirectory() as directory:
+    version_file = Path(directory) / 'platform-version'
+    for version in ('3.0.0', '3.0.0~pre2372', '3.0.0~git202610260120.b3607b4-2381', '2.1.2.3'):
+        version_file.write_text(version + '\n')
+        subprocess.run(['/bin/sh', '-ec', command], cwd=directory,
+                       env=dict(os.environ, SDK_PLATFORM_VERSION_FILE=str(version_file)), check=True)
+        fields = dict(line.split(' = ', 1) for line in (Path(directory) / 'sdk-release').read_text().splitlines())
+        assert fields['Platform Version'] == version
+        assert fields['SDK Version'] == version + '_Palette_SDK'
+        assert fields['Platform Base'] == version.split('~', 1)[0]
+        # sima-cli's numeric compatibility comparison must accept this field.
+        assert tuple(map(int, fields['Platform Base'].split('.')))
+PYTEST
