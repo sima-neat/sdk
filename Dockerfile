@@ -260,8 +260,9 @@ RUN /usr/local/bin/install-gcc16-toolchain.sh --verify-only && \
 # sima-cli uses /etc/sdk-release to distinguish a Palette SDK from a generic
 # Linux host. Keep this build-time marker stable so dependency layers are not
 # invalidated by the branch/commit identity written into the final image.
-RUN printf 'Platform Version = %s\nSDK Version = %s_Palette_SDK\n' \
-      "$(cat "${SDK_PLATFORM_VERSION_FILE}")" "$(cat "${SDK_PLATFORM_VERSION_FILE}")" > /etc/sdk-release
+RUN platform_version="$(cat "${SDK_PLATFORM_VERSION_FILE}")" && \
+    printf 'Platform Version = %s\nPlatform Base = %s\nSDK Version = %s_Palette_SDK\n' \
+      "${platform_version}" "${platform_version%%~*}" "${platform_version}" > /etc/sdk-release
 
 ARG SIMA_CLI_REF
 ARG SIMA_CLI_VERSION
