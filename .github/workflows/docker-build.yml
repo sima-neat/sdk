@@ -41,7 +41,7 @@ jobs:
         id: resolve
         env:
           # Temporary develop SDK: master platform cohort, not the daily channel.
-          PRE_RELEASE_BASE: ${{ inputs.pre_release_base || '3.0.0~pre3272' }}
+          PRE_RELEASE_BASE: ${{ inputs.pre_release_base || '3.0.0~pre2372' }}
         run: |
           set -euo pipefail
           scripts/resolve-platform-config.sh | tee "${RUNNER_TEMP}/platform-config.env"
