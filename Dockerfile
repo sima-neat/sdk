@@ -305,7 +305,9 @@ RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
       /usr/bin/python3 /usr/local/bin/sysroot-directory.py init /opt/toolchain/aarch64/modalix; \
     fi
 
-RUN if [ -n "${NEAT_INSIGHT_BRANCH}${NEAT_INSIGHT_VERSION}" ]; then \
+ARG NEAT_CORE_RESOLUTION_ATTEMPT=manual
+RUN echo "Dependency resolution attempt: ${NEAT_CORE_RESOLUTION_ATTEMPT}" && \
+    if [ -n "${NEAT_INSIGHT_BRANCH}${NEAT_INSIGHT_VERSION}" ]; then \
       /usr/local/bin/insight-admin update "${NEAT_INSIGHT_BRANCH:-main}" "${NEAT_INSIGHT_VERSION:-latest}"; \
     else \
       /usr/local/bin/insight-admin update; \
@@ -359,14 +361,15 @@ RUN chmod 755 /usr/local/bin/sima-install-neat-extension && \
 # Preinstall Neat Framework and resources
 COPY scripts/install-neat-resources.sh /usr/local/bin/install-neat-resources.sh
 RUN chmod 755 /usr/local/bin/install-neat-resources.sh
+ARG NEAT_CORE_REQUIRED=0
 ARG NEAT_CORE_SOURCE_REF=
 ARG NEAT_CORE_SOURCE_REASON=
 ARG NEAT_APPS_SOURCE_REF=
-ARG NEAT_CORE_RESOLUTION_ATTEMPT=manual
 RUN echo "Neat Core resolution attempt: ${NEAT_CORE_RESOLUTION_ATTEMPT}" && \
-    if [ "${SDK_APT_CHANNEL}" != release ]; then \
+    if [ "${SDK_APT_CHANNEL}" != release ] && [ "${NEAT_CORE_REQUIRED}" != 1 ]; then \
       install-neat-resources.sh --skip "platform-only SDK does not bundle Core"; \
     else \
+      NEAT_CORE_REQUIRED="${NEAT_CORE_REQUIRED}" \
       NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}" \
       NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON}" \
       NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF}" \

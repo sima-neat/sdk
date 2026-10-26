@@ -198,3 +198,16 @@ assert_arg SDK_CROSS_TOOLCHAIN_IMAGE=debian:trixie
 assert_arg BASE_SDK_VERSION=3.0.0~git202609090314.abcdef0-1218
 assert_arg NEAT_CORE_SOURCE_REF=
 assert_arg SDK_PKG_LIST=libpgm-dev
+
+# Explicit opt-in retains Core and Apps sources on the master pre-release cohort.
+NEAT_CORE_REQUIRED=1 SDK_APT_CHANNEL=pre-release BASE_SDK_VERSION=3.0.0~pre3272 \
+  run_build "${ROOT_DIR}/build.sh" example/sdk temporary
+assert_arg NEAT_CORE_REQUIRED=1
+assert_arg NEAT_CORE_SOURCE_REF=1111111111111111111111111111111111111111
+assert_arg NEAT_APPS_SOURCE_REF=2222222222222222222222222222222222222222
+assert_arg BASE_SDK_VERSION=3.0.0~pre3272
+
+if NEAT_CORE_REQUIRED=invalid run_build "${ROOT_DIR}/build.sh" example/sdk invalid >/dev/null 2>&1; then
+  echo "Expected an invalid Core bundling policy to fail." >&2
+  exit 1
+fi

@@ -177,7 +177,7 @@ done
 docker_workflow="${ROOT_DIR}/.github/workflows/docker-build.yml"
 grep -Fq 'pre_release_base:' "${docker_workflow}" || \
   fail "manual workflow dispatch does not expose a pre-release selector"
-grep -Fq "PRE_RELEASE_BASE: \${{ inputs.pre_release_base }}" "${docker_workflow}" || \
+grep -Fq "PRE_RELEASE_BASE: \${{ inputs.pre_release_base || '3.0.0~pre3272' }}" "${docker_workflow}" || \
   fail "workflow does not pass the optional manual selector to the resolver"
 if grep -Fq "inputs.pre_release_base || '3.0.0'" "${docker_workflow}" || \
    grep -Fq 'vars.PRE_RELEASE_BASE' "${docker_workflow}"; then

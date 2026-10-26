@@ -13,8 +13,20 @@
 
 This repository packages the SiMa.ai Neat SDK as a Docker image for `x86_64` and `arm64` Linux hosts.
 
-This branch builds the platform-only SDK for eLxr 3.0.0 daily builds, with an
-Agate/Trixie ARM64 sysroot and GCC 14. Matching Neat Core packages are not yet bundled.
+This temporary `develop` SDK selects the master platform revision
+`3.0.0~pre3272` and the latest published `develop` builds of Insight and Core.
+CI sets `NEAT_CORE_REQUIRED=1` to bake Core into `/neat-resources` even on a
+pre-release platform. Missing or incompatible Core artifacts fail the build.
+
+For a local build with the same settings:
+
+```bash
+SDK_APT_CHANNEL=pre-release BASE_SDK_VERSION=3.0.0~pre3272 \
+  REQUESTED_PRE_RELEASE_BASE=3.0.0~pre3272 NEAT_CORE_REQUIRED=1 ./build.sh
+```
+
+The platform revision must exist in the pre-release mirror before CI can build
+this SDK. Without `NEAT_CORE_REQUIRED=1`, non-release builds continue to omit Core.
 
 The main user workflow is:
 
