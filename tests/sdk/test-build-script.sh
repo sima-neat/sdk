@@ -244,3 +244,41 @@ with tempfile.TemporaryDirectory() as directory:
         # sima-cli's numeric compatibility comparison must accept this field.
         assert tuple(map(int, fields['Platform Base'].split('.')))
 PYTEST
+
+# Exercise Core-layer ordering and error propagation with no network or root writes.
+python3 - "${ROOT_DIR}/Dockerfile" <<'PYTEST'
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+source = Path(sys.argv[1]).read_text()
+start = source.index('RUN echo "Neat Core resolution attempt:')
+command = source[start + 4:source.index('\n\n', start)]
+with tempfile.TemporaryDirectory() as directory:
+    root = Path(directory)
+    for name, script in {
+        'apt-get': 'echo apt >> "$CALL_LOG"; exit "${APT_STATUS:-0}"',
+        'install-neat-resources.sh': 'echo "core $*" >> "$CALL_LOG"; exit "${CORE_STATUS:-0}"',
+        'rm': 'echo cleanup >> "$CALL_LOG"',
+    }.items():
+        path = root / name
+        path.write_text('#!/bin/sh\n' + script + '\n')
+        path.chmod(0o755)
+    for channel, apt_status, core_status, expected, status in (
+        ('daily', 0, 0, ['core --skip platform-only SDK does not bundle Core'], 0),
+        ('pre-release', 0, 0, ['apt', 'core ', 'cleanup'], 0),
+        ('release', 0, 0, ['apt', 'core ', 'cleanup'], 0),
+        ('pre-release', 42, 0, ['apt'], 42),
+        ('pre-release', 0, 43, ['apt', 'core '], 43),
+    ):
+        log = root / 'calls'
+        log.write_text('')
+        env = dict(os.environ, PATH=str(root) + ':' + os.environ['PATH'],
+                   CALL_LOG=str(log), SDK_APT_CHANNEL=channel,
+                   APT_STATUS=str(apt_status), CORE_STATUS=str(core_status))
+        result = subprocess.run(['/bin/sh', '-c', command], env=env, capture_output=True, text=True)
+        assert result.returncode == status, (channel, result)
+        assert log.read_text().splitlines() == expected, log.read_text()
+PYTEST

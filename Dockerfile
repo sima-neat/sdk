@@ -369,10 +369,12 @@ RUN echo "Neat Core resolution attempt: ${NEAT_CORE_RESOLUTION_ATTEMPT}" && \
     if [ "${SDK_APT_CHANNEL}" = daily ]; then \
       install-neat-resources.sh --skip "platform-only SDK does not bundle Core"; \
     else \
+      apt-get update --allow-releaseinfo-change && \
       NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}" \
       NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON}" \
       NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF}" \
-      install-neat-resources.sh; \
+      install-neat-resources.sh && \
+      rm -rf /var/lib/apt/lists/*; \
     fi
 
 # Apply volatile build identity only after the stable SDK/toolchain/resource layers. Keeping these
