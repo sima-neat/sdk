@@ -40,8 +40,7 @@ jobs:
       - name: Resolve stable or pre-release platform version
         id: resolve
         env:
-          # Temporary develop SDK: master platform cohort, not the daily channel.
-          PRE_RELEASE_BASE: ${{ inputs.pre_release_base || '3.0.0~pre2372' }}
+          PRE_RELEASE_BASE: ${{ inputs.pre_release_base }}
         run: |
           set -euo pipefail
           scripts/resolve-platform-config.sh | tee "${RUNNER_TEMP}/platform-config.env"
@@ -222,8 +221,6 @@ jobs:
           IMAGE_SUFFIX: ${{ matrix.image_suffix }}
           CACHE_REF: ${{ steps.image.outputs.cache_ref }}
           CACHE_FROM: ${{ steps.image.outputs.cache_from }}
-          # Require the develop Core artifact; never publish a platform-only fallback.
-          NEAT_CORE_REQUIRED: "1"
           DOCKER_PLATFORM: ${{ matrix.platform }}
           SDK_APT_CHANNEL: ${{ needs.resolve-platform-config.outputs.sdk_apt_channel }}
           REQUESTED_PRE_RELEASE_BASE: ${{ needs.resolve-platform-config.outputs.requested_pre_release_base }}

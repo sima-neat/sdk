@@ -199,15 +199,23 @@ assert_arg BASE_SDK_VERSION=3.0.0~git202609090314.abcdef0-1218
 assert_arg NEAT_CORE_SOURCE_REF=
 assert_arg SDK_PKG_LIST=libpgm-dev
 
-# Explicit opt-in retains Core and Apps sources on the master pre-release cohort.
-NEAT_CORE_REQUIRED=1 SDK_APT_CHANNEL=pre-release BASE_SDK_VERSION=3.0.0~pre2372 \
-  run_build "${ROOT_DIR}/build.sh" example/sdk temporary
-assert_arg NEAT_CORE_REQUIRED=1
+# Master pre-release builds retain Core and Apps without an override flag.
+SDK_APT_CHANNEL=pre-release BASE_SDK_VERSION=3.0.0~pre2372 \
+  run_build "${ROOT_DIR}/build.sh" example/sdk master
+assert_arg SDK_APT_CHANNEL=pre-release
 assert_arg NEAT_CORE_SOURCE_REF=1111111111111111111111111111111111111111
 assert_arg NEAT_APPS_SOURCE_REF=2222222222222222222222222222222222222222
 assert_arg BASE_SDK_VERSION=3.0.0~pre2372
 
-if NEAT_CORE_REQUIRED=invalid run_build "${ROOT_DIR}/build.sh" example/sdk invalid >/dev/null 2>&1; then
-  echo "Expected an invalid Core bundling policy to fail." >&2
-  exit 1
-fi
+# Decide whether to bundle only after resolving a master selector from daily defaults.
+cat > "${TMP_DIR}/MasterPackages" <<'EOF'
+Package: simaai-palette-modalix
+Version: 3.0.0~pre2372
+Architecture: all
+EOF
+SDK_APT_CHANNEL=daily BASE_SDK_VERSION=3.0.0~pre2372 \
+  PRE_RELEASE_PACKAGES_FILE="${TMP_DIR}/MasterPackages" \
+  run_build "${ROOT_DIR}/build.sh" example/sdk resolved-master
+assert_arg SDK_APT_CHANNEL=pre-release
+assert_arg NEAT_CORE_SOURCE_REF=1111111111111111111111111111111111111111
+assert_arg NEAT_APPS_SOURCE_REF=2222222222222222222222222222222222222222

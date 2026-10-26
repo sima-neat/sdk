@@ -21,39 +21,10 @@ REQUESTED_PRE_RELEASE_BASE="${REQUESTED_PRE_RELEASE_BASE:-}"
 NEAT_BRANCH="${NEAT_BRANCH:-main}"
 NEAT_VERSION="${NEAT_VERSION:-latest}"
 NEAT_CORE_TARGET="${NEAT_CORE_TARGET:-}"
-NEAT_CORE_REQUIRED="${NEAT_CORE_REQUIRED:-0}"
-case "${NEAT_CORE_REQUIRED}" in
-  0|1) ;;
-  *) echo "NEAT_CORE_REQUIRED must be 0 or 1" >&2; exit 1 ;;
-esac
 NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH:-}"
 NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION:-}"
 NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF:-}"
 NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON:-}"
-if [[ "${SDK_APT_CHANNEL}" != release && "${NEAT_CORE_REQUIRED}" != 1 ]]; then
-  NEAT_CORE_SOURCE_REF=""
-  NEAT_CORE_SOURCE_REASON="platform-only SDK does not bundle Core"
-  NEAT_APPS_SOURCE_REF=""
-elif [[ -z "${NEAT_CORE_SOURCE_REF}" ]]; then
-  if resolved_core_source_ref="$(
-    neat_resolve_dependency_source_ref core https://github.com/sima-neat/core.git
-  )"; then
-    NEAT_CORE_SOURCE_REF="${resolved_core_source_ref}"
-  else
-    resolve_status=$?
-    if [[ "${resolve_status}" == "3" ]]; then
-      core_manifest_ref="$(neat_dependency_ref core)"
-      NEAT_CORE_SOURCE_REASON="requested Core source ref ${core_manifest_ref} does not exist yet"
-    else
-      exit "${resolve_status}"
-    fi
-  fi
-fi
-if [[ "${SDK_APT_CHANNEL}" == release || "${NEAT_CORE_REQUIRED}" == 1 ]]; then
-  NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF:-$(
-    neat_resolve_dependency_source_ref apps https://github.com/sima-neat/apps.git
-  )}"
-fi
 SIMA_CLI_REF="${SIMA_CLI_REF:-$(neat_dependency_ref sima-cli)}"
 SIMA_CLI_VERSION="${SIMA_CLI_VERSION:-}"
 BUILDX_OUTPUT="${BUILDX_OUTPUT:-load}"
@@ -86,7 +57,6 @@ Environment overrides:
   SDK_APT_CHANNEL  Platform package channel: release, pre-release, or daily (default: ${SDK_APT_CHANNEL})
   NEAT_BRANCH  NEAT Framework branch to bake into /neat-resources (default: ${NEAT_BRANCH})
   NEAT_VERSION  NEAT Framework version/tag to bake into /neat-resources (default: ${NEAT_VERSION})
-  NEAT_CORE_REQUIRED  Set to 1 to require Core even on non-release platforms (default: 0)
   NEAT_CORE_TARGET  Override the Neat Core Vulcan package target from deps/manifest.json
   NEAT_INSIGHT_BRANCH  Override the Insight branch/release channel from deps/manifest.json
   NEAT_INSIGHT_VERSION  Override the Insight version/tag from deps/manifest.json
@@ -145,6 +115,31 @@ if [[ "${SDK_APT_CHANNEL}" == daily && "${BASE_SDK_VERSION}" != *~git* ]]; then
   REQUESTED_PRE_RELEASE_BASE="${BASE_SDK_VERSION}"
   BASE_SDK_VERSION="$(printf '%s\n' "${platform_config}" | sed -n 's/^base_sdk_version=//p')"
   [[ -n "${BASE_SDK_VERSION}" ]] || { echo "Platform version resolution failed" >&2; exit 1; }
+fi
+
+if [[ "${SDK_APT_CHANNEL}" == daily ]]; then
+  NEAT_CORE_SOURCE_REF=""
+  NEAT_CORE_SOURCE_REASON="platform-only SDK does not bundle Core"
+  NEAT_APPS_SOURCE_REF=""
+elif [[ -z "${NEAT_CORE_SOURCE_REF}" ]]; then
+  if resolved_core_source_ref="$(
+    neat_resolve_dependency_source_ref core https://github.com/sima-neat/core.git
+  )"; then
+    NEAT_CORE_SOURCE_REF="${resolved_core_source_ref}"
+  else
+    resolve_status=$?
+    if [[ "${resolve_status}" == "3" ]]; then
+      core_manifest_ref="$(neat_dependency_ref core)"
+      NEAT_CORE_SOURCE_REASON="requested Core source ref ${core_manifest_ref} does not exist yet"
+    else
+      exit "${resolve_status}"
+    fi
+  fi
+fi
+if [[ "${SDK_APT_CHANNEL}" != daily ]]; then
+  NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF:-$(
+    neat_resolve_dependency_source_ref apps https://github.com/sima-neat/apps.git
+  )}"
 fi
 
 if [[ "${SIMA_CLI_REF}" == *:* ]]; then
@@ -277,7 +272,6 @@ if docker buildx version >/dev/null 2>&1; then
     --build-arg NEAT_BRANCH="${NEAT_BRANCH}"
     --build-arg NEAT_VERSION="${NEAT_VERSION}"
     --build-arg NEAT_CORE_TARGET="${NEAT_CORE_TARGET}"
-    --build-arg NEAT_CORE_REQUIRED="${NEAT_CORE_REQUIRED}"
     --build-arg NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH}"
     --build-arg NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION}"
     --build-arg NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}"
@@ -343,7 +337,6 @@ build_cmd=(
   --build-arg NEAT_BRANCH="${NEAT_BRANCH}"
   --build-arg NEAT_VERSION="${NEAT_VERSION}"
   --build-arg NEAT_CORE_TARGET="${NEAT_CORE_TARGET}"
-  --build-arg NEAT_CORE_REQUIRED="${NEAT_CORE_REQUIRED}"
   --build-arg NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH}"
   --build-arg NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION}"
   --build-arg NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}"

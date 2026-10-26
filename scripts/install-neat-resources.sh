@@ -35,10 +35,6 @@ EOF
   printf 'Requested: %s\n' "${core_target}"
   printf 'Reason: %s\n' "${reason}"
   printf '===============================\n\n'
-  if [[ "${NEAT_CORE_REQUIRED:-0}" == 1 && "${status}" != bundled ]]; then
-    echo "Core bundling is required: ${reason}" >&2
-    exit 1
-  fi
 }
 
 clear_partial_resources() {

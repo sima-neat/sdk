@@ -126,19 +126,3 @@ set -e
 grep -Fq 'refusing to produce a partial SDK' "${tmpdir}/log-fatal" || fail "fatal failure message missing"
 
 echo "Neat resource installation tests passed"
-
-# Required mode must not silently produce a platform-only image.
-rm -rf "${tmpdir}/resources-bundled"
-NEAT_CORE_REQUIRED=1 run_installer bundled
-for mode in incompatible unavailable; do
-  if NEAT_CORE_REQUIRED=1 run_installer "${mode}"; then
-    fail "required Core must fail when ${mode}"
-  fi
-  grep -Fq 'Core bundling is required:' "${tmpdir}/log-${mode}" || fail "required failure missing"
-done
-if NEAT_CORE_REQUIRED=1 NEAT_CORE_SOURCE_REF='' \
-  NEAT_CORE_STATUS_FILE="${tmpdir}/required-missing-status" \
-  NEAT_RESOURCES_ROOT="${tmpdir}/required-missing-resources" \
-  "${INSTALLER}" > "${tmpdir}/required-missing-log" 2>&1; then
-  fail "required Core must fail when source is missing"
-fi
