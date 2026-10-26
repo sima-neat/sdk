@@ -65,7 +65,7 @@ assert_arg NEAT_CORE_SOURCE_REF=1111111111111111111111111111111111111111
 assert_arg NEAT_CORE_SOURCE_REASON=
 grep -Eq '^NEAT_CORE_RESOLUTION_ATTEMPT=(local-[0-9]{14}-[0-9]+|[0-9]+-[0-9]+)$' "${TMP_DIR}/docker-args"
 assert_arg NEAT_APPS_SOURCE_REF=2222222222222222222222222222222222222222
-assert_arg SIMA_CLI_REF=v2.1.18
+assert_arg SIMA_CLI_REF=v2.1.19
 assert_arg SIMA_CLI_VERSION=latest
 assert_arg example/sdk:test
 
@@ -198,3 +198,24 @@ assert_arg SDK_CROSS_TOOLCHAIN_IMAGE=debian:trixie
 assert_arg BASE_SDK_VERSION=3.0.0~git202609090314.abcdef0-1218
 assert_arg NEAT_CORE_SOURCE_REF=
 assert_arg SDK_PKG_LIST=libpgm-dev
+
+# Master pre-release builds retain Core and Apps without an override flag.
+SDK_APT_CHANNEL=pre-release BASE_SDK_VERSION=3.0.0~pre2372 \
+  run_build "${ROOT_DIR}/build.sh" example/sdk master
+assert_arg SDK_APT_CHANNEL=pre-release
+assert_arg NEAT_CORE_SOURCE_REF=1111111111111111111111111111111111111111
+assert_arg NEAT_APPS_SOURCE_REF=2222222222222222222222222222222222222222
+assert_arg BASE_SDK_VERSION=3.0.0~pre2372
+
+# Decide whether to bundle only after resolving a master selector from daily defaults.
+cat > "${TMP_DIR}/MasterPackages" <<'EOF'
+Package: simaai-palette-modalix
+Version: 3.0.0~pre2372
+Architecture: all
+EOF
+SDK_APT_CHANNEL=daily BASE_SDK_VERSION=3.0.0~pre2372 \
+  PRE_RELEASE_PACKAGES_FILE="${TMP_DIR}/MasterPackages" \
+  run_build "${ROOT_DIR}/build.sh" example/sdk resolved-master
+assert_arg SDK_APT_CHANNEL=pre-release
+assert_arg NEAT_CORE_SOURCE_REF=1111111111111111111111111111111111111111
+assert_arg NEAT_APPS_SOURCE_REF=2222222222222222222222222222222222222222

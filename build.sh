@@ -25,30 +25,6 @@ NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH:-}"
 NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION:-}"
 NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF:-}"
 NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON:-}"
-if [[ "${SDK_APT_CHANNEL}" != release ]]; then
-  NEAT_CORE_SOURCE_REF=""
-  NEAT_CORE_SOURCE_REASON="platform-only SDK does not bundle Core"
-  NEAT_APPS_SOURCE_REF=""
-elif [[ -z "${NEAT_CORE_SOURCE_REF}" ]]; then
-  if resolved_core_source_ref="$(
-    neat_resolve_dependency_source_ref core https://github.com/sima-neat/core.git
-  )"; then
-    NEAT_CORE_SOURCE_REF="${resolved_core_source_ref}"
-  else
-    resolve_status=$?
-    if [[ "${resolve_status}" == "3" ]]; then
-      core_manifest_ref="$(neat_dependency_ref core)"
-      NEAT_CORE_SOURCE_REASON="requested Core source ref ${core_manifest_ref} does not exist yet"
-    else
-      exit "${resolve_status}"
-    fi
-  fi
-fi
-if [[ "${SDK_APT_CHANNEL}" == release ]]; then
-  NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF:-$(
-    neat_resolve_dependency_source_ref apps https://github.com/sima-neat/apps.git
-  )}"
-fi
 SIMA_CLI_REF="${SIMA_CLI_REF:-$(neat_dependency_ref sima-cli)}"
 SIMA_CLI_VERSION="${SIMA_CLI_VERSION:-}"
 BUILDX_OUTPUT="${BUILDX_OUTPUT:-load}"
@@ -139,6 +115,31 @@ if [[ "${SDK_APT_CHANNEL}" == daily && "${BASE_SDK_VERSION}" != *~git* ]]; then
   REQUESTED_PRE_RELEASE_BASE="${BASE_SDK_VERSION}"
   BASE_SDK_VERSION="$(printf '%s\n' "${platform_config}" | sed -n 's/^base_sdk_version=//p')"
   [[ -n "${BASE_SDK_VERSION}" ]] || { echo "Platform version resolution failed" >&2; exit 1; }
+fi
+
+if [[ "${SDK_APT_CHANNEL}" == daily ]]; then
+  NEAT_CORE_SOURCE_REF=""
+  NEAT_CORE_SOURCE_REASON="platform-only SDK does not bundle Core"
+  NEAT_APPS_SOURCE_REF=""
+elif [[ -z "${NEAT_CORE_SOURCE_REF}" ]]; then
+  if resolved_core_source_ref="$(
+    neat_resolve_dependency_source_ref core https://github.com/sima-neat/core.git
+  )"; then
+    NEAT_CORE_SOURCE_REF="${resolved_core_source_ref}"
+  else
+    resolve_status=$?
+    if [[ "${resolve_status}" == "3" ]]; then
+      core_manifest_ref="$(neat_dependency_ref core)"
+      NEAT_CORE_SOURCE_REASON="requested Core source ref ${core_manifest_ref} does not exist yet"
+    else
+      exit "${resolve_status}"
+    fi
+  fi
+fi
+if [[ "${SDK_APT_CHANNEL}" != daily ]]; then
+  NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF:-$(
+    neat_resolve_dependency_source_ref apps https://github.com/sima-neat/apps.git
+  )}"
 fi
 
 if [[ "${SIMA_CLI_REF}" == *:* ]]; then
