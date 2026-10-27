@@ -188,6 +188,7 @@ mkdir -p "${object_dir}"
       --disable-libsanitizer \
       --with-system-zlib \
       --enable-default-pie
+  echo "Building GCC ${GCC_VERSION} with ${jobs} parallel jobs."
   make -j"${jobs}"
   staging="${build_root}/stage"
   # Release SDK images do not need debug symbols for GCC itself. Keep the
