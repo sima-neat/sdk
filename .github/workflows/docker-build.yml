@@ -336,7 +336,7 @@ jobs:
   smoke:
     name: Smoke on ${{ matrix.arch }}
     if: github.event_name != 'pull_request'
-    needs: publish-manifest
+    needs: [resolve-platform-config, publish-manifest]
     runs-on: ${{ matrix.runs_on }}
     env:
       SIMA_CLI_CHECK_FOR_UPDATE: "0"
@@ -543,6 +543,8 @@ jobs:
         env:
           IMAGE_REF: ${{ steps.image.outputs.image_ref }}
           SMOKE_ARCH: ${{ matrix.arch }}
+          EXPECTED_PLATFORM: ${{ needs.resolve-platform-config.outputs.base_sdk_version }}
+          REQUIRE_CORE: ${{ github.event_name == 'workflow_dispatch' && needs.resolve-platform-config.outputs.sdk_apt_channel != 'daily' }}
         run: |
           set -euo pipefail
 
@@ -556,6 +558,17 @@ jobs:
           sdk_release="$(docker exec "${container_id}" cat /etc/sdk-release)"
           echo "Generated /etc/sdk-release (${SMOKE_ARCH}):"
           printf '%s\n' "${sdk_release}"
+
+          # A successful manual non-daily build must prove Core integration,
+          # rather than silently accepting a platform-only fallback image.
+          grep -Fxq "Platform Version = ${EXPECTED_PLATFORM}" <<< "${sdk_release}"
+          if [[ "${REQUIRE_CORE}" == true ]]; then
+            source scripts/neat-deps.sh
+            expected_core="$(neat_dependency_target core core)"
+            grep -Fxq 'SDK Profile = full' <<< "${sdk_release}"
+            grep -Fxq 'Neat Core = bundled' <<< "${sdk_release}"
+            grep -Fxq "Neat Core Requested = ${expected_core}" <<< "${sdk_release}"
+          fi
 
           {
             printf '## SDK release metadata (%s)\n\n' "${SMOKE_ARCH}"
