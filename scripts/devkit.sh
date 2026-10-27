@@ -67,13 +67,11 @@ check_remote_passwordless_sudo() {
 
 sdk_platform_version_from_release_file() {
   local sdk_release="$1"
-  local sdk_profile=""
   local platform_version=""
 
-  sdk_profile="$(sdk_release_value "SDK Profile" "${sdk_release}" 2>/dev/null || true)"
-  if [[ "${sdk_profile}" == "platform-cross" ]]; then
-    platform_version="$(sdk_release_value "Platform Base" "${sdk_release}" 2>/dev/null || true)"
-  fi
+  # DISTRO_VERSION identifies the platform release, not its package build.
+  # Both full and platform-cross SDKs record that identity in Platform Base.
+  platform_version="$(sdk_release_value "Platform Base" "${sdk_release}" 2>/dev/null || true)"
 
   if [[ -z "${platform_version}" ]]; then
     platform_version="$(sdk_release_value "Platform Version" "${sdk_release}" 2>/dev/null || true)"

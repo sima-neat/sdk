@@ -36,12 +36,46 @@ grep -Fq 'Neat Core is not bundled in this platform SDK; skipping DevKit Core sy
 
 cat > "${tmpdir}/full-release" <<'EOF'
 SDK Profile = full
-Platform Version = 3.0.0
+Platform Version = 3.0.0~pre2372
+Platform Base = 3.0.0
 Neat Core = bundled
 EOF
 
 [[ "$(sdk_platform_version_from_release_file "${tmpdir}/full-release")" == "3.0.0" ]] || \
-  fail "full profile did not retain Platform Version compatibility"
+  fail "full pre-release profile did not use Platform Base for DevKit compatibility"
+
+cat > "${tmpdir}/full-official-release" <<'EOF'
+SDK Profile = full
+Platform Version = 3.0.0
+Platform Base = 3.0.0
+Neat Core = bundled
+EOF
+[[ "$(sdk_platform_version_from_release_file "${tmpdir}/full-official-release")" == "3.0.0" ]] || \
+  fail "full official release did not use Platform Base for DevKit compatibility"
+
+cat > "${tmpdir}/full-daily-release" <<'EOF'
+SDK Profile = full
+Platform Version = 3.0.0~git202610270000.abcdef0-2413
+Platform Base = 3.0.0
+Neat Core = bundled
+EOF
+[[ "$(sdk_platform_version_from_release_file "${tmpdir}/full-daily-release")" == "3.0.0" ]] || \
+  fail "full daily profile did not use Platform Base for DevKit compatibility"
+
+# Older images without Platform Base retain their existing fallback behavior.
+cat > "${tmpdir}/legacy-full-release" <<'EOF'
+SDK Profile = full
+Platform Version = 2.1.2
+Neat Core = bundled
+EOF
+[[ "$(sdk_platform_version_from_release_file "${tmpdir}/legacy-full-release")" == "2.1.2" ]] || \
+  fail "legacy full profile did not fall back to Platform Version"
+
+cat > "${tmpdir}/legacy-elxr-release" <<'EOF'
+eLXr Version = 2.1.2_release_neat_main_abcdef0
+EOF
+[[ "$(sdk_platform_version_from_release_file "${tmpdir}/legacy-elxr-release")" == "2.1.2" ]] || \
+  fail "legacy profile did not retain its eLXr Version fallback"
 
 full_output="$(
   SDK_RELEASE_FILE="${tmpdir}/full-release" \
