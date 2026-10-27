@@ -84,6 +84,7 @@ jobs:
         run: |
           tests/sdk/test-install-sdk-stub.sh
           tests/sdk/test-neat-deps.sh
+          python3 tests/sdk/neat-status/test_validate_neat_status.py
           tests/sdk/test-install-neat-resources.sh
           tests/sdk/test-build-script.sh
           tests/sdk/test-gcc16-build-env.sh

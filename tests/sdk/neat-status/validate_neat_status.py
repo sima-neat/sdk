@@ -44,14 +44,11 @@ def validate_status(data, manifest=None):
         add_error(errors, "Missing environment.sysroot")
 
     components = data.get("components") or {}
-    required_components = {
-        "core",
-        "gstPlugins",
-        "insight",
-        "modelCompiler",
-        "pyneat",
-        "runtime",
-    }
+    # Platform 3 replaces the legacy runtime/plugin packages with Runner/Scheduler.
+    platform3 = re.match(r"^3[.]", str(environment.get("sdkVersion") or "")) is not None
+    runtime_components = {"runner", "scheduler"} if platform3 else {"runtime", "gstPlugins"}
+    versioned_components = {"core", "insight", "pyneat"} | runtime_components
+    required_components = versioned_components | {"modelCompiler"}
     for name in sorted(required_components):
         component = components.get(name)
         if component is None:
@@ -60,7 +57,7 @@ def validate_status(data, manifest=None):
         if not component.get("name"):
             add_error(errors, f"Missing components.{name}.name")
 
-    for name in ["core", "gstPlugins", "insight", "pyneat", "runtime"]:
+    for name in sorted(versioned_components):
         component = components.get(name) or {}
         if not component.get("version"):
             add_error(errors, f"Missing components.{name}.version")
