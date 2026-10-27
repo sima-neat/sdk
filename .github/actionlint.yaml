@@ -1,6 +1,13 @@
 self-hosted-runner:
   labels:
     - apt-mirror
+    - ubuntu
+    - default
+    - amd64
+    - vulcan-production
+    - vulcan-staging
+    - vulcan-stg
+    - vulcan-dev
 
 config-variables: null
 
