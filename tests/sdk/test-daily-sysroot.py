@@ -41,6 +41,18 @@ class DailySelectionTest(unittest.TestCase):
         headers = candidate('6.18.3-2254')
         self.assertIs(module.daily_candidate([headers], '3.0.0~pre2254'), headers)
 
+    def test_stable_platform3_uses_release_agate_and_trixie(self):
+        release = candidate('2.2.0', 'repo.sima.ai', 'agate')
+        daily = candidate('2.2.0~git202609100513.abcdef0-1220')
+        prerelease = candidate('2.2.0~pre2372', 'repo.sima.ai', 'agate')
+        legacy = candidate('2.2.0', 'repo.sima.ai', 'bookworm')
+        trixie = candidate('2.41', 'deb.debian.org', 'trixie')
+        bookworm = candidate('2.36', 'deb.debian.org', 'bookworm')
+        self.assertIs(module.daily_candidate([daily, prerelease, legacy, release], '3.0.0'), release)
+        self.assertIs(module.daily_candidate([bookworm, trixie], '3.0.0'), trixie)
+        self.assertIsNone(module.daily_candidate([daily, prerelease, legacy, bookworm], '3.0.0'))
+        self.assertIsNone(module.daily_candidate([release], '3.0.0', '9.0'))
+
     def test_all_package_native_cache_key_without_host_arch_fallback(self):
         all_package = SimpleNamespace(architecture="all")
         host_package = SimpleNamespace(architecture="amd64")

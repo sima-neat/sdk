@@ -249,7 +249,7 @@ RUN --mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,shari
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /tmp/*
 
 # Exercise the target libc/linker layout, not only the compiler's own sysroot.
-RUN if { [ "${SDK_APT_CHANNEL}" = daily ] || { [ "${SDK_APT_CHANNEL}" = pre-release ] && [ "${BASE_SDK_VERSION%%.*}" = 3 ]; }; } && [ "${MINIMAL_IMAGE}" != 1 ]; then \
+RUN if { [ "${SDK_APT_CHANNEL}" = daily ] || [ "${BASE_SDK_VERSION%%.*}" = 3 ]; } && [ "${MINIMAL_IMAGE}" != 1 ]; then \
       printf '#include <gst/gst.h>\nint main() { gst_init(nullptr, nullptr); return 0; }\n' > /tmp/agate-smoke.cpp; \
       flags="$(PKG_CONFIG_LIBDIR=/opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu/pkgconfig:/opt/toolchain/aarch64/modalix/usr/share/pkgconfig pkg-config --cflags --libs gstreamer-1.0)" && \
       aarch64-linux-gnu-g++ --sysroot=/opt/toolchain/aarch64/modalix /tmp/agate-smoke.cpp $flags \
@@ -313,7 +313,7 @@ RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/libexec/sima-sdk/devkit-container-remote.sh && \
     chmod 755 /usr/local/bin/devkit-sync-rsync.sh && \
     install-sdk-sysroot-overlay.sh && \
-    if { [ "${SDK_APT_CHANNEL}" = daily ] || { [ "${SDK_APT_CHANNEL}" = pre-release ] && [ "${BASE_SDK_VERSION%%.*}" = 3 ]; }; }; then \
+    if { [ "${SDK_APT_CHANNEL}" = daily ] || [ "${BASE_SDK_VERSION%%.*}" = 3 ]; }; then \
       /usr/bin/python3 /usr/local/bin/sysroot-directory.py init /opt/toolchain/aarch64/modalix; \
     fi
 

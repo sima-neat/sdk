@@ -164,6 +164,19 @@ grep -Fq 'sdk_fallback_origin="repo.sima.ai"' "${apt_config_script}" || \
 grep -Fq 'deb [trusted=yes] ${sdk_fallback_repository} bookworm non-free' "${apt_config_script}" || \
   fail "release fallback is not written to the APT source list"
 
+# Exercise source generation without writing to the host's /etc/apt.
+apt_root="${tmpdir}/apt"
+mkdir -p "${apt_root}/sources.list.d" "${apt_root}/preferences.d"
+sed "s|/etc/apt|${apt_root}|g" "${apt_config_script}" > "${tmpdir}/configure-apt-repos.sh"
+for channel in release pre-release daily; do
+  SDK_APT_CHANNEL="${channel}" bash "${tmpdir}/configure-apt-repos.sh" 3.0.0 "${patterns_file}"
+  grep -Fq 'trixie main' "${apt_root}/sources.list.d/debian-target.list" || fail "${channel} 3.0 did not select Trixie"
+  grep -Fq ' agate non-free' "${apt_root}/sources.list.d/elxr.list" || fail "${channel} 3.0 did not select Agate"
+  if grep -Rq bookworm "${apt_root}"; then
+    fail "${channel} 3.0 configured a Bookworm source"
+  fi
+done
+
 for apt_script in \
   "${apt_config_script}" \
   "${ROOT_DIR}/scripts/install-sysroot-overlay.sh" \

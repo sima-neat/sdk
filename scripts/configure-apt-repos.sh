@@ -39,7 +39,7 @@ if [[ ! -f "${patterns_file}" ]]; then
   exit 1
 fi
 
-if [[ "${sdk_apt_channel}" == daily || ( "${sdk_apt_channel}" == pre-release && "${base_sdk_version}" == 3.* ) ]]; then
+if [[ "${sdk_apt_channel}" == daily || "${base_sdk_version}" == 3.* ]]; then
   cat > /etc/apt/sources.list.d/elxr.list <<EOF
 deb [arch=arm64 trusted=yes] ${sdk_platform_repository} agate non-free
 EOF
