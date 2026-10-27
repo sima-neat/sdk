@@ -2,6 +2,9 @@ const { execFile } = require('child_process');
 const fs = require('fs/promises');
 const path = require('path');
 
+// Explicit routing also supports SDKs whose bundled CLI has no production default.
+const MODEL_REGISTRY_ENV = {SIMA_MODELS_REGISTRY_BASE_URL: 'https://models-registry.neat.sima.ai'};
+
 function parseCatalog(text) {
   const data = JSON.parse(text);
   if (!Array.isArray(data.models)) throw new Error('Invalid model registry response.');
@@ -43,7 +46,7 @@ function runCli(file, args, token, timeout = 0, extraEnv = {}) {
 }
 
 function modelCardUrl(model) {
-  const url = new URL('https://developer-stg.sima.ai/models/');
+  const url = new URL('https://developer.sima.ai/models/');
   url.searchParams.set('branch', 'develop');
   url.searchParams.set('model', model.id);
   url.searchParams.set('variant', model.variant);
@@ -51,7 +54,7 @@ function modelCardUrl(model) {
 }
 
 function downloadArgs(model, output) {
-  return ['models', 'download', '--branch', 'develop', '--stg', '--id', model.id,
+  return ['models', 'download', '--branch', 'develop', '--id', model.id,
     '--variant', model.variant, '--output', output, '--json'];
 }
 
@@ -108,7 +111,7 @@ function registerModels(vscode, context, resolveCli, enabled = false) {
       const cli = await resolveCli();
       const models = await vscode.window.withProgress({location:vscode.ProgressLocation.Notification,
         title:'Loading develop model builds', cancellable:true}, async (_, token) =>
-        parseCatalog(await runCli(cli, ['models','list','--branch','develop','--stg','--json'], token, 120000)));
+        parseCatalog(await runCli(cli, ['models','list','--branch','develop','--json'], token, 120000, MODEL_REGISTRY_ENV)));
       if (!models.length) return vscode.window.showInformationMessage('No existing builds are available on develop.');
       const model = await vscode.window.showQuickPick(models, {title:'Model Registry · develop',
         placeHolder:'Search models, variants, tasks, or licenses', matchOnDescription:true, matchOnDetail:true});
@@ -145,7 +148,7 @@ function registerModels(vscode, context, resolveCli, enabled = false) {
           completed = true;
           return;
         }
-        const result = JSON.parse(await runCli(cli, downloadArgs(model, destination), token));
+        const result = JSON.parse(await runCli(cli, downloadArgs(model, destination), token, 0, MODEL_REGISTRY_ENV));
         if (typeof result.path !== 'string') throw new Error('The CLI did not return a downloaded path.');
         const downloaded = path.resolve(result.path);
         if (!downloaded.startsWith(destination + path.sep)) throw new Error('The CLI returned a path outside the download folder.');

@@ -168,10 +168,10 @@ and daily builds. The Models button and command are hidden on older SDKs or
 when `/etc/sdk-release` cannot identify a supported platform version.
 
 Choose **Models** in the Neat panel or run **SiMa Neat: Browse Models (develop)**
-from the Command Palette. Search existing staging registry builds by model name,
+from the Command Palette. Search existing production registry builds by model name,
 variant, description, task, or license. After selecting a model, choose an action (downloads and source copies then ask for a destination workspace):
 
-- **Show Model Card** opens the staging Model Registry inside VSCode, with the
+- **Show Model Card** opens the production Model Registry inside VSCode, with the
   selected model, variant, and `develop` branch in the URL. No files are downloaded.
 - **Download prebuilt artifact** downloads the existing build for the selected variant.
 - **Copy model source folder** copies `models/<model>` from the current `develop`
@@ -188,6 +188,8 @@ variant, description, task, or license. After selecting a model, choose an actio
   or build outputs are copied. Scripts are not executed.
 
 Downloads use the SDK's `sima-cli models` commands and checksum verification.
+The extension explicitly selects `https://models-registry.neat.sima.ai` for
+listing and downloads; model cards open `https://developer.sima.ai/models/`.
 The current existing build for that model/variant on `develop` is downloaded
 into a new `models/<model>-<variant>-<unique suffix>` folder. No existing model
 folder is overwritten. ZIP and tar packages are unpacked into `contents/` for review;
@@ -196,8 +198,8 @@ directory packages and individual model artifacts are kept as downloaded.
 The folder is revealed in Explorer when complete. Cancel aborts the operation
 and removes its incomplete folder. Model contents are never executed.
 
-Requires an SDK with `sima-cli models list/download --stg --json`, Python 3.9+,
-and network access to the staging registry and artifact download endpoints.
+Requires an SDK with `sima-cli models list/download --json`, Python 3.9+,
+and network access to the production registry and artifact download endpoints.
 This initial integration uses `develop` only; it does not compile or deploy models.
 
 ### SDK landing page

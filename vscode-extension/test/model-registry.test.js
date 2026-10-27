@@ -8,7 +8,7 @@ test('catalog exposes existing model variants and rejects unsafe identifiers', (
   ]}));
   assert.equal(rows.length,1); assert.equal(rows[0].id,'yolo');
   assert.match(rows[0].detail,/detection/); assert.match(rows[0].detail,/Apache-2.0/);
-  assert.deepEqual(downloadArgs(rows[0],'/workspace/my models'), ['models','download','--branch','develop','--stg','--id','yolo','--variant','w8a8','--output','/workspace/my models','--json']);
+  assert.deepEqual(downloadArgs(rows[0],'/workspace/my models'), ['models','download','--branch','develop','--id','yolo','--variant','w8a8','--output','/workspace/my models','--json']);
   assert.throws(()=>parseCatalog('{"models":{}}'));
 });
 test('CLI execution preserves arguments without shell expansion and reports failure', async () => {
@@ -25,6 +25,7 @@ test('download flow creates independent workspace folders and reveals results', 
   try {
     const cli = path.join(root,'fake-cli');
     await fs.writeFile(cli, `#!${process.execPath}\nconst fs=require('fs'),p=require('path');
+if(process.env.SIMA_MODELS_REGISTRY_BASE_URL!=='https://models-registry.neat.sima.ai'||process.argv.includes('--stg')||process.argv.includes('--staging')) throw Error('Models must use production');
 if(process.argv.includes('list')) console.log(JSON.stringify({models:[{metadata:{model_id:'model',variant_id:'w8a8',display_name:'Model'}}]}));
 else {const root=process.argv[process.argv.indexOf('--output')+1];const folder=p.join(root,'model');fs.mkdirSync(folder);fs.writeFileSync(p.join(folder,'README.md'),'review');console.log(JSON.stringify({path:folder,run_id:'build-123'}));}\n`);
     await fs.chmod(cli,0o755);
@@ -114,7 +115,7 @@ test('Git errors redact session credentials', async () => {
 test('Show Model Card opens selected develop model inside VSCode without a workspace', async () => {
   const {modelCardUrl, registerModels} = require('../src/model-registry');
   const url=new URL(modelCardUrl({id:'model with space',variant:'w8&a8'}));
-  assert.equal(url.origin,'https://developer-stg.sima.ai');
+  assert.equal(url.origin,'https://developer.sima.ai');
   assert.equal(url.pathname,'/models/');
   assert.equal(url.searchParams.get('model'),'model with space');
   assert.equal(url.searchParams.get('variant'),'w8&a8');
@@ -130,5 +131,5 @@ test('Show Model Card opens selected develop model inside VSCode without a works
     showErrorMessage:message=>assert.fail(message)}};
   registerModels(vscode,{subscriptions:[]},async()=>'/unused/cli', true);
   await callback();
-  assert.deepEqual(opened,[['simpleBrowser.show','https://developer-stg.sima.ai/models/?branch=develop&model=qwen3_5_0_8b&variant=w4a16']]);
+  assert.deepEqual(opened,[['simpleBrowser.show','https://developer.sima.ai/models/?branch=develop&model=qwen3_5_0_8b&variant=w4a16']]);
 });
