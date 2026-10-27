@@ -62,23 +62,38 @@ jobs:
   build:
     name: Build on ${{ matrix.arch }}
     needs: resolve-platform-config
-    runs-on: ${{ matrix.runs_on }}
+    environment: ${{ vars.VULCAN_ENV || 'production' }}
+    runs-on: [self-hosted, linux, "${{ matrix.runner_arch }}", "vulcan-${{ vars.VULCAN_ENV || 'production' }}", ubuntu, default]
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: x86_64
-            runs_on: ubuntu-24.04
+            runner_arch: amd64
             platform: linux/amd64
             image_suffix: x86_64
           - arch: aarch64
-            runs_on: ubuntu-24.04-arm
+            runner_arch: arm64
             platform: linux/arm64
             image_suffix: aarch64
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+
+      - name: Verify native Ubuntu build host
+        env:
+          EXPECTED_ARCH: ${{ matrix.runner_arch }}
+        run: |
+          set -euo pipefail
+          source /etc/os-release
+          test "${ID}" = ubuntu
+          test "${VERSION_ID}" = 24.04
+          test "$(dpkg --print-architecture)" = "${EXPECTED_ARCH}"
+          docker version
+          docker info
+          df -h
 
       - name: Run SDK build and package tests
         run: |
