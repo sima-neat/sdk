@@ -10,6 +10,28 @@ COPY scripts/install-cross-toolchain.sh /usr/local/bin/install-cross-toolchain.s
 RUN chmod 755 /usr/local/bin/install-cross-toolchain.sh && \
     install-cross-toolchain.sh
 
+# Build GCC independently of the SDK platform and its rolling package versions.
+# Ubuntu's AArch64 libc provides a stable bootstrap sysroot; the final image
+# verifies the resulting compiler against the actual Modalix SDK sysroot.
+FROM ${SDK_BASE_IMAGE} AS gcc16-toolchain
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update --allow-releaseinfo-change && \
+    apt-get install -y --no-install-recommends \
+      gcc g++ make binutils-aarch64-linux-gnu libc6-dev-arm64-cross \
+      ca-certificates curl wget tar bzip2 xz-utils file zlib1g-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /opt/toolchain/aarch64/modalix/usr && \
+    cp -a /usr/aarch64-linux-gnu/include /opt/toolchain/aarch64/modalix/usr/ && \
+    cp -a /usr/aarch64-linux-gnu/lib /opt/toolchain/aarch64/modalix/usr/
+# Preserve the absolute paths used by the cross-libc linker scripts inside
+# the bootstrap sysroot, plus the target dynamic loader path under /lib.
+RUN ln -s . /opt/toolchain/aarch64/modalix/usr/aarch64-linux-gnu && \
+    ln -s usr/lib /opt/toolchain/aarch64/modalix/lib
+COPY scripts/install-gcc16-toolchain.sh /usr/local/bin/install-gcc16-toolchain.sh
+RUN --mount=type=cache,id=sima-sdk-gcc16-v1,target=/var/cache/sima-sdk-gcc16,sharing=locked \
+    GCC16_BUILD_CACHE=/var/cache/sima-sdk-gcc16 \
+    bash /usr/local/bin/install-gcc16-toolchain.sh
+
 FROM ${SDK_BASE_IMAGE} AS sdk-platform
 
 ARG SDK_PKG_LIST
@@ -227,7 +249,7 @@ RUN --mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,shari
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /tmp/*
 
 # Exercise the target libc/linker layout, not only the compiler's own sysroot.
-RUN if { [ "${SDK_APT_CHANNEL}" = daily ] || { [ "${SDK_APT_CHANNEL}" = pre-release ] && [ "${BASE_SDK_VERSION%%.*}" = 3 ]; }; } && [ "${MINIMAL_IMAGE}" != 1 ]; then \
+RUN if { [ "${SDK_APT_CHANNEL}" = daily ] || [ "${BASE_SDK_VERSION%%.*}" = 3 ]; } && [ "${MINIMAL_IMAGE}" != 1 ]; then \
       printf '#include <gst/gst.h>\nint main() { gst_init(nullptr, nullptr); return 0; }\n' > /tmp/agate-smoke.cpp; \
       flags="$(PKG_CONFIG_LIBDIR=/opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu/pkgconfig:/opt/toolchain/aarch64/modalix/usr/share/pkgconfig pkg-config --cflags --libs gstreamer-1.0)" && \
       aarch64-linux-gnu-g++ --sysroot=/opt/toolchain/aarch64/modalix /tmp/agate-smoke.cpp $flags \
@@ -236,17 +258,6 @@ RUN if { [ "${SDK_APT_CHANNEL}" = daily ] || { [ "${SDK_APT_CHANNEL}" = pre-rele
       aarch64-linux-gnu-readelf -h /tmp/agate-smoke | grep -q AArch64 && \
       rm -f /tmp/agate-smoke.cpp /tmp/agate-smoke; \
     fi
-
-# GCC 16 is a complete alternate compiler installation, not part of the
-# Modalix target sysroot. Build it in an isolated stage so bootstrap packages
-# and source trees do not increase the published SDK image.
-FROM sdk-platform AS gcc16-toolchain
-RUN apt-get update --allow-releaseinfo-change && \
-    apt-get install -y --no-install-recommends gcc g++ xz-utils && \
-    rm -rf /var/lib/apt/lists/*
-RUN --mount=type=cache,id=sima-sdk-gcc16-v1,target=/var/cache/sima-sdk-gcc16,sharing=locked \
-    GCC16_BUILD_CACHE=/var/cache/sima-sdk-gcc16 \
-    /usr/local/bin/install-gcc16-toolchain.sh --jobs 4
 
 FROM sdk-platform
 COPY --from=gcc16-toolchain \
@@ -302,7 +313,7 @@ RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/libexec/sima-sdk/devkit-container-remote.sh && \
     chmod 755 /usr/local/bin/devkit-sync-rsync.sh && \
     install-sdk-sysroot-overlay.sh && \
-    if { [ "${SDK_APT_CHANNEL}" = daily ] || { [ "${SDK_APT_CHANNEL}" = pre-release ] && [ "${BASE_SDK_VERSION%%.*}" = 3 ]; }; }; then \
+    if { [ "${SDK_APT_CHANNEL}" = daily ] || [ "${BASE_SDK_VERSION%%.*}" = 3 ]; }; then \
       /usr/bin/python3 /usr/local/bin/sysroot-directory.py init /opt/toolchain/aarch64/modalix; \
     fi
 

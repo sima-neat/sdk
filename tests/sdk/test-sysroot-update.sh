@@ -405,17 +405,17 @@ Version: 1.0
 
 usr/lib/fixture
 EOF
-for channel_base in 'release 3.0.0' 'pre-release 2.1.2' 'daily 3.0.0' 'daily 2.1.2' 'pre-release 3.0.0'; do
+for channel_base in 'release 2.1.2' 'release 3.0.0' 'pre-release 2.1.2' 'daily 3.0.0' 'daily 2.1.2' 'pre-release 3.0.0'; do
   read -r mutation_channel mutation_base <<< "${channel_base}"
   printf 'Platform Channel = %s\nPlatform Base = %s\n' "${mutation_channel}" "${mutation_base}" > "${tmpdir}/mutation-sdk-release"
   for operation in install remove; do
     if env "${common_env[@]}" SYSROOT="${mutation_root}" \
       SDK_RELEASE_FILE="${tmpdir}/mutation-sdk-release" \
       "${SYSROOT_COMMAND}" "${operation}" fixture:arm64 --dry-run > "${tmpdir}/mutation-output" 2>&1; then
-      [[ "${channel_base}" == 'release 3.0.0' || "${channel_base}" == 'pre-release 2.1.2' ]] || \
+      [[ "${channel_base}" == 'release 2.1.2' || "${channel_base}" == 'pre-release 2.1.2' ]] || \
         fail "${operation} accepted whole-directory channel ${channel_base}"
     else
-      [[ "${channel_base}" == 'daily '* || "${channel_base}" == 'pre-release 3.0.0' ]] || \
+      [[ "${channel_base}" == 'release 3.0.0' || "${channel_base}" == 'daily '* || "${channel_base}" == 'pre-release 3.0.0' ]] || \
         fail "${operation} rejected mutable channel ${channel_base}: $(cat "${tmpdir}/mutation-output")"
       grep -Fq 'SDK_PKG_LIST' "${tmpdir}/mutation-output" || fail 'unexpected mutation rejection'
     fi

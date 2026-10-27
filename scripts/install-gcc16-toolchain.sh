@@ -88,6 +88,13 @@ verify_toolchain() {
     fi
   done
 
+  # The bootstrap libc has a flat layout, but the SDK uses Debian multiarch.
+  # Catch a compiler that would omit the SDK's architecture-specific headers.
+  if [[ "$("${cc}" -print-multiarch)" != "${TARGET}" ]]; then
+    echo "GCC16 must support the ${TARGET} multiarch layout." >&2
+    return 1
+  fi
+
   libstdcxx="$("${cxx}" --sysroot="${sysroot}" -print-file-name=libstdc++.so)"
   libgcc="$("${cxx}" --sysroot="${sysroot}" -print-file-name=libgcc_s.so.1)"
   for runtime in "${libstdcxx}" "${libgcc}"; do
@@ -173,6 +180,7 @@ object_dir="${build_root}/objects"
 mkdir -p "${object_dir}"
 (
   cd "${object_dir}"
+  # Do not infer multiarch support from the flat bootstrap libc layout.
   CC="$(command -v gcc)" CXX="$(command -v g++)" \
     "${source_dir}/configure" \
       --prefix="${prefix}" \
@@ -183,11 +191,13 @@ mkdir -p "${object_dir}"
       --enable-languages=c,c++ \
       --disable-bootstrap \
       --disable-multilib \
+      --enable-multiarch \
       --disable-nls \
       --disable-libcc1 \
       --disable-libsanitizer \
       --with-system-zlib \
       --enable-default-pie
+  echo "Building GCC ${GCC_VERSION} with ${jobs} parallel jobs."
   make -j"${jobs}"
   staging="${build_root}/stage"
   # Release SDK images do not need debug symbols for GCC itself. Keep the

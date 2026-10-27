@@ -62,23 +62,38 @@ jobs:
   build:
     name: Build on ${{ matrix.arch }}
     needs: resolve-platform-config
-    runs-on: ${{ matrix.runs_on }}
+    environment: ${{ vars.VULCAN_ENV || 'production' }}
+    runs-on: [self-hosted, linux, "${{ matrix.runner_arch }}", "vulcan-${{ vars.VULCAN_ENV || 'production' }}", ubuntu, default]
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: x86_64
-            runs_on: ubuntu-24.04
+            runner_arch: amd64
             platform: linux/amd64
             image_suffix: x86_64
           - arch: aarch64
-            runs_on: ubuntu-24.04-arm
+            runner_arch: arm64
             platform: linux/arm64
             image_suffix: aarch64
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+
+      - name: Verify native Ubuntu build host
+        env:
+          EXPECTED_ARCH: ${{ matrix.runner_arch }}
+        run: |
+          set -euo pipefail
+          source /etc/os-release
+          test "${ID}" = ubuntu
+          test "${VERSION_ID}" = 24.04
+          test "$(dpkg --print-architecture)" = "${EXPECTED_ARCH}"
+          docker version
+          docker info
+          df -h
 
       - name: Run SDK build and package tests
         run: |
@@ -321,7 +336,7 @@ jobs:
   smoke:
     name: Smoke on ${{ matrix.arch }}
     if: github.event_name != 'pull_request'
-    needs: publish-manifest
+    needs: [resolve-platform-config, publish-manifest]
     runs-on: ${{ matrix.runs_on }}
     env:
       SIMA_CLI_CHECK_FOR_UPDATE: "0"
@@ -528,6 +543,8 @@ jobs:
         env:
           IMAGE_REF: ${{ steps.image.outputs.image_ref }}
           SMOKE_ARCH: ${{ matrix.arch }}
+          EXPECTED_PLATFORM: ${{ needs.resolve-platform-config.outputs.base_sdk_version }}
+          REQUIRE_CORE: ${{ github.event_name == 'workflow_dispatch' && needs.resolve-platform-config.outputs.sdk_apt_channel != 'daily' }}
         run: |
           set -euo pipefail
 
@@ -541,6 +558,17 @@ jobs:
           sdk_release="$(docker exec "${container_id}" cat /etc/sdk-release)"
           echo "Generated /etc/sdk-release (${SMOKE_ARCH}):"
           printf '%s\n' "${sdk_release}"
+
+          # A successful manual non-daily build must prove Core integration,
+          # rather than silently accepting a platform-only fallback image.
+          grep -Fxq "Platform Version = ${EXPECTED_PLATFORM}" <<< "${sdk_release}"
+          if [[ "${REQUIRE_CORE}" == true ]]; then
+            source scripts/neat-deps.sh
+            expected_core="$(neat_dependency_target core core)"
+            grep -Fxq 'SDK Profile = full' <<< "${sdk_release}"
+            grep -Fxq 'Neat Core = bundled' <<< "${sdk_release}"
+            grep -Fxq "Neat Core Requested = ${expected_core}" <<< "${sdk_release}"
+          fi
 
           {
             printf '## SDK release metadata (%s)\n\n' "${SMOKE_ARCH}"

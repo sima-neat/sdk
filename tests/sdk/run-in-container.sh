@@ -152,7 +152,7 @@ test_sysroot_overlay_representative() {
   test -e "${overlay_sysroot}/usr/include/asm-generic/errno.h"
 }
 
-test_daily_development_sysroot() {
+test_trixie_development_sysroot() {
   local source="${WORK_DIR}/daily-development.cpp"
   local binary="${WORK_DIR}/daily-development"
   local flags
@@ -441,7 +441,7 @@ test_daily_update_cycle() {
     sudo env SDK_PKG_LIST="${SDK_PKG_LIST:-}" sysroot update --sysroot "${active}" "${revision}"
     setup_sdk_environment
     test_modalix_cross_toolchain
-    test_daily_development_sysroot
+    test_trixie_development_sysroot
     (cd "/tmp/modalix-overlay-${revision}" && sha256sum -c "${SYSROOT}/var/lib/sima-sdk/packages.sha256" >/dev/null)
     grep -Fxq "Platform Revision = ${revision}" "${SYSROOT}/var/lib/sima-sdk/sysroot-overlay"
   done
@@ -461,9 +461,11 @@ run_test "code-server browser IDE" test_code_server
 if [[ -r "${SDK_RELEASE_FILE}" ]] && [[ "$(sdk_release_value "SDK Profile")" == "platform-cross" ]]; then
   run_test "Core-less SDK profile" test_platform_cross_profile
   run_test "Modalix cross toolchain" test_modalix_cross_toolchain
-  if [[ "$(sdk_release_value "Platform Channel")" == daily ]]; then
-    run_test "Debian 13 development sysroot" test_daily_development_sysroot
-    run_test "Daily sysroot update cycle" test_daily_update_cycle
+  if [[ "$(sdk_release_value "Platform Base")" == 3.* || "$(sdk_release_value "Platform Channel")" == daily ]]; then
+    run_test "Debian 13 development sysroot" test_trixie_development_sysroot
+    if [[ "$(sdk_release_value "Platform Channel")" == daily ]]; then
+      run_test "Daily sysroot update cycle" test_daily_update_cycle
+    fi
   else
     run_test "Representative sysroot overlay install" test_sysroot_overlay_representative
   fi
@@ -473,7 +475,11 @@ fi
 
 run_test "SDK status: neat --json" test_neat_status
 run_test "Modalix cross toolchain" test_modalix_cross_toolchain
-run_test "Representative sysroot overlay install" test_sysroot_overlay_representative
+if [[ "$(sdk_release_value "Platform Base")" == 3.* || "$(sdk_release_value "Platform Channel")" == daily ]]; then
+  run_test "Debian 13 development sysroot" test_trixie_development_sysroot
+else
+  run_test "Representative sysroot overlay install" test_sysroot_overlay_representative
+fi
 run_test "Representative internals build" test_internals_representative
 run_test "Representative core API build" test_core_api_representative
 run_test "Representative llima Python extension build" test_llima_python_extension_representative

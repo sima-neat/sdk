@@ -49,7 +49,7 @@ EOF
   trap cleanup_sysroot_pref EXIT
 fi
 
-if [[ "${SDK_APT_CHANNEL:-daily}" == daily || ( "${SDK_APT_CHANNEL:-daily}" == pre-release && "${base_sdk_version}" == 3.* ) ]]; then
+if [[ "${SDK_APT_CHANNEL:-daily}" == daily || "${base_sdk_version}" == 3.* ]]; then
   # Resolve development packages and their Debian 13 runtime dependencies together.
   daily_packages=(
     a65apps-dev simaai-gst-plugins-dev simaai-heap-dev

@@ -15,11 +15,10 @@ apt_cache_options=()
 overlay_apt_workdir=""
 agate_apt_workdir=""
 
-# Agate development channels replace the sysroot as one transaction. Stable
-# releases retain the legacy package install/remove path, including 3.x.
+# Agate/Platform 3 sysroots are replaced as one transaction on every channel.
 uses_directory_replacement() {
   local channel="$1" platform_base="$2"
-  [[ "${channel}" == daily || ( "${channel}" == pre-release && "${platform_base}" == 3.* ) ]]
+  [[ "${channel}" == daily || "${platform_base}" == 3.* ]]
 }
 
 image_uses_directory_replacement() {
@@ -1226,7 +1225,7 @@ EOF
 
 cmd_install() {
   if image_uses_directory_replacement; then
-    die "For daily and 3.x pre-release SDKs, select development packages with SDK_PKG_LIST during update or rebuild."
+    die "For daily and Platform 3 SDKs, select development packages with SDK_PKG_LIST during update or rebuild."
   fi
   local -a resolved normalized
   local pkg resolved_pkg workdir i

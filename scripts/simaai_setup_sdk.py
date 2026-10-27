@@ -521,19 +521,25 @@ def daily_candidate(candidates, platform_version, requested_version="", relation
 
     APT orders versions newest first. Prefer daily packages no newer than the
     selected Palette build, then Debian 13 packages. Exact dependency versions
-    and inequalities remain constraints on both sources.
+    and inequalities remain constraints on both sources. Stable Platform 3
+    releases select release-repository Agate packages without a build suffix.
     """
     import apt_pkg
 
     master = "~pre" in platform_version
-    build = int(platform_version.rsplit("~pre" if master else "-", 1)[1])
+    stable = "~" not in platform_version
+    build = None if stable else int(platform_version.rsplit("~pre" if master else "-", 1)[1])
     daily = []
     debian = []
     for candidate in candidates:
         if requested_version and not apt_pkg.check_dep(candidate.version, relation, requested_version):
             continue
         origins = candidate.origins
-        if any(origin.site == "debian.neat.sima.ai" and origin.codename == "agate" for origin in origins):
+        if stable and any(origin.site == "repo.sima.ai" and origin.codename == "agate"
+                          for origin in origins):
+            if "~" not in candidate.version:
+                daily.append(candidate)
+        elif not stable and any(origin.site == "debian.neat.sima.ai" and origin.codename == "agate" for origin in origins):
             revision = re.search(r"~pre([0-9]+)$" if master else r"-([0-9]+)$", candidate.version)
             # Kernel packages retain a plain numeric Debian revision on master.
             if master and "~" not in candidate.version:
@@ -549,7 +555,7 @@ def daily_candidate(candidates, platform_version, requested_version="", relation
 
 def main(pkg_name, version, libc_ver, dldir, installdir):
     daily_channel = (os.environ.get("SDK_APT_CHANNEL") == "daily" or
-                     (os.environ.get("SDK_APT_CHANNEL") == "pre-release" and version.startswith("3.")))
+                     version.startswith("3."))
     # packages that are to be ignored
     blacklist = {
         "m4-mla-modalix:armhf": "",
