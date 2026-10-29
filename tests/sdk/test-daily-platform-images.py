@@ -540,3 +540,27 @@ def test_release_catalog_preserves_legacy_readers_and_announcements(s3, tmp_path
     assert [b['name'] for b in complete['builds']] == [release, name(2478)]
     mirror(source, s3, True, report_path=report)
     assert json.loads(report.read_text())['copied_versions'] == []
+
+
+@pytest.mark.parametrize('failed_index', ['index.json', 'index-v2.json'])
+def test_release_catalog_retry_announces_new_builds_once(s3, tmp_path, monkeypatch, failed_index):
+    mirror(Source([1]), s3, True)
+    source = Source([1, 2])
+    release = '3.0.0_release_master_B2479'
+    source.names.add(release)
+    report = tmp_path / 'report.json'
+    original = m.put_json
+    def fail(client, key, value):
+        if key == m.PREFIX + failed_index:
+            raise RuntimeError('Index publication failed')
+        return original(client, key, value)
+    monkeypatch.setattr(m, 'put_json', fail)
+    with pytest.raises(RuntimeError, match='Index publication failed'):
+        mirror(source, s3, True, report_path=report)
+    assert not report.exists()
+    monkeypatch.setattr(m, 'put_json', original)
+    mirror(source, s3, True, report_path=report)
+    assert json.loads(report.read_text())['copied_versions'] == [release, name(2)]
+    assert source.downloads == [release, name(2)]
+    mirror(source, s3, True, report_path=report)
+    assert json.loads(report.read_text())['copied_versions'] == []

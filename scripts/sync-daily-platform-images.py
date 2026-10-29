@@ -309,13 +309,14 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
         indexed_versions = {build['name'] for build in (old or {}).get('builds', [])
                             if build['name'].startswith('3.0.0_release_master_') or build['name'] in legacy_versions}
         copied_versions.update(set(names) - indexed_versions)
-        if old is None or {k: v for k, v in old.items() if k != 'generated_at'} != index:
-            put_json(s3, PREFIX + 'index-v2.json', dict(index, generated_at=datetime.now(timezone.utc).isoformat()))
         # Older consumers reject the whole catalog when they see release names.
         # Keep their URL compatible while new consumers use the complete pool.
         legacy = dict(index, builds=[build for build in builds if not build['name'].startswith('3.0.0_release_master_')])
         if previous_legacy is None or {k: v for k, v in previous_legacy.items() if k != 'generated_at'} != legacy:
             put_json(s3, PREFIX + 'index.json', dict(legacy, generated_at=datetime.now(timezone.utc).isoformat()))
+        # Commit the complete catalog last so retries retain new-build announcements.
+        if old is None or {k: v for k, v in old.items() if k != 'generated_at'} != index:
+            put_json(s3, PREFIX + 'index-v2.json', dict(index, generated_at=datetime.now(timezone.utc).isoformat()))
         if report_path is not None:
             report_path.parent.mkdir(parents=True, exist_ok=True)
             report_path.write_text(json.dumps({
