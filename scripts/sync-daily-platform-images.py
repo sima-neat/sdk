@@ -23,6 +23,9 @@ PREFIX = 'daily-platform-images/'
 BUILD = runpy.run_path(str(Path(__file__).with_name('platform-builds.py')))['BUILD']
 IMAGES = ('.wic', '.wic.gz', '.wic.xz', '.wic.zst', '.img', '.img.gz', '.img.xz', '.img.zst', '.iso')
 KEEP = 21
+RETIRED_BUILDS = set(json.loads(Path(__file__).with_name("retired-platform-images.json").read_text()))
+if any(not BUILD.fullmatch(name) for name in RETIRED_BUILDS):
+    raise ValueError("Invalid retired platform build name")
 
 
 def rank(name):
@@ -225,7 +228,8 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
     stored = existing_builds(s3)
     # Keep successful builds even if Artifactory has already removed them.
     manifests = {name: read_json(s3, f'{PREFIX}{name}/manifest.json') for name in stored}
-    candidates = sorted(upstream | {name for name, manifest in manifests.items() if manifest}, key=rank, reverse=True)
+    candidates = sorted((upstream | {name for name, manifest in manifests.items() if manifest})
+                        - RETIRED_BUILDS, key=rank, reverse=True)
     snapshots = {}
     names = []
     rolling_count = 0

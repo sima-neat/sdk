@@ -546,29 +546,25 @@ source-change reports are skipped rather than inferred from unrelated builds.
 
 ## Official release Agate channel
 
-The production sync also mirrors `http://sw-web.eng.sima.ai/deb/release`
-(the internal official release publisher) to
-`https://debian.neat.sima.ai/release`, independently of daily and pre-release.
-The public `repo.sima.ai/elxr/deb/release` Agate endpoint was not yet available
-when B2479 was published, so it is not used as the transfer source.
-Use `deb [trusted=yes] https://debian.neat.sima.ai/release agate non-free`.
-Base OS packages still come from Debian Trixie. Release cache, publication
-receipts, reports, and locks use their own `release/` paths. Payloads and indexes
-receive the same validation and atomic publication checks as the other channels.
-
-`3.0.0_release_master_B2479` uses Palette `3.0.0`, not `3.0.0~pre2479`.
-Its generated Dockerfile specifies kernel headers `6.18.3-2479`. Release-image
-readiness checks use the release indexes and exact Palette release version;
-as with other channels this is an anchor/exact-dependency index check, not a
-complete sysroot APT solve or a guarantee about unpinned component versions.
-
+Official release sysroots are published by platform at
+`https://repo.sima.ai/elxr/deb/release`. The scheduled Vulcan workflow mirrors
+only daily and pre-release packages. The temporary B2479 `debian.neat.sima.ai/release`
+mirror has been retired now that the official repository is available.
+Release image package-readiness checks use the official repository for the
+external observation.
 
 The complete image pool is published at `daily-platform-images/index-v2.json`.
-The original `index.json` omits release-master entries because older Kerrigan
-readers reject unknown build families. Updated clients prefer the complete
-catalog and fall back to the original URL until it is available. Both catalogs
-reference the same immutable manifests. The complete catalog keeps all release-master
-builds plus the latest 21 daily/pre-release builds; the legacy catalog keeps only
-those rolling builds. The sync never deletes release-master objects or their
-versions, even if Artifactory no longer lists the release. The publisher role
-also explicitly denies deletion of release-master paths.
+The legacy `index.json` omits release-master entries for older clients.
+The complete catalog retains unretired release-master builds plus the latest
+21 daily/pre-release builds; the legacy catalog contains only those rolling
+builds. Automatic pruning never deletes release-master objects or versions,
+and the publisher role explicitly denies deletion of release-master paths.
+
+## Explicit image retirement
+
+Release-master images remain outside rolling retention. An owner-authorized
+retirement is recorded in `scripts/retired-platform-images.json`, which excludes
+that build from catalog publication and prevents rediscovery from restoring it.
+It does not grant deletion privileges or automatically delete release objects;
+an operator removes the exact retired prefix separately. B2479 is retired in
+favor of B2501. General release-master deletion protection remains in place.

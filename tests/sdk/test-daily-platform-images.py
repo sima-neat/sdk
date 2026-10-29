@@ -58,6 +58,12 @@ class Source:
         Path(target).write_bytes(b'image')
 
 
+@pytest.fixture(autouse=True)
+def no_production_retirements(monkeypatch):
+    # Most fixtures exercise synthetic release histories, including B2479.
+    monkeypatch.setattr(m, 'RETIRED_BUILDS', set())
+
+
 @pytest.fixture
 def s3():
     with mock_aws():
@@ -606,3 +612,20 @@ def test_multiple_old_release_masters_do_not_consume_rolling_slots(s3):
     assert len(result['builds']) == 23
     assert set(result['pinned_builds']) == releases
     assert {b['name'] for b in result['builds']} == releases | {name(n) for n in range(104, 125)}
+
+
+def test_explicit_retirement_omits_stored_and_upstream_build_without_automatic_deletion(s3, monkeypatch):
+    retired = '3.0.0_release_master_B2479'
+    replacement = '3.0.0_release_master_B2501'
+    source = Source([2487])
+    source.names.update({retired, replacement})
+    mirror(source, s3, True)
+    source.downloads.clear()
+    monkeypatch.setattr(m, 'RETIRED_BUILDS', {retired})
+    result = mirror(source, s3, True)
+    assert {b['name'] for b in result['builds']} == {replacement, name(2487)}
+    assert result['pinned_builds'] == [replacement]
+    assert not source.downloads
+    # Retirement requires separately authorized deletion, never rolling pruning.
+    assert m.read_json(s3, m.PREFIX + retired + '/manifest.json')['name'] == retired
+    assert retired not in {b['name'] for b in m.read_json(s3, m.PREFIX + 'index-v2.json')['builds']}
