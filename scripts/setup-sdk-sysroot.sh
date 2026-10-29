@@ -8,7 +8,7 @@ sysroot="${SYSROOT:-/opt/toolchain/aarch64/modalix}"
 download_dir="${SYSROOT_UPDATE_DOWNLOAD_DIR:-/tmp/modalix}"
 python_command="${SDK_SYSROOT_PYTHON:-/usr/bin/python3}"
 sysroot_pref=/etc/apt/preferences.d/00-sima-sdk-sysroot-target.pref
-if [[ "${SDK_APT_CHANNEL:-daily}" != "release" ]]; then
+if [[ "${SDK_APT_CHANNEL:-release}" != "release" ]]; then
   sdk_apt_origin="debian.neat.sima.ai"
 else
   sdk_apt_origin="repo.sima.ai"
@@ -49,7 +49,7 @@ EOF
   trap cleanup_sysroot_pref EXIT
 fi
 
-if [[ "${SDK_APT_CHANNEL:-daily}" == daily || "${base_sdk_version}" == 3.* ]]; then
+if [[ "${SDK_APT_CHANNEL:-release}" == daily || "${base_sdk_version}" == 3.* ]]; then
   # Resolve development packages and their Debian 13 runtime dependencies together.
   daily_packages=(
     a65apps-dev simaai-gst-plugins-dev simaai-heap-dev
