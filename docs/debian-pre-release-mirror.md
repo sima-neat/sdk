@@ -553,3 +553,10 @@ Its generated Dockerfile specifies kernel headers `6.18.3-2479`. Release-image
 readiness checks use the release indexes and exact Palette release version;
 as with other channels this is an anchor/exact-dependency index check, not a
 complete sysroot APT solve or a guarantee about unpinned component versions.
+
+
+The complete image pool is published at `daily-platform-images/index-v2.json`.
+The original `index.json` omits release-master entries because older Kerrigan
+readers reject unknown build families. Updated clients prefer the complete
+catalog and fall back to the original URL until it is available. Both catalogs
+reference the same immutable manifests and share the 21-build retention pool.

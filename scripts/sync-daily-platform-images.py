@@ -301,13 +301,21 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
             name = manifest['name']
             if manifests.get(name) != manifest:
                 put_json(s3, f'{PREFIX}{name}/manifest.json', manifest)
-        old = read_json(s3, PREFIX + 'index.json')
+        old = read_json(s3, PREFIX + 'index-v2.json') or read_json(s3, PREFIX + 'index.json')
         # Uploads can finish in an earlier attempt whose index publication failed.
         # Announce those builds when they first become available in the index.
-        indexed_versions = {build['name'] for build in (old or {}).get('builds', [])}
+        previous_legacy = read_json(s3, PREFIX + 'index.json')
+        legacy_versions = {build['name'] for build in (previous_legacy or {}).get('builds', [])}
+        indexed_versions = {build['name'] for build in (old or {}).get('builds', [])
+                            if build['name'].startswith('3.0.0_release_master_') or build['name'] in legacy_versions}
         copied_versions.update(set(names) - indexed_versions)
         if old is None or {k: v for k, v in old.items() if k != 'generated_at'} != index:
-            put_json(s3, PREFIX + 'index.json', dict(index, generated_at=datetime.now(timezone.utc).isoformat()))
+            put_json(s3, PREFIX + 'index-v2.json', dict(index, generated_at=datetime.now(timezone.utc).isoformat()))
+        # Older consumers reject the whole catalog when they see release names.
+        # Keep their URL compatible while new consumers use the complete pool.
+        legacy = dict(index, builds=[build for build in builds if not build['name'].startswith('3.0.0_release_master_')])
+        if previous_legacy is None or {k: v for k, v in previous_legacy.items() if k != 'generated_at'} != legacy:
+            put_json(s3, PREFIX + 'index.json', dict(legacy, generated_at=datetime.now(timezone.utc).isoformat()))
         if report_path is not None:
             report_path.parent.mkdir(parents=True, exist_ok=True)
             report_path.write_text(json.dumps({

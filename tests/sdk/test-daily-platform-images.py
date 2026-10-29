@@ -471,13 +471,14 @@ def test_failed_run_removes_stale_report(s3, tmp_path):
     assert not report.exists()
 
 
-def test_index_publication_retry_reports_new_build_without_reupload(s3, tmp_path, monkeypatch):
+@pytest.mark.parametrize("failed_index", ["index.json", "index-v2.json"])
+def test_index_publication_retry_reports_new_build_without_reupload(s3, tmp_path, monkeypatch, failed_index):
     report = tmp_path / 'result.json'
     mirror(Source([1]), s3, True)
     source = Source([1, 2])
     original_put = m.put_json
     def fail_index(client, key, value):
-        if key == m.PREFIX + 'index.json':
+        if key == m.PREFIX + failed_index:
             raise RuntimeError('Index publication failed')
         return original_put(client, key, value)
     monkeypatch.setattr(m, 'put_json', fail_index)
@@ -525,3 +526,17 @@ def test_release_master_discovery_and_retention(s3):
     source.info = lambda path: {'children': [{'uri': '/' + n, 'folder': True} for n in names]}
     assert source.builds() == {release}
     assert m.rank(release)[0] == 2479
+
+
+def test_release_catalog_preserves_legacy_readers_and_announcements(s3, tmp_path):
+    release = '3.0.0_release_master_B2479'
+    source = Source([2478])
+    source.names.add(release)
+    report = tmp_path / 'report.json'
+    mirror(source, s3, True, report_path=report)
+    legacy = m.read_json(s3, m.PREFIX + 'index.json')
+    complete = m.read_json(s3, m.PREFIX + 'index-v2.json')
+    assert [b['name'] for b in legacy['builds']] == [name(2478)]
+    assert [b['name'] for b in complete['builds']] == [release, name(2478)]
+    mirror(source, s3, True, report_path=report)
+    assert json.loads(report.read_text())['copied_versions'] == []
