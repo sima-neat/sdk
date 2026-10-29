@@ -227,8 +227,9 @@ replacing the index or pruning old builds.
 Directory names matching `3.0.0_daily_<channel>_B<number>` or
 `3.0.0_pre-release_master_B<number>` or `3.0.0_release_master_B<number>` are eligible.
 Completed builds are ordered by numeric build number, newest first (with directory
-name as a deterministic tie breaker). The latest 21 completed builds are kept
-across channels; pending uploads do not evict them.
+name as a deterministic tie breaker). The latest 21 completed daily/pre-release builds are kept across those channels;
+release-master builds are retained permanently in addition to that window.
+Pending uploads do not evict completed builds.
 Successfully mirrored builds remain eligible if Artifactory removes them.
 Each directory must contain a `.wic`, `.img`, or `.iso` image; WIC/IMG gzip,
 xz, and zstd variants are supported. All files in an eligible build directory,
@@ -280,28 +281,34 @@ Without `publish`, the image step previews source metadata and selected builds;
 it does not download image bodies, write S3, or delete objects. With `publish`,
 it verifies/downloads/uploads files, publishes the index only after all selected
 builds succeed, then permanently deletes **all object versions and delete markers**
-for older matching build directories. It also removes abandoned partial uploads
-that exist as completed S3 objects under older build directories. Other release
+for older matching daily/pre-release build directories. It also removes abandoned
+partial uploads under those older rolling-build directories. Release-master
+objects, versions, delete markers, and partial directories are never pruned,
+regardless of whether the caller includes them in its retained set. Other release
 lines and bucket prefixes are untouched. Multipart uploads are aborted by the SDK
 on ordinary transfer failures. Count retention is owned by this workflow, not
 Vulcan's generic branch artifact cleanup.
 
-A failed run can temporarily leave more than 21 directories in S3. The previous
+A failed run can temporarily leave more directories than the 21 rolling builds
+plus all retained release-master builds in S3. The previous
 index remains usable until the new index is published; a failure during pruning
 leaves the new index usable and the next successful run retries cleanup.
 Consumers should refresh the index when an old selection is no longer available.
 
 ### CLI index contract (schema version 1)
 
-Read `s3://sima-neat-artifacts-production/daily-platform-images/index.json`.
+Read `s3://sima-neat-artifacts-production/daily-platform-images/index-v2.json`.
+The legacy `index.json` exposes only the rolling daily/pre-release builds.
 The object is published with JSON content type and `no-cache, max-age=0`.
 The index is unchanged on a no-op run and contains:
 
 - `schema_version`: `1`.
 - `generated_at`: UTC ISO 8601 publication timestamp.
-- `platform`: `modalix`; `version_prefix`: `3.0.0_daily_`.
-- `bucket`, `prefix`, and `retention_count` (`21`).
-- `builds`: newest-first array, with at most 21 entries.
+- `platform`: `modalix`; `version_prefix`: `3.0.0_`.
+- `bucket`, `prefix`, and `retention_count` (`21` daily/pre-release builds).
+- `retention_scope`: `daily-and-pre-release`.
+- `pinned_builds`: permanently retained release-master build names.
+- `builds`: newest-first array containing up to 21 rolling builds plus every release-master build.
 - Each build: `name`, numeric `build_number`, `source_url`, and `files`.
 - Each file: relative `path`, S3 `key`, `s3_uri`, byte `size`, and `sha256`.
 
@@ -510,14 +517,15 @@ version notifications. The existing daily digest remains scoped to the daily
 APT result artifact.
 
 Image discovery also accepts `3.0.0_pre-release_master_B<number>` and
-`3.0.0_release_master_B<number>`. Master and
-develop compete for **21 total completed builds**, ordered by numeric build
+`3.0.0_release_master_B<number>`. Pre-release master and
+daily develop compete for **21 rolling completed builds**; release master builds
+are pinned permanently outside that window, ordered by numeric build
 number with the full name as tie breaker. There is no per-channel quota. The
 existing `daily-platform-images/` URLs and schema-v1 index remain in use;
 `version_prefix` is now `3.0.0_`. APT retention follows upstream indexes, not
-this image count. The publisher IAM policy must permit deletion under
-`3.0.0_daily_*`, `3.0.0_pre-release_master_B*`, and
-`3.0.0_release_master_B*` before deploying this change.
+this image count. The publisher IAM policy permits deletion only under
+`3.0.0_daily_*` and `3.0.0_pre-release_master_B*`. An explicit deny protects
+release-master objects and versions from publisher deletion.
 
 For a master SDK build, select an exact version such as `3.0.0~pre2254` through
 `pre_release_base` in the Docker workflow, or locally:
@@ -559,4 +567,8 @@ The complete image pool is published at `daily-platform-images/index-v2.json`.
 The original `index.json` omits release-master entries because older Kerrigan
 readers reject unknown build families. Updated clients prefer the complete
 catalog and fall back to the original URL until it is available. Both catalogs
-reference the same immutable manifests and share the 21-build retention pool.
+reference the same immutable manifests. The complete catalog keeps all release-master
+builds plus the latest 21 daily/pre-release builds; the legacy catalog keeps only
+those rolling builds. The sync never deletes release-master objects or their
+versions, even if Artifactory no longer lists the release. The publisher role
+also explicitly denies deletion of release-master paths.

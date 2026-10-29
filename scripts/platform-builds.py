@@ -1,4 +1,4 @@
-"""Shared Modalix build identity; all channels compete for 21 image slots."""
+"""Shared Modalix build identity; release-master builds are pinned; other channels share 21 slots."""
 import re
 
 # Keep existing daily branch names readable, but allow only master pre-release and release builds.

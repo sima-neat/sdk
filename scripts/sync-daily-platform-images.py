@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mirror verified Artifactory daily builds; index publication precedes retention."""
+"""Mirror verified Artifactory builds; retain release masters permanently."""
 import argparse
 import base64
 import netrc
@@ -30,6 +30,10 @@ def rank(name):
     if not match:
         raise ValueError(f'Invalid daily build name: {name}')
     return int(match[1]), name
+
+
+def is_release_master(name):
+    return name.startswith('3.0.0_release_master_') and bool(BUILD.fullmatch(name))
 
 
 def safe_path(value):
@@ -199,7 +203,7 @@ def prune(s3, retained):
     for page in s3.get_paginator('list_object_versions').paginate(Bucket=BUCKET, Prefix=PREFIX + '3.0.0_'):
         for obj in page.get('Versions', []) + page.get('DeleteMarkers', []):
             name = obj['Key'][len(PREFIX):].split('/')[0]
-            if BUILD.fullmatch(name) and name not in retained:
+            if BUILD.fullmatch(name) and not is_release_master(name) and name not in retained:
                 doomed.append({'Key': obj['Key'], 'VersionId': obj['VersionId']})
     for offset in range(0, len(doomed), 1000):
         result = s3.delete_objects(Bucket=BUCKET, Delete={'Objects': doomed[offset:offset + 1000], 'Quiet': True})
@@ -224,7 +228,11 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
     candidates = sorted(upstream | {name for name, manifest in manifests.items() if manifest}, key=rank, reverse=True)
     snapshots = {}
     names = []
+    rolling_count = 0
     for name in candidates:
+        pinned = is_release_master(name)
+        if not pinned and rolling_count >= KEEP:
+            continue
         if name in upstream:
             try:
                 files = source.files(name)
@@ -239,8 +247,8 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
                 continue
             snapshots[name] = files
         names.append(name)
-        if len(names) == KEEP:
-            break
+        if not pinned:
+            rolling_count += 1
     if not names:
         print('No stable completed builds; leaving S3 and index unchanged', flush=True)
         return None
@@ -283,7 +291,9 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
                 copied_versions.add(name)
         builds.append(manifest)
     index = {'schema_version': 1, 'platform': 'modalix', 'version_prefix': '3.0.0_',
-             'bucket': BUCKET, 'prefix': PREFIX, 'retention_count': KEEP, 'builds': builds}
+             'bucket': BUCKET, 'prefix': PREFIX, 'retention_count': KEEP,
+             'retention_scope': 'daily-and-pre-release',
+             'pinned_builds': [name for name in names if is_release_master(name)], 'builds': builds}
     if publish:
         # A directory can gain supporting files during a long transfer. Recheck
         # every selected upstream inventory before writing any completion marker.
@@ -311,7 +321,7 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
         copied_versions.update(set(names) - indexed_versions)
         # Older consumers reject the whole catalog when they see release names.
         # Keep their URL compatible while new consumers use the complete pool.
-        legacy = dict(index, builds=[build for build in builds if not build['name'].startswith('3.0.0_release_master_')])
+        legacy = dict(index, pinned_builds=[], builds=[build for build in builds if not is_release_master(build['name'])])
         if previous_legacy is None or {k: v for k, v in previous_legacy.items() if k != 'generated_at'} != legacy:
             put_json(s3, PREFIX + 'index.json', dict(legacy, generated_at=datetime.now(timezone.utc).isoformat()))
         # Commit the complete catalog last so retries retain new-build announcements.
@@ -323,14 +333,16 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
                 'schema_version': 1, 'result': 'Published', 'versions': names,
                 'copied_versions': [name for name in names if name in copied_versions],
             }, indent=2) + '\n')
-        protected = set(names) | {name for name in upstream if rank(name) > rank(names[-1])}
+        rolling_names = [name for name in names if not is_release_master(name)]
+        protected = set(names) | {name for name in upstream
+                                  if not rolling_names or rank(name) > rank(rolling_names[-1])}
         print(f'Removed {prune(s3, protected)} expired object versions')
     return index
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--publish', action='store_true', help='Upload, publish index, and permanently prune older builds')
+    parser.add_argument('--publish', action='store_true', help='Upload, publish index, and permanently prune older non-release builds')
     parser.add_argument('--work-root', required=True, help='Persistent inventory observations and download workspace')
     parser.add_argument('--report', type=Path, help='Published image versions for notifications')
     args = parser.parse_args()
