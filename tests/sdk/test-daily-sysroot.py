@@ -53,6 +53,17 @@ class DailySelectionTest(unittest.TestCase):
         self.assertIsNone(module.daily_candidate([daily, prerelease, legacy, bookworm], '3.0.0'))
         self.assertIsNone(module.daily_candidate([release], '3.0.0', '9.0'))
 
+    def test_stable_platform3_accepts_official_tvm_git_version(self):
+        version = '1.4.1~git202605280444.c66e7682-0'
+        release = candidate(version, 'repo.sima.ai', 'agate')
+        prerelease = candidate('1.4.1~pre2479', 'repo.sima.ai', 'agate')
+        mirror = candidate(version)
+        # Palette's unversioned dependency and Python's exact TVM pin.
+        self.assertIs(module.daily_candidate([prerelease, mirror, release], '3.0.0'), release)
+        self.assertIs(module.daily_candidate([release], '3.0.0', version), release)
+        self.assertIsNone(module.daily_candidate([release], '3.0.0', '1.4.0'))
+        self.assertIsNone(module.daily_candidate([prerelease, mirror], '3.0.0'))
+
     def test_all_package_native_cache_key_without_host_arch_fallback(self):
         all_package = SimpleNamespace(architecture="all")
         host_package = SimpleNamespace(architecture="amd64")
