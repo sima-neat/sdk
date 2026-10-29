@@ -1,11 +1,17 @@
 const vscode = require("vscode");
+const { loadStatuses } = require("./panel-status");
+const { registerGettingStarted } = require("./getting-started");
+const { modelRegistryAvailable } = require("./sdk-capabilities");
+let modelsEnabled = false;
+const { registerModels } = require("./model-registry");
+const { SessionTime } = require("./session-time");
 const { execFile } = require("child_process");
 const fs = require("fs");
 const https = require("https");
 const os = require("os");
 const path = require("path");
 const { URLSearchParams } = require("url");
-const { resolveInsightLaunchUrl } = require("./insight-launcher");
+const { getInsightUrl, readNeatStatus } = require("./landing-data");
 
 const APPS_REPO_URL = "https://github.com/sima-neat/apps";
 const SIMA_CLI_DIR = path.join(os.homedir(), ".sima-cli");
@@ -49,7 +55,12 @@ class NeatPanelProvider {
 
     this.disposables.push(
       webviewView.webview.onDidReceiveMessage(async (message) => {
-        if (message.command === "cloneSamples") {
+        if (message.command === "sessionTimeReady") {
+          this.updateSessionTime(this.sessionState);
+          this.webviewView?.webview.postMessage({ command: "panelStatus", html: this.panelHtml });
+        } else if (message.command === "refreshStatus") {
+          await this.refresh();
+        } else if (message.command === "cloneSamples") {
           try {
             await cloneSamples();
           } catch (error) {
@@ -81,6 +92,8 @@ class NeatPanelProvider {
           } finally {
             await this.refresh();
           }
+        } else if (message.command === "browseModels") {
+          await vscode.commands.executeCommand("simaNeat.browseModels");
         } else if (message.command === "openDocumentation") {
           await vscode.env.openExternal(vscode.Uri.parse("https://developer.sima.ai/software"));
         } else if (message.command === "openInsight") {
@@ -91,7 +104,14 @@ class NeatPanelProvider {
       })
     );
 
-    await this.refresh();
+    // Do not keep VS Code waiting for view resolution while probes run.
+    void this.refresh();
+    this.updateSessionTime(this.sessionState);
+  }
+
+  updateSessionTime(state) {
+    this.sessionState = state;
+    this.webviewView?.webview.postMessage({ command: "sessionTime", state });
   }
 
   async refresh() {
@@ -103,23 +123,69 @@ class NeatPanelProvider {
       vscode.Uri.joinPath(this.extensionUri, "media", "neat-logo.png")
     );
     const workspaceRoot = getWorkspaceRoot();
-    const samplesState = await getSamplesState(workspaceRoot);
-    const tutorialsState = await getTutorialsState(workspaceRoot);
-    const authState = await getDeveloperPortalAuthState();
-    const devKitState = await getDevKitSyncState();
-
-    this.webviewView.webview.html = getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitState);
+    const view = this.webviewView;
+    const generation = this.refreshGeneration = (this.refreshGeneration || 0) + 1;
+    const loading = (buttonLabel) => ({disabled: true, buttonLabel, status: "Checking…", detail: ""});
+    const states = {samples: loading("Samples"), tutorials: loading("Tutorials"),
+      auth: loading("Developer Portal"), devkit: loading("DevKit Sync")};
+    const render = () => getPanelHtml(logoUri, states.samples, states.tutorials, states.auth, states.devkit);
+    this.panelHtml = render();
+    view.webview.html = this.panelHtml;
+    await loadStatuses({
+      samples: () => getSamplesState(workspaceRoot),
+      tutorials: () => getTutorialsState(workspaceRoot),
+      auth: () => getDeveloperPortalAuthState(),
+      devkit: () => getDevKitSyncState()
+    }, (key, state) => {
+      if (this.disposed || this.refreshGeneration !== generation || this.webviewView !== view) return;
+      states[key] = state;
+      this.panelHtml = render();
+      view.webview.postMessage({command: "panelStatus", html: this.panelHtml, section: key});
+    });
   }
 
   dispose() {
+    this.disposed = true;
+    this.refreshGeneration = (this.refreshGeneration || 0) + 1;
     for (const disposable of this.disposables) {
       disposable.dispose();
     }
   }
 }
 
-function activate(context) {
+async function activate(context) {
+  modelsEnabled = await modelRegistryAvailable();
+  await vscode.commands.executeCommand("setContext", "simaNeat.modelRegistryAvailable", modelsEnabled);
+  registerModels(vscode, context, resolveSimaCliExecutable, modelsEnabled);
+  // Application-scoped settings cannot use contributes.configurationDefaults.
+  // Seed the web user's preference only if they have not selected one.
+  if (vscode.env.uiKind === vscode.UIKind.Web) {
+    try {
+      const config = vscode.workspace.getConfiguration("window");
+      const menu = config.inspect("menuBarVisibility");
+      if (menu && menu.globalValue === undefined && menu.workspaceValue === undefined && menu.workspaceFolderValue === undefined) {
+        await config.update("menuBarVisibility", "visible", vscode.ConfigurationTarget.Global);
+      }
+    } catch (error) {
+      console.warn("Neat: unable to initialize the menu bar preference", error);
+    }
+  }
+
+  const brand = vscode.window.createStatusBarItem("simaNeat.brand", vscode.StatusBarAlignment.Left, Number.MAX_SAFE_INTEGER);
+  brand.name = "Palette Neat SDK";
+  brand.text = "Palette Neat SDK";
+  brand.tooltip = "Open the SiMa Neat panel";
+  brand.accessibilityInformation = { label: "Palette Neat SDK. Open the Neat panel." };
+  brand.command = "simaNeat.showPanel";
+  brand.show();
+  context.subscriptions.push(brand);
+
   const provider = new NeatPanelProvider(context.extensionUri);
+  context.subscriptions.push(new SessionTime(
+    vscode,
+    process.env.NEAT_SESSION_FILE || "/run/sima-neat/session.json",
+    (state) => provider.updateSessionTime(state)
+  ));
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider("simaNeat.panel", provider),
@@ -131,6 +197,9 @@ function activate(context) {
       await vscode.commands.executeCommand("simaNeat.panel.focus");
     })
   );
+  await registerGettingStarted(vscode, context, {
+    getDevkitConfig: getDevKitSyncConfig, openInsight, modelsEnabled
+  });
 }
 
 function getWorkspaceRoot() {
@@ -410,15 +479,9 @@ async function openInsight() {
 }
 
 async function getInsightWebUiUrl() {
-  return resolveInsightLaunchUrl(async () => {
-    try {
-      const stdout = await execFilePromise("neat", ["--json"], {}, { showError: false });
-      const status = JSON.parse(stdout);
-      return status?.insight?.webUiUrl || "";
-    } catch {
-      return "";
-    }
-  });
+  return getInsightUrl(await readNeatStatus((file, args) =>
+    execFilePromise(file, args, { timeout: 5000, killSignal: "SIGKILL" }, { showError: false })
+  ));
 }
 
 async function getDevKitSyncState() {
@@ -494,7 +557,7 @@ async function loadPersistedDevKitSyncConfig() {
         "[[ -f ~/.devkit-sync.rc ]] && source ~/.devkit-sync.rc",
         "printf '%s\\n' \"${DEVKIT_SYNC_DEVKIT_IP:-}\" \"${DEVKIT_SYNC_DEVKIT_USER:-sima}\" \"${DEVKIT_SYNC_DEVKIT_PORT:-22}\""
       ].join("; ")
-    ], {}, { showError: false });
+    ], { timeout: 5000, killSignal: "SIGKILL" }, { showError: false });
     const [host = "", user = DEFAULT_DEVKIT_SYNC_USER, port = DEFAULT_DEVKIT_SYNC_PORT] = stdout.split(/\r?\n/);
     return {
       host: host.trim(),
@@ -569,7 +632,7 @@ async function isSshPortReachable(host, port) {
       await execFilePromise("bash", [
         "-lc",
         `timeout 3 bash -c 'cat < /dev/null > /dev/tcp/${host}/${port}'`
-      ], {}, { showError: false });
+      ], { timeout: 5000, killSignal: "SIGKILL" }, { showError: false });
       return true;
     } catch {
       return false;
@@ -679,6 +742,8 @@ async function execPythonSnippet(script) {
   const errors = [];
   for (const pythonExecutable of candidates) {
     try {
+      // Interactive login may need a cold Python import on a slow SDK filesystem.
+      // This is not a panel status probe; preserve its action lifetime.
       return await execFilePromise(pythonExecutable, ["-c", script], {}, { showError: false });
     } catch (error) {
       errors.push(`${pythonExecutable}: ${error.message}`);
@@ -698,7 +763,7 @@ async function resolveSimaCliExecutable() {
     const pathFromShell = (await execFilePromise(
       "bash",
       ["-lc", "command -v sima-cli || true"],
-      {},
+      { timeout: 5000, killSignal: "SIGKILL" },
       { showError: false }
     )).trim();
     if (pathFromShell) {
@@ -1005,6 +1070,18 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
       font-family: var(--vscode-font-family);
     }
 
+    #session-banner {
+      border: 2px solid var(--vscode-focusBorder);
+      border-radius: 6px; padding: 16px; margin-bottom: 16px;
+      background: var(--vscode-editor-background);
+    }
+    #session-banner.quiet { border-color: transparent; padding: 0; background: transparent; }
+    #session-banner.quiet #session-time { font-size: 13px; font-weight: 400; }
+    #session-banner.quiet strong, #session-banner.quiet #session-detail { display: none; }
+    #session-banner.warning { border-color: var(--vscode-editorWarning-foreground); }
+    #session-banner.error { border-color: var(--vscode-editorError-foreground); }
+    #session-time { display: block; font-size: 24px; font-weight: 700; margin: 8px 0; font-variant-numeric: tabular-nums; }
+    #session-detail { margin: 0; }
     .masthead {
       display: grid;
       grid-template-columns: 56px 1fr;
@@ -1207,6 +1284,11 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
   </style>
 </head>
 <body>
+  <section id="session-banner" hidden aria-label="Environment time remaining">
+    <strong>ENVIRONMENT SESSION</strong>
+    <span id="session-time"></span>
+    <p id="session-detail"></p>
+  </section>
   <div class="masthead">
     <img class="logo" src="${logoUri}" alt="SiMa.ai">
     <div>
@@ -1215,10 +1297,11 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
     </div>
   </div>
   <div class="quick-links">
+    ${modelsEnabled ? actionButton("browseModels", "repo", "Models", "Browse develop builds and download model files", false) : ""}
     ${actionButton("openDocumentation", "docs", "Documentation", "developer.sima.ai/software", true)}
     ${actionButton("openInsight", "eye", "Insight", "Open detected Insight web UI", true)}
   </div>
-  <div class="panel-section">
+  <div class="panel-section" id="status-devkit">
     <div class="section-title">DevKit Sync</div>
     <div class="stack">
       <button id="devKitSsh" class="action-button ${devKitState.online ? "" : "secondary"}" data-host="${devKitHost}" data-user="${devKitUser}" data-port="${devKitPort}" ${devKitDisabled}>
@@ -1230,10 +1313,10 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
       </button>
     </div>
   </div>
-  <div class="panel-section">
+  <div class="panel-section" id="status-auth">
     <div class="section-title">Developer Portal</div>
     <div class="stack">
-      <button id="developerPortalAuth" class="action-button ${authState.signedIn ? "secondary" : ""}" data-command="${authCommand}">
+      <button id="developerPortalAuth" class="action-button ${authState.signedIn ? "secondary" : ""}" data-command="${authCommand}" ${authState.disabled ? "disabled" : ""}>
         <span class="icon-badge ${authState.signedIn ? "secondary" : ""}" aria-hidden="true">${iconText(authIcon)}</span>
         <span class="action-copy">
           <span class="action-title">${authButtonLabel}</span>
@@ -1243,7 +1326,7 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
       <p class="detail">${authDetail}</p>
     </div>
   </div>
-  <div class="panel-section">
+  <div class="panel-section" id="status-tutorials">
     <div class="section-title">Tutorials</div>
     <div class="stack">
       <button id="installTutorials" class="action-button" ${tutorialsDisabled}>
@@ -1256,7 +1339,7 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
       ${tutorialsStatusLine}
     </div>
   </div>
-  <div class="panel-section">
+  <div class="panel-section" id="status-samples">
     <div class="section-title">Samples</div>
     <div class="stack">
       <button id="cloneSamples" class="action-button" ${cloneDisabled}>
@@ -1269,38 +1352,42 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
       ${samplesStatusLine}
     </div>
   </div>
+  <button id="refreshStatus" class="secondary">Refresh status</button>
   <script>
     const vscode = acquireVsCodeApi();
-    const cloneButton = document.getElementById("cloneSamples");
-    cloneButton?.addEventListener("click", () => {
-      cloneButton.disabled = true;
-      cloneButton.textContent = "Cloning...";
-      vscode.postMessage({ command: "cloneSamples" });
+    window.addEventListener("message", ({ data }) => {
+      if (data.command === "panelStatus" && data.html) {
+        const next = new DOMParser().parseFromString(data.html, "text/html");
+        for (const key of data.section ? [data.section] : ["samples", "tutorials", "auth", "devkit"]) {
+          const id = "status-" + key;
+          const current = document.getElementById(id);
+          const replacement = next.getElementById(id);
+          if (current && replacement) current.replaceWith(replacement);
+        }
+        return;
+      }
+      if (data.command !== "sessionTime") return;
+      const banner = document.getElementById("session-banner");
+      banner.hidden = !data.state;
+      if (!data.state) return;
+      banner.className = data.state.display === "quiet" ? "quiet" : data.state.severity;
+      document.getElementById("session-time").textContent = data.state.text;
+      document.getElementById("session-detail").textContent = data.state.detail;
     });
-    const tutorialsButton = document.getElementById("installTutorials");
-    tutorialsButton?.addEventListener("click", () => {
-      tutorialsButton.disabled = true;
-      vscode.postMessage({ command: "installTutorials" });
-    });
-    const authButton = document.getElementById("developerPortalAuth");
-    authButton?.addEventListener("click", () => {
-      authButton.disabled = true;
-      authButton.textContent = authButton.dataset.command === "logoutDeveloperPortal" ? "Signing out..." : "Signing in...";
-      vscode.postMessage({ command: authButton.dataset.command });
-    });
-    const devKitButton = document.getElementById("devKitSsh");
-    devKitButton?.addEventListener("click", () => {
-      vscode.postMessage({
-        command: "openDevKitSsh",
-        host: devKitButton.dataset.host,
-        user: devKitButton.dataset.user,
-        port: devKitButton.dataset.port
-      });
-    });
-    document.querySelectorAll(".quick-links .action-button[data-command]").forEach((button) => {
-      button.addEventListener("click", () => {
-        vscode.postMessage({ command: button.dataset.command });
-      });
+    vscode.postMessage({ command: "sessionTimeReady" });
+    document.addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button || button.disabled) return;
+      if (button.id === "devKitSsh") {
+        vscode.postMessage({command: "openDevKitSsh", host: button.dataset.host,
+          user: button.dataset.user, port: button.dataset.port});
+        return;
+      }
+      const command = button.dataset.command || button.id;
+      if (["cloneSamples", "installTutorials", "loginDeveloperPortal", "logoutDeveloperPortal"].includes(command)) {
+        button.disabled = true;
+      }
+      vscode.postMessage({command});
     });
   </script>
 </body>

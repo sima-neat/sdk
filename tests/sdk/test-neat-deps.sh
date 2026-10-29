@@ -21,10 +21,18 @@ JSON
 [[ "$(neat_dependency_ref core)" == "v0.3.0" ]]
 
 export SDK_DEPS_MANIFEST="${ROOT_DIR}/deps/manifest.json"
-[[ "$(neat_dependency_ref core)" == "v0.5.0" ]]
-[[ "$(neat_dependency_ref apps)" == "v0.5.1" ]]
-[[ "$(neat_dependency_ref insight)" == "v0.0.8" ]]
-[[ "$(neat_dependency_ref sima-cli)" == "v2.1.18" ]]
+assert_dependency_ref() {
+  local dependency="$1" expected="$2" actual
+  actual="$(neat_dependency_ref "${dependency}")" || return 1
+  if [[ "${actual}" != "${expected}" ]]; then
+    echo "Expected ${dependency} ref ${expected}, got ${actual}" >&2
+    exit 1
+  fi
+}
+assert_dependency_ref core develop:latest
+assert_dependency_ref apps v0.5.1
+assert_dependency_ref insight develop:latest
+assert_dependency_ref sima-cli v2.1.19
 
 git_repo="${TMP_DIR}/git-source"
 git init --quiet "${git_repo}"

@@ -48,12 +48,6 @@ without blocking develop reports. The production image publisher needs an
 additional deletion grant for the master prefix:
 https://github.com/sima-neat/vulcan/pull/271.
 
-The `develop` implementation includes exact master SDK selection and
-whole-directory sysroot transactions. The `main` backport includes only the
-sync workflow, image retention, APT mirroring, readiness, and reporting; it does
-not import the unrelated Agate SDK foundation from `develop`. Full master SDK image build and hardware validation remain
+The implementation includes exact master SDK selection and whole-directory
+sysroot transactions. Full master SDK image build and hardware validation remain
 rollout checks; local tests do not establish those results.
-
-The Vulcan prerequisite (#271) has been deployed and its post-apply plan is clean.
-The stable 3.x sysroot fix in `44d6526` is not needed in this backport: `main`
-keeps its existing SDK/sysroot scripts unchanged.

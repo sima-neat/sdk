@@ -16,6 +16,12 @@ container after `sima-cli sdk setup -y -n` starts it.
 - `test-resolve-platform-config.sh`, `test-write-sdk-release.sh`, and
   `test-devkit-platform-profile.sh` cover pre-release selection, image
   provenance, protected release refs, and intentional Core-sync skipping.
+- `test-gcc16-build-env.sh` validates the opt-in GCC 16 environment selector,
+  compiler-prefix/sysroot separation, legacy default behavior, and installer
+  command syntax.
+- `test-devkit-container.sh` covers registry-address translation, lazy and
+  resumable DevKit Docker setup, fresh-shell helper persistence, and the
+  `dk container` pull, deploy, run, and lifecycle command forwarding.
 - `test-install-neat-resources.sh` covers bundled Core, unpublished and
   incompatible Core skips, explicit platform-only builds, and unexpected fatal
   installer failures.
@@ -26,10 +32,21 @@ container after `sima-cli sdk setup -y -n` starts it.
   resolve overlay package aliases without writing under the system APT paths.
 - `test-sysroot-progress.py` verifies package download/cache and extraction
   progress summaries used by `sysroot update`.
+- `test-code-server-launcher.sh` verifies the code-server launcher contract,
+  password handling, OpenVSCode environment compatibility aliases, explicit
+  unauthenticated mode, TLS fail-closed behavior, supervision disablement, and
+  the pinned/checksummed Dockerfile installation.
 - `neat-status/` validates the `neat --json` assembly/status contract.
 - `insight-video-routing/` downloads a small H.264 video, streams it from the
   runner into the SDK container's published Insight video UDP port with
   `ffmpeg`, then verifies vf ingest through the Insight API.
+- `container-build/` runs from both SDK architectures when Neat Core is
+  installed and skips cleanly for Core-less SDK profiles. It invokes Buildx as
+  a non-root SDK user in an opt-in socket-mounted SDK container, cross-compiles
+  the Hello Neat C++ example, packages the executable and its runtime-library
+  closure into a minimal `linux/arm64` image, and executes that image. The
+  ARM64 smoke worker provides the native runtime check; the AMD64 worker repeats
+  it with ARM64 emulation to validate the cross-host developer workflow.
 - `hello-neat/` contains the minimal Hello Neat example from the public docs.
 - `representative-builds/internals/` builds a tiny CMake target that consumes
   `NeatInternals` and its transitive sysroot dependencies.

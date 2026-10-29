@@ -40,7 +40,7 @@ case "${CORE_TEST_MODE:?}" in
     printf 'archive\n' > downloaded.deb
     ;;
   incompatible)
-    echo 'Palette SDK version 2.1.3 is not compatible. Required: 2.1.2' >&2
+    echo 'Palette SDK version 3.0.0 is not compatible. Required: 2.1.2' >&2
     exit 1
     ;;
   unavailable)

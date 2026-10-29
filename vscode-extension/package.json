@@ -24,14 +24,24 @@
   "main": "./src/extension.js",
   "activationEvents": [
     "onStartupFinished",
+    "onWebviewPanel:simaNeat.landing",
     "onView:simaNeat.panel",
     "onCommand:simaNeat.showPanel"
   ],
   "contributes": {
     "commands": [
       {
+        "command": "simaNeat.gettingStarted",
+        "title": "SiMa Neat: Getting Started"
+      },
+      {
         "command": "simaNeat.showPanel",
         "title": "SiMa Neat: Show Panel"
+      },
+      {
+        "command": "simaNeat.browseModels",
+        "title": "SiMa Neat: Browse Models (develop)",
+        "enablement": "simaNeat.modelRegistryAvailable"
       }
     ],
     "viewsContainers": {
@@ -63,6 +73,22 @@
         "uiTheme": "vs-dark",
         "path": "./themes/sima-neat-dark.json"
       }
-    ]
+    ],
+    "configurationDefaults": {
+      "workbench.startupEditor": "none",
+      "workbench.colorTheme": "SiMa Neat Light",
+      "workbench.preferredLightColorTheme": "SiMa Neat Light",
+      "workbench.preferredDarkColorTheme": "SiMa Neat Dark",
+      "editor.fontFamily": "'IBM Plex Mono', monospace",
+      "terminal.integrated.fontFamily": "'IBM Plex Mono', monospace"
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "simaNeat.browseModels",
+          "when": "simaNeat.modelRegistryAvailable"
+        }
+      ]
+    }
   }
 }
