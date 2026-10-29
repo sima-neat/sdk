@@ -151,6 +151,33 @@ jobs:
           fi
           scripts/sync-debian-pre-release-mirror.sh "${arguments[@]}"
 
+      - name: Refresh production AWS credentials for release packages
+        id: release_credentials
+        if: ${{ !cancelled() && steps.mirror_dependencies.outcome == 'success' && steps.mirror_workspace.outcome == 'success' && inputs.replay_image_build == '' }}
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.VULCAN_DEBIAN_MIRROR_PUBLISHER_ROLE_ARN }}
+          role-session-name: sdk-release-packages-${{ github.run_id }}
+
+      - name: Synchronize and validate official release mirror
+        if: ${{ !cancelled() && steps.release_credentials.outcome == 'success' }}
+        env:
+          DEBIAN_MIRROR_CHANNEL: release
+          APT_MIRROR2_THREADS: ${{ inputs.download_workers || '16' }}
+          DEBIAN_MIRROR_REPORT_DIR: ${{ github.workspace }}/out/release-debian-mirror-sync
+          MINIMUM_FREE_GIB: ${{ inputs.minimum_free_gib || '25' }}
+        run: |
+          set -euo pipefail
+          arguments=(--minimum-free-gib "${MINIMUM_FREE_GIB}")
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ inputs.publish }}" == "true" ]]; then
+            arguments+=(--publish)
+          fi
+          if [[ "${{ inputs.force }}" == "true" ]]; then
+            arguments+=(--force)
+          fi
+          scripts/sync-debian-pre-release-mirror.sh "${arguments[@]}"
+
       - name: Upload machine-readable synchronization result
         if: always()
         uses: actions/upload-artifact@v7
@@ -166,6 +193,15 @@ jobs:
         with:
           name: master-debian-mirror-result-${{ github.run_id }}
           path: out/master-debian-mirror-sync/mirror-sync-result.json
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Upload release synchronization result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-debian-mirror-result-${{ github.run_id }}
+          path: out/release-debian-mirror-sync/mirror-sync-result.json
           if-no-files-found: ignore
           retention-days: 3
 
@@ -216,6 +252,7 @@ jobs:
             --cache-root "${DEBIAN_MIRROR_WORK_ROOT}/source-change-cache"
             --package-index "${DEBIAN_MIRROR_WORK_ROOT}/agate/repository/dists/agate/non-free/binary-arm64/Packages.gz"
             --master-package-index "${DEBIAN_MIRROR_WORK_ROOT}/pre-release/agate/repository/dists/agate/non-free/binary-arm64/Packages.gz"
+            --release-package-index "${DEBIAN_MIRROR_WORK_ROOT}/release/agate/repository/dists/agate/non-free/binary-arm64/Packages.gz"
           )
           if [[ -n "${REPLAY_IMAGE_BUILD}" ]]; then
             arguments+=(--replay-build "${REPLAY_IMAGE_BUILD}")
@@ -264,6 +301,7 @@ jobs:
             arguments+=(
               --apt-report out/debian-mirror-sync/mirror-sync-result.json
               --master-apt-report out/master-debian-mirror-sync/mirror-sync-result.json
+              --release-apt-report out/release-debian-mirror-sync/mirror-sync-result.json
               --image-report out/daily-platform-images/result.json
               --sysroot-report out/daily-platform-images/sysroot-readiness.json
             )

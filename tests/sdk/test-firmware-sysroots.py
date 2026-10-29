@@ -162,3 +162,16 @@ def test_master_uses_exact_pre_build_and_separate_indexes():
     report = m.check([IMAGE, master], reader)
     assert len(calls) == 4
     assert all(item[where]['status'] == 'available' for item in report['builds'] for where in ('internal', 'external'))
+
+
+def test_release_master_uses_official_release_sysroot():
+    image = '3.0.0_release_master_B2479'
+    assert m.available([package(version='3.0.0')], image)['status'] == 'available'
+    assert m.available([package(version='3.0.0~pre24790')], image)['status'] == 'missing'
+    calls = []
+    def reader(url):
+        calls.append(url)
+        return [package(version='3.0.0')]
+    result = m.check([image], reader)
+    assert all(url.endswith('/release') for url in calls)
+    assert all(result['builds'][0][where]['status'] == 'available' for where in ('internal', 'external'))

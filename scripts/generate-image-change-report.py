@@ -961,6 +961,7 @@ def main() -> int:
     parser.add_argument("--package-index", type=Path,
                         help="Debian Packages or Packages.gz used to recover complete build provenance")
     parser.add_argument("--codex-timeout", type=int, default=300)
+    parser.add_argument("--release-package-index", type=Path, help="Release Agate Packages index")
     parser.add_argument("--master-package-index", type=Path, help="Master Agate Packages index")
     args = parser.parse_args()
     if bool(args.build) != bool(args.manifest):
@@ -992,9 +993,12 @@ def main() -> int:
             except MissingChangeManifest as exc:
                 print(str(exc), flush=True)
     master_index = PackageVersionIndex(args.master_package_index)
+    release_index = PackageVersionIndex(args.release_package_index)
     for build, manifest_text in builds:
+        selected_index = (release_index if build.startswith("3.0.0_release_master_") else
+                          master_index if build.startswith("3.0.0_pre-release_master_") else package_index)
         paths = generate(build, manifest_text, args.output_dir, args.cache_root,
-                         args.codex_timeout, jenkins, master_index if "_pre-release_master_" in build else package_index)
+                         args.codex_timeout, jenkins, selected_index)
         if args.evidence_dir:
             args.evidence_dir.mkdir(parents=True, exist_ok=True)
             for path in paths:

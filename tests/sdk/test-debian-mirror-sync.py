@@ -28,7 +28,7 @@ with (root / "calls").open("a") as log:
 if name in ("flock", "getent"):
     sys.exit(0)
 channel = os.environ.get("DEBIAN_MIRROR_CHANNEL", "daily")
-work = root / "work" / ("pre-release" if channel == "pre-release" else "")
+work = root / "work" / (channel if channel != "daily" else "")
 if name == "curl":
     assert args[-1] == f"http://sw-web.eng.sima.ai/deb/{channel}/dists/agate/InRelease"
     shutil.copyfile(root / "fixture/dists/agate/InRelease", args[args.index("--output") + 1])
@@ -151,6 +151,18 @@ class MirrorSyncTest(unittest.TestCase):
         self.assertEqual(self.run_sync("--publish")["result"], "No change")
         self.assertTrue((self.root / "work/pre-release/agate/repository").is_dir())
         self.assertEqual(json.loads((self.root / "s3/pre-release/.mirror/publication.json").read_text())["source"]["inrelease_sha256"], "old-bookworm")
+
+    def test_release_isolated_publication_and_no_change(self):
+        self.run_sync("--publish")
+        daily = (self.root / "s3/daily/dists/agate/Release").read_bytes()
+        self.env["DEBIAN_MIRROR_CHANNEL"] = "release"
+        report = self.run_sync("--publish")
+        self.assertEqual(report["source"]["url"], "http://sw-web.eng.sima.ai/deb/release")
+        self.assertFalse(report["changes"]["baseline_available"])
+        self.assertTrue((self.root / "s3/release/dists/agate/Release").is_file())
+        self.assertEqual((self.root / "s3/daily/dists/agate/Release").read_bytes(), daily)
+        self.assertEqual(self.run_sync("--publish")["result"], "No change")
+        self.assertTrue((self.root / "work/release/agate/repository").is_dir())
 
     def test_validation_only_does_not_publish(self):
         report = self.run_sync()

@@ -103,6 +103,8 @@ def available(records, image):
     version_re = re.compile(re.escape(release) + r'~git[0-9]+\.[A-Za-z0-9]+-' + re.escape(build) + r'\Z')
     if BUILD_MODEL['channel'](image) == 'pre-release':
         version_re = re.compile(re.escape(f'{release}~pre{build}') + r'\Z')
+    if BUILD_MODEL['channel'](image) == 'release':
+        version_re = re.compile(re.escape(release) + r'\Z')
     anchors = [p for p in records if p['Package'] == ANCHOR and version_re.fullmatch(p['Version'])]
     if not anchors:
         return {'status': 'missing', 'reason': 'Exact release/build palette package is absent'}
