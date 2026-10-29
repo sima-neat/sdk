@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       pre_release_base:
-        description: Platform selector (3.0.0 for develop, exact ~git version, or 3.0.0~pre2254 for master)
+        description: Optional daily/pre-release selector (empty = official release; 3.0.0 = latest daily)
         required: false
         type: string
 

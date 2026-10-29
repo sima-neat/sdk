@@ -81,17 +81,19 @@ run_resolver() {
     "${RESOLVER}"
 }
 
-for protected_ref in main release-3.0; do
+for protected_ref in main release-3.0 develop codex/test local; do
   stable="$(PRE_RELEASE_BASE='' GITHUB_REF_TYPE=branch GITHUB_REF_NAME="${protected_ref}" run_resolver)"
   grep -Fxq 'sdk_apt_channel=release' <<< "${stable}" || fail "${protected_ref} did not select the stable channel"
   grep -Fxq 'requested_pre_release_base=' <<< "${stable}" || fail "${protected_ref} unexpectedly selected a floating version"
   grep -Fxq 'base_sdk_version=3.0.0' <<< "${stable}" || fail "${protected_ref} stable version was incorrect"
 done
 
-floating="$(STABLE_BASE_SDK_VERSION='' PRE_RELEASE_BASE='' GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop run_resolver)"
-grep -Fxq 'sdk_apt_channel=daily' <<< "${floating}" || fail "pre-release channel was not selected"
-grep -Fxq 'requested_pre_release_base=3.0.0' <<< "${floating}" || fail "manifest platform version was not selected"
-grep -Fxq 'base_sdk_version=3.0.0~git202609090314.abcdef0-4460' <<< "${floating}" || fail "floating selector did not choose the newest Debian version"
+manifest_stable="$(STABLE_BASE_SDK_VERSION='' PRE_RELEASE_BASE='' PRE_RELEASE_PACKAGES_FILE=/missing GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop run_resolver)"
+grep -Fxq 'sdk_apt_channel=release' <<< "${manifest_stable}" || fail "develop did not default to release"
+grep -Fxq 'base_sdk_version=3.0.0' <<< "${manifest_stable}" || fail "manifest platform version was not selected"
+floating="$(PRE_RELEASE_BASE=3.0.0 GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop run_resolver)"
+grep -Fxq 'sdk_apt_channel=daily' <<< "${floating}" || fail "explicit daily channel was not selected"
+grep -Fxq 'base_sdk_version=3.0.0~git202609090314.abcdef0-4460' <<< "${floating}" || fail "floating selector did not choose newest version"
 
 tag_stable="$(PRE_RELEASE_BASE='' GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v3.0.0 run_resolver)"
 grep -Fxq 'sdk_apt_channel=release' <<< "${tag_stable}" || fail "tag did not select the stable channel"
@@ -166,12 +168,29 @@ grep -Fq 'deb [trusted=yes] ${sdk_fallback_repository} bookworm non-free' "${apt
 
 # Exercise source generation without writing to the host's /etc/apt.
 apt_root="${tmpdir}/apt"
-mkdir -p "${apt_root}/sources.list.d" "${apt_root}/preferences.d"
+mkdir -p "${apt_root}/sources.list.d" "${apt_root}/preferences.d" "${apt_root}/trusted.gpg.d" "${tmpdir}/bin"
+# Stub only key retrieval/conversion; exercise the actual source-generation code.
+cat > "${tmpdir}/bin/wget" <<'SH'
+#!/usr/bin/env bash
+printf '%s' 'test-signing-key'
+SH
+cat > "${tmpdir}/bin/gpg" <<'SH'
+#!/usr/bin/env bash
+cat
+SH
+chmod +x "${tmpdir}/bin/wget" "${tmpdir}/bin/gpg"
 sed "s|/etc/apt|${apt_root}|g" "${apt_config_script}" > "${tmpdir}/configure-apt-repos.sh"
 for channel in release pre-release daily; do
-  SDK_APT_CHANNEL="${channel}" bash "${tmpdir}/configure-apt-repos.sh" 3.0.0 "${patterns_file}"
+  PATH="${tmpdir}/bin:${PATH}" SDK_APT_CHANNEL="${channel}" bash "${tmpdir}/configure-apt-repos.sh" 3.0.0 "${patterns_file}"
   grep -Fq 'trixie main' "${apt_root}/sources.list.d/debian-target.list" || fail "${channel} 3.0 did not select Trixie"
   grep -Fq ' agate non-free' "${apt_root}/sources.list.d/elxr.list" || fail "${channel} 3.0 did not select Agate"
+  if [[ "${channel}" == release ]]; then
+    grep -Fxq "deb [arch=arm64 signed-by=${apt_root}/trusted.gpg.d/simaai.gpg] https://repo.sima.ai/elxr/deb/release agate non-free" "${apt_root}/sources.list.d/elxr.list" || fail "official Agate source is not signed"
+    [[ -s "${apt_root}/trusted.gpg.d/simaai.gpg" ]] || fail "SiMa key was not installed"
+    if grep -Fq trusted=yes "${apt_root}/sources.list.d/elxr.list"; then
+      fail "official source bypasses signature verification"
+    fi
+  fi
   if grep -Rq bookworm "${apt_root}"; then
     fail "${channel} 3.0 configured a Bookworm source"
   fi

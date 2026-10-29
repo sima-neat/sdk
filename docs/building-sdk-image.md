@@ -119,14 +119,23 @@ the Docker build, so a new branch artifact invalidates the cached installation l
 
 ## Platform 3.0 package selection
 
-`build.sh` defaults to platform `3.0.0`, the `daily` APT channel, and the
-`debian:trixie` GCC 14 toolchain. It resolves the floating platform base to an
-exact mirrored `3.0.0~gitTIMESTAMP.COMMIT-BUILD` revision before building.
-Dockerfile-only builds perform the same resolution and record the exact version.
-Local resolution requires `curl`, `gzip`, Python 3, and `dpkg`.
+`build.sh` and Dockerfile-only builds default to platform `3.0.0`, the official
+`release` APT channel, and the `debian:trixie` GCC 14 toolchain. The official
+SiMa repository uses the `agate` suite and verifies packages with the SiMa key:
 
-CI resolves the version once for both architectures. Use the workflow's platform
-selector to pin a specific daily revision. Floating selectors are rejected on
+```text
+deb [arch=arm64 signed-by=/etc/apt/trusted.gpg.d/simaai.gpg] https://repo.sima.ai/elxr/deb/release agate non-free
+```
+
+The firmware release is `3.0.0_master_B2501`; the Palette Debian package version
+is `3.0.0`. Target dependencies continue to come from Debian 13 Trixie.
+
+CI uses the official release by default on develop, other branches, and tags.
+An empty workflow platform selector uses the manifest's `platform-version`.
+An explicit `3.0.0` selector requests the latest daily revision; an exact
+`3.0.0~gitTIMESTAMP.COMMIT-BUILD` or `3.0.0~preBUILD` selects daily or pre-release
+packages respectively. CI resolves that selection once for both architectures.
+Floating selectors are rejected on
 `main`, `release-*`, and tags; use an exact revision for those refs.
 
 ## Add packages or change the platform revision
@@ -138,8 +147,8 @@ packages. For example:
 SDK_PKG_LIST=libpgm-dev ./build.sh sdk 3.0.0
 ```
 
-Use `BASE_SDK_VERSION=3.0.0~gitTIMESTAMP.COMMIT-BUILD` to select a particular
-mirrored revision. `sysroot list` and `sysroot status` inspect the installed
+To select a particular mirrored revision, set `SDK_APT_CHANNEL=daily` and
+`BASE_SDK_VERSION=3.0.0~gitTIMESTAMP.COMMIT-BUILD`. `sysroot list` and `sysroot status` inspect the installed
 inventory. The legacy in-place updater and package installer are unavailable
 for daily images because they apply older repository and kernel-header pins.
 
@@ -151,12 +160,13 @@ To make an Insight upgrade permanent in the image, rebuild the SDK image with th
 NEAT_INSIGHT_BRANCH=main NEAT_INSIGHT_VERSION=latest ./build.sh sdk 3.0.0
 ```
 
-## Platform 3.0 preparation branch
+## Explicit daily builds
 
-Pushes to `3.0.0-prep` default to the floating `3.0.0` platform selector.
-The workflow resolves it once to an exact mirrored Palette `~git` version and
-passes the same version to both host-architecture builds. A manual Platform
-selector overrides this default and can pin a full `3.0.0~gitTIMESTAMP.COMMIT-BUILD`.
+For local daily builds, set `SDK_APT_CHANNEL=daily`. With the default platform
+base `3.0.0`, the helper resolves the newest mirrored Palette `~git` revision.
+Dockerfile-only daily builds perform the same resolution. Local resolution
+requires `curl`, `gzip`, Python 3, and `dpkg`. Daily builds omit bundled Neat Core;
+official builds attempt to bundle the compatible Core selected by the manifest.
 
 Daily builds resolve development packages together with the platform sysroot,
 using Debian 13 package names and Python 3.13. The development package set

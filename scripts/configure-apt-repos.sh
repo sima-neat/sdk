@@ -4,7 +4,7 @@ set -euo pipefail
 
 base_sdk_version="${1:?Usage: configure-apt-repos.sh BASE_SDK_VERSION [PATTERNS_FILE]}"
 patterns_file="${2:-/usr/local/share/sima-sdk/platform-package-patterns.txt}"
-sdk_apt_channel="${SDK_APT_CHANNEL:-daily}"
+sdk_apt_channel="${SDK_APT_CHANNEL:-release}"
 sdk_platform_repository="${SDK_PLATFORM_REPOSITORY:-}"
 sdk_apt_origin="${SDK_APT_ORIGIN:-}"
 sdk_fallback_repository=""
@@ -40,8 +40,15 @@ if [[ ! -f "${patterns_file}" ]]; then
 fi
 
 if [[ "${sdk_apt_channel}" == daily || "${base_sdk_version}" == 3.* ]]; then
+  platform_source_options="arch=arm64 trusted=yes"
+  if [[ "${sdk_apt_channel}" == release ]]; then
+    wget -qO - https://repo.sima.ai/elxr/deb/simaai.gpg | \
+      gpg --dearmor > /etc/apt/trusted.gpg.d/simaai.gpg
+    chmod 644 /etc/apt/trusted.gpg.d/simaai.gpg
+    platform_source_options="arch=arm64 signed-by=/etc/apt/trusted.gpg.d/simaai.gpg"
+  fi
   cat > /etc/apt/sources.list.d/elxr.list <<EOF
-deb [arch=arm64 trusted=yes] ${sdk_platform_repository} agate non-free
+deb [${platform_source_options}] ${sdk_platform_repository} agate non-free
 EOF
   cat > /etc/apt/sources.list.d/debian-target.list <<'EOF'
 deb [arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian trixie main
