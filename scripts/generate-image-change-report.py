@@ -994,7 +994,7 @@ def main() -> int:
     master_index = PackageVersionIndex(args.master_package_index)
     for build, manifest_text in builds:
         paths = generate(build, manifest_text, args.output_dir, args.cache_root,
-                         args.codex_timeout, jenkins, master_index if "_pre-release_master_" in build else package_index)
+                         args.codex_timeout, jenkins, master_index if build.startswith(("3.0.0_pre-release_master_", "3.0.0_release_master_")) else package_index)
         if args.evidence_dir:
             args.evidence_dir.mkdir(parents=True, exist_ok=True)
             for path in paths:

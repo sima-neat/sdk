@@ -225,7 +225,7 @@ previously published builds fail the step without
 replacing the index or pruning old builds.
 
 Directory names matching `3.0.0_daily_<channel>_B<number>` or
-`3.0.0_pre-release_master_B<number>` are eligible.
+`3.0.0_pre-release_master_B<number>` or `3.0.0_release_master_B<number>` are eligible.
 Completed builds are ordered by numeric build number, newest first (with directory
 name as a deterministic tie breaker). The latest 21 completed builds are kept
 across channels; pending uploads do not evict them.
@@ -509,13 +509,15 @@ Master synchronization results are uploaded separately and included in immediate
 version notifications. The existing daily digest remains scoped to the daily
 APT result artifact.
 
-Image discovery also accepts `3.0.0_pre-release_master_B<number>`. Master and
+Image discovery also accepts `3.0.0_pre-release_master_B<number>` and
+`3.0.0_release_master_B<number>`. Master and
 develop compete for **21 total completed builds**, ordered by numeric build
 number with the full name as tie breaker. There is no per-channel quota. The
 existing `daily-platform-images/` URLs and schema-v1 index remain in use;
 `version_prefix` is now `3.0.0_`. APT retention follows upstream indexes, not
 this image count. The publisher IAM policy must permit deletion under both
-`3.0.0_daily_*` and `3.0.0_pre-release_master_B*` before deploying this change.
+`3.0.0_daily_*`, `3.0.0_pre-release_master_B*`, and
+`3.0.0_release_master_B*` before deploying this change.
 
 The SDK build/update changes are on `develop` (PR #257) and are not part of
 this sync-only `main` backport. With that SDK implementation, select an exact

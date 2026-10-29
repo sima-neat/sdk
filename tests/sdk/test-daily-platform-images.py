@@ -493,8 +493,9 @@ def test_index_publication_retry_reports_new_build_without_reupload(s3, tmp_path
     assert json.loads(report.read_text())['copied_versions'] == []
 
 
-def test_master_and_develop_share_retention_and_pruning(s3):
-    master = lambda n: f'3.0.0_pre-release_master_B{n}'
+@pytest.mark.parametrize("master_channel", ["pre-release", "release"])
+def test_master_and_develop_share_retention_and_pruning(s3, master_channel):
+    master = lambda n: f'3.0.0_{master_channel}_master_B{n}'
     source = Source(range(1, 21))
     source.names.add(master(21))
     mirror(source, s3, True)
@@ -515,3 +516,12 @@ def test_master_discovery_excludes_unrelated_prerelease_branches():
              '3.1.0_pre-release_master_B2256']
     source.info = lambda path: {'children': [{'uri': '/' + n, 'folder': True} for n in names]}
     assert source.builds() == {names[0]}
+
+
+def test_release_master_discovery_and_retention(s3):
+    release = '3.0.0_release_master_B2479'
+    source = artifactory()
+    names = [release, '3.0.0_release_feature_B2480', '3.1.0_release_master_B2481']
+    source.info = lambda path: {'children': [{'uri': '/' + n, 'folder': True} for n in names]}
+    assert source.builds() == {release}
+    assert m.rank(release)[0] == 2479
