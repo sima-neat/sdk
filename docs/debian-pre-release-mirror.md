@@ -536,3 +536,22 @@ The readiness report checks the anchor and exact dependency pins only. Master
 has unpinned dependencies, so this is not evidence of firmware/sysroot package
 identity. Images lacking `manifestChanges.txt` still publish and notify, but
 source-change reports are skipped rather than inferred from unrelated builds.
+
+
+## Official release Agate channel
+
+The production sync also mirrors `http://sw-web.eng.sima.ai/deb/release`
+(the internal official release publisher) to
+`https://debian.neat.sima.ai/release`, independently of daily and pre-release.
+The public `repo.sima.ai/elxr/deb/release` Agate endpoint was not yet available
+when B2479 was published, so it is not used as the transfer source.
+Use `deb [trusted=yes] https://debian.neat.sima.ai/release agate non-free`.
+Base OS packages still come from Debian Trixie. Release cache, publication
+receipts, reports, and locks use their own `release/` paths. Payloads and indexes
+receive the same validation and atomic publication checks as the other channels.
+
+`3.0.0_release_master_B2479` uses Palette `3.0.0`, not `3.0.0~pre2479`.
+Its generated Dockerfile specifies kernel headers `6.18.3-2479`. Release-image
+readiness checks use the release indexes and exact Palette release version;
+as with other channels this is an anchor/exact-dependency index check, not a
+complete sysroot APT solve or a guarantee about unpinned component versions.

@@ -8,4 +8,6 @@ BUILD = re.compile(r'3\.0\.0_(?:daily_[A-Za-z0-9_-]+|(?:pre-release|release)_mas
 def channel(build):
     if not BUILD.fullmatch(build):
         raise ValueError(f'Invalid platform build: {build}')
-    return 'pre-release' if build.startswith(('3.0.0_pre-release_master_', '3.0.0_release_master_')) else 'daily'
+    if build.startswith('3.0.0_release_master_'):
+        return 'release'
+    return 'pre-release' if build.startswith('3.0.0_pre-release_master_') else 'daily'

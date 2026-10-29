@@ -269,6 +269,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apt-report', type=Path)
     parser.add_argument('--master-apt-report', type=Path)
+    parser.add_argument('--release-apt-report', type=Path)
     parser.add_argument('--image-report', type=Path)
     parser.add_argument('--state', type=Path, required=True)
     parser.add_argument('--sysroot-report', type=Path)
@@ -276,7 +277,7 @@ def main():
     parser.add_argument('--replay-image-build')
     args = parser.parse_args()
     if args.replay_image_build:
-        if args.apt_report or args.master_apt_report or args.image_report or args.sysroot_report:
+        if args.apt_report or args.master_apt_report or args.release_apt_report or args.image_report or args.sysroot_report:
             parser.error('--replay-image-build cannot be combined with mirror result inputs')
         versions = None
     else:
@@ -284,10 +285,11 @@ def main():
             parser.error('--apt-report and --image-report are required for normal notifications')
         versions = collect(load_report(args.apt_report), load_report(args.image_report),
                            load_report(args.sysroot_report) if args.sysroot_report else None)
-        if args.master_apt_report:
-            master = collect(load_report(args.master_apt_report), {})
-            for kind, entries in master.items():
-                versions.setdefault(kind, []).extend(f'[master] {entry}' for entry in entries)
+        for label, path in (('master', args.master_apt_report), ('release', args.release_apt_report)):
+            if path:
+                additional = collect(load_report(path), {})
+                for kind, entries in additional.items():
+                    versions.setdefault(kind, []).extend(f'[{label}] {entry}' for entry in entries)
     sender = runpy.run_path(str(Path(__file__).with_name('post-debian-mirror-summary.py')))
     post, upload = sender['post_message'], sender['upload_file']
 

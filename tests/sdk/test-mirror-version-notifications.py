@@ -435,3 +435,14 @@ def test_workflow_keeps_master_publication_and_reports_independent():
     assert '--publish' in master['run'] and 'inputs.publish' in master['run']
     notify = next(s for s in steps if s['name'] == 'Notify Slack of new APT and device image versions')
     assert '--master-apt-report out/master-debian-mirror-sync/mirror-sync-result.json' in notify['run']
+
+
+def test_release_publication_is_independent_and_reported():
+    workflow = yaml.safe_load((ROOT / '.github/workflows/sync-debian-pre-release-mirror.yml').read_text())
+    steps = workflow['jobs']['sync']['steps']
+    release = next(s for s in steps if s['name'] == 'Synchronize and validate official release mirror')
+    assert release['env']['DEBIAN_MIRROR_CHANNEL'] == 'release'
+    assert 'release-debian-mirror-sync' in release['env']['DEBIAN_MIRROR_REPORT_DIR']
+    assert '!cancelled()' in release['if'] and 'release_credentials.outcome' in release['if']
+    notify = next(s for s in steps if s['name'] == 'Notify Slack of new APT and device image versions')
+    assert '--release-apt-report out/release-debian-mirror-sync/mirror-sync-result.json' in notify['run']
