@@ -522,7 +522,7 @@ def daily_candidate(candidates, platform_version, requested_version="", relation
     APT orders versions newest first. Prefer daily packages no newer than the
     selected Palette build, then Debian 13 packages. Exact dependency versions
     and inequalities remain constraints on both sources. Stable Platform 3
-    releases select release-repository Agate packages without a build suffix.
+    releases select release-repository Agate packages, excluding ~preN builds.
     """
     import apt_pkg
 
@@ -537,7 +537,9 @@ def daily_candidate(candidates, platform_version, requested_version="", relation
         origins = candidate.origins
         if stable and any(origin.site == "repo.sima.ai" and origin.codename == "agate"
                           for origin in origins):
-            if "~" not in candidate.version:
+            # Official components such as TVM retain upstream ~git versions.
+            # Only the explicit pre-release build suffix marks a ~preN build.
+            if not re.search(r"~pre[0-9]+$", candidate.version):
                 daily.append(candidate)
         elif not stable and any(origin.site == "debian.neat.sima.ai" and origin.codename == "agate" for origin in origins):
             revision = re.search(r"~pre([0-9]+)$" if master else r"-([0-9]+)$", candidate.version)
