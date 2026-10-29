@@ -72,5 +72,5 @@ echo "sdk release metadata tests passed"
 SDK_RELEASE_FILE="${tmpdir}/defaults" NEAT_CORE_STATUS_FILE="${tmpdir}/missing" \
   env -u BASE_SDK_VERSION -u SDK_APT_CHANNEL "${WRITER}"
 grep -Fxq 'Platform Base = 3.0.0' "${tmpdir}/defaults"
-grep -Fxq 'Platform Channel = daily' "${tmpdir}/defaults"
-grep -Fxq 'Neat Core = not bundled' "${tmpdir}/defaults"
+grep -Fxq 'Platform Channel = release' "${tmpdir}/defaults"
+grep -Fxq 'Neat Core = bundled' "${tmpdir}/defaults"

@@ -50,7 +50,7 @@ jobs:
         run: |
           tests/sdk/test-resolve-platform-config.sh
           tests/sdk/test-write-sdk-release.sh
-          tests/sdk/test-devkit-platform-profile.sh || { bash -x tests/sdk/test-devkit-platform-profile.sh; exit 1; }
+          tests/sdk/test-devkit-platform-profile.sh
           tests/sdk/test-devkit-sudo-check.sh
           tests/sdk/test-devkit-container.sh
           tests/sdk/test-sysroot-unprivileged-dry-run.sh
