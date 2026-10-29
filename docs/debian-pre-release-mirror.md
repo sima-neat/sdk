@@ -515,13 +515,11 @@ develop compete for **21 total completed builds**, ordered by numeric build
 number with the full name as tie breaker. There is no per-channel quota. The
 existing `daily-platform-images/` URLs and schema-v1 index remain in use;
 `version_prefix` is now `3.0.0_`. APT retention follows upstream indexes, not
-this image count. The publisher IAM policy must permit deletion under both
+this image count. The publisher IAM policy must permit deletion under
 `3.0.0_daily_*`, `3.0.0_pre-release_master_B*`, and
 `3.0.0_release_master_B*` before deploying this change.
 
-The SDK build/update changes are on `develop` (PR #257) and are not part of
-this sync-only `main` backport. With that SDK implementation, select an exact
-master version such as `3.0.0~pre2254` through
+For a master SDK build, select an exact version such as `3.0.0~pre2254` through
 `pre_release_base` in the Docker workflow, or locally:
 
 ```bash
