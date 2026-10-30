@@ -47,6 +47,14 @@ const gib = (n) =>
     ? (n / 1024 ** 3).toLocaleString(undefined, { maximumFractionDigits: 1 })
     : "Unknown";
 window.addEventListener("message", ({ data }) => {
+  if (data.type === "registryState") {
+    const release = data.value?.current_state;
+    text("registry-release", "Current Release: " + (release || "Unavailable"));
+    const preview = release === "Alpha" || release === "Beta";
+    $("registry-program").hidden = !preview;
+    text("registry-program", preview ? "The Model Registry is currently in the " + release + " program. Features and available models may change before general availability." : "");
+    return;
+  }
   if (data.type === "error") {
     text("load-status", "Unable to refresh environment details. Try Refresh.");
     $("refresh").disabled = false;

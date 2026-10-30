@@ -148,7 +148,9 @@ test("restores the landing tab after a browser reload", async () => {
   await registerGettingStarted(f.vscode, f.context, f.services);
   const panel = f.panels[0];
   panel.dispose();
+  panel.title = "Palette Neat";
   await f.context.serializer.deserializeWebviewPanel(panel);
+  assert.equal(panel.title, "Palette SDK");
   assert.match(panel.webview.html, /Palette SDK/);
   assert.equal(panel.webview.options.enableScripts, true);
   await panel.receive({ type: "ready" });

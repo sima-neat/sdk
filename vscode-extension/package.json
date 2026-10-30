@@ -40,7 +40,7 @@
       },
       {
         "command": "simaNeat.browseModels",
-        "title": "SiMa Neat: Browse Models (develop)",
+        "title": "SiMa Neat: Browse Models",
         "enablement": "simaNeat.modelRegistryAvailable"
       }
     ],

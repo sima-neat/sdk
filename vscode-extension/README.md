@@ -167,14 +167,14 @@ Model Registry is available only on SDK 3.0 or newer, including 3.0 pre-release
 and daily builds. The Models button and command are hidden on older SDKs or
 when `/etc/sdk-release` cannot identify a supported platform version.
 
-Choose **Models** in the Palette panel or run **SiMa Neat: Browse Models (develop)**
+Choose **Models** in the Palette panel or run **SiMa Neat: Browse Models**
 from the Command Palette. Search existing production registry builds by model name,
 variant, description, task, or license. After selecting a model, choose an action (downloads and source copies then ask for a destination workspace):
 
 - **Show Model Card** opens the production Model Registry inside VSCode, with the
-  selected model, variant, and `develop` branch in the URL. No files are downloaded.
+  selected model, variant, and configured branch in the URL. No files are downloaded.
 - **Download prebuilt artifact** downloads the existing build for the selected variant.
-- **Copy model source folder** copies `models/<model>` from the current `develop`
+- **Copy model source folder** copies `models/<model>` from the current configured
   branch of `sima-neat/models`, including its definition, README, and scripts.
   This source revision can differ from the prebuilt artifact's revision. Source
   lands in `models/<model>-source-<unique suffix>/contents/models/<model>`;
@@ -190,7 +190,7 @@ variant, description, task, or license. After selecting a model, choose an actio
 Downloads use the SDK's `sima-cli models` commands and checksum verification.
 The extension explicitly selects `https://models-registry.neat.sima.ai` for
 listing and downloads; model cards open `https://developer.sima.ai/models/`.
-The current existing build for that model/variant on `develop` is downloaded
+The current existing build for that model/variant on the configured branch is downloaded
 into a new `models/<model>-<variant>-<unique suffix>` folder. No existing model
 folder is overwritten. ZIP and tar packages are unpacked into `contents/` for review;
 directory packages and individual model artifacts are kept as downloaded.
@@ -200,7 +200,7 @@ and removes its incomplete folder. Model contents are never executed.
 
 Requires an SDK with `sima-cli models list/download --json`, Python 3.9+,
 and network access to the production registry and artifact download endpoints.
-This initial integration uses `develop` only; it does not compile or deploy models.
+This integration follows the release state’s `default_branch`; it does not compile or deploy models.
 
 ### SDK landing page
 
@@ -256,3 +256,29 @@ Only the two built-in agent identifiers and their predefined actions are
 accepted from the webview. Extension changes made elsewhere in the editor
 update the page while it is open. Network access to the configured gallery is
 required; provider sign-in and service access remain provider-managed.
+
+## Registry release state
+
+The Palette panel and Getting Started header display `Current Release: Alpha`
+(or `Beta` / `GA`) from
+`https://artifacts.neat.sima.ai/models/state.json`. The extension host fetches
+this small public JSON at activation, every minute, and when opening Models or
+refreshing Getting Started. Requests have a five-second timeout and a 4 KiB limit;
+no authentication token is sent. UI rendering does not wait for the request.
+
+`default_branch` selects `develop` or `main` for model listing, downloads, model
+card URLs, and source copies. Each operation keeps the branch it started with
+even if the remote state changes while a picker is open. Download and source
+records include that branch.
+
+Only validated state is used. An unavailable or invalid endpoint preserves the
+last valid state for the current extension session. Before the first successful
+fetch, the label says `Current Release: Unavailable` and model operations retain
+the previous `develop` default. State is not persisted across editor restarts.
+The registry file is published only from the Models repository’s `main` branch;
+CloudFront must disable caching for this mutable file.
+
+For Alpha and Beta, the Models section and Palette panel explain that the Model
+Registry is in that program and that features and available models may change
+before general availability. GA hides this notice. Branch selection remains
+internal: picker titles, action labels, and confirmations do not show branches.

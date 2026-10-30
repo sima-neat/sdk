@@ -1,4 +1,5 @@
 const vscode = require("vscode");
+const { RegistryState } = require("./registry-state");
 const { insightOpenUrl } = require("./insight-launcher");
 const { loadStatuses } = require("./panel-status");
 const { registerGettingStarted } = require("./getting-started");
@@ -58,6 +59,7 @@ class NeatPanelProvider {
       webviewView.webview.onDidReceiveMessage(async (message) => {
         if (message.command === "sessionTimeReady") {
           this.updateSessionTime(this.sessionState);
+          this.updateRegistryState(this.registryState);
           this.webviewView?.webview.postMessage({ command: "panelStatus", html: this.panelHtml });
         } else if (message.command === "refreshStatus") {
           await this.refresh();
@@ -110,6 +112,11 @@ class NeatPanelProvider {
     this.updateSessionTime(this.sessionState);
   }
 
+  updateRegistryState(state) {
+    this.registryState = state;
+    this.webviewView?.webview.postMessage({command: "registryState", state});
+  }
+
   updateSessionTime(state) {
     this.sessionState = state;
     this.webviewView?.webview.postMessage({ command: "sessionTime", state });
@@ -157,7 +164,10 @@ class NeatPanelProvider {
 async function activate(context) {
   modelsEnabled = await modelRegistryAvailable();
   await vscode.commands.executeCommand("setContext", "simaNeat.modelRegistryAvailable", modelsEnabled);
-  registerModels(vscode, context, resolveSimaCliExecutable, modelsEnabled);
+  const registryState = new RegistryState();
+  context.subscriptions.push(registryState);
+  registryState.start();
+  registerModels(vscode, context, resolveSimaCliExecutable, modelsEnabled, () => registryState.refresh());
   // Application-scoped settings cannot use contributes.configurationDefaults.
   // Seed the web user's preference only if they have not selected one.
   if (vscode.env.uiKind === vscode.UIKind.Web) {
@@ -182,6 +192,8 @@ async function activate(context) {
   context.subscriptions.push(brand);
 
   const provider = new NeatPanelProvider(context.extensionUri);
+  provider.updateRegistryState(registryState.snapshot());
+  context.subscriptions.push(registryState.subscribe(state => provider.updateRegistryState(state)));
   context.subscriptions.push(new SessionTime(
     vscode,
     process.env.NEAT_SESSION_FILE || "/run/sima-neat/session.json",
@@ -199,7 +211,7 @@ async function activate(context) {
     })
   );
   await registerGettingStarted(vscode, context, {
-    getDevkitConfig: getDevKitSyncConfig, openInsight, modelsEnabled
+    getDevkitConfig: getDevKitSyncConfig, openInsight, modelsEnabled, registryState
   });
 }
 
@@ -1295,10 +1307,12 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
     <div>
       <h1 class="title">Palette SDK</h1>
       <p class="subtitle">Build, inspect, and manage SDK workspaces.</p>
+      <p class="subtitle" id="registry-release" aria-live="polite">Current Release: Unavailable</p>
+      <p class="subtitle" id="registry-program" aria-live="polite" hidden></p>
     </div>
   </div>
   <div class="quick-links">
-    ${modelsEnabled ? actionButton("browseModels", "repo", "Models", "Browse develop builds and download model files", false) : ""}
+    ${modelsEnabled ? actionButton("browseModels", "repo", "Models", "Browse model builds and download model files", false) : ""}
     ${actionButton("openDocumentation", "docs", "Documentation", "developer.sima.ai/software", true)}
     ${actionButton("openInsight", "eye", "Insight", "Open detected Insight web UI", true)}
   </div>
@@ -1357,6 +1371,15 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
   <script>
     const vscode = acquireVsCodeApi();
     window.addEventListener("message", ({ data }) => {
+      if (data.command === "registryState") {
+        const release = data.state?.current_state;
+        document.getElementById("registry-release").textContent = "Current Release: " + (release || "Unavailable");
+        const notice = document.getElementById("registry-program");
+        const preview = release === "Alpha" || release === "Beta";
+        notice.hidden = !preview;
+        notice.textContent = preview ? "The Model Registry is currently in the " + release + " program. Features and available models may change before general availability." : "";
+        return;
+      }
       if (data.command === "panelStatus" && data.html) {
         const next = new DOMParser().parseFromString(data.html, "text/html");
         for (const key of data.section ? [data.section] : ["samples", "tutorials", "auth", "devkit"]) {

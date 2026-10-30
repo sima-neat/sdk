@@ -48,6 +48,8 @@ function createLandingPage(vscode, context, services) {
           retainContextWhenHidden: true,
         },
       );
+    // Restored panels retain the title saved by the previous extension version.
+    current.title = "Palette SDK";
     if (restored)
       current.webview.options = {
         enableScripts: true,
@@ -81,6 +83,10 @@ function createLandingPage(vscode, context, services) {
         void current.webview.postMessage({ type: "agents", value });
     };
     const agentChanges = agents.subscribe(sendAgents);
+    const sendRegistryState = (value) => {
+      if (!disposed) void current.webview.postMessage({type: "registryState", value});
+    };
+    const registryChanges = services.registryState?.subscribe(sendRegistryState);
     const receive = current.webview.onDidReceiveMessage(async (message) => {
       if (message?.type === "agents-ready") {
         sendAgents(agents.snapshot());
@@ -91,6 +97,8 @@ function createLandingPage(vscode, context, services) {
         return;
       }
       if (message?.type === "ready" || message?.type === "refresh") {
+        sendRegistryState(services.registryState?.snapshot());
+        void services.registryState?.refresh();
         await refresh();
         return;
       }
@@ -131,6 +139,7 @@ function createLandingPage(vscode, context, services) {
       disposed = true;
       receive.dispose();
       agentChanges.dispose();
+      registryChanges?.dispose();
       if (panel === current) panel = undefined;
     });
     context.subscriptions.push(current);

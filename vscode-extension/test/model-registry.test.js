@@ -26,6 +26,7 @@ test('download flow creates independent workspace folders and reveals results', 
     const cli = path.join(root,'fake-cli');
     await fs.writeFile(cli, `#!${process.execPath}\nconst fs=require('fs'),p=require('path');
 if(process.env.SIMA_MODELS_REGISTRY_BASE_URL!=='https://models-registry.neat.sima.ai'||process.argv.includes('--stg')||process.argv.includes('--staging')) throw Error('Models must use production');
+if(process.argv[process.argv.indexOf('--branch')+1]!=='main') throw Error('Expected main');
 if(process.argv.includes('list')) console.log(JSON.stringify({models:[{metadata:{model_id:'model',variant_id:'w8a8',display_name:'Model'}}]}));
 else {const root=process.argv[process.argv.indexOf('--output')+1];const folder=p.join(root,'model');fs.mkdirSync(folder);fs.writeFileSync(p.join(folder,'README.md'),'review');console.log(JSON.stringify({path:folder,run_id:'build-123'}));}\n`);
     await fs.chmod(cli,0o755);
@@ -38,7 +39,7 @@ else {const root=process.argv[process.argv.indexOf('--output')+1];const folder=p
       withProgress:async(options,fn)=>fn({report(){}}, {isCancellationRequested:false,onCancellationRequested:()=>({dispose(){}})}),
       showQuickPick:async rows=>rows[0],showWorkspaceFolderPick:async()=>({name:'test',uri:{scheme:'file',fsPath:root}}),
       showInformationMessage:async()=> 'Download',showErrorMessage:message=>errors.push(message)}};
-    registerModels(vscode,{subscriptions:[]},async()=>cli, true);
+    registerModels(vscode,{subscriptions:[]},async()=>cli, true, async()=>({current_state:'GA',default_branch:'main'}));
     await callback();await callback();
     assert.deepEqual(errors,[]);assert.equal(revealed.length,2);assert.notEqual(revealed[0],revealed[1]);
     assert.equal(await fs.readFile(path.join(revealed[0],'model/README.md'),'utf8'),'review');
@@ -57,7 +58,7 @@ test('source action copies only the selected model and records its commit', asyn
     await fs.mkdir(path.join(repo, 'models/model'), {recursive:true});
     await fs.writeFile(path.join(repo, 'models/model/README.md'), 'Model source');
     await fs.writeFile(path.join(repo, 'unrelated.txt'), 'Do not copy');
-    await runCli('git', ['init', '-b', 'develop', repo]);
+    await runCli('git', ['init', '-b', 'main', repo]);
     await runCli('git', ['-C', repo, 'add', '.']);
     await runCli('git', ['-C', repo, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-m', 'fixture']);
     const destination = path.join(root, 'output');
@@ -66,20 +67,21 @@ test('source action copies only the selected model and records its commit', asyn
     const runner = async (file, args, token, timeout) => {
       if (args[0] === 'clone') {
         assert.equal(args[args.length - 2], 'https://github.com/sima-neat/models.git');
-        assert.equal(args[args.indexOf('--branch') + 1], 'develop');
+        assert.equal(args[args.indexOf('--branch') + 1], 'main');
         checkout = args[args.length - 1];
         args = [...args]; args[args.length - 2] = repo;
       }
       return runCli(file, args, token, timeout);
     };
-    await copySource({id:'model'}, destination, undefined, runner);
+    await copySource({id:'model',branch:'main'}, destination, undefined, runner);
     assert.equal(await fs.readFile(path.join(destination, 'contents/models/model/README.md'), 'utf8'), 'Model source');
     await assert.rejects(fs.stat(path.join(destination, 'contents/unrelated.txt')));
     await assert.rejects(fs.stat(checkout));
     const provenance = JSON.parse(await fs.readFile(path.join(destination, 'registry-source.json'), 'utf8'));
     assert.equal(provenance.commit, (await runCli('git', ['-C', repo, 'rev-parse', 'HEAD'])).trim());
+    assert.equal(provenance.branch, 'main');
     assert.equal(provenance.sourcePath, 'models/model');
-    await assert.rejects(copySource({id:'missing'}, destination, undefined, runner));
+    await assert.rejects(copySource({id:'missing',branch:'main'}, destination, undefined, runner));
     await assert.rejects(fs.stat(checkout));
   } finally { await fs.rm(root, {recursive:true, force:true}); }
 });
@@ -112,7 +114,7 @@ test('Git errors redact session credentials', async () => {
     {GIT_CONFIG_VALUE_0:header}), error=>!error.message.includes('secret-test-value') && !error.message.includes(header) && error.message.includes('[redacted]'));
 });
 
-test('Show Model Card opens selected develop model inside VSCode without a workspace', async () => {
+test('Show Model Card opens selected main model inside VSCode without a workspace', async () => {
   const {modelCardUrl, registerModels} = require('../src/model-registry');
   const url=new URL(modelCardUrl({id:'model with space',variant:'w8&a8'}));
   assert.equal(url.origin,'https://developer.sima.ai');
@@ -129,7 +131,7 @@ test('Show Model Card opens selected develop model inside VSCode without a works
     showQuickPick:async(rows)=>rows.find(row=>row.action==='card') || rows[0],
     showWorkspaceFolderPick:()=>assert.fail('Model card should not require a workspace'),
     showErrorMessage:message=>assert.fail(message)}};
-  registerModels(vscode,{subscriptions:[]},async()=>'/unused/cli', true);
+  registerModels(vscode,{subscriptions:[]},async()=>'/unused/cli', true, async()=>({current_state:'GA',default_branch:'main'}));
   await callback();
-  assert.deepEqual(opened,[['simpleBrowser.show','https://developer.sima.ai/models/?branch=develop&model=qwen3_5_0_8b&variant=w4a16']]);
+  assert.deepEqual(opened,[['simpleBrowser.show','https://developer.sima.ai/models/?branch=main&model=qwen3_5_0_8b&variant=w4a16']]);
 });
