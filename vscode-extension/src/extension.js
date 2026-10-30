@@ -1,4 +1,5 @@
 const vscode = require("vscode");
+const { insightOpenUrl } = require("./insight-launcher");
 const { loadStatuses } = require("./panel-status");
 const { registerGettingStarted } = require("./getting-started");
 const { modelRegistryAvailable } = require("./sdk-capabilities");
@@ -475,7 +476,7 @@ async function openInsight() {
     return;
   }
 
-  await vscode.env.openExternal(vscode.Uri.parse(insightUrl));
+  await vscode.env.openExternal(vscode.Uri.parse(insightOpenUrl(insightUrl, vscode.env.uiKind === vscode.UIKind.Web)));
 }
 
 async function getInsightWebUiUrl() {
