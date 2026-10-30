@@ -119,17 +119,17 @@ function registerModels(vscode, context, resolveCli, enabled = false, getState =
       const branch = state.current_state === null ? FALLBACK_STATE.default_branch : parseState(state).default_branch;
       const cli = await resolveCli();
       const models = await vscode.window.withProgress({location:vscode.ProgressLocation.Notification,
-        title:`Loading ${branch} model builds`, cancellable:true}, async (_, token) =>
+        title:'Loading model builds', cancellable:true}, async (_, token) =>
         parseCatalog(await runCli(cli, ['models','list','--branch',branch,'--json'], token, 120000, MODEL_REGISTRY_ENV)));
-      if (!models.length) return vscode.window.showInformationMessage(`No existing builds are available on ${branch}.`);
-      const model = await vscode.window.showQuickPick(models, {title:`Model Registry · ${branch}`,
+      if (!models.length) return vscode.window.showInformationMessage('No existing model builds are available.');
+      const model = await vscode.window.showQuickPick(models, {title:'Model Registry',
         placeHolder:'Search models, variants, tasks, or licenses', matchOnDescription:true, matchOnDetail:true});
       if (!model) return;
       model.branch = branch; // Keep the selected catalog branch for the whole operation.
       const operation = await vscode.window.showQuickPick([
         {label:'Download prebuilt artifact', action:'artifact', description:model.variant},
-        {label:'Copy model source folder', action:'source', description:`Models repository · ${branch}`},
-        {label:'Show Model Card', action:'card', description:`Open in VSCode · ${branch}`},
+        {label:'Copy model source folder', action:'source', description:'Models repository'},
+        {label:'Show Model Card', action:'card', description:'Open in VSCode'},
       ], {title:model.label, placeHolder:'Choose a model action'});
       if (!operation) return;
       if (operation.action === 'card') {
@@ -142,7 +142,7 @@ function registerModels(vscode, context, resolveCli, enabled = false, getState =
       if (workspace.uri.scheme !== 'file') throw new Error('Open a filesystem workspace in the SDK to download models.');
       const action = await vscode.window.showInformationMessage(
         ` ${source ? "Copy source for" : "Download"} ${model.label} into ${workspace.name}/models?`.trim(),
-        {modal:true, detail:`${model.detail}\n\n${source ? "Copies models/" + model.id + " from the current " + branch + " branch of sima-neat/models (may differ from the build revision)." : "Downloads the current existing " + branch + " build."} Files go into a new folder; no code is executed.`}, source ? 'Copy source' : 'Download');
+        {modal:true, detail:`${model.detail}\n\n${source ? "Copies models/" + model.id + " from sima-neat/models (may differ from the build revision)." : "Downloads the current available build."} Files go into a new folder; no code is executed.`}, source ? 'Copy source' : 'Download');
       if (action !== (source ? 'Copy source' : 'Download')) return;
       const sourceRun = source ? await sourceRunner(vscode) : undefined;
       await vscode.window.withProgress({location:vscode.ProgressLocation.Notification,

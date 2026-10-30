@@ -60,3 +60,30 @@ test('initial outage leaves the release unknown, and disposed pending requests c
   await pending;
   assert.equal(state.snapshot().current_state, null);
 });
+
+test('both UI surfaces explain Alpha/Beta and remove the notice for GA or unknown state', () => {
+  const fs = require('node:fs');
+  const vm = require('node:vm');
+  for (const file of ['../media/landing/landing.js', '../src/extension.js']) {
+    const source = fs.readFileSync(require.resolve(file), 'utf8');
+    const start = source.indexOf('window.addEventListener("message", ({ data }) => {');
+    const next = source.indexOf('\n      if (data.command === "panelStatus"', start);
+    const end = file.includes('landing.js') ? source.indexOf('\n  if (data.type === "error")', start) : next;
+    const elements = {'registry-release': {}, 'registry-program': {}};
+    let receive;
+    vm.runInNewContext(source.slice(start, end) + '\n});', {
+      window: {addEventListener: (_event, callback) => {receive = callback;}},
+      document: {getElementById: id => elements[id]},
+      $: id => elements[id], text: (id, value) => {elements[id].textContent = value;},
+    });
+    for (const release of ['Alpha', 'Beta', 'GA', undefined]) {
+      receive({data: {type:'registryState', command:'registryState',
+        value:{current_state:release}, state:{current_state:release}}});
+      assert.equal(elements['registry-release'].textContent, `Current Release: ${release || 'Unavailable'}`);
+      assert.equal(elements['registry-program'].hidden, !['Alpha','Beta'].includes(release));
+      if (['Alpha','Beta'].includes(release)) {
+        assert.match(elements['registry-program'].textContent, new RegExp(`${release} program`));
+      } else assert.equal(elements['registry-program'].textContent, '');
+    }
+  }
+});

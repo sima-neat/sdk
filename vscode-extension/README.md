@@ -277,3 +277,8 @@ fetch, the label says `Current Release: Unavailable` and model operations retain
 the previous `develop` default. State is not persisted across editor restarts.
 The registry file is published only from the Models repository’s `main` branch;
 CloudFront must disable caching for this mutable file.
+
+For Alpha and Beta, the Models section and Palette panel explain that the Model
+Registry is in that program and that features and available models may change
+before general availability. GA hides this notice. Branch selection remains
+internal: picker titles, action labels, and confirmations do not show branches.

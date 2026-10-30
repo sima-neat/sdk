@@ -48,7 +48,11 @@ const gib = (n) =>
     : "Unknown";
 window.addEventListener("message", ({ data }) => {
   if (data.type === "registryState") {
-    text("registry-release", "Current Release: " + (data.value?.current_state || "Unavailable"));
+    const release = data.value?.current_state;
+    text("registry-release", "Current Release: " + (release || "Unavailable"));
+    const preview = release === "Alpha" || release === "Beta";
+    $("registry-program").hidden = !preview;
+    text("registry-program", preview ? "The Model Registry is currently in the " + release + " program. Features and available models may change before general availability." : "");
     return;
   }
   if (data.type === "error") {

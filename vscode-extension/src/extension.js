@@ -1308,6 +1308,7 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
       <h1 class="title">Palette SDK</h1>
       <p class="subtitle">Build, inspect, and manage SDK workspaces.</p>
       <p class="subtitle" id="registry-release" aria-live="polite">Current Release: Unavailable</p>
+      <p class="subtitle" id="registry-program" aria-live="polite" hidden></p>
     </div>
   </div>
   <div class="quick-links">
@@ -1371,7 +1372,12 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
     const vscode = acquireVsCodeApi();
     window.addEventListener("message", ({ data }) => {
       if (data.command === "registryState") {
-        document.getElementById("registry-release").textContent = "Current Release: " + (data.state?.current_state || "Unavailable");
+        const release = data.state?.current_state;
+        document.getElementById("registry-release").textContent = "Current Release: " + (release || "Unavailable");
+        const notice = document.getElementById("registry-program");
+        const preview = release === "Alpha" || release === "Beta";
+        notice.hidden = !preview;
+        notice.textContent = preview ? "The Model Registry is currently in the " + release + " program. Features and available models may change before general availability." : "";
         return;
       }
       if (data.command === "panelStatus" && data.html) {
