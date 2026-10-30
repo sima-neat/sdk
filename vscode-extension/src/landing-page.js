@@ -48,6 +48,8 @@ function createLandingPage(vscode, context, services) {
           retainContextWhenHidden: true,
         },
       );
+    // Restored panels retain the title saved by the previous extension version.
+    current.title = "Palette SDK";
     if (restored)
       current.webview.options = {
         enableScripts: true,
