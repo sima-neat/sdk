@@ -22,7 +22,7 @@ templates = [args.server_dir / p for p in (
 )]
 pattern = re.compile(r'<link\b[^>]*\brel="(?:alternate )?icon"[^>]*>', re.I)
 asset = re.compile(r'(?P<prefix>/src/browser/media/)(?:favicon(?:-dark-support)?\.(?:svg|ico)|neat-favicon-[a-f0-9]+\.png)')
-LOGIN_HEADER = """<div class="neat-brand"><img src="{{CS_STATIC_BASE}}/src/browser/media/NEAT_ICON" alt="" width="40" height="40" /><span>SiMa.ai <span class="neat-product">/ Palette Neat SDK</span></span></div>
+LOGIN_HEADER = """<div class="neat-brand"><img src="{{CS_STATIC_BASE}}/src/browser/media/NEAT_ICON" alt="" width="40" height="40" /><span>SiMa.ai <span class="neat-product">/ Palette SDK</span></span></div>
           <h1 class="main">Your development environment</h1>
           <div class="sub">Sign in to start building with SiMa Neat.</div>"""
 LOGIN_HELP = """<section class="neat-help" aria-labelledby="neat-password-help">

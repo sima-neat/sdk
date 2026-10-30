@@ -172,10 +172,10 @@ async function activate(context) {
   }
 
   const brand = vscode.window.createStatusBarItem("simaNeat.brand", vscode.StatusBarAlignment.Left, Number.MAX_SAFE_INTEGER);
-  brand.name = "Palette Neat SDK";
-  brand.text = "Palette Neat SDK";
-  brand.tooltip = "Open the SiMa Neat panel";
-  brand.accessibilityInformation = { label: "Palette Neat SDK. Open the Neat panel." };
+  brand.name = "Palette SDK";
+  brand.text = "Palette SDK";
+  brand.tooltip = "Open Palette panel";
+  brand.accessibilityInformation = { label: "Palette SDK. Open the Palette panel." };
   brand.command = "simaNeat.showPanel";
   brand.show();
   context.subscriptions.push(brand);
@@ -1292,7 +1292,7 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
   <div class="masthead">
     <img class="logo" src="${logoUri}" alt="SiMa.ai">
     <div>
-      <h1 class="title">Palette Neat</h1>
+      <h1 class="title">Palette SDK</h1>
       <p class="subtitle">Build, inspect, and manage SDK workspaces.</p>
     </div>
   </div>

@@ -57,7 +57,7 @@ remain intact. Styles are served locally under the existing content security
 policy, and browser zoom remains enabled.
 
 Image publication smoke tests fetch `/login` after SDK setup and check the
-Palette Neat branding, password guidance, login form, and served CSS/logo assets.
+Palette SDK branding, password guidance, login form, and served CSS/logo assets.
 The test fixture is not installed; the helper modifies the real code-server page
 at image build time. Existing containers must be recreated from a published
 image containing the change to receive it.
@@ -83,7 +83,7 @@ follows the browser's light/dark preference independently of the editor theme.
 Desktop VS Code users need the fonts installed locally; bundled web fonts are
 loaded by the SDK's code-server pages.
 
-The extension always shows “Palette Neat SDK” in the left status bar.
+The extension always shows “Palette SDK” in the left status bar.
 Clicking it opens the Neat panel. In code-server, the bundled workbench stylesheet
 adds the SiMa logo beside the label; desktop VS Code shows the text alone.
 This branding item is independent of the optional session-expiration indicator.
