@@ -87,3 +87,18 @@ test("falls back and re-reads the override for every resolution", async () => {
   );
   assert.equal(defaultCalls, 1);
 });
+
+const { insightOpenUrl } = require("../src/insight-launcher");
+test("web Insight launch opts out of HTTP proxy while retaining the advertised host and port", () => {
+  for (const host of ["127.0.0.1", "192.168.76.60", "remote.example.test"]) {
+    const original = `https://${host}:19900/view?launch-source=host-override#viewer`;
+    const marked = new URL(insightOpenUrl(original, true));
+    assert.equal(marked.host, `${host}:19900`);
+    assert.equal(marked.searchParams.get("palette-insight-direct"), "1");
+    assert.equal(marked.searchParams.get("launch-source"), "host-override");
+    assert.equal(marked.hash, "#viewer");
+    assert.equal(insightOpenUrl(original, false), original);
+  }
+  assert.equal(insightOpenUrl("http://localhost:9900/", true), "http://localhost:9900/");
+  assert.equal(insightOpenUrl("javascript:alert(1)", true), "");
+});
