@@ -102,3 +102,14 @@ test("web Insight launch opts out of HTTP proxy while retaining the advertised h
   assert.equal(insightOpenUrl("http://localhost:9900/", true), "http://localhost:9900/");
   assert.equal(insightOpenUrl("javascript:alert(1)", true), "");
 });
+
+test("Arthas launch-file override remains authoritative through web launch", async () => {
+  const override = "https://arthas.example.test/environments/session-123/proxy/9900/?session=abc#viewer";
+  const resolved = await resolveInsightLaunchUrl(
+    () => { throw new Error("must not replace the host override"); },
+    { readFile: async () => override }
+  );
+  const launched = new URL(insightOpenUrl(resolved, true));
+  launched.searchParams.delete("palette-insight-direct");
+  assert.equal(launched.href, override);
+});

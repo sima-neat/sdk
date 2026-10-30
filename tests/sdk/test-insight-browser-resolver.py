@@ -55,6 +55,15 @@ const resolve = RESOLVER;
   assert.equal(result.query,"launch-source=host-override");
   assert.equal(result.fragment,"viewer");
  }
+ // Arthas supplies an externally routed URL, including an explicit proxy path.
+ // Preserve that route; only remove the SDK's internal launch marker.
+ for (const path of ["/environments/session-123/proxy/9900/", "/proxy/9900/", "/insight/"]) {
+  const result=await resolve(uri(`https://arthas.example.test${path}?session=abc&palette-insight-direct=1#viewer`));
+  assert.equal(result.authority,"arthas.example.test");
+  assert.equal(result.path,path);
+  assert.equal(result.query,"session=abc");
+  assert.equal(result.fragment,"viewer");
+ }
  for (const value of ["http://127.0.0.1:3000/", "https://127.0.0.1:9900/",
                        "http://127.0.0.1:9900/?palette-insight-direct=1"]) {
   const result=await resolve(uri(value));
