@@ -35,7 +35,7 @@ class LoginPage(HTMLParser):
 
 
 html = fetch(BASE).decode('utf-8')
-assert 'SiMa.ai' in html and '/ Palette Neat SDK' in html, 'Missing SDK login branding'
+assert 'SiMa.ai' in html and '/ Palette SDK' in html, 'Missing SDK login branding'
 assert 'sima-cli sdk neat printenv CODE_SERVER_PASSWORD' in html, 'Missing password guidance'
 assert 'Welcome to code-server' not in html, 'Stock login page is still served'
 page = LoginPage()
