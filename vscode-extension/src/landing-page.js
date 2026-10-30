@@ -24,7 +24,7 @@ async function landingHtml(vscode, context, webview) {
       "utf8",
     )
   ).replace("{{LOGO}}", asset("sima-logo.png"));
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; font-src ${webview.cspSource}; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';"><title>Palette Neat</title><link rel="stylesheet" href="${asset("landing", "landing.css")}"></head><body>${body}<script nonce="${nonce}" src="${asset("landing", "landing.js")}"></script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; font-src ${webview.cspSource}; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';"><title>Palette SDK</title><link rel="stylesheet" href="${asset("landing", "landing.css")}"></head><body>${body}<script nonce="${nonce}" src="${asset("landing", "landing.js")}"></script></body></html>`;
 }
 function createLandingPage(vscode, context, services) {
   let panel;
@@ -38,7 +38,7 @@ function createLandingPage(vscode, context, services) {
       restored ||
       vscode.window.createWebviewPanel(
         "simaNeat.landing",
-        "Palette Neat",
+        "Palette SDK",
         vscode.ViewColumn.One,
         {
           enableScripts: true,

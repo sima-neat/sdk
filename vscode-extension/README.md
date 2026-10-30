@@ -1,13 +1,13 @@
-# SiMa Neat VS Code Extension
+# Palette SDK VS Code Extension
 
-Experimental VS Code extension scaffold for SiMa Neat SDK workspaces.
+Experimental VS Code extension scaffold for Palette SDK workspaces.
 
 ## Features
 
-- Adds a SiMa Neat activity bar container.
+- Adds a Palette activity bar container.
 - Opens Insight using the current URL reported by `neat --json`.
 - Initializes the browser editor menu bar to always visible (`window.menuBarVisibility: visible`) when no explicit user/workspace value exists. Users can change it afterward; desktop VS Code preferences are untouched.
-- Shows a Neat webview panel with SDK controls.
+- Shows a Palette webview panel with SDK controls.
 - Supports opt-in, host-controlled expiration reminders for Arthas; ordinary local environments remain silent.
 - Adds Developer Portal Login/Logout controls that store tokens in the same `~/.sima-cli/.tokens.json` cache used by `sima-cli`.
 - Contributes `SiMa Neat Light` and `SiMa Neat Dark` themes.
@@ -78,13 +78,13 @@ Host and container clocks must agree. This is an advisory UI, not access control
 or environment shutdown enforcement.
 
 The status bar shows a live countdown; clicking it opens a prominent banner at
-the top of the Neat panel. Warnings appear at five minutes, one minute, and
+the top of the Palette panel. Warnings appear at five minutes, one minute, and
 expiration (once per stage per deadline, per editor window). Changing the deadline
 resets warnings. Expiration stays visible until the host clears or extends it.
 Reloading the editor reads the same absolute deadline, without resetting time.
 Malformed/unreadable updates retain the last valid deadline and log to **Neat
 Session Time**. VS Code has no public extension API for a full-width workbench
-banner; this uses the supported status bar, notifications, and Neat webview.
+banner; this uses the supported status bar, notifications, and Palette webview.
 
 After installing an updated VSIX, reload existing editor windows. To run tests:
 
@@ -133,7 +133,7 @@ concurrent read/modify/write conflicts. Setting a new deadline without
 
 Add `"blink":true` to the JSON state to blink the status-bar warning/error
 background (one second on, one second off). Text remains visible throughout;
-the Neat panel does not blink. Blinking defaults to off and has no visual effect
+the Palette panel does not blink. Blinking defaults to off and has no visual effect
 in `quiet` mode or while `auto` has normal severity. Toggling blink alone does
 not repeat notifications. Presentation-only updates preserve the blink setting;
 a new deadline resets it to off unless `--blink` is specified.
@@ -167,7 +167,7 @@ Model Registry is available only on SDK 3.0 or newer, including 3.0 pre-release
 and daily builds. The Models button and command are hidden on older SDKs or
 when `/etc/sdk-release` cannot identify a supported platform version.
 
-Choose **Models** in the Neat panel or run **SiMa Neat: Browse Models (develop)**
+Choose **Models** in the Palette panel or run **SiMa Neat: Browse Models (develop)**
 from the Command Palette. Search existing production registry builds by model name,
 variant, description, task, or license. After selecting a model, choose an action (downloads and source copies then ask for a destination workspace):
 
@@ -205,7 +205,7 @@ This initial integration uses `develop` only; it does not compile or deploy mode
 ### SDK landing page
 
 Each browser-editor launch with no restored tabs or explicit
-`workbench.startupEditor` preference opens the local Palette Neat landing page.
+`workbench.startupEditor` preference opens the local Palette SDK landing page.
 The stock Welcome page is disabled by default. Existing startup preferences and
 open editors are preserved. A stock Welcome tab alone does not suppress the
 landing page if it appears before extension activation. Use **SiMa Neat: Getting
@@ -218,7 +218,7 @@ accounts for affinity, cpusets, and cgroup quotas; RAM shows available headroom
 and the visible container limit. **Refresh** reads a new snapshot.
 
 The configured DevKit comes from the same DevKit Sync settings used by the
-Neat panel. A bounded SSH read retrieves `/proc/device-tree/model` and
+Palette panel. A bounded SSH read retrieves `/proc/device-tree/model` and
 `SIMA_BUILD_VERSION` from `/etc/build` or `/etc/buildinfo`. Unconfigured,
 unreachable, and invalid configurations are distinct states; missing metadata
 is shown as unknown. SSH tries keys first, then the standard DevKit password
@@ -227,7 +227,7 @@ are rejected. No firmware or device settings are modified.
 
 Insight version comes from `neat --json --offline`, with an installed Python
 package metadata fallback for platform-only SDK images. Both the landing page
-and Neat panel share the launch resolver: `/home/docker/.insight-config/launch-url`
+and Palette panel share the launch resolver: `/home/docker/.insight-config/launch-url`
 first, then `neat`'s `insight.webUiUrl`, then the published mainUI port and
 `CONTAINER_HOST_IP` when Core is absent. Missing URLs disable the launch action.
 

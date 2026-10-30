@@ -1,7 +1,7 @@
 {
   "name": "sima-neat",
-  "displayName": "Palette Neat Development Environment",
-  "description": "VS Code extension for SiMa Neat SDK workspaces.",
+  "displayName": "Palette SDK Development Environment",
+  "description": "VS Code extension for Palette SDK workspaces.",
   "version": "0.0.1",
   "publisher": "sima-neat",
   "license": "UNLICENSED",
@@ -36,7 +36,7 @@
       },
       {
         "command": "simaNeat.showPanel",
-        "title": "SiMa Neat: Show Panel"
+        "title": "Open Palette panel"
       },
       {
         "command": "simaNeat.browseModels",
@@ -48,7 +48,7 @@
       "activitybar": [
         {
           "id": "simaNeat",
-          "title": "SiMa Neat",
+          "title": "Palette",
           "icon": "media/neat-logo.png"
         }
       ]
@@ -57,7 +57,7 @@
       "simaNeat": [
         {
           "id": "simaNeat.panel",
-          "name": "Neat",
+          "name": "Palette",
           "type": "webview"
         }
       ]
