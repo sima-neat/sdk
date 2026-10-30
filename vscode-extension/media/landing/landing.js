@@ -47,6 +47,10 @@ const gib = (n) =>
     ? (n / 1024 ** 3).toLocaleString(undefined, { maximumFractionDigits: 1 })
     : "Unknown";
 window.addEventListener("message", ({ data }) => {
+  if (data.type === "registryState") {
+    text("registry-release", "Current Release: " + (data.value?.current_state || "Unavailable"));
+    return;
+  }
   if (data.type === "error") {
     text("load-status", "Unable to refresh environment details. Try Refresh.");
     $("refresh").disabled = false;

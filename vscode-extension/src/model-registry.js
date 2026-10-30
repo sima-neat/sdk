@@ -1,6 +1,13 @@
 const { execFile } = require('child_process');
 const fs = require('fs/promises');
 const path = require('path');
+const {FALLBACK_STATE, parseState} = require('./registry-state');
+
+function branchFor(model) {
+  const branch = model.branch || 'develop';
+  if (!['develop', 'main'].includes(branch)) throw new Error('Invalid model branch');
+  return branch;
+}
 
 // Explicit routing also supports SDKs whose bundled CLI has no production default.
 const MODEL_REGISTRY_ENV = {SIMA_MODELS_REGISTRY_BASE_URL: 'https://models-registry.neat.sima.ai'};
@@ -47,14 +54,14 @@ function runCli(file, args, token, timeout = 0, extraEnv = {}) {
 
 function modelCardUrl(model) {
   const url = new URL('https://developer.sima.ai/models/');
-  url.searchParams.set('branch', 'develop');
+  url.searchParams.set('branch', branchFor(model));
   url.searchParams.set('model', model.id);
   url.searchParams.set('variant', model.variant);
   return url.toString();
 }
 
 function downloadArgs(model, output) {
-  return ['models', 'download', '--branch', 'develop', '--id', model.id,
+  return ['models', 'download', '--branch', branchFor(model), '--id', model.id,
     '--variant', model.variant, '--output', output, '--json'];
 }
 
@@ -84,7 +91,7 @@ async function copySource(model, destination, token, run = runCli) {
   try {
     const checkout = path.join(temporary, 'repository');
     await run('git', ['clone', '--depth', '1', '--filter=blob:none', '--no-checkout',
-      '--branch', 'develop', repository, checkout], token, 120000);
+      '--branch', branchFor(model), repository, checkout], token, 120000);
     const commit = (await run('git', ['-C', checkout, 'rev-parse', 'HEAD'], token)).trim();
     const archive = path.join(destination, 'source.tar');
     await run('git', ['-C', checkout, 'archive', '--format=tar', '--output', archive,
@@ -92,14 +99,14 @@ async function copySource(model, destination, token, run = runCli) {
     await run('python3', [path.join(__dirname, 'unpack-model.py'), destination, archive], token);
     await fs.rm(archive);
     await fs.writeFile(path.join(destination, 'registry-source.json'),
-      JSON.stringify({repository, branch:'develop', commit, model:model.id,
+      JSON.stringify({repository, branch:branchFor(model), commit, model:model.id,
         sourcePath:`models/${model.id}`}, null, 2) + '\n');
   } finally {
     await fs.rm(temporary, {recursive:true, force:true});
   }
 }
 
-function registerModels(vscode, context, resolveCli, enabled = false) {
+function registerModels(vscode, context, resolveCli, enabled = false, getState = async () => FALLBACK_STATE) {
   let busy = false;
   const command = vscode.commands.registerCommand('simaNeat.browseModels', async () => {
     if (!enabled) return vscode.window.showInformationMessage('Model Registry requires SDK 3.0 or newer.');
@@ -108,18 +115,21 @@ function registerModels(vscode, context, resolveCli, enabled = false) {
     let destination;
     let completed = false;
     try {
+      const state = await getState();
+      const branch = state.current_state === null ? FALLBACK_STATE.default_branch : parseState(state).default_branch;
       const cli = await resolveCli();
       const models = await vscode.window.withProgress({location:vscode.ProgressLocation.Notification,
-        title:'Loading develop model builds', cancellable:true}, async (_, token) =>
-        parseCatalog(await runCli(cli, ['models','list','--branch','develop','--json'], token, 120000, MODEL_REGISTRY_ENV)));
-      if (!models.length) return vscode.window.showInformationMessage('No existing builds are available on develop.');
-      const model = await vscode.window.showQuickPick(models, {title:'Model Registry · develop',
+        title:`Loading ${branch} model builds`, cancellable:true}, async (_, token) =>
+        parseCatalog(await runCli(cli, ['models','list','--branch',branch,'--json'], token, 120000, MODEL_REGISTRY_ENV)));
+      if (!models.length) return vscode.window.showInformationMessage(`No existing builds are available on ${branch}.`);
+      const model = await vscode.window.showQuickPick(models, {title:`Model Registry · ${branch}`,
         placeHolder:'Search models, variants, tasks, or licenses', matchOnDescription:true, matchOnDetail:true});
       if (!model) return;
+      model.branch = branch; // Keep the selected catalog branch for the whole operation.
       const operation = await vscode.window.showQuickPick([
         {label:'Download prebuilt artifact', action:'artifact', description:model.variant},
-        {label:'Copy model source folder', action:'source', description:'Models repository · develop'},
-        {label:'Show Model Card', action:'card', description:'Open in VSCode · develop'},
+        {label:'Copy model source folder', action:'source', description:`Models repository · ${branch}`},
+        {label:'Show Model Card', action:'card', description:`Open in VSCode · ${branch}`},
       ], {title:model.label, placeHolder:'Choose a model action'});
       if (!operation) return;
       if (operation.action === 'card') {
@@ -132,7 +142,7 @@ function registerModels(vscode, context, resolveCli, enabled = false) {
       if (workspace.uri.scheme !== 'file') throw new Error('Open a filesystem workspace in the SDK to download models.');
       const action = await vscode.window.showInformationMessage(
         ` ${source ? "Copy source for" : "Download"} ${model.label} into ${workspace.name}/models?`.trim(),
-        {modal:true, detail:`${model.detail}\n\n${source ? "Copies models/" + model.id + " from the current develop branch of sima-neat/models (may differ from the build revision)." : "Downloads the current existing develop build."} Files go into a new folder; no code is executed.`}, source ? 'Copy source' : 'Download');
+        {modal:true, detail:`${model.detail}\n\n${source ? "Copies models/" + model.id + " from the current " + branch + " branch of sima-neat/models (may differ from the build revision)." : "Downloads the current existing " + branch + " build."} Files go into a new folder; no code is executed.`}, source ? 'Copy source' : 'Download');
       if (action !== (source ? 'Copy source' : 'Download')) return;
       const sourceRun = source ? await sourceRunner(vscode) : undefined;
       await vscode.window.withProgress({location:vscode.ProgressLocation.Notification,
@@ -154,7 +164,7 @@ function registerModels(vscode, context, resolveCli, enabled = false) {
         if (!downloaded.startsWith(destination + path.sep)) throw new Error('The CLI returned a path outside the download folder.');
         progress.report({message:'Preparing model files for review'});
         await runCli('python3', [path.join(__dirname, 'unpack-model.py'), destination, downloaded], token);
-        await fs.writeFile(path.join(destination, 'registry-download.json'), JSON.stringify({branch:'develop', ...result}, null, 2) + '\n');
+        await fs.writeFile(path.join(destination, 'registry-download.json'), JSON.stringify({...result, branch}, null, 2) + '\n');
         completed = true;
       });
       await vscode.commands.executeCommand('revealInExplorer', vscode.Uri.file(destination));
