@@ -58,6 +58,12 @@ class Source:
         Path(target).write_bytes(b'image')
 
 
+@pytest.fixture(autouse=True)
+def no_production_retirements(monkeypatch):
+    # Most fixtures exercise synthetic release histories, including B2479.
+    monkeypatch.setattr(m, 'RETIRED_BUILDS', set())
+
+
 @pytest.fixture
 def s3():
     with mock_aws():
@@ -494,8 +500,8 @@ def test_index_publication_retry_reports_new_build_without_reupload(s3, tmp_path
     assert json.loads(report.read_text())['copied_versions'] == []
 
 
-@pytest.mark.parametrize("master_channel", ["pre-release", "release"])
-def test_master_and_develop_share_retention_and_pruning(s3, master_channel):
+def test_master_and_develop_share_retention_and_pruning(s3):
+    master_channel = "pre-release"
     master = lambda n: f'3.0.0_{master_channel}_master_B{n}'
     source = Source(range(1, 21))
     source.names.add(master(21))
@@ -564,3 +570,62 @@ def test_release_catalog_retry_announces_new_builds_once(s3, tmp_path, monkeypat
     assert source.downloads == [release, name(2)]
     mirror(source, s3, True, report_path=report)
     assert json.loads(report.read_text())['copied_versions'] == []
+
+
+def test_release_master_survives_newer_rolling_builds_and_upstream_removal(s3):
+    release = '3.0.0_release_master_B2479'
+    initial = Source(range(2458, 2479))
+    initial.names.add(release)
+    result = mirror(initial, s3, True)
+    assert len(result['builds']) == 22
+    assert result['pinned_builds'] == [release]
+    # More than 21 newer builds cannot evict the release, even after Artifactory removes it.
+    newer = Source(range(2500, 2530))
+    result = mirror(newer, s3, True)
+    expected = {name(n) for n in range(2509, 2530)} | {release}
+    assert {b['name'] for b in result['builds']} == expected
+    assert m.existing_builds(s3) == expected
+    assert m.read_json(s3, m.PREFIX + release + '/manifest.json')['name'] == release
+    assert len(m.read_json(s3, m.PREFIX + 'index.json')['builds']) == 21
+    assert release in {b['name'] for b in m.read_json(s3, m.PREFIX + 'index-v2.json')['builds']}
+
+
+def test_prune_never_deletes_release_versions_markers_or_partial_uploads(s3):
+    prefix = m.PREFIX + '3.0.0_release_master_B2479/'
+    key = prefix + 'image.wic.gz'
+    s3.put_object(Bucket=m.BUCKET, Key=key, Body=b'first')
+    s3.put_object(Bucket=m.BUCKET, Key=key, Body=b'second')
+    s3.delete_object(Bucket=m.BUCKET, Key=key)
+    s3.put_object(Bucket=m.BUCKET, Key=prefix + 'partial', Body=b'partial')
+    before = s3.list_object_versions(Bucket=m.BUCKET, Prefix=prefix)
+    assert m.prune(s3, set()) == 0
+    after = s3.list_object_versions(Bucket=m.BUCKET, Prefix=prefix)
+    for field in ('Versions', 'DeleteMarkers'):
+        assert {(x['Key'], x['VersionId']) for x in before.get(field, [])} == {(x['Key'], x['VersionId']) for x in after.get(field, [])}
+
+
+def test_multiple_old_release_masters_do_not_consume_rolling_slots(s3):
+    releases = {'3.0.0_release_master_B10', '3.0.0_release_master_B20'}
+    source = Source(range(100, 125))
+    source.names.update(releases)
+    result = mirror(source, s3, True)
+    assert len(result['builds']) == 23
+    assert set(result['pinned_builds']) == releases
+    assert {b['name'] for b in result['builds']} == releases | {name(n) for n in range(104, 125)}
+
+
+def test_explicit_retirement_omits_stored_and_upstream_build_without_automatic_deletion(s3, monkeypatch):
+    retired = '3.0.0_release_master_B2479'
+    replacement = '3.0.0_release_master_B2501'
+    source = Source([2487])
+    source.names.update({retired, replacement})
+    mirror(source, s3, True)
+    source.downloads.clear()
+    monkeypatch.setattr(m, 'RETIRED_BUILDS', {retired})
+    result = mirror(source, s3, True)
+    assert {b['name'] for b in result['builds']} == {replacement, name(2487)}
+    assert result['pinned_builds'] == [replacement]
+    assert not source.downloads
+    # Retirement requires separately authorized deletion, never rolling pruning.
+    assert m.read_json(s3, m.PREFIX + retired + '/manifest.json')['name'] == retired
+    assert retired not in {b['name'] for b in m.read_json(s3, m.PREFIX + 'index-v2.json')['builds']}

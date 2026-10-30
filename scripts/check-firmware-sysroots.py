@@ -156,6 +156,8 @@ def check(images, reader=read_index):
             continue
         for label, base in (('internal', INTERNAL), ('external', EXTERNAL)):
             url = base.rsplit('/', 1)[0] + '/' + channel
+            if channel == 'release' and label == 'external':
+                url = 'https://repo.sima.ai/elxr/deb/release'
             if url not in cache:
                 try:
                     cache[url] = reader(url)
