@@ -43,6 +43,9 @@ The install command pulls the SDK image and then asks whether to pair the SDK
 with a Modalix DevKit. If you choose to pair, enter the DevKit IP address when
 prompted.
 
+If pairing asks to enable passwordless sudo for the DevKit user, press Enter
+to accept the default Yes, or enter `n` to skip the change.
+
 To install the SDK with Edgematic Studio enabled, select the alternative
 `metadata-edgematic-studio.json` package metadata:
 
