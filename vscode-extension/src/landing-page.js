@@ -59,7 +59,9 @@ function createLandingPage(vscode, context, services) {
       };
     panel = current;
     let disposed = false,
-      busy = false;
+      busy = false,
+      devkitConnected = false,
+      cloningApps = false;
     const refresh = async () => {
       if (busy || disposed) return;
       busy = true;
@@ -67,12 +69,15 @@ function createLandingPage(vscode, context, services) {
         const value = await (services.loadData || loadLandingData)(
           services.getDevkitConfig,
         );
+        const appsState = await services.getAppsState?.();
+        devkitConnected = value.devkit?.state === "connected";
         if (!disposed)
           await current.webview.postMessage({
             type: "data",
-            value: { ...value, modelsEnabled: services.modelsEnabled },
+            value: { ...value, appsState, modelsEnabled: services.modelsEnabled },
           });
       } catch {
+        devkitConnected = false;
         if (!disposed) await current.webview.postMessage({ type: "error" });
       } finally {
         busy = false;
@@ -109,6 +114,28 @@ function createLandingPage(vscode, context, services) {
         switch (message.action) {
           case "panel":
             await vscode.commands.executeCommand("simaNeat.showPanel");
+            break;
+          case "devkit": {
+            if (!devkitConnected) {
+              vscode.window.showErrorMessage("Connect a DevKit, then refresh before opening a shell.");
+              break;
+            }
+            const terminal = vscode.window.createTerminal("DevKit");
+            terminal.show();
+            terminal.sendText("dk shell");
+            break;
+          }
+          case "cloneApps":
+            if (cloningApps) break;
+            cloningApps = true;
+            await current.webview.postMessage({ type: "appsClone", busy: true });
+            try {
+              await services.cloneApps();
+            } finally {
+              cloningApps = false;
+              await current.webview.postMessage({ type: "appsClone", busy: false });
+              await refresh();
+            }
             break;
           case "models":
             await vscode.commands.executeCommand("simaNeat.browseModels");

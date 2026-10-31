@@ -259,8 +259,10 @@ required; provider sign-in and service access remain provider-managed.
 
 ## Registry release state
 
-The Palette panel and Getting Started header display `Current Release: Alpha`
-(or `Beta` / `GA`) from
+The Palette panel displays `Release program: Alpha` (or `Beta`) inside
+a dedicated Model Registry section. Getting Started shows the explicitly labeled
+Model Registry release program within its Models tab, away from the SDK header.
+Both hide the program label for GA and read the program from
 `https://artifacts.neat.sima.ai/models/state.json`. The extension host fetches
 this small public JSON at activation, every minute, and when opening Models or
 refreshing Getting Started. Requests have a five-second timeout and a 4 KiB limit;
@@ -273,7 +275,7 @@ records include that branch.
 
 Only validated state is used. An unavailable or invalid endpoint preserves the
 last valid state for the current extension session. Before the first successful
-fetch, the label says `Current Release: Unavailable` and model operations retain
+fetch, the registry program label says `Unavailable` and model operations retain
 the previous `develop` default. State is not persisted across editor restarts.
 The registry file is published only from the Models repository’s `main` branch;
 CloudFront must disable caching for this mutable file.
@@ -282,3 +284,12 @@ For Alpha and Beta, the Models section and Palette panel explain that the Model
 Registry is in that program and that features and available models may change
 before general availability. GA hides this notice. Branch selection remains
 internal: picker titles, action labels, and confirmations do not show branches.
+
+The Getting Started DevKit card includes **Connect**, enabled when the last
+status check reports a connected DevKit. It opens an integrated terminal and runs
+`dk shell` using the SDK's configured DevKit. Refresh after changing connections.
+
+The Apps tab offers **Clone to Workspace** beside **Explore apps**. It uses the
+existing Samples clone action: `git clone https://github.com/sima-neat/apps apps`
+in the current workspace folder, following the remote default branch. Existing
+`apps/` directories are preserved and disable cloning; progress is shown while cloning.

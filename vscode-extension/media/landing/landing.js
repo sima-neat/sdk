@@ -49,19 +49,32 @@ const gib = (n) =>
 window.addEventListener("message", ({ data }) => {
   if (data.type === "registryState") {
     const release = data.value?.current_state;
-    text("registry-release", "Current Release: " + (release || "Unavailable"));
+    $("registry-release").hidden = release === "GA";
+    text("registry-release", "Model Registry release program: " + (release || "Unavailable"));
     const preview = release === "Alpha" || release === "Beta";
     $("registry-program").hidden = !preview;
     text("registry-program", preview ? "The Model Registry is currently in the " + release + " program. Features and available models may change before general availability." : "");
     return;
   }
+  if (data.type === "appsClone") {
+    $("clone-apps").disabled = true;
+    text("clone-apps", data.busy ? "Cloning…" : "Clone to Workspace");
+    if (data.busy) text("apps-workspace-status", "Cloning Apps into this workspace…");
+    return;
+  }
   if (data.type === "error") {
+    $("connect-devkit").disabled = true;
+    $("clone-apps").disabled = true;
     text("load-status", "Unable to refresh environment details. Try Refresh.");
     $("refresh").disabled = false;
     return;
   }
   if (data.type !== "data") return;
-  const { sdk, devkit, insight, modelsEnabled, updatedAt } = data.value;
+  const { sdk, devkit, insight, appsState, modelsEnabled, updatedAt } = data.value;
+  $("clone-apps").disabled = !appsState || appsState.disabled;
+  text("apps-workspace-status", appsState?.disabled
+    ? [appsState.status, appsState.detail].filter(Boolean).join(" ")
+    : "Clones the Apps default branch into apps/ in your current workspace.");
   text("sdk-version", sdk.release || sdk.version || "Unavailable");
   $("sdk-version").title = sdk.version || "";
   text("sdk-platform", sdk.platform || "Unknown");
@@ -74,6 +87,8 @@ window.addEventListener("message", ({ data }) => {
   );
   text("sdk-memory", `${gib(sdk.available)} / ${gib(sdk.total)} GiB`);
   const connected = devkit.state === "connected";
+  $("connect-devkit").disabled = !connected;
+  $("connect-devkit").title = connected ? "Open a DevKit shell" : "Connect a DevKit, then refresh";
   $("topology").classList.toggle("unavailable", !connected);
   text(
     "status",
@@ -100,7 +115,7 @@ window.addEventListener("message", ({ data }) => {
   text(
     "hint",
     connected
-      ? "Ready to receive your models and applications."
+      ? "Ready for deployment."
       : devkit.state === "absent"
         ? "You can build and compile without a DevKit. Connect one when you’re ready to deploy."
         : devkit.state === "invalid"

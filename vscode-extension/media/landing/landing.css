@@ -1289,3 +1289,59 @@ body:not(.vscode-light).vscode-dark .task-panel,
 @media (prefers-reduced-motion: reduce) {
   .install-agent[aria-busy="true"]::before { animation: none; }
 }
+
+/* Keep the DevKit status and shell action together without competing with tasks. */
+.devkit-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  margin-top: 16px;
+}
+.devkit-footer .hint {
+  flex: 1 1 180px;
+  margin: 0;
+  font-size: 12px;
+}
+.devkit-connect {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 7px 16px;
+  border: 1px solid var(--blue);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.devkit-connect:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--blue) 8%, transparent);
+}
+.devkit-connect:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.task-cta.task-secondary {
+  border: 1px solid var(--blue);
+  background: transparent;
+  color: var(--blue);
+}
+.task-cta.task-secondary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--blue) 8%, transparent);
+}
+.task-panel .apps-workspace-status {
+  margin: 12px 0 0;
+  font-size: 12px;
+}
