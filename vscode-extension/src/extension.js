@@ -211,7 +211,8 @@ async function activate(context) {
     })
   );
   await registerGettingStarted(vscode, context, {
-    getDevkitConfig: getDevKitSyncConfig, openInsight, modelsEnabled, registryState
+    getDevkitConfig: getDevKitSyncConfig, openInsight, modelsEnabled, registryState,
+    getAppsState: () => getSamplesState(getWorkspaceRoot()), cloneApps: cloneSamples
   });
 }
 
@@ -1307,15 +1308,20 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
     <div>
       <h1 class="title">Palette SDK</h1>
       <p class="subtitle">Build, inspect, and manage SDK workspaces.</p>
-      <p class="subtitle" id="registry-release" aria-live="polite">Current Release: Unavailable</p>
-      <p class="subtitle" id="registry-program" aria-live="polite" hidden></p>
     </div>
   </div>
   <div class="quick-links">
-    ${modelsEnabled ? actionButton("browseModels", "repo", "Models", "Browse model builds and download model files", false) : ""}
     ${actionButton("openDocumentation", "docs", "Documentation", "developer.sima.ai/software", true)}
     ${actionButton("openInsight", "eye", "Insight", "Open detected Insight web UI", true)}
   </div>
+  <section class="panel-section" id="status-models" aria-labelledby="registry-title" ${modelsEnabled ? "" : "hidden"}>
+    <div class="section-title" id="registry-title">Model Registry</div>
+    <div class="stack">
+      <p class="subtitle" id="registry-release" aria-live="polite">Release program: Unavailable</p>
+      <p class="subtitle" id="registry-program" aria-live="polite" hidden></p>
+      ${modelsEnabled ? actionButton("browseModels", "repo", "Models", "Browse model builds and download model files", false) : ""}
+    </div>
+  </section>
   <div class="panel-section" id="status-devkit">
     <div class="section-title">DevKit Sync</div>
     <div class="stack">
@@ -1373,7 +1379,9 @@ function getPanelHtml(logoUri, samplesState, tutorialsState, authState, devKitSt
     window.addEventListener("message", ({ data }) => {
       if (data.command === "registryState") {
         const release = data.state?.current_state;
-        document.getElementById("registry-release").textContent = "Current Release: " + (release || "Unavailable");
+        const programLabel = document.getElementById("registry-release");
+        programLabel.hidden = release === "GA";
+        programLabel.textContent = "Release program: " + (release || "Unavailable");
         const notice = document.getElementById("registry-program");
         const preview = release === "Alpha" || release === "Beta";
         notice.hidden = !preview;
