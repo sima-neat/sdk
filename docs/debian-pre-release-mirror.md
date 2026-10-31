@@ -225,7 +225,7 @@ previously published builds fail the step without
 replacing the index or pruning old builds.
 
 Directory names matching `3.0.0_daily_<channel>_B<number>` or
-`3.0.0_pre-release_master_B<number>` are eligible.
+`3.0.0_pre-release_master_B<number>` or `3.0.0_release_master_B<number>` are eligible.
 Completed builds are ordered by numeric build number, newest first (with directory
 name as a deterministic tie breaker). The latest 21 completed builds are kept
 across channels; pending uploads do not evict them.
@@ -509,17 +509,17 @@ Master synchronization results are uploaded separately and included in immediate
 version notifications. The existing daily digest remains scoped to the daily
 APT result artifact.
 
-Image discovery also accepts `3.0.0_pre-release_master_B<number>`. Master and
+Image discovery also accepts `3.0.0_pre-release_master_B<number>` and
+`3.0.0_release_master_B<number>`. Master and
 develop compete for **21 total completed builds**, ordered by numeric build
 number with the full name as tie breaker. There is no per-channel quota. The
 existing `daily-platform-images/` URLs and schema-v1 index remain in use;
 `version_prefix` is now `3.0.0_`. APT retention follows upstream indexes, not
-this image count. The publisher IAM policy must permit deletion under both
-`3.0.0_daily_*` and `3.0.0_pre-release_master_B*` before deploying this change.
+this image count. The publisher IAM policy must permit deletion under
+`3.0.0_daily_*`, `3.0.0_pre-release_master_B*`, and
+`3.0.0_release_master_B*` before deploying this change.
 
-The SDK build/update changes are on `develop` (PR #257) and are not part of
-this sync-only `main` backport. With that SDK implementation, select an exact
-master version such as `3.0.0~pre2254` through
+For a master SDK build, select an exact version such as `3.0.0~pre2254` through
 `pre_release_base` in the Docker workflow, or locally:
 
 ```bash
@@ -534,3 +534,29 @@ The readiness report checks the anchor and exact dependency pins only. Master
 has unpinned dependencies, so this is not evidence of firmware/sysroot package
 identity. Images lacking `manifestChanges.txt` still publish and notify, but
 source-change reports are skipped rather than inferred from unrelated builds.
+
+
+## Official release Agate channel
+
+The production sync also mirrors `http://sw-web.eng.sima.ai/deb/release`
+(the internal official release publisher) to
+`https://debian.neat.sima.ai/release`, independently of daily and pre-release.
+The public `repo.sima.ai/elxr/deb/release` Agate endpoint was not yet available
+when B2479 was published, so it is not used as the transfer source.
+Use `deb [trusted=yes] https://debian.neat.sima.ai/release agate non-free`.
+Base OS packages still come from Debian Trixie. Release cache, publication
+receipts, reports, and locks use their own `release/` paths. Payloads and indexes
+receive the same validation and atomic publication checks as the other channels.
+
+`3.0.0_release_master_B2479` uses Palette `3.0.0`, not `3.0.0~pre2479`.
+Its generated Dockerfile specifies kernel headers `6.18.3-2479`. Release-image
+readiness checks use the release indexes and exact Palette release version;
+as with other channels this is an anchor/exact-dependency index check, not a
+complete sysroot APT solve or a guarantee about unpinned component versions.
+
+
+The complete image pool is published at `daily-platform-images/index-v2.json`.
+The original `index.json` omits release-master entries because older Kerrigan
+readers reject unknown build families. Updated clients prefer the complete
+catalog and fall back to the original URL until it is available. Both catalogs
+reference the same immutable manifests and share the 21-build retention pool.

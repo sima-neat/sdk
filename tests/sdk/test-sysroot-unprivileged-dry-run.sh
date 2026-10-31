@@ -17,11 +17,14 @@ fi
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "${tmpdir}"' EXIT
 
+# This fixture exercises the legacy overlay format, independent of the host image.
+export SDK_RELEASE_FILE="${tmpdir}/sdk-release"
+printf 'Platform Channel = pre-release\n' > "${SDK_RELEASE_FILE}"
 sysroot="${tmpdir}/sysroot"
 mkdir -p "${sysroot}/var/lib/sima-sdk" "${tmpdir}/bin"
 cat > "${sysroot}/var/lib/sima-sdk/sysroot-overlay" <<'EOF'
 Overlay State = active
-Platform Revision = 2.1.3~pre4617
+Platform Revision = 3.0.0~pre4617
 Platform Repository = https://debian.neat.sima.ai/pre-release
 EOF
 
@@ -45,7 +48,7 @@ done
 [[ "${preferences_file}" != "${SIMA_FORBIDDEN_APT_PREFERENCES_FILE:?}" ]]
 grep -Fq 'deb [arch=arm64 trusted=yes] https://debian.neat.sima.ai/pre-release bookworm non-free' \
   "${source_file}"
-grep -Fq 'Pin: version 2.1.3~pre4617' "${preferences_file}"
+grep -Fq 'Pin: version 3.0.0~pre4617' "${preferences_file}"
 
 case "${1:-}" in
   policy)

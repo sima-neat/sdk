@@ -38,6 +38,14 @@ if [[ -d /usr/lib/gcc/aarch64-linux-gnu ]]; then
   cp -a /usr/lib/gcc/aarch64-linux-gnu /opt/cross-toolchain/usr/lib/gcc/
 fi
 
+# GCC 14 moved compiler executables such as cc1plus and lto1 to libexec.
+for directory in /usr/libexec/gcc /usr/libexec/gcc-cross; do
+  if [[ -d "${directory}" ]]; then
+    mkdir -p /opt/cross-toolchain/usr/libexec
+    cp -a "${directory}" /opt/cross-toolchain/usr/libexec/
+  fi
+done
+
 if [[ -d /usr/aarch64-linux-gnu ]]; then
   cp -a /usr/aarch64-linux-gnu /opt/cross-toolchain/usr/
 fi
@@ -72,6 +80,9 @@ for lib in \
     cp -a "${lib}" "/opt/cross-toolchain/usr/lib/${multiarch}/"
   fi
 done
+
+mkdir -p /opt/cross-toolchain/usr/local/share/sima-sdk
+aarch64-linux-gnu-gcc -dumpversion > /opt/cross-toolchain/usr/local/share/sima-sdk/cross-toolchain-version
 
 apt-get clean
 rm -rf /var/lib/apt/lists/*

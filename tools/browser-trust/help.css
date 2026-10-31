@@ -1,0 +1,11 @@
+.neat-certificate [hidden] { display:none !important; }
+.neat-certificate summary { cursor:pointer; font-weight:500; }
+.neat-certificate p,.neat-certificate li { font-size:14px; line-height:1.6; }
+.neat-certificate li { margin:10px 0; }
+.neat-certificate .neat-cert-note { font-size:12px; color:var(--neat-muted); }
+.neat-certificate select { font:inherit; margin:8px 0 12px; padding:8px; background:var(--neat-surface); color:var(--neat-ink); border:1px solid var(--neat-line); border-radius:4px; }
+#neat-ca-download { display:inline-block; padding:10px 16px; border:1px solid #5998dd; border-radius:4px; color:light-dark(#245f99,#9ac9f9); text-decoration:none; }
+.neat-certificate :is(a,summary,select):focus-visible { outline:2px solid #5998dd; outline-offset:3px; }
+.neat-brand img { width:100px; height:auto; }
+
+@media (prefers-color-scheme:dark) { .neat-brand img { background:#edf0ec; padding:4px; border-radius:3px; } }

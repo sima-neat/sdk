@@ -8,12 +8,14 @@
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-supported-E95420?logo=ubuntu&logoColor=white)
 ![Windows 11](https://img.shields.io/badge/Windows%2011-supported-0078D4?logo=windows&logoColor=white)
 ![macOS](https://img.shields.io/badge/macOS-supported-000000?logo=apple&logoColor=white)
-![eLxr Platform 2.1.3](https://img.shields.io/badge/eLxr%20Platform-2.1.3%20compatible-2E7D32)
+![eLxr Platform 3.0.0](https://img.shields.io/badge/eLxr%20Platform-3.0.0%20compatible-2E7D32)
 ![Modalix](https://img.shields.io/badge/Modalix-supported-4B5563)
 
 This repository packages the SiMa.ai Neat SDK as a Docker image for `x86_64` and `arm64` Linux hosts.
 
-The current Neat SDK image is compatible with the eLxr platform `2.1.3` release.
+This branch defaults to the official eLxr 3.0.0 release, with an Agate/Trixie
+ARM64 sysroot and GCC 14. Neat Core is bundled when a compatible package is available.
+Daily and pre-release platform builds remain available through explicit selectors.
 
 The main user workflow is:
 
@@ -40,6 +42,9 @@ sima-cli neat install sdk@{version}
 The install command pulls the SDK image and then asks whether to pair the SDK
 with a Modalix DevKit. If you choose to pair, enter the DevKit IP address when
 prompted.
+
+If pairing asks to enable passwordless sudo for the DevKit user, press Enter
+to accept the default Yes, or enter `n` to skip the change.
 
 To install the SDK with Edgematic Studio enabled, select the alternative
 `metadata-edgematic-studio.json` package metadata:
@@ -92,6 +97,35 @@ neat
 
 The SDK workspace is mounted at `/workspace` inside the container.
 
+### Build ARM64 Application Images
+
+Neat SDK 3.0 and newer containers automatically receive access to the host
+Docker builder during setup:
+
+```bash
+sima-cli sdk setup
+sima-cli sdk neat
+```
+
+The SDK includes a pinned Docker CLI and Buildx plugin. Before creating a 3.0+
+SDK container, `sima-cli` verifies that the host Docker CLI, daemon, and active
+local Unix socket are available, then mounts that socket. It verifies and
+bootstraps the builder with the SDK's pinned Buildx plugin after the container
+starts. The SDK does not run a nested daemon. Commands issued in the SDK create
+sibling containers managed by the host daemon. Docker socket access grants
+host-level control; `sima-cli` displays this security boundary during setup.
+
+Inside the SDK shell, build a Modalix application image with:
+
+```bash
+docker buildx inspect --bootstrap
+docker buildx build --platform linux/arm64 --load -t neat-app:dev .
+```
+
+The application should be cross-compiled against the Modalix sysroot before
+the image build. Avoid target-architecture `RUN` commands when building on a
+non-ARM64 host unless the selected builder has ARM64 emulation available.
+
 The SDK image also preinstalls a tested, pinned version of the OpenAI Codex CLI.
 From the SDK shell, run:
 
@@ -108,7 +142,9 @@ sudo codex update
 The update remains in the current container. Recreating the container restores
 the version bundled with the SDK image.
 
-An experimental VS Code extension scaffold lives in `vscode-extension/`. It adds a SiMa Neat activity bar panel and light/dark themes for SDK workspace experiments.
+The Neat VS Code extension lives in `vscode-extension/`. It adds a SiMa Neat activity bar panel and light/dark themes. SDK assembly bundles its runtime files at `/opt/sima-neat/vscode-extension`. Updated sima-cli setup runs `sima-install-neat-extension` as the mapped SDK user to copy and register this bundled version in that user's code-server extensions directory, without a prompt or download. Repeated setup preserves other extensions and refreshes Neat when the bundled contents change.
+
+Codex and Claude extensions remain optional downloads during sima-cli setup. Set `SDK_SKIP_CODING_AGENT_INSTALL=1` in the host environment to bypass their prompts and installation, even with `--all-extensions`; Neat still installs automatically. On code-server, Codex defaults to the latest available release unless an exact version is explicitly requested. This setting does not remove existing extensions or the Codex CLI included in the SDK image.
 
 You can run Docker directly for low-level debugging:
 
@@ -126,7 +162,23 @@ The build environment is configured automatically when the container starts. To 
 source /opt/bin/simaai-init-build-env modalix
 ```
 
-The browser-based VS Code server starts automatically with the SDK container. Full Neat SDK containers keep the HTTP editor endpoint on port `9999` for reverse proxies such as an AWS ALB, and also expose a local HTTPS endpoint using the SDK certificate mounted at `/sdk-cert`. Open the `codeUI` URL printed by `sima-cli sdk setup`; browsers may require trusting the local certificate before loading editor webviews.
+The default environment selects the SDK's platform compiler. Builds that
+require the qualified GCC 16 C++ toolchain can select the bundled alternate
+compiler explicitly:
+
+```bash
+source /opt/bin/simaai-init-build-env modalix gcc16
+```
+
+This preserves `SYSROOT=/opt/toolchain/aarch64/modalix` for target C headers
+and platform libraries while exporting `SIMA_GCC16_ROOT`, `CC`, and `CXX` from
+the complete GCC 16.2 installation under
+`/opt/toolchain/gcc-16.2.0-aarch64-linux-gnu`. GCC 16 owns its matching C++
+headers, `libstdc++`, and `libgcc`; the compiler installation is deliberately
+kept outside the platform sysroot. Applications must deploy a compatible
+target `libstdc++.so.6` runtime or package their required runtime closure.
+
+The browser-based VS Code environment is provided by code-server and starts automatically with the SDK container. Full Neat SDK containers keep the HTTP editor endpoint on port `9999` for trusted reverse proxies such as an AWS ALB, and also expose a local HTTPS endpoint using the SDK certificate mounted at `/sdk-cert`. Open the credential-free `codeUI` URL printed by `sima-cli sdk setup`, then sign in with the generated password shown by the CLI. Browsers may require trusting the local certificate before loading editor webviews.
 
 To start it manually if supervision is disabled:
 
@@ -134,7 +186,25 @@ To start it manually if supervision is disabled:
 sima-code
 ```
 
-By default, it serves `/workspace` and runs as the SDK user configured by `sima-cli sdk setup`. Set `OPENVSCODE_SERVER_TOKEN` before the container starts if the port is exposed beyond a trusted local machine. Set `OPENVSCODE_SERVER_CERT` and `OPENVSCODE_SERVER_CERT_KEY` to override the HTTPS certificate files, or mount `/sdk-cert/neat-sdk.pem` and `/sdk-cert/neat-sdk-key.pem`. Set `OPENVSCODE_SERVER_HTTPS_PORT` to change the HTTPS listener port. Set `OPENVSCODE_SERVER_SUPERVISED=0` to disable automatic startup.
+By default, it serves `/workspace`, requires password authentication, and runs as the SDK user configured by `sima-cli sdk setup`. Set `CODE_SERVER_PASSWORD` before the container starts when launching it without `sima-cli`; a strong temporary password is generated and printed otherwise. Set `CODE_SERVER_CERT` and `CODE_SERVER_CERT_KEY` to override the HTTPS certificate files, or mount `/sdk-cert/neat-sdk.pem` and `/sdk-cert/neat-sdk-key.pem`. Set `CODE_SERVER_HTTPS_PORT` to change the HTTPS listener port. Set `CODE_SERVER_SUPERVISED=0` to disable automatic startup.
+
+See the [Arthas SDK integration guide](docs/arthas-integration.md) for hosted provisioning, authentication, and expiration controls.
+
+For a one-click experience behind an authenticated gateway such as Arthas, set `CODE_SERVER_WITHOUT_PASSWORD=1`. This explicit setting takes precedence if launch tooling also injects `CODE_SERVER_PASSWORD`. The gateway must authenticate and authorize every request, proxy WebSocket upgrades, and be the only network path to code-server; do not expose either code-server port directly. The same option may be used for explicitly trusted local development, but must not be used on a remotely reachable endpoint without such a gateway.
+
+Rollout requires a `sima-cli` release containing [code-server support (#293)](https://github.com/sima-neat/sima-cli/pull/293). Publish that CLI release, update the `sima-cli.ref` pin in `deps/manifest.json` from `v2.1.18`, and install the release on SDK hosts before distributing the new SDK image: older CLIs pass legacy environment variables but still show token URLs and use OpenVSCode extension/service paths. The image smoke workflow installs `sima-cli` from PyPI, so it also needs the updated published release. The updated CLI retains support for older OpenVSCode SDK images. Install Core containing [neat status support (#1107)](https://github.com/sima-neat/core/pull/1107) to retrieve the password again with `neat` or `neat --json`; the password is supplied through `CODE_SERVER_PASSWORD` in the SDK container environment.
+
+The SDK launcher disables Workspace Trust with `--disable-workspace-trust` on every start. Folders opened in this SDK editor have full features enabled without Restricted Mode or a trust prompt, including tasks and extensions that can execute workspace code.
+
+code-server stores its user data under `~/.local/share/code-server` by default. Override that location with `CODE_SERVER_USER_DATA_DIR` or set `CODE_SERVER_EXTENSIONS_DIR` for extensions. During the migration, the launcher also accepts the former `OPENVSCODE_*` variables so current `sima-cli` releases can start a new SDK image; new automation should use the `CODE_SERVER_*` names.
+
+For diagnostics inside the container:
+
+```bash
+supervisorctl status code-server
+curl -fsS http://127.0.0.1:9999/healthz
+tail -n 100 /var/log/supervisor/code-server.err.log
+```
 
 ## Pair With A DevKit
 
@@ -143,7 +213,7 @@ The SDK supports an NFS-based shared workspace with a DevKit. The workspace is s
 Start the SDK container with the DevKit IP:
 
 ```bash
-sima-cli sdk setup --devkit-ip 10.0.0.244
+sima-cli sdk setup --devkit 10.0.0.244
 ```
 
 Open a direct SSH shell to the paired DevKit:
@@ -157,6 +227,38 @@ Run an executable or Python application from the DevKit:
 ```bash
 dk /workspace/app-binary-or-dot-py-file
 ```
+
+Check the paired DevKit and its reverse network path to Insight:
+
+```bash
+dk status
+```
+
+In addition to the SSH and workspace status, this checks that the DevKit can
+reach Insight over TCP and that Insight receives a UDP metadata probe.
+
+Build and push an ARM64 container image from the SDK, then download and run it
+on the paired DevKit:
+
+```bash
+docker buildx build \
+  --platform linux/arm64 \
+  --tag "${SIMA_CONTAINER_REGISTRY}/hello-neat:develop" \
+  --push \
+  .
+
+dk container deploy hello-neat:develop --detach --name hello-neat --network host
+```
+
+`deploy` always downloads the current image before running it. Use
+`dk container run hello-neat:develop ...` to run the image already available on
+the DevKit. Put Docker run options after the image name. Use `--` before a
+container command and its arguments.
+
+SDK setup does not install Docker on the DevKit. If Docker is missing, the
+first `dk container` command offers to install it with the required Modalix
+`/data` storage, nftables, and scoped registry configuration. Use
+`dk container setup --yes` for an explicitly approved noninteractive install.
 
 ## Advanced Topics
 

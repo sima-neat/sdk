@@ -79,9 +79,14 @@ test_modalix_cross_toolchain() {
   local smoke_bin="${WORK_DIR}/modalix-cross-smoke"
   local compiler="${CXX:-aarch64-linux-gnu-g++}"
   local sysroot_libdir="${SYSROOT}/usr/lib/aarch64-linux-gnu"
-  local sysroot_gcc_libdir="${SYSROOT}/usr/lib/gcc/aarch64-linux-gnu/12"
+  local compiler_major
+  compiler_major="$("${compiler}" -dumpversion)"
+  if [[ "$(sdk_release_value "Platform Channel")" == daily ]]; then
+    test "${compiler_major}" -ge 14
+  fi
+  local sysroot_gcc_libdir="${SYSROOT}/usr/lib/gcc/aarch64-linux-gnu/${compiler_major}"
 
-  test "${SYSROOT}" = "/opt/toolchain/aarch64/modalix"
+  test "${SYSROOT}" = "$(readlink -f /opt/toolchain/aarch64/modalix)"
   command -v "${compiler}"
   test -d "${SYSROOT}/usr/include"
   test -d "${sysroot_libdir}"
@@ -113,6 +118,19 @@ EOF
   file "${smoke_bin}" | grep -Eq 'aarch64|ARM aarch64|ARM64'
 }
 
+test_initialized_compiler_flags() {
+  local source="${WORK_DIR}/initialized-flags.c"
+  printf 'int square(int x) { return x * x; }\n' > "${source}"
+  # Exercise the exported flags used by interactive SDK builds. Explicit flag
+  # expansion matches make's handling of these SDK-generated argument lists.
+  # shellcheck disable=SC2086
+  "${CC:-aarch64-linux-gnu-gcc}" ${CPPFLAGS:-} ${CFLAGS:-} \
+    -Werror -c "${source}" -o "${WORK_DIR}/initialized-c.o"
+  # shellcheck disable=SC2086
+  "${CXX:-aarch64-linux-gnu-g++}" ${CPPFLAGS:-} ${CXXFLAGS:-} \
+    -Werror -x c++ -c "${source}" -o "${WORK_DIR}/initialized-cxx.o"
+}
+
 test_sysroot_overlay_representative() {
   local overlay_script="/usr/local/bin/install-sysroot-overlay.sh"
   local overlay_sysroot="${WORK_DIR}/overlay-sysroot"
@@ -132,6 +150,49 @@ test_sysroot_overlay_representative() {
   test -e "${overlay_sysroot}/usr/lib/aarch64-linux-gnu/libspdlog.so.1.10.0"
   test -e "${overlay_sysroot}/usr/lib/aarch64-linux-gnu/libcpp-httplib.so.0.11"
   test -e "${overlay_sysroot}/usr/include/asm-generic/errno.h"
+}
+
+test_trixie_development_sysroot() {
+  local source="${WORK_DIR}/daily-development.cpp"
+  local binary="${WORK_DIR}/daily-development"
+  local flags
+  test -e "${SYSROOT}/usr/include/python3.13/Python.h"
+  test -e "${SYSROOT}/usr/include/httplib.h"
+  test -e "${SYSROOT}/usr/include/simaai/argminmax.h"
+  test -e "${SYSROOT}/usr/include/asm-generic/errno.h"
+  cat > "${source}" <<'EOF'
+#include <gst/gst.h>
+#include <simaai/simaailog.h>
+#include <opencv2/core.hpp>
+#include <lttng/tracepoint.h>
+#include <json/json.h>
+#include <zmq.hpp>
+#include <fmt/format.h>
+#include <spdlog/spdlog.h>
+int main(int argc, char **argv) {
+  gst_init(&argc, &argv);
+  Json::Value value(13);
+  spdlog::info("{}", fmt::format("Debian {} sysroot, OpenCV {}", value.asInt(), cv::getVersionMajor()));
+  return 0;
+}
+EOF
+  # Exercise the public path with the same rooted lookup used by consumers.
+  test ! -L /opt/toolchain/aarch64/modalix
+  cat > "${WORK_DIR}/find-glib.cmake" <<'EOF'
+set(CMAKE_SYSROOT "/opt/toolchain/aarch64/modalix")
+set(CMAKE_FIND_ROOT_PATH "${CMAKE_SYSROOT}")
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GLIB REQUIRED glib-2.0)
+find_library(GLIB_LIBRARY NAMES glib-2.0 HINTS ${GLIB_LIBRARY_DIRS} REQUIRED)
+EOF
+  cmake -P "${WORK_DIR}/find-glib.cmake"
+  flags="$(pkg-config --cflags --libs gstreamer-1.0 fmt spdlog opencv4 lttng-ust jsoncpp)"
+  # pkg-config emits a shell-separated compiler argument list.
+  # shellcheck disable=SC2086
+  "${CXX:-aarch64-linux-gnu-g++}" --sysroot="${SYSROOT}" \
+    "${source}" $flags -Wl,--no-as-needed -lMLArt -Wl,--as-needed -o "${binary}"
+  file "${binary}" | grep -Eq 'aarch64|ARM aarch64|ARM64'
 }
 
 test_internals_representative() {
@@ -255,6 +316,74 @@ test_hello_neat_python() {
   echo "Skipping Python runtime example; pyneat is validated on the DevKit side."
 }
 
+test_code_server() {
+  local actual_version auth_secret backend_user http_status https_status
+  local cookie_jar="${WORK_DIR}/code-server.cookies"
+
+  if [[ ! -x /opt/code-server/bin/code-server ]]; then
+    echo "code-server executable is missing from /opt/code-server/bin/code-server." >&2
+    return 1
+  fi
+  if [[ -e /opt/openvscode-server/bin/openvscode-server ]]; then
+    echo "Legacy OpenVSCode Server is still present in the SDK image." >&2
+    return 1
+  fi
+  actual_version="$(/opt/code-server/bin/code-server --config /dev/null --version | head -n 1)"
+  if [[ "${actual_version%% *}" != "${CODE_SERVER_VERSION}" ]]; then
+    echo "Unexpected code-server version: expected ${CODE_SERVER_VERSION}, got ${actual_version}." >&2
+    return 1
+  fi
+
+  for _ in $(seq 1 30); do
+    if supervisorctl status code-server | grep -Fq RUNNING; then
+      break
+    fi
+    sleep 1
+  done
+  if ! supervisorctl status code-server | grep -F RUNNING; then
+    echo "code-server did not reach the supervisor RUNNING state." >&2
+    tail -n 100 /var/log/supervisor/code-server.log 2>/dev/null || true
+    tail -n 100 /var/log/supervisor/code-server.err.log 2>/dev/null || true
+    return 1
+  fi
+  for _ in $(seq 1 30); do
+    if curl -fsS http://127.0.0.1:9999/healthz | grep -Fq '"status":'; then
+      break
+    fi
+    sleep 1
+  done
+  curl -fsS http://127.0.0.1:9999/healthz | grep -F '"status":'
+
+  backend_user="${CODE_SERVER_USER:-${OPENVSCODE_SERVER_USER:-}}"
+  if [[ -n "${backend_user}" ]]; then
+    if ! pgrep -u "${backend_user}" -f '/opt/code-server' >/dev/null; then
+      echo "No code-server process is running as ${backend_user}." >&2
+      # Include the owning user in diagnostics; pgrep alone cannot show it.
+      # shellcheck disable=SC2009
+      ps -eo user=,pid=,args= | grep -F '/opt/code-server' >&2 || true
+      return 1
+    fi
+  fi
+
+  http_status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:9999/)"
+  test "${http_status}" = "302"
+
+  python3 "${ROOT_DIR}/check-code-server-login.py"
+
+  auth_secret="${CODE_SERVER_PASSWORD:-${OPENVSCODE_SERVER_TOKEN:-}}"
+  test -n "${auth_secret}"
+  http_status="$(curl -sS -o /dev/null -c "${cookie_jar}" -w '%{http_code}' \
+    --data-urlencode "password=${auth_secret}" http://127.0.0.1:9999/login)"
+  test "${http_status}" = "302"
+  curl -fsS -b "${cookie_jar}" 'http://127.0.0.1:9999/?folder=/workspace' >/dev/null
+
+  if [[ -f /sdk-cert/neat-sdk.pem && -f /sdk-cert/neat-sdk-key.pem ]]; then
+    https_status="$(curl -ksS -o /dev/null -w '%{http_code}' https://127.0.0.1:10000/healthz)"
+    test "${https_status}" = "200"
+    curl -kfsS https://127.0.0.1:10000/healthz | grep -F '"status":'
+  fi
+}
+
 sdk_release_value() {
   local key="$1"
   awk -F= -v key="${key}" '
@@ -283,6 +412,9 @@ test_platform_cross_profile() {
     release)
       [[ "${platform_version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]
       ;;
+    daily)
+      [[ "${platform_version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+~git[0-9]{12}[.][0-9a-f]+-[0-9]+$ ]]
+      ;;
     pre-release)
       [[ "${platform_version}" =~ ^[0-9]+[.][0-9]+[.][0-9]+~pre[0-9]+$ ]]
       ;;
@@ -295,6 +427,27 @@ test_platform_cross_profile() {
   test ! -e /neat-resources/apps-src
 }
 
+test_daily_update_cycle() {
+  local active="/opt/toolchain/aarch64/modalix" original revision before
+  original="$(sdk_release_value 'Platform Version')"
+  local -a revisions
+  sudo apt-get update
+  mapfile -t revisions < <(apt-cache madison simaai-palette-modalix |
+    awk -v original="${original}" '$3 != original && $3 ~ /^3[.]0[.]0~git/ { if (!seen[$3]++) print $3 }' | head -n 2)
+  [[ ${#revisions[@]} == 2 ]]
+  before="$(sha256sum "${SDK_RELEASE_FILE}")"
+  for revision in "${revisions[@]}" "${original}"; do
+    sudo env SDK_PKG_LIST="${SDK_PKG_LIST:-}" sysroot update --sysroot "${active}" "${revision}" --dry-run
+    sudo env SDK_PKG_LIST="${SDK_PKG_LIST:-}" sysroot update --sysroot "${active}" "${revision}"
+    setup_sdk_environment
+    test_modalix_cross_toolchain
+    test_trixie_development_sysroot
+    (cd "/tmp/modalix-overlay-${revision}" && sha256sum -c "${SYSROOT}/var/lib/sima-sdk/packages.sha256" >/dev/null)
+    grep -Fxq "Platform Revision = ${revision}" "${SYSROOT}/var/lib/sima-sdk/sysroot-overlay"
+  done
+  [[ "$(sha256sum "${SDK_RELEASE_FILE}")" == "${before}" ]]
+}
+
 setup_sdk_environment
 
 rm -rf "${WORK_DIR}"
@@ -302,17 +455,31 @@ mkdir -p "${HELLO_WORK}" "${REPRESENTATIVE_WORK}" "$(dirname "${STATUS_JSON}")"
 cp -a "${HELLO_SRC}/." "${HELLO_WORK}/"
 cp -a "${REPRESENTATIVE_SRC}/." "${REPRESENTATIVE_WORK}/"
 
+run_test "Initialized SDK compiler flags" test_initialized_compiler_flags
+run_test "code-server browser IDE" test_code_server
+
 if [[ -r "${SDK_RELEASE_FILE}" ]] && [[ "$(sdk_release_value "SDK Profile")" == "platform-cross" ]]; then
   run_test "Core-less SDK profile" test_platform_cross_profile
   run_test "Modalix cross toolchain" test_modalix_cross_toolchain
-  run_test "Representative sysroot overlay install" test_sysroot_overlay_representative
+  if [[ "$(sdk_release_value "Platform Base")" == 3.* || "$(sdk_release_value "Platform Channel")" == daily ]]; then
+    run_test "Debian 13 development sysroot" test_trixie_development_sysroot
+    if [[ "$(sdk_release_value "Platform Channel")" == daily ]]; then
+      run_test "Daily sysroot update cycle" test_daily_update_cycle
+    fi
+  else
+    run_test "Representative sysroot overlay install" test_sysroot_overlay_representative
+  fi
   printf '\nCore-less SDK smoke tests passed.\n'
   exit 0
 fi
 
 run_test "SDK status: neat --json" test_neat_status
 run_test "Modalix cross toolchain" test_modalix_cross_toolchain
-run_test "Representative sysroot overlay install" test_sysroot_overlay_representative
+if [[ "$(sdk_release_value "Platform Base")" == 3.* || "$(sdk_release_value "Platform Channel")" == daily ]]; then
+  run_test "Debian 13 development sysroot" test_trixie_development_sysroot
+else
+  run_test "Representative sysroot overlay install" test_sysroot_overlay_representative
+fi
 run_test "Representative internals build" test_internals_representative
 run_test "Representative core API build" test_core_api_representative
 run_test "Representative llima Python extension build" test_llima_python_extension_representative

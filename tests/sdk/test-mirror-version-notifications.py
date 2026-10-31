@@ -416,8 +416,9 @@ def test_readiness_preview_and_unknown_are_not_availability():
     assert 'wait for synchronization' not in m.sysroot_events(readiness(internal='unknown'))[0]
 
 
-def test_master_image_links_and_change_attachments(tmp_path):
-    build = '3.0.0_pre-release_master_B2254'
+@pytest.mark.parametrize('channel', ['pre-release', 'release'])
+def test_master_image_links_and_change_attachments(tmp_path, channel):
+    build = f'3.0.0_{channel}_master_B2254'
     assert '/2254/console|' in m.format_version('images', build)
     (tmp_path / f'{build}.html').write_text('report')
     attachments, _ = m.image_change_artifacts([{'kind': 'images', 'version': build}], tmp_path)
@@ -434,3 +435,14 @@ def test_workflow_keeps_master_publication_and_reports_independent():
     assert '--publish' in master['run'] and 'inputs.publish' in master['run']
     notify = next(s for s in steps if s['name'] == 'Notify Slack of new APT and device image versions')
     assert '--master-apt-report out/master-debian-mirror-sync/mirror-sync-result.json' in notify['run']
+
+
+def test_release_publication_is_independent_and_reported():
+    workflow = yaml.safe_load((ROOT / '.github/workflows/sync-debian-pre-release-mirror.yml').read_text())
+    steps = workflow['jobs']['sync']['steps']
+    release = next(s for s in steps if s['name'] == 'Synchronize and validate official release mirror')
+    assert release['env']['DEBIAN_MIRROR_CHANNEL'] == 'release'
+    assert 'release-debian-mirror-sync' in release['env']['DEBIAN_MIRROR_REPORT_DIR']
+    assert '!cancelled()' in release['if'] and 'release_credentials.outcome' in release['if']
+    notify = next(s for s in steps if s['name'] == 'Notify Slack of new APT and device image versions')
+    assert '--release-apt-report out/release-debian-mirror-sync/mirror-sync-result.json' in notify['run']

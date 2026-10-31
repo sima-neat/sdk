@@ -6,34 +6,95 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-BOARD=$1
+# Select the instruction set explicitly and tune scheduling for Cortex-A65.
+# -mcpu also selects ISA features, which conflicts with this -march on GCC 14.
+BOARD=${1:-}
+TOOLCHAIN=${2:-default}
+
+_simaai_remove_path_entry() {
+	_simaai_remove=$1
+	_simaai_remaining=${PATH}
+	_simaai_new_path=
+	_simaai_first=1
+	while [ -n "${_simaai_remaining}" ]; do
+		case "${_simaai_remaining}" in
+			*:*)
+				_simaai_entry=${_simaai_remaining%%:*}
+				_simaai_remaining=${_simaai_remaining#*:}
+				;;
+			*)
+				_simaai_entry=${_simaai_remaining}
+				_simaai_remaining=
+				;;
+		esac
+		if [ "${_simaai_entry}" = "${_simaai_remove}" ]; then
+			continue
+		fi
+		if [ "${_simaai_first}" = 1 ]; then
+			_simaai_new_path=${_simaai_entry}
+			_simaai_first=0
+		else
+			_simaai_new_path="${_simaai_new_path}:${_simaai_entry}"
+		fi
+	done
+	export PATH="${_simaai_new_path}"
+}
+
+# Re-sourcing the environment switches only the compiler. Preserve virtualenvs
+# and any other tools added to PATH after the container entrypoint ran.
+if [ -n "${SIMA_SDK_ACTIVE_GCC16_BIN:-}" ]; then
+	_simaai_remove_path_entry "${SIMA_SDK_ACTIVE_GCC16_BIN}"
+fi
+if [ -n "${SIMA_GCC16_ROOT:-}" ]; then
+	_simaai_remove_path_entry "${SIMA_GCC16_ROOT}/bin"
+fi
+_simaai_remove_path_entry /opt/toolchain/gcc-16.2.0-aarch64-linux-gnu/bin
+unset SIMA_SDK_ACTIVE_GCC16_BIN
+
+if [ "${TOOLCHAIN}" != "default" ] && [ "${TOOLCHAIN}" != "gcc16" ]; then
+	echo "Usage: source simaai-init-build-env <modalix|davinci> [default|gcc16]" >&2
+	return 2 2>/dev/null || exit 2
+fi
+if [ "${TOOLCHAIN}" = "gcc16" ] && [ "${BOARD}" != "modalix" ]; then
+	echo "The GCC 16 toolchain is qualified only with the Modalix sysroot." >&2
+	return 2 2>/dev/null || exit 2
+fi
 
     if [ "${BOARD}" = "davinci" ]; then
 	echo "Setting up build environment for davinci..."
 
-	export CFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/davinci"
-	export CXXFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/davinci"
-	export CPPFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/davinci"
+	export CFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/davinci"
+	export CXXFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/davinci"
+	export CPPFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/davinci"
 	export SYSROOT="/opt/toolchain/aarch64/davinci"
 elif [ "${BOARD}" = "modalix" ]; then
 	echo "Setting up build environment for modalix..."
-	export CFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/modalix"
-	export CXXFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/modalix"
-	export CPPFLAGS="-mcpu=cortex-a65 -march=armv8.2-a+crypto -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=/opt/toolchain/aarch64/modalix"
-	export SYSROOT="/opt/toolchain/aarch64/modalix"
+	export SYSROOT_ACTIVE="${SYSROOT_ACTIVE:-/opt/toolchain/aarch64/modalix}"
+	export SYSROOT="${SYSROOT_ACTIVE}"
+	export CFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=${SYSROOT}"
+	export CXXFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=${SYSROOT}"
+	export CPPFLAGS="-march=armv8.2-a+crypto -mtune=cortex-a65 -mbranch-protection=standard -mabi=lp64 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -Wformat -Wformat-security -Werror=format-security -O2 -pipe --sysroot=${SYSROOT}"
 else
-	echo "Usage: source simaai-init-build-env <modalix|davinci>"
+	echo "Usage: source simaai-init-build-env <modalix|davinci> [default|gcc16]" >&2
+	return 2 2>/dev/null || exit 2
 fi
 
 export CROSS_COMPILE="aarch64-linux-gnu-"
-if command -v "${CROSS_COMPILE}gcc-12" >/dev/null 2>&1; then
-	export CC="${CROSS_COMPILE}gcc-12"
+if [ "${TOOLCHAIN}" = "gcc16" ]; then
+	export SIMA_GCC16_ROOT="${SIMA_GCC16_ROOT:-/opt/toolchain/gcc-16.2.0-aarch64-linux-gnu}"
+	if [ ! -x "${SIMA_GCC16_ROOT}/bin/${CROSS_COMPILE}gcc" ] || \
+	   [ ! -x "${SIMA_GCC16_ROOT}/bin/${CROSS_COMPILE}g++" ]; then
+		echo "GCC 16 toolchain is incomplete under ${SIMA_GCC16_ROOT}." >&2
+		return 1 2>/dev/null || exit 1
+	fi
+	export SIMA_SDK_ACTIVE_GCC16_BIN="${SIMA_GCC16_ROOT}/bin"
+	export PATH="${SIMA_SDK_ACTIVE_GCC16_BIN}:${PATH}"
+	export CC="${SIMA_GCC16_ROOT}/bin/${CROSS_COMPILE}gcc"
+	export CXX="${SIMA_GCC16_ROOT}/bin/${CROSS_COMPILE}g++"
 else
+	unset SIMA_GCC16_ROOT
+	# Generic compiler names are pinned to the image's selected toolchain version.
 	export CC="${CROSS_COMPILE}gcc"
-fi
-if command -v "${CROSS_COMPILE}g++-12" >/dev/null 2>&1; then
-	export CXX="${CROSS_COMPILE}g++-12"
-else
 	export CXX="${CROSS_COMPILE}g++"
 fi
 export LD="${CROSS_COMPILE}ld"
@@ -42,14 +103,23 @@ export OBJDUMP="${CROSS_COMPILE}objdump"
 export OBJCOPY="${CROSS_COMPILE}objcopy"
 export AR="${CROSS_COMPILE}ar"
 export LDFLAGS="--sysroot=${SYSROOT} -L${SYSROOT}/usr/lib/aarch64-linux-gnu -L${SYSROOT}/lib/aarch64-linux-gnu -L${SYSROOT}/usr/lib/aarch64-linux-gnu/blas -L${SYSROOT}/usr/lib/aarch64-linux-gnu/lapack -L${SYSROOT}/usr/lib/aarch64-linux-gnu/openblas-pthread -Wl,-rpath-link,${SYSROOT}/usr/lib/aarch64-linux-gnu -Wl,-rpath-link,${SYSROOT}/lib/aarch64-linux-gnu -Wl,-rpath-link,${SYSROOT}/usr/lib/aarch64-linux-gnu/blas -Wl,-rpath-link,${SYSROOT}/usr/lib/aarch64-linux-gnu/lapack -Wl,-rpath-link,${SYSROOT}/usr/lib/aarch64-linux-gnu/openblas-pthread -Wl,--allow-shlib-undefined"
+export PKG_CONFIG_SYSROOT_DIR="${SYSROOT}"
 export PKG_CONFIG_LIBDIR="${SYSROOT}/usr/lib/aarch64-linux-gnu/pkgconfig:${SYSROOT}/usr/lib/pkgconfig:${SYSROOT}/usr/share/pkgconfig"
 unset PKG_CONFIG_PATH
-export CFLAGS="${CFLAGS} -I${SYSROOT}/usr/include -I${SYSROOT}/usr/include/simaai"
-export CXXFLAGS="${CXXFLAGS} -I${SYSROOT}/usr/include -I${SYSROOT}/usr/include/simaai"
-export CPPFLAGS="${CPPFLAGS} -I${SYSROOT}/usr/include -I${SYSROOT}/usr/include/simaai"
+if [ "${TOOLCHAIN}" = "default" ]; then
+	export CFLAGS="${CFLAGS} -I${SYSROOT}/usr/include -I${SYSROOT}/usr/include/simaai"
+	export CXXFLAGS="${CXXFLAGS} -I${SYSROOT}/usr/include -I${SYSROOT}/usr/include/simaai"
+	export CPPFLAGS="${CPPFLAGS} -I${SYSROOT}/usr/include -I${SYSROOT}/usr/include/simaai"
+fi
 export CMAKE_LIBRARY_PATH="${SYSROOT}/usr/lib:${SYSROOT}/usr/lib/aarch64-linux-gnu:${SYSROOT}/usr/lib/aarch64-linux-gnu/blas:${SYSROOT}/usr/lib/aarch64-linux-gnu/lapack"
 export OpenCV_DIR="${SYSROOT}/usr/lib/aarch64-linux-gnu/cmake/opencv4"
 export CODEC_INCLUDE_DIRS="${SYSROOT}/usr/include/simaai/codec"
 export RUSTUP_HOME=/opt/toolchain/rust
 export CARGO_HOME=/opt/toolchain/rust
-export PATH=/opt/toolchain/rust/bin:${PATH}
+case ":${PATH}:" in
+	*:/opt/toolchain/rust/bin:*) ;;
+	*) export PATH="/opt/toolchain/rust/bin:${PATH}" ;;
+esac
+
+unset _simaai_remove _simaai_remaining _simaai_new_path _simaai_first _simaai_entry
+unset -f _simaai_remove_path_entry 2>/dev/null || true

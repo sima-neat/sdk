@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 UPSTREAM_HOST="sw-web.eng.sima.ai"
 CHANNEL="${DEBIAN_MIRROR_CHANNEL:-daily}"
-case "${CHANNEL}" in daily|pre-release) ;; *) echo "Unsupported mirror channel: ${CHANNEL}" >&2; exit 2 ;; esac
+case "${CHANNEL}" in daily|pre-release|release) ;; *) echo "Unsupported mirror channel: ${CHANNEL}" >&2; exit 2 ;; esac
 UPSTREAM_ROOT="deb/${CHANNEL}"
 UPSTREAM_BASE_URL="http://${UPSTREAM_HOST}/${UPSTREAM_ROOT}"
 SUITE="agate"
@@ -71,9 +71,9 @@ if [[ -z "${BUCKET}" || -z "${KMS_KEY_ID}" || -z "${CLOUDFRONT_DISTRIBUTION_ID}"
   exit 1
 fi
 
-# Preserve the daily cache location; master must not reuse its baseline or lock.
-if [[ "${CHANNEL}" == pre-release ]]; then
-  WORK_ROOT="${WORK_ROOT}/pre-release"
+# Preserve the daily cache location; each other channel has its own baseline and lock.
+if [[ "${CHANNEL}" != daily ]]; then
+  WORK_ROOT="${WORK_ROOT}/${CHANNEL}"
 fi
 mkdir -p "${WORK_ROOT}"
 exec 9>"${WORK_ROOT}/sync.lock"

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # Generated Dockerfile for modalix.
 ARG SDK_BASE_IMAGE=ubuntu:24.04
-ARG SDK_CROSS_TOOLCHAIN_IMAGE=debian:bookworm
+ARG SDK_CROSS_TOOLCHAIN_IMAGE=debian:trixie
 FROM ${SDK_CROSS_TOOLCHAIN_IMAGE} AS cross-toolchain
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -10,10 +10,32 @@ COPY scripts/install-cross-toolchain.sh /usr/local/bin/install-cross-toolchain.s
 RUN chmod 755 /usr/local/bin/install-cross-toolchain.sh && \
     install-cross-toolchain.sh
 
-FROM ${SDK_BASE_IMAGE}
+# Build GCC independently of the SDK platform and its rolling package versions.
+# Ubuntu's AArch64 libc provides a stable bootstrap sysroot; the final image
+# verifies the resulting compiler against the actual Modalix SDK sysroot.
+FROM ${SDK_BASE_IMAGE} AS gcc16-toolchain
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update --allow-releaseinfo-change && \
+    apt-get install -y --no-install-recommends \
+      gcc g++ make binutils-aarch64-linux-gnu libc6-dev-arm64-cross \
+      ca-certificates curl wget tar bzip2 xz-utils file zlib1g-dev && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /opt/toolchain/aarch64/modalix/usr && \
+    cp -a /usr/aarch64-linux-gnu/include /opt/toolchain/aarch64/modalix/usr/ && \
+    cp -a /usr/aarch64-linux-gnu/lib /opt/toolchain/aarch64/modalix/usr/
+# Preserve the absolute paths used by the cross-libc linker scripts inside
+# the bootstrap sysroot, plus the target dynamic loader path under /lib.
+RUN ln -s . /opt/toolchain/aarch64/modalix/usr/aarch64-linux-gnu && \
+    ln -s usr/lib /opt/toolchain/aarch64/modalix/lib
+COPY scripts/install-gcc16-toolchain.sh /usr/local/bin/install-gcc16-toolchain.sh
+RUN --mount=type=cache,id=sima-sdk-gcc16-v1,target=/var/cache/sima-sdk-gcc16,sharing=locked \
+    GCC16_BUILD_CACHE=/var/cache/sima-sdk-gcc16 \
+    bash /usr/local/bin/install-gcc16-toolchain.sh
+
+FROM ${SDK_BASE_IMAGE} AS sdk-platform
 
 ARG SDK_PKG_LIST
-ARG BASE_SDK_VERSION=2.1.3
+ARG BASE_SDK_VERSION=3.0.0
 ARG SDK_APT_CHANNEL=release
 ARG REQUESTED_PRE_RELEASE_BASE=
 ARG MINIMAL_IMAGE=0
@@ -22,9 +44,10 @@ ARG NEAT_VERSION=latest
 ARG NEAT_CORE_TARGET=
 ARG NEAT_INSIGHT_BRANCH=
 ARG NEAT_INSIGHT_VERSION=
-ARG OPENVSCODE_SERVER_VERSION=openvscode-server-v1.109.5
 ARG CODEX_CLI_VERSION=0.153.4
-ARG SDK_SYSROOT_PKG_LIST="libarpack2 libarpack2-dev libblas-dev libblas3 libblkid-dev libbsd0 libcharls2 libcpp-httplib-dev libelf1 libexpat1 libffi-dev libffi8 libgdal32 libgfortran5 libglib2.0-0 libgomp1 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstrtspserver-1.0-0 libgstrtspserver-1.0-dev libjpeg62-turbo libjson-glib-dev liblapack-dev liblapack3 liblzma5 libmount-dev libopenblas-pthread-dev libopenblas0-pthread libopenjp2-7 libpng16-16 libpython3.11-dev libqt5gui5 libsepol-dev libspdlog-dev libssl3 libstdc++6 libsuperlu-dev libsuperlu5 libtiff6 liburcu-dev libwebp7 python3-dev python3.11-dev zlib1g"
+ARG DOCKER_CLI_VERSION=29.8.2
+ARG DOCKER_BUILDX_VERSION=0.37.2
+ARG TARGETARCH
 ENV SDK_PKG_LIST="\
 	libgrpc-dev,\
 	protobuf-compiler-grpc,\
@@ -32,16 +55,13 @@ ENV SDK_PKG_LIST="\
 ENV NEAT_INSIGHT_VENV_DIR=/opt/neat-insight/venv
 ENV NEAT_INSIGHT_PORT=9900
 ENV NEAT_INSIGHT_SUPERVISED=1
-ENV OPENVSCODE_SERVER_DIR=/opt/openvscode-server
-ENV OPENVSCODE_SERVER_PORT=9999
-ENV OPENVSCODE_SERVER_HTTPS_PORT=10000
-ENV OPENVSCODE_SERVER_SUPERVISED=1
+ENV CODE_SERVER_DIR=/opt/code-server
 ENV PIP_DEFAULT_TIMEOUT=120
 ENV SDK_APT_CHANNEL=${SDK_APT_CHANNEL}
 ENV PIP_RETRIES=10
 ENV RUSTUP_HOME=/opt/toolchain/rust
 ENV CARGO_HOME=/opt/toolchain/rust
-ENV PATH="${OPENVSCODE_SERVER_DIR}/bin:${NEAT_INSIGHT_VENV_DIR}/bin:${CARGO_HOME}/bin:${PATH}"
+ENV PATH="${CODE_SERVER_DIR}/bin:${NEAT_INSIGHT_VENV_DIR}/bin:${CARGO_HOME}/bin:${PATH}"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -70,6 +90,7 @@ RUN apt-get update --allow-releaseinfo-change && \
     apt-get install -y --no-install-recommends \
       vim \
       make \
+      binutils \
       cmake \
       debian-archive-keyring \
       default-jre-headless \
@@ -117,24 +138,42 @@ RUN apt-get update --allow-releaseinfo-change && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Install only the Docker client and Buildx plugin. The SDK deliberately does
+# not run dockerd; sima-cli can opt in to mounting an existing builder socket.
 RUN set -eux; \
-    case "$(dpkg --print-architecture)" in \
-      amd64) openvscode_arch="x64" ;; \
-      arm64) openvscode_arch="arm64" ;; \
-      armhf) openvscode_arch="armhf" ;; \
-      *) echo "Unsupported OpenVSCode Server architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    case "${TARGETARCH}" in \
+      amd64) \
+        docker_arch="x86_64"; \
+        docker_sha256="995d1ef289677f74fd58d8d2c35727b6a4ee389c69db8638a3e42d0487aa5b0f"; \
+        buildx_sha256="982ca20490b45ed1ec8d99795974d3d874a358f75938c9c237305010e6b7e548" \
+        ;; \
+      arm64) \
+        docker_arch="aarch64"; \
+        docker_sha256="76a624e4a8e5da654d1150e808175125efb5a6f1b6aa1cbd9caee18f51047a50"; \
+        buildx_sha256="efa38cb7aa7db2dbb9ad049b00b0a9737f66f033626177b5a4e845184ad7ab29" \
+        ;; \
+      *) echo "Unsupported Docker CLI architecture: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
-    openvscode_archive="${OPENVSCODE_SERVER_VERSION}-linux-${openvscode_arch}.tar.gz"; \
+    docker_archive="docker-${DOCKER_CLI_VERSION}.tgz"; \
     curl -fsSL --retry 3 --retry-delay 2 \
-      "https://github.com/gitpod-io/openvscode-server/releases/download/${OPENVSCODE_SERVER_VERSION}/${openvscode_archive}" \
-      -o "/tmp/${openvscode_archive}"; \
-    mkdir -p "${OPENVSCODE_SERVER_DIR}"; \
-    tar -xzf "/tmp/${openvscode_archive}" -C "${OPENVSCODE_SERVER_DIR}" --strip-components=1; \
-    rm -f "/tmp/${openvscode_archive}"; \
-    chmod -R a+rX "${OPENVSCODE_SERVER_DIR}"
+      "https://download.docker.com/linux/static/stable/${docker_arch}/${docker_archive}" \
+      -o "/tmp/${docker_archive}"; \
+    echo "${docker_sha256}  /tmp/${docker_archive}" | sha256sum -c -; \
+    tar -xzf "/tmp/${docker_archive}" -C /tmp; \
+    install -m 0755 /tmp/docker/docker /usr/local/bin/docker; \
+    install -d -m 0755 /usr/local/lib/docker/cli-plugins; \
+    buildx_asset="buildx-v${DOCKER_BUILDX_VERSION}.linux-${TARGETARCH}"; \
+    curl -fsSL --retry 3 --retry-delay 2 \
+      "https://github.com/docker/buildx/releases/download/v${DOCKER_BUILDX_VERSION}/${buildx_asset}" \
+      -o /usr/local/lib/docker/cli-plugins/docker-buildx; \
+    echo "${buildx_sha256}  /usr/local/lib/docker/cli-plugins/docker-buildx" | sha256sum -c -; \
+    chmod 0755 /usr/local/lib/docker/cli-plugins/docker-buildx; \
+    test "$(docker --version | awk '{print $3}' | tr -d ',')" = "${DOCKER_CLI_VERSION}"; \
+    docker buildx version | grep -F "v${DOCKER_BUILDX_VERSION}"; \
+    rm -rf /tmp/docker "/tmp/${docker_archive}"
 
 COPY --from=cross-toolchain /opt/cross-toolchain/ /
-COPY --from=cross-toolchain /opt/cross-toolchain/ /opt/bookworm-cross-toolchain/
+COPY --from=cross-toolchain /opt/cross-toolchain/ /opt/sdk-cross-toolchain/
 COPY scripts/pin-cross-toolchain.sh /usr/local/bin/pin-cross-toolchain.sh
 
 RUN chmod 755 /usr/local/bin/pin-cross-toolchain.sh && \
@@ -149,10 +188,18 @@ RUN chmod 755 /usr/local/bin/pin-cross-toolchain.sh && \
     rm -f /tmp/cross-smoke.o /tmp/cross-smoke.c /tmp/cross-smoke.cpp /tmp/cross-smoke-cxx
 
 COPY config/platform-package-patterns.txt /usr/local/share/sima-sdk/platform-package-patterns.txt
+COPY scripts/resolve-platform-config.sh /usr/local/bin/resolve-platform-config.sh
 COPY scripts/configure-apt-repos.sh /usr/local/bin/configure-apt-repos.sh
 
-RUN chmod 755 /usr/local/bin/configure-apt-repos.sh && \
-    configure-apt-repos.sh "${BASE_SDK_VERSION}"
+ENV SDK_PLATFORM_VERSION_FILE=/usr/local/share/sima-sdk/platform-version
+RUN if { [ "${SDK_APT_CHANNEL}" = daily ] || { [ "${SDK_APT_CHANNEL}" = pre-release ] && [ "${BASE_SDK_VERSION%%.*}" = 3 ]; }; }; then \
+      PRE_RELEASE_BASE="${BASE_SDK_VERSION}" STABLE_BASE_SDK_VERSION="${BASE_SDK_VERSION}" \
+        bash /usr/local/bin/resolve-platform-config.sh > /tmp/platform-config && \
+      sed -n 's/^base_sdk_version=//p' /tmp/platform-config > "${SDK_PLATFORM_VERSION_FILE}"; \
+    else printf '%s\n' "${BASE_SDK_VERSION}" > "${SDK_PLATFORM_VERSION_FILE}"; fi && \
+    test -s "${SDK_PLATFORM_VERSION_FILE}" && \
+    chmod 755 /usr/local/bin/configure-apt-repos.sh && \
+    configure-apt-repos.sh "$(cat "${SDK_PLATFORM_VERSION_FILE}")"
 
 RUN mkdir -p /tmp/supervisor /var/log/supervisor && \
     mkdir -p /etc/supervisor/conf.available && \
@@ -170,6 +217,7 @@ COPY scripts/install-rustup.sh /usr/local/bin/install-rustup.sh
 COPY scripts/install-sima-cli.sh /usr/local/bin/install-sima-cli.sh
 COPY scripts/sima-code.sh /usr/local/bin/sima-code
 COPY scripts/setup-sdk-sysroot.sh /usr/local/bin/setup-sdk-sysroot.sh
+COPY scripts/install-gcc16-toolchain.sh /usr/local/bin/install-gcc16-toolchain.sh
 COPY scripts/validate-sysroot-package-versions.sh /usr/local/bin/validate-sysroot-package-versions.sh
 RUN chmod 755 /opt/bin/simaai-init-build-env \
               /opt/bin/simaai_setup_sdk.py \
@@ -177,6 +225,7 @@ RUN chmod 755 /opt/bin/simaai-init-build-env \
               /usr/local/bin/install-sima-cli.sh \
               /usr/local/bin/sima-code \
               /usr/local/bin/setup-sdk-sysroot.sh \
+              /usr/local/bin/install-gcc16-toolchain.sh \
               /usr/local/bin/validate-sysroot-package-versions.sh
 
 # Ensure images expose a docker group so downstream setup scripts can
@@ -187,8 +236,8 @@ RUN install-rustup.sh
 
 RUN --mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,sharing=locked \
     SYSROOT_UPDATE_DOWNLOAD_DIR=/var/cache/sima-sdk-debs \
-    setup-sdk-sysroot.sh "${BASE_SDK_VERSION}" "${SDK_PKG_LIST}" && \
-    cp -a /opt/bookworm-cross-toolchain/. / && \
+    setup-sdk-sysroot.sh "$(cat "${SDK_PLATFORM_VERSION_FILE}")" "${SDK_PKG_LIST}" && \
+    cp -a /opt/sdk-cross-toolchain/. / && \
     pin-cross-toolchain.sh && \
     aarch64-linux-gnu-gcc --version && \
     aarch64-linux-gnu-g++ --version && \
@@ -199,11 +248,32 @@ RUN --mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,shari
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb /tmp/*
 
+# Exercise the target libc/linker layout, not only the compiler's own sysroot.
+RUN if { [ "${SDK_APT_CHANNEL}" = daily ] || [ "${BASE_SDK_VERSION%%.*}" = 3 ]; } && [ "${MINIMAL_IMAGE}" != 1 ]; then \
+      printf '#include <gst/gst.h>\nint main() { gst_init(nullptr, nullptr); return 0; }\n' > /tmp/agate-smoke.cpp; \
+      flags="$(PKG_CONFIG_LIBDIR=/opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu/pkgconfig:/opt/toolchain/aarch64/modalix/usr/share/pkgconfig pkg-config --cflags --libs gstreamer-1.0)" && \
+      aarch64-linux-gnu-g++ --sysroot=/opt/toolchain/aarch64/modalix /tmp/agate-smoke.cpp $flags \
+        -L/opt/toolchain/aarch64/modalix/usr/lib/aarch64-linux-gnu \
+        -Wl,--no-as-needed -lMLArt -Wl,--as-needed -o /tmp/agate-smoke && \
+      aarch64-linux-gnu-readelf -h /tmp/agate-smoke | grep -q AArch64 && \
+      rm -f /tmp/agate-smoke.cpp /tmp/agate-smoke; \
+    fi
+
+FROM sdk-platform
+COPY --from=gcc16-toolchain \
+  /opt/toolchain/gcc-16.2.0-aarch64-linux-gnu/ \
+  /opt/toolchain/gcc-16.2.0-aarch64-linux-gnu/
+RUN /usr/local/bin/install-gcc16-toolchain.sh --verify-only && \
+    bash -c 'source /opt/bin/simaai-init-build-env modalix gcc16 >/dev/null && \
+      test "$($CC -dumpfullversion -dumpversion)" = 16.2.0 && \
+      test "$($CXX -dumpmachine)" = aarch64-linux-gnu'
+
 # sima-cli uses /etc/sdk-release to distinguish a Palette SDK from a generic
 # Linux host. Keep this build-time marker stable so dependency layers are not
 # invalidated by the branch/commit identity written into the final image.
-RUN printf 'Platform Version = %s\nSDK Version = %s_Palette_SDK\n' \
-      "${BASE_SDK_VERSION}" "${BASE_SDK_VERSION}" > /etc/sdk-release
+RUN platform_version="$(cat "${SDK_PLATFORM_VERSION_FILE}")" && \
+    printf 'Platform Version = %s\nPlatform Base = %s\nSDK Version = %s_Palette_SDK\n' \
+      "${platform_version}" "${platform_version%%~*}" "${platform_version}" > /etc/sdk-release
 
 ARG SIMA_CLI_REF
 ARG SIMA_CLI_VERSION
@@ -215,16 +285,19 @@ RUN SIMA_CLI_REF="${SIMA_CLI_REF}" \
 COPY scripts/install-sysroot-overlay.sh /usr/local/bin/install-sysroot-overlay.sh
 COPY scripts/install-sdk-sysroot-overlay.sh /usr/local/bin/install-sdk-sysroot-overlay.sh
 COPY scripts/sysroot.sh /usr/local/bin/sysroot
+COPY scripts/sysroot-directory.py /usr/local/bin/sysroot-directory.py
 COPY scripts/neat-deps.sh /usr/local/bin/neat-deps.sh
 COPY deps/manifest.json /usr/local/share/sima-sdk/deps/manifest.json
 COPY config/sysroot-overlay.conf /usr/local/share/sima-sdk/sysroot-overlay.conf
 COPY config/supervisor-neat-insight.conf /etc/supervisor/conf.available/neat-insight.conf
-COPY config/supervisor-openvscode.conf /etc/supervisor/conf.available/openvscode.conf
+COPY config/supervisor-code-server.conf /etc/supervisor/conf.available/code-server.conf
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY scripts/insight-admin.sh /usr/local/bin/insight-admin
 COPY scripts/neat-insight-supervised.sh /usr/local/bin/neat-insight-supervised
-COPY scripts/openvscode-supervised.sh /usr/local/bin/openvscode-supervised
+COPY scripts/insight-network-test.sh /usr/local/bin/insight-network-test
+COPY scripts/code-server-supervised.sh /usr/local/bin/code-server-supervised
 COPY scripts/devkit.sh /usr/local/bin/devkit.sh
+COPY scripts/devkit-container-remote.sh /usr/local/libexec/sima-sdk/devkit-container-remote.sh
 COPY scripts/devkit-sync-rsync.sh /usr/local/bin/devkit-sync-rsync.sh
 RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/install-sdk-sysroot-overlay.sh && \
@@ -233,13 +306,20 @@ RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/docker-entrypoint.sh && \
     chmod 755 /usr/local/bin/insight-admin && \
     chmod 755 /usr/local/bin/neat-insight-supervised && \
-    chmod 755 /usr/local/bin/openvscode-supervised && \
+    chmod 755 /usr/local/bin/insight-network-test && \
+    chmod 755 /usr/local/bin/code-server-supervised && \
     ln -sf /usr/local/bin/insight-admin /usr/local/bin/install-neat-insight && \
     chmod 755 /usr/local/bin/devkit.sh && \
+    chmod 755 /usr/local/libexec/sima-sdk/devkit-container-remote.sh && \
     chmod 755 /usr/local/bin/devkit-sync-rsync.sh && \
-    install-sdk-sysroot-overlay.sh
+    install-sdk-sysroot-overlay.sh && \
+    if { [ "${SDK_APT_CHANNEL}" = daily ] || [ "${BASE_SDK_VERSION%%.*}" = 3 ]; }; then \
+      /usr/bin/python3 /usr/local/bin/sysroot-directory.py init /opt/toolchain/aarch64/modalix; \
+    fi
 
-RUN if [ -n "${NEAT_INSIGHT_BRANCH}${NEAT_INSIGHT_VERSION}" ]; then \
+ARG NEAT_CORE_RESOLUTION_ATTEMPT=manual
+RUN echo "Dependency resolution attempt: ${NEAT_CORE_RESOLUTION_ATTEMPT}" && \
+    if [ -n "${NEAT_INSIGHT_BRANCH}${NEAT_INSIGHT_VERSION}" ]; then \
       /usr/local/bin/insight-admin update "${NEAT_INSIGHT_BRANCH:-main}" "${NEAT_INSIGHT_VERSION:-latest}"; \
     else \
       /usr/local/bin/insight-admin update; \
@@ -252,21 +332,62 @@ RUN chmod 755 /etc/profile.d/neat-sdk-prompt.sh \
 
 WORKDIR /workspace
 
+# Editor changes must not invalidate the platform sysroot or GCC compilation.
+ARG CODE_SERVER_VERSION=4.140.0
+ARG CODE_SERVER_SHA256_AMD64=864c5d01c808ade57e4d12c708717be7a187219fded60428f263b9e2da9f6b48
+ARG CODE_SERVER_SHA256_ARM64=ae4b07153f2037b06d24749bc8004221fcbf3ffe317038401be0452f541bf200
+ENV CODE_SERVER_VERSION=${CODE_SERVER_VERSION}
+
+RUN set -eux; \
+    case "$(dpkg --print-architecture)" in \
+      amd64) code_server_arch="amd64"; code_server_sha256="${CODE_SERVER_SHA256_AMD64}" ;; \
+      arm64) code_server_arch="arm64"; code_server_sha256="${CODE_SERVER_SHA256_ARM64}" ;; \
+      *) echo "Unsupported code-server architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac; \
+    code_server_archive="code-server-${CODE_SERVER_VERSION}-linux-${code_server_arch}.tar.gz"; \
+    curl -fsSL --retry 3 --retry-delay 2 \
+      "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/${code_server_archive}" \
+      -o "/tmp/${code_server_archive}"; \
+    echo "${code_server_sha256}  /tmp/${code_server_archive}" | sha256sum -c -; \
+    mkdir -p "${CODE_SERVER_DIR}"; \
+    tar -xzf "/tmp/${code_server_archive}" -C "${CODE_SERVER_DIR}" --strip-components=1; \
+    rm -f "/tmp/${code_server_archive}"; \
+    chmod -R a+rX "${CODE_SERVER_DIR}"; \
+    "${CODE_SERVER_DIR}/bin/code-server" --config /dev/null --version
+
+# Bundle our own extension from this SDK revision; setup copies it per user offline.
+COPY vscode-extension/package.json vscode-extension/LICENSE /opt/sima-neat/vscode-extension/
+COPY vscode-extension/src/ /opt/sima-neat/vscode-extension/src/
+COPY vscode-extension/media/ /opt/sima-neat/vscode-extension/media/
+COPY vscode-extension/themes/ /opt/sima-neat/vscode-extension/themes/
+# Brand the installed login page and browser icons before publishing the image.
+# No test fixtures are copied into the runtime installation.
+COPY tools/brand_code_server.py /usr/local/bin/sima-brand-code-server
+COPY tools/patch_insight_browser_resolver.py /usr/local/bin/sima-patch-insight-browser-resolver
+RUN python3 /usr/local/bin/sima-patch-insight-browser-resolver --server-dir "${CODE_SERVER_DIR}"
+COPY tools/browser-trust/ /usr/local/bin/browser-trust/
+RUN python3 /usr/local/bin/sima-brand-code-server --server-dir "${CODE_SERVER_DIR}" \
+    --icon /opt/sima-neat/vscode-extension/media/neat-logo.png
+COPY scripts/install-neat-vscode-extension.py /usr/local/bin/sima-install-neat-extension
+RUN chmod 755 /usr/local/bin/sima-install-neat-extension && \
+    chmod -R a+rX /opt/sima-neat/vscode-extension
+
 # Preinstall Neat Framework and resources
 COPY scripts/install-neat-resources.sh /usr/local/bin/install-neat-resources.sh
 RUN chmod 755 /usr/local/bin/install-neat-resources.sh
 ARG NEAT_CORE_SOURCE_REF=
 ARG NEAT_CORE_SOURCE_REASON=
 ARG NEAT_APPS_SOURCE_REF=
-ARG NEAT_CORE_RESOLUTION_ATTEMPT=manual
 RUN echo "Neat Core resolution attempt: ${NEAT_CORE_RESOLUTION_ATTEMPT}" && \
-    if [ "${SDK_APT_CHANNEL}" = pre-release ]; then \
-      install-neat-resources.sh --skip "pre-release platform SDK does not bundle Core"; \
+    if [ "${SDK_APT_CHANNEL}" = daily ]; then \
+      install-neat-resources.sh --skip "platform-only SDK does not bundle Core"; \
     else \
+      apt-get update --allow-releaseinfo-change && \
       NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}" \
       NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON}" \
       NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF}" \
-      install-neat-resources.sh; \
+      install-neat-resources.sh && \
+      rm -rf /var/lib/apt/lists/*; \
     fi
 
 # Apply volatile build identity only after the stable SDK/toolchain/resource layers. Keeping these
@@ -281,10 +402,13 @@ ENV SDK_IMAGE_TAG="${SDK_RELEASE_REF}"
 ENV SDK_PROMPT_HOSTNAME="neat-sdk-${SDK_RELEASE_REF}"
 LABEL org.opencontainers.image.source="https://github.com/sima-neat/sdk" \
       org.opencontainers.image.revision="${SDK_GIT_HASH}" \
-      org.opencontainers.image.version="${SDK_RELEASE_REF}"
+      org.opencontainers.image.version="${SDK_RELEASE_REF}" \
+      com.sima.sdk.platform.version="${BASE_SDK_VERSION}" \
+      com.sima.sdk.code-ui="code-server-v1"
 
 COPY scripts/write-sdk-release.sh /usr/local/bin/write-sdk-release.sh
-RUN chmod 755 /usr/local/bin/write-sdk-release.sh && write-sdk-release.sh
+RUN chmod 755 /usr/local/bin/write-sdk-release.sh && \
+    BASE_SDK_VERSION="$(cat "${SDK_PLATFORM_VERSION_FILE}")" write-sdk-release.sh
 
 # Expose required ports
 EXPOSE 9900 9999 10000 9000-9079 9100-9179 8081 8554

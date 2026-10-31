@@ -3,7 +3,7 @@
 
 The SDK release flow publishes two useful install targets:
 
-* `sdk@2.1.3.3` points directly at the tagged SDK release package.
+* `sdk@3.0.0.3` points directly at the tagged SDK release package.
 * `sdk@release-2.1` points at the latest install-stub package produced by the
   `release-2.1` branch build.
 
@@ -19,6 +19,7 @@ import argparse
 import hashlib
 import json
 import re
+import shlex
 import subprocess
 import tempfile
 from pathlib import Path
@@ -68,7 +69,7 @@ def retarget_metadata_resource(metadata_path: Path, image_resource: str) -> None
 
     The install stub itself remains in the same package. Only the GHCR SDK image
     resource changes from a release-line tag, such as `ghcr:sima-neat/sdk:release-2.1`,
-    to a version tag, such as `ghcr:sima-neat/sdk:v2.1.3.3`.
+    to a version tag, such as `ghcr:sima-neat/sdk:v3.0.0.3`.
     """
     metadata = load_json(metadata_path)
     resources = metadata.get("resources")
@@ -86,6 +87,13 @@ def retarget_metadata_resource(metadata_path: Path, image_resource: str) -> None
 
     if not replaced:
         raise SystemExit("metadata.json does not contain a ghcr:sima-neat/sdk:* resource")
+
+    # New packages bind setup to the downloaded image; keep that binding in sync.
+    # Legacy installers did not forward arguments and have no --image binding.
+    command = shlex.split(metadata["installation"]["script"])
+    if "--image" in command:
+        command[command.index("--image") + 1] = "ghcr.io/" + image_resource.removeprefix("ghcr:")
+        metadata["installation"]["script"] = shlex.join(command)
 
     metadata["resources"] = updated_resources
     write_json(metadata_path, metadata, indent=4)
@@ -129,7 +137,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--image-resource",
         required=True,
-        help="Tagged SDK image resource, e.g. ghcr:sima-neat/sdk:v2.1.3.3.",
+        help="Tagged SDK image resource, e.g. ghcr:sima-neat/sdk:v3.0.0.3.",
     )
     parser.add_argument("--sse-kms-key-id", default="", help="Optional KMS key for S3 uploads.")
     parser.add_argument(

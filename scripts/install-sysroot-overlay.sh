@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SYSROOT="${1:-/opt/toolchain/aarch64/modalix}"
 LIBDIR="${SYSROOT}/usr/lib/aarch64-linux-gnu"
+if [[ "${2:-}" != "--finalize-only" ]]; then
 LINUX_LIBC_DEV_ARM64_VERSION="${SDK_SYSROOT_LINUX_LIBC_DEV_ARM64_VERSION:-${SDK_SYSROOT_LINUX_LIBC_DEV_VERSION:-}}"
 if [[ "${SDK_APT_CHANNEL:-release}" == "pre-release" ]]; then
   SDK_APT_ORIGIN="debian.neat.sima.ai"
@@ -164,6 +165,8 @@ find "${workdir}/linux-libc-dev" -maxdepth 1 -type f -name '*.deb' -print0 \
       echo "Extracting final sysroot headers from $(basename "${deb}")"
       dpkg-deb -x "${deb}" "${SYSROOT}"
     done
+
+fi
 
 # dpkg-deb -x does not run maintainer scripts or update-alternatives, so
 # recreate the linker-facing BLAS/LAPACK/OpenBLAS links in the sysroot.

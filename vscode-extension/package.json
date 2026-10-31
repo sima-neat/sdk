@@ -1,7 +1,7 @@
 {
   "name": "sima-neat",
-  "displayName": "Palette Neat Development Environment",
-  "description": "VS Code extension for SiMa Neat SDK workspaces.",
+  "displayName": "Palette SDK Development Environment",
+  "description": "VS Code extension for Palette SDK workspaces.",
   "version": "0.0.1",
   "publisher": "sima-neat",
   "license": "UNLICENSED",
@@ -24,21 +24,31 @@
   "main": "./src/extension.js",
   "activationEvents": [
     "onStartupFinished",
+    "onWebviewPanel:simaNeat.landing",
     "onView:simaNeat.panel",
     "onCommand:simaNeat.showPanel"
   ],
   "contributes": {
     "commands": [
       {
+        "command": "simaNeat.gettingStarted",
+        "title": "SiMa Neat: Getting Started"
+      },
+      {
         "command": "simaNeat.showPanel",
-        "title": "SiMa Neat: Show Panel"
+        "title": "Open Palette panel"
+      },
+      {
+        "command": "simaNeat.browseModels",
+        "title": "SiMa Neat: Browse Models",
+        "enablement": "simaNeat.modelRegistryAvailable"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "simaNeat",
-          "title": "SiMa Neat",
+          "title": "Palette",
           "icon": "media/neat-logo.png"
         }
       ]
@@ -47,7 +57,7 @@
       "simaNeat": [
         {
           "id": "simaNeat.panel",
-          "name": "Neat",
+          "name": "Palette",
           "type": "webview"
         }
       ]
@@ -63,6 +73,22 @@
         "uiTheme": "vs-dark",
         "path": "./themes/sima-neat-dark.json"
       }
-    ]
+    ],
+    "configurationDefaults": {
+      "workbench.startupEditor": "none",
+      "workbench.colorTheme": "SiMa Neat Light",
+      "workbench.preferredLightColorTheme": "SiMa Neat Light",
+      "workbench.preferredDarkColorTheme": "SiMa Neat Dark",
+      "editor.fontFamily": "'IBM Plex Mono', monospace",
+      "terminal.integrated.fontFamily": "'IBM Plex Mono', monospace"
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "simaNeat.browseModels",
+          "when": "simaNeat.modelRegistryAvailable"
+        }
+      ]
+    }
   }
 }

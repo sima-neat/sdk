@@ -45,18 +45,33 @@ check_remote_passwordless_sudo() {
   local user="$1"
   local ip="$2"
   local port="$3"
-  ssh -tt -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" "sudo -n true" >/dev/null 2>&1
+  local probe_timeout="${4:-20}"
+  local attempt=""
+  local status=0
+  local reason=""
+
+  for attempt in 1 2; do
+    status=0
+    timeout --foreground "${probe_timeout}" ssh -T -n -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" "sudo -n true" >/dev/null 2>&1 || status=$?
+    case "${status}" in
+      0) return 0 ;;
+      124) reason="timed out after ${probe_timeout}s" ;;
+      125) return 2 ;;
+      255) reason="failed to connect over SSH" ;;
+      *) return 1 ;;
+    esac
+    echo "Passwordless sudo check on ${user}@${ip} ${reason} (attempt ${attempt}/2)." >&2
+  done
+  return 2
 }
 
 sdk_platform_version_from_release_file() {
   local sdk_release="$1"
-  local sdk_profile=""
   local platform_version=""
 
-  sdk_profile="$(sdk_release_value "SDK Profile" "${sdk_release}" 2>/dev/null || true)"
-  if [[ "${sdk_profile}" == "platform-cross" ]]; then
-    platform_version="$(sdk_release_value "Platform Base" "${sdk_release}" 2>/dev/null || true)"
-  fi
+  # DISTRO_VERSION identifies the platform release, not its package build.
+  # Both full and platform-cross SDKs record that identity in Platform Base.
+  platform_version="$(sdk_release_value "Platform Base" "${sdk_release}" 2>/dev/null || true)"
 
   if [[ -z "${platform_version}" ]]; then
     platform_version="$(sdk_release_value "Platform Version" "${sdk_release}" 2>/dev/null || true)"
@@ -367,6 +382,19 @@ EOS
 
   local remote_dir="/tmp/sima-neat-install-$(date +%Y%m%d-%H%M%S)"
   local -a deploy_files=("${deb_files[@]}" "${wheel_file}" "${cache_dir}/install_neat_framework.sh" "${cache_dir}/manifest.json")
+  # Pairing must forward the same admission and install metadata as Core's
+  # own SDK-to-DevKit installer, not just the package payloads.
+  if [[ " ${expected_deb_names[*]} " == *" simaai-scheduler "* ]] &&
+      [[ ! -f "${cache_dir}/scheduler_platform_admission.py" || -L "${cache_dir}/scheduler_platform_admission.py" ]]; then
+    neat_sync_fail_or_continue "WARNING: Scheduler Platform admission delegate missing from SDK cache: ${cache_dir}/scheduler_platform_admission.py"
+    return $?
+  fi
+  local resource
+  for resource in install_sentinel.sh scheduler_platform_admission.py neat-install-manifest.txt resolved-deps-manifest.json; do
+    if [[ -f "${cache_dir}/${resource}" ]]; then
+      deploy_files+=("${cache_dir}/${resource}")
+    fi
+  done
 
   if ! ssh -T -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" "mkdir -p '${remote_dir}'"; then
     neat_sync_fail_or_continue "WARNING: Failed to create Neat framework install directory on DevKit: ${remote_dir}"
@@ -608,7 +636,14 @@ if (( _DEVKIT_COMPAT_STATUS != 0 )); then
 fi
 
 if [[ "${_DEVKIT_USER}" != "root" ]]; then
-  if ! check_remote_passwordless_sudo "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"; then
+  _DEVKIT_SUDO_STATUS=0
+  check_remote_passwordless_sudo "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}" || _DEVKIT_SUDO_STATUS=$?
+  if (( _DEVKIT_SUDO_STATUS == 2 )); then
+    echo "Could not determine whether '${_DEVKIT_USER}' has passwordless sudo on ${_DEVKIT_IP}; leaving sudoers unchanged." >&2
+    echo "Hint: rerun setup. If this keeps happening, check the DevKit for a stuck 'sudo -n true' process." >&2
+    return 1
+  fi
+  if (( _DEVKIT_SUDO_STATUS != 0 )); then
     echo ""
     echo "DevKit user '${_DEVKIT_USER}' does not have passwordless sudo."
     echo "This script can apply a one-time sudoers change:"
@@ -622,10 +657,10 @@ if [[ "${_DEVKIT_USER}" != "root" ]]; then
         echo "Non-interactive mode: accepting default 'no' for passwordless sudo setup."
       fi
     else
-      read -r -p "Apply this change on ${_DEVKIT_IP}? [y/N]: " _ALLOW_NOPASSWD
+      read -r -p "Apply this change on ${_DEVKIT_IP}? [Y/n]: " _ALLOW_NOPASSWD
     fi
     case "${_ALLOW_NOPASSWD,,}" in
-      y|yes)
+      ""|y|yes)
         echo "Applying passwordless sudo setup for ${_DEVKIT_USER}@${_DEVKIT_IP}."
         _REMOTE_SUDO_PASSWORD="${_DEFAULT_DEVKIT_PASSWORD}"
         if ! devkit_sync_noninteractive; then
@@ -973,6 +1008,13 @@ Remote workspace    : ${DEVKIT_SYNC_REMOTE_ROOT:-${DEVKIT_SYNC_MOUNT_POINT:-/wor
 NFS mount path      : ${DEVKIT_SYNC_NFS_MOUNT_POINT:-${DEVKIT_SYNC_MOUNT_POINT:-/workspace}}
 EOF
 
+  if [[ -n "${SIMA_CONTAINER_REGISTRY:-}" && -n "${SIMA_DEVKIT_CONTAINER_REGISTRY:-}" ]]; then
+    echo "SDK image registry  : ${SIMA_CONTAINER_REGISTRY}"
+    echo "DevKit registry     : ${SIMA_DEVKIT_CONTAINER_REGISTRY}"
+  else
+    echo "Container registry  : not configured"
+  fi
+
   if [[ -n "${DEVKIT_SYNC_HINT:-}" ]]; then
     echo "Status hint         : ${DEVKIT_SYNC_HINT}"
   fi
@@ -992,6 +1034,13 @@ EOF
       echo "Workspace sync is not active. 'dk shell' can still be used over SSH."
       ;;
   esac
+
+  echo ""
+  if ! command -v insight-network-test >/dev/null 2>&1; then
+    echo "Insight reverse path : test helper is not installed" >&2
+    return 1
+  fi
+  insight-network-test
 }
 
 devkit-local-sync-scope() {
@@ -1015,6 +1064,227 @@ devkit-local-sync-scope() {
   else
     printf '%s/%s\n' "${root}" "${rel_path%%/*}"
   fi
+}
+
+devkit-container-usage() {
+  cat >&2 <<'EOF'
+Usage:
+  dk container setup [--yes]
+  dk container deploy <image> [docker-run-options] [-- command [args...]]
+  dk container run <image> [docker-run-options] [-- command [args...]]
+  dk container pull <image>
+  dk container images
+  dk container list
+  dk container logs <container> [docker-logs-options]
+  dk container stop <container>
+  dk container remove <container> [docker-rm-options]
+
+Examples:
+  dk container setup
+  dk container deploy hello-neat:develop --detach --name hello-neat --network host
+  dk container run hello-neat:develop --rm -- --help
+  dk container logs hello-neat --follow
+EOF
+}
+
+devkit-container-image-ref() {
+  local image="${1:-}"
+  local sdk_registry="${SIMA_CONTAINER_REGISTRY:-}"
+  local devkit_registry="${SIMA_DEVKIT_CONTAINER_REGISTRY:-}"
+
+  if [[ -z "${devkit_registry}" ]]; then
+    echo "The local container registry is not configured for this SDK shell." >&2
+    echo "Run 'sima-cli sdk setup --devkit <devkit-ip>', then open a new SDK shell." >&2
+    return 2
+  fi
+  if [[ -z "${image}" || "${image}" == -* || "${image}" == /* || "${image}" == *://* ]]; then
+    echo "Invalid container image name: ${image:-<empty>}" >&2
+    return 2
+  fi
+
+  case "${image}" in
+    "${devkit_registry}"/*)
+      printf '%s\n' "${image}"
+      ;;
+    "${sdk_registry}"/*)
+      printf '%s/%s\n' "${devkit_registry}" "${image#"${sdk_registry}"/}"
+      ;;
+    *)
+      printf '%s/%s\n' "${devkit_registry}" "${image}"
+      ;;
+  esac
+}
+
+devkit-container-remote() {
+  local action="$1"
+  shift
+  local remote_script=""
+  local remote_script_encoded=""
+  local remote_command=""
+  # The wrapper is evaluated by Bash on the DevKit, not by this shell.
+  # shellcheck disable=SC2016
+  local remote_wrapper='set -euo pipefail; encoded="${1#x}"; script="$(printf "%s" "${encoded}" | base64 -d; printf .)"; script="${script%?}"; shift; args=(); for encoded in "$@"; do encoded="${encoded#x}"; decoded="$(printf "%s" "${encoded}" | base64 -d; printf .)"; args+=("${decoded%?}"); done; exec bash --noprofile --norc -c "${script}" -- "${args[@]}"'
+  local encoded=""
+  local detach_stdin=0
+  local -a ssh_args=(
+    ssh
+    -p "${DEVKIT_SYNC_DEVKIT_PORT:-22}"
+    -o BatchMode=yes
+    -o ConnectTimeout=8
+  )
+  case "${action}" in
+    docker-check|registry-setup|setup)
+      detach_stdin=1
+      ;;
+  esac
+  if [[ "${detach_stdin}" == 1 ]]; then
+    ssh_args+=(-T -n)
+  elif [[ -t 0 && -t 1 ]]; then
+    ssh_args+=(-t)
+  else
+    ssh_args+=(-T)
+  fi
+  ssh_args+=("${DEVKIT_SYNC_DEVKIT_USER:-sima}@${DEVKIT_SYNC_DEVKIT_IP}")
+
+  # OpenSSH joins remote argv with spaces and asks the login shell to parse the
+  # resulting command. Encode the fixed helper and each argument independently
+  # so whitespace and shell metacharacters survive that extra parsing step.
+  # Supplying the helper through bash -c also leaves SSH stdin attached to the
+  # caller, which is required by `docker run -i` and interactive shells.
+  local remote_script_path="${DEVKIT_CONTAINER_REMOTE_SCRIPT:-/usr/local/libexec/sima-sdk/devkit-container-remote.sh}"
+  if [[ ! -r "${remote_script_path}" && -r "$(dirname "${BASH_SOURCE[0]}")/devkit-container-remote.sh" ]]; then
+    remote_script_path="$(dirname "${BASH_SOURCE[0]}")/devkit-container-remote.sh"
+  fi
+  if [[ ! -r "${remote_script_path}" ]]; then
+    echo "DevKit container remote helper not found: ${remote_script_path}" >&2
+    return 2
+  fi
+  remote_script="$(<"${remote_script_path}")"
+
+  remote_script_encoded="$(printf '%s' "${remote_script}" | base64 | tr -d '\n')"
+  remote_command="bash --noprofile --norc -c '${remote_wrapper}' -- x${remote_script_encoded}"
+  for arg in "${action}" "$@"; do
+    encoded="$(printf '%s' "${arg}" | base64 | tr -d '\n')"
+    remote_command+=" x${encoded}"
+  done
+  ssh_args+=("${remote_command}")
+
+  "${ssh_args[@]}"
+}
+
+devkit-container-install-docker() {
+  local assume_yes="${1:-0}"
+  local answer=""
+
+  if [[ "${assume_yes}" != 1 ]]; then
+    if [[ ! -t 0 || ! -t 1 || ! -e /dev/tty ]]; then
+      echo "Docker is not ready on the DevKit." >&2
+      echo "Run 'dk container setup --yes' to approve Modalix Docker setup." >&2
+      return 2
+    fi
+    cat >/dev/tty <<'EOF'
+Docker setup is required to run SDK-built images on the DevKit.
+This will reuse a working Docker installation when possible. Otherwise it will
+install Docker CE, store Docker and containerd data under /data, enable the
+services, and add the DevKit user to the docker group.
+EOF
+    printf 'Set up Docker on the DevKit now? [y/N]: ' >/dev/tty
+    IFS= read -r answer </dev/tty
+    case "${answer}" in
+      y|Y|yes|YES|Yes) ;;
+      *)
+        echo "Docker installation skipped." >&2
+        return 2
+        ;;
+    esac
+  fi
+
+  devkit-container-remote setup "${SIMA_DEVKIT_CONTAINER_REGISTRY:-}"
+}
+
+devkit-container-remote-with-setup() {
+  local status=0
+  if devkit-container-remote docker-check; then
+    :
+  else
+    status=$?
+    if [[ "${status}" -ne 42 ]]; then
+      return "${status}"
+    fi
+    if devkit-container-install-docker; then
+      :
+    else
+      status=$?
+      return "${status}"
+    fi
+  fi
+  devkit-container-remote "$@"
+}
+
+devkit-container-ensure-registry() {
+  if [[ -z "${SIMA_DEVKIT_CONTAINER_REGISTRY:-}" ]]; then
+    devkit-container-image-ref "registry-check" >/dev/null || return $?
+  fi
+  devkit-container-remote-with-setup registry-setup "${SIMA_DEVKIT_CONTAINER_REGISTRY}"
+}
+
+devkit-container() {
+  local action="${1:-}"
+  if [[ -z "${action}" || "${action}" == "help" || "${action}" == "--help" || "${action}" == "-h" ]]; then
+    devkit-container-usage
+    return 0
+  fi
+  shift
+
+  case "${action}" in
+    setup)
+      if [[ $# -gt 1 || ( $# -eq 1 && "$1" != --yes ) ]]; then
+        devkit-container-usage
+        return 2
+      fi
+      if [[ "${1:-}" == --yes ]]; then
+        devkit-container-install-docker 1
+      else
+        devkit-container-install-docker
+      fi
+      ;;
+    deploy|run|pull)
+      if [[ $# -lt 1 ]]; then
+        devkit-container-usage
+        return 2
+      fi
+      local image
+      image="$(devkit-container-image-ref "$1")" || return $?
+      shift
+      if [[ "${action}" == deploy || "${action}" == pull ]]; then
+        devkit-container-ensure-registry || return $?
+      fi
+      printf '[DevKit] container %s: %s\n' "${action}" "${image}"
+      devkit-container-remote-with-setup "${action}" "${image}" "$@"
+      ;;
+    images)
+      devkit-container-ensure-registry || return $?
+      devkit-container-remote-with-setup images "${SIMA_DEVKIT_CONTAINER_REGISTRY}"
+      ;;
+    list)
+      devkit-container-remote-with-setup list
+      ;;
+    logs|stop|remove|rm)
+      if [[ $# -lt 1 ]]; then
+        devkit-container-usage
+        return 2
+      fi
+      if [[ "${action}" == "rm" ]]; then
+        action="remove"
+      fi
+      devkit-container-remote-with-setup "${action}" "$@"
+      ;;
+    *)
+      echo "Unknown dk container command: ${action}" >&2
+      devkit-container-usage
+      return 2
+      ;;
+  esac
 }
 
 # Run a local /workspace binary or Python script on the paired DevKit.
@@ -1395,7 +1665,7 @@ EOS
 unalias dk >/dev/null 2>&1 || true
 dk() {
   if [[ $# -lt 1 ]]; then
-    echo "Usage: dk <local-executable-path|shell|sync|status> [args...]" >&2
+    echo "Usage: dk <local-executable-path|shell|sync|status|container> [args...]" >&2
     return 0
   fi
   case "$1" in
@@ -1407,6 +1677,11 @@ dk() {
     status)
       shift
       devkit-status "$@"
+      return $?
+      ;;
+    container)
+      shift
+      devkit-container "$@"
       return $?
       ;;
   esac
@@ -1434,6 +1709,8 @@ __devkit_persist_export() {
   __devkit_persist_export DEVKIT_RSYNC_REMOTE_ROOT
   __devkit_persist_export DEVKIT_RSYNC_HELPER
   __devkit_persist_export DEVKIT_SYNC_HINT
+  __devkit_persist_export SIMA_CONTAINER_REGISTRY
+  __devkit_persist_export SIMA_DEVKIT_CONTAINER_REGISTRY
   __devkit_persist_export SDK_RELEASE_REF
   __devkit_persist_export SDK_PROMPT_REF
   __devkit_persist_export SDK_IMAGE_BRANCH
@@ -1469,6 +1746,13 @@ __devkit_persist_export() {
   declare -f devkit-sync
   declare -f devkit-status
   declare -f devkit-local-sync-scope
+  declare -f devkit-container-usage
+  declare -f devkit-container-image-ref
+  declare -f devkit-container-remote
+  declare -f devkit-container-install-docker
+  declare -f devkit-container-remote-with-setup
+  declare -f devkit-container-ensure-registry
+  declare -f devkit-container
   declare -f devkit-run
   echo 'unalias dk >/dev/null 2>&1 || true'
   declare -f dk
@@ -1625,6 +1909,12 @@ EOF
 EOF
     ;;
 esac
+if [[ -n "${SIMA_DEVKIT_CONTAINER_REGISTRY:-}" ]]; then
+  cat <<EOF
+  Deploy an SDK-built container image:
+    dk container deploy <image>:<tag> --detach --name <container-name>
+EOF
+fi
 cat <<EOF
 ============================================================
 ${_c_rst}

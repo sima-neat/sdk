@@ -109,6 +109,7 @@ SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli packages build "${artifacts_dir}" \
 
 python3 - "${artifacts_dir}/metadata.json" "${IMAGE_RESOURCE}" "${PACKAGE_RELEASE}" "${PACKAGE_DOWNLOAD_SIZE}" "${PACKAGE_INSTALL_SIZE}" <<'PY'
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -122,6 +123,8 @@ metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
 resources = metadata.setdefault("resources", [])
 if image_resource not in resources:
     resources.append(image_resource)
+image_ref = image_resource.removeprefix("ghcr:").removeprefix("ghcr.io/")
+metadata["installation"]["script"] += " --image " + shlex.quote("ghcr.io/" + image_ref)
 metadata["release"] = release
 metadata["size"] = {
     "download": download_size,
