@@ -657,10 +657,10 @@ if [[ "${_DEVKIT_USER}" != "root" ]]; then
         echo "Non-interactive mode: accepting default 'no' for passwordless sudo setup."
       fi
     else
-      read -r -p "Apply this change on ${_DEVKIT_IP}? [y/N]: " _ALLOW_NOPASSWD
+      read -r -p "Apply this change on ${_DEVKIT_IP}? [Y/n]: " _ALLOW_NOPASSWD
     fi
     case "${_ALLOW_NOPASSWD,,}" in
-      y|yes)
+      ""|y|yes)
         echo "Applying passwordless sudo setup for ${_DEVKIT_USER}@${_DEVKIT_IP}."
         _REMOTE_SUDO_PASSWORD="${_DEFAULT_DEVKIT_PASSWORD}"
         if ! devkit_sync_noninteractive; then
