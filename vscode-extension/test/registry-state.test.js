@@ -79,7 +79,8 @@ test('both UI surfaces explain Alpha/Beta and remove the notice for GA or unknow
     for (const release of ['Alpha', 'Beta', 'GA', undefined]) {
       receive({data: {type:'registryState', command:'registryState',
         value:{current_state:release}, state:{current_state:release}}});
-      assert.equal(elements['registry-release'].textContent, `Current Release: ${release || 'Unavailable'}`);
+      assert.equal(elements['registry-release'].textContent, `${file.includes('landing.js') ? 'Model Registry release program' : 'Release program'}: ${release || 'Unavailable'}`);
+      assert.equal(elements['registry-release'].hidden, release === 'GA');
       assert.equal(elements['registry-program'].hidden, !['Alpha','Beta'].includes(release));
       if (['Alpha','Beta'].includes(release)) {
         assert.match(elements['registry-program'].textContent, new RegExp(`${release} program`));

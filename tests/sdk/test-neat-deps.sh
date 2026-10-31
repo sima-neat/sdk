@@ -31,7 +31,7 @@ assert_dependency_ref() {
 }
 assert_dependency_ref core v0.6.0
 assert_dependency_ref apps v0.6.0
-assert_dependency_ref insight v0.0.9
+assert_dependency_ref insight v0.0.10
 assert_dependency_ref sima-cli v2.1.20
 
 git_repo="${TMP_DIR}/git-source"

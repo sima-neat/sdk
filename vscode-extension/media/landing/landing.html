@@ -3,8 +3,7 @@
     <img src="{{LOGO}}" alt="SiMa.ai" /><span>Palette SDK</span>
   </div>
   <div class="data-refresh">
-    <span class="eyebrow" id="registry-release" aria-live="polite">Current Release: Unavailable</span
-    ><button class="refresh" id="refresh">Refresh</button>
+    <button class="refresh" id="refresh">Refresh</button>
   </div>
 </header>
 <main>
@@ -260,7 +259,10 @@
           <dd class="mono" id="address">—</dd>
         </div>
       </dl>
-      <p class="hint" id="hint">Checking the configured DevKit…</p>
+      <div class="devkit-footer">
+        <p class="hint" id="hint">Checking the configured DevKit…</p>
+        <button class="devkit-connect" id="connect-devkit" data-action="devkit" disabled>Connect</button>
+      </div>
     </article>
   </section>
   <section class="quickstart" aria-label="Common tasks">
@@ -480,7 +482,11 @@
           Explore sample applications, bring them into your workspace, and adapt
           them to your use case.
         </p>
-        <button class="task-cta" data-action="apps">Explore apps ↗</button>
+        <div class="task-actions">
+          <button class="task-cta" data-action="apps">Explore apps ↗</button>
+          <button class="task-cta task-secondary" data-action="cloneApps" id="clone-apps" disabled>Clone to Workspace</button>
+        </div>
+        <p class="apps-workspace-status" id="apps-workspace-status" aria-live="polite">Checking workspace…</p>
       </div>
       <ol class="steps">
         <li>
@@ -521,6 +527,7 @@
           Browse available models in Neat, then prepare a model for your target
           device.
         </p>
+        <p id="registry-release" aria-live="polite">Model Registry release program: Unavailable</p>
         <p id="registry-program" aria-live="polite" hidden></p>
         <button class="task-cta" data-action="models" id="browse-models">
           Browse models →
