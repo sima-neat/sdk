@@ -220,3 +220,44 @@ test("absent or invalid NLS configuration safely uses English", async () => {
     assert.equal(await workbenchWelcomeLabel(config), "Welcome");
   }
 });
+
+test("Apps clone action refreshes workspace availability after cloning", async () => {
+  const f = fixture();
+  let cloned = false;
+  f.services.getAppsState = async () => ({
+    disabled: cloned,
+    status: cloned ? "Samples are available under" : "Clone SiMa Neat samples into this workspace.",
+    detail: "apps",
+  });
+  f.services.cloneApps = async () => { cloned = true; };
+  await registerGettingStarted(f.vscode, f.context, f.services);
+  const page = f.panels[0];
+  await page.receive({ type: "ready" });
+  assert.equal(page.message.value.appsState.disabled, false);
+  await page.receive({ type: "action", action: "cloneApps", command: "ignored" });
+  assert.equal(cloned, true);
+  assert.equal(page.message.type, "data");
+  assert.equal(page.message.value.appsState.disabled, true);
+  assert.equal(page.message.value.appsState.detail, "apps");
+});
+
+test("DevKit Connect only opens the fixed shell action after a connected status", async () => {
+  const f = fixture();
+  const commands = [];
+  f.vscode.window.createTerminal = (name) => {
+    assert.equal(name, "DevKit");
+    return { show() {}, sendText: (command) => commands.push(command) };
+  };
+  await registerGettingStarted(f.vscode, f.context, f.services);
+  const page = f.panels[0];
+  await page.receive({ type: "action", action: "devkit" });
+  assert.deepEqual(commands, []);
+  f.services.loadData = async () => ({ sdk: {}, devkit: { state: "connected" }, insight: {} });
+  await page.receive({ type: "ready" });
+  await page.receive({ type: "action", action: "devkit", command: "ignored" });
+  assert.deepEqual(commands, ["dk shell"]);
+  f.services.loadData = async () => { throw Error("offline"); };
+  await page.receive({ type: "refresh" });
+  await page.receive({ type: "action", action: "devkit" });
+  assert.deepEqual(commands, ["dk shell"]);
+});
