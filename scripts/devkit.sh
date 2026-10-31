@@ -382,6 +382,19 @@ EOS
 
   local remote_dir="/tmp/sima-neat-install-$(date +%Y%m%d-%H%M%S)"
   local -a deploy_files=("${deb_files[@]}" "${wheel_file}" "${cache_dir}/install_neat_framework.sh" "${cache_dir}/manifest.json")
+  # Pairing must forward the same admission and install metadata as Core's
+  # own SDK-to-DevKit installer, not just the package payloads.
+  if [[ " ${expected_deb_names[*]} " == *" simaai-scheduler "* ]] &&
+      [[ ! -f "${cache_dir}/scheduler_platform_admission.py" || -L "${cache_dir}/scheduler_platform_admission.py" ]]; then
+    neat_sync_fail_or_continue "WARNING: Scheduler Platform admission delegate missing from SDK cache: ${cache_dir}/scheduler_platform_admission.py"
+    return $?
+  fi
+  local resource
+  for resource in install_sentinel.sh scheduler_platform_admission.py neat-install-manifest.txt resolved-deps-manifest.json; do
+    if [[ -f "${cache_dir}/${resource}" ]]; then
+      deploy_files+=("${cache_dir}/${resource}")
+    fi
+  done
 
   if ! ssh -T -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 "${user}@${ip}" "mkdir -p '${remote_dir}'"; then
     neat_sync_fail_or_continue "WARNING: Failed to create Neat framework install directory on DevKit: ${remote_dir}"
