@@ -29,10 +29,10 @@ assert_dependency_ref() {
     exit 1
   fi
 }
-assert_dependency_ref core develop:latest
-assert_dependency_ref apps v0.5.1
-assert_dependency_ref insight develop:latest
-assert_dependency_ref sima-cli v2.1.19
+assert_dependency_ref core v0.6.0
+assert_dependency_ref apps v0.6.0
+assert_dependency_ref insight v0.0.9
+assert_dependency_ref sima-cli v2.1.20
 
 git_repo="${TMP_DIR}/git-source"
 git init --quiet "${git_repo}"
