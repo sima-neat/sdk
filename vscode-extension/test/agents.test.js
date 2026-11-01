@@ -21,7 +21,13 @@ function harness(execute) {
       },
     },
   };
-  const manager = createAgentManager(vscode);
+  const targets = { codex: { id: "openai.chatgpt", version: "1.2.3" }, claude: { id: "anthropic.claude-code", version: "2.3.4" } };
+  const catalog = { snapshot: () => ({ available: true, components: targets }),
+    refresh: async () => {}, subscribe: () => ({ dispose() {} }),
+    verifyInstalled: async () => {},
+    artifact: async key => ({ file: `/verified/${key}.vsix`, target: targets[key] }) };
+  vscode.Uri = { file: p => ({ fsPath: p }) };
+  const manager = createAgentManager(vscode, catalog);
   const subscription = manager.subscribe((value) => updates.push(value));
   return { manager, installed, calls, updates, changes, subscription };
 }
@@ -33,13 +39,13 @@ for (const [key, id, command] of [
     let activated = 0;
     const h = harness(async (name) => {
       if (name === "workbench.extensions.installExtension")
-        h.installed.set(id, { activate: async () => activated++ });
+        h.installed.set(id, { packageJSON: {version: key === "codex" ? "1.2.3" : "2.3.4"}, activate: async () => activated++ });
     });
     assert.equal(h.manager.snapshot()[key].status, "available");
     await h.manager.action(key, "install");
     assert.deepEqual(h.calls[0], [
       "workbench.extensions.installExtension",
-      id,
+      { fsPath: `/verified/${key}.vsix` },
       { enable: true, donotSync: true },
     ]);
     assert.equal(h.updates[0][key].status, "installing");
@@ -55,6 +61,7 @@ test("duplicate installs are ignored while the other agent stays available", asy
   let finish;
   const h = harness(() => new Promise((resolve) => (finish = resolve)));
   const first = h.manager.action("codex", "install");
+  await new Promise(resolve => setImmediate(resolve));
   await h.manager.action("codex", "install");
   assert.equal(h.calls.length, 1);
   assert.equal(h.manager.snapshot().claude.busy, false);
@@ -97,7 +104,7 @@ test("untrusted provider/action messages cannot choose commands or install URLs"
 });
 test("extension changes update status and listeners are removed on disposal", async () => {
   const h = harness();
-  h.installed.set("openai.chatgpt", {});
+  h.installed.set("openai.chatgpt", {packageJSON: {version: "1.2.3"}});
   for (const change of h.changes) change();
   assert.equal(h.updates.at(-1).codex.status, "installed");
   h.installed.delete("openai.chatgpt");
@@ -109,6 +116,7 @@ test("extension changes update status and listeners are removed on disposal", as
 test("open failures preserve installed state and manage opens the correct extension", async () => {
   const h = harness();
   h.installed.set("openai.chatgpt", {
+    packageJSON: {version: "1.2.3"},
     activate: async () => {
       throw Error("failed");
     },
@@ -130,6 +138,7 @@ test("manage remains usable during an install without releasing its duplicate gu
   const h = harness((command) => command === "workbench.extensions.installExtension"
     ? new Promise(resolve => { finish = resolve; }) : undefined);
   const install = h.manager.action("codex", "install");
+  await new Promise(resolve => setImmediate(resolve));
   await h.manager.action("codex", "manage");
   assert.deepEqual(h.calls.at(-1), ["workbench.extensions.action.showExtensionsWithIds", ["openai.chatgpt"]]);
   assert.equal(h.manager.snapshot().codex.status, "installing");
@@ -147,13 +156,24 @@ test("successful install clears a concurrent management error and publishes inst
     throw Error("management failed");
   });
   const install = h.manager.action("codex", "install");
+  await new Promise(resolve => setImmediate(resolve));
   await h.manager.action("codex", "manage");
   assert.match(h.updates.at(-1).codex.error, /Unable to open Extensions/);
   assert.equal(h.manager.snapshot().codex.status, "installing");
-  h.installed.set("openai.chatgpt", {});
+  h.installed.set("openai.chatgpt", {packageJSON: {version: "1.2.3"}});
   finish();
   await install;
   assert.equal(h.updates.at(-1).codex.status, "installed");
   assert.equal(h.updates.at(-1).codex.error, "");
   assert.equal(h.updates.at(-1).codex.busy, false);
+});
+
+test("an existing incompatible version offers a pinned repair and cannot be opened",async()=>{
+ const h=harness();
+ h.installed.set('openai.chatgpt',{packageJSON:{version:'9.9.9'},activate:()=>assert.fail('must not activate an incompatible version')});
+ assert.equal(h.manager.snapshot().codex.status,'available');
+ await h.manager.action('codex','open');assert.equal(h.calls.length,0);
+ await h.manager.action('codex','install');
+ assert.equal(h.calls[0][1].fsPath,'/verified/codex.vsix');
+ assert.equal(h.manager.snapshot().codex.status,'reload');
 });

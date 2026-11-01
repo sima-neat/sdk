@@ -99,6 +99,10 @@ jobs:
       - name: Run SDK build and package tests
         run: |
           tests/sdk/test-install-sdk-stub.sh
+          node --test tests/sdk/test-code-server-components.cjs
+          python3 tests/sdk/test-components-publication.py
+          node scripts/components-catalog.js validate
+          python3 tests/sdk/test-sdk-component-pins.py
           tests/sdk/test-neat-deps.sh
           python3 tests/sdk/neat-status/test_validate_neat_status.py
           tests/sdk/test-install-neat-resources.sh

@@ -328,6 +328,8 @@ test_code_server() {
     echo "Legacy OpenVSCode Server is still present in the SDK image." >&2
     return 1
   fi
+  local CODE_SERVER_VERSION
+  CODE_SERVER_VERSION="$(python3 -c 'import json; print(json.load(open("/usr/local/share/sima-sdk/deps/manifest.json"))["code-server"]["version"])')"
   actual_version="$(/opt/code-server/bin/code-server --config /dev/null --version | head -n 1)"
   if [[ "${actual_version%% *}" != "${CODE_SERVER_VERSION}" ]]; then
     echo "Unexpected code-server version: expected ${CODE_SERVER_VERSION}, got ${actual_version}." >&2

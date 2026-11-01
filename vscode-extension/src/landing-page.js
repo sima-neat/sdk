@@ -1,5 +1,6 @@
 const fs = require("fs/promises");
 const crypto = require("crypto");
+const { ComponentCatalog } = require("./components");
 const { createAgentManager } = require("./agents");
 const { loadLandingData } = require("./landing-data");
 function escape(value) {
@@ -28,7 +29,8 @@ async function landingHtml(vscode, context, webview) {
 }
 function createLandingPage(vscode, context, services) {
   let panel;
-  const agents = createAgentManager(vscode);
+  const catalog = services.components || new ComponentCatalog(context, { vscodeVersion: vscode.version });
+  const agents = createAgentManager(vscode, catalog);
   return async function open(restored) {
     if (panel && !restored) {
       panel.reveal();
@@ -88,6 +90,8 @@ function createLandingPage(vscode, context, services) {
         void current.webview.postMessage({ type: "agents", value });
     };
     const agentChanges = agents.subscribe(sendAgents);
+    const sendComponents = value => { if (!disposed) void current.webview.postMessage({ type: "components", value }); };
+    const componentChanges = catalog.subscribe(sendComponents);
     const sendRegistryState = (value) => {
       if (!disposed) void current.webview.postMessage({type: "registryState", value});
     };
@@ -95,6 +99,8 @@ function createLandingPage(vscode, context, services) {
     const receive = current.webview.onDidReceiveMessage(async (message) => {
       if (message?.type === "agents-ready") {
         sendAgents(agents.snapshot());
+        sendComponents(catalog.snapshot());
+        void catalog.refresh();
         return;
       }
       if (message?.type === "agent") {
@@ -104,6 +110,8 @@ function createLandingPage(vscode, context, services) {
       if (message?.type === "ready" || message?.type === "refresh") {
         sendRegistryState(services.registryState?.snapshot());
         void services.registryState?.refresh();
+        sendComponents(catalog.snapshot());
+        void catalog.refresh();
         await refresh();
         return;
       }
@@ -166,6 +174,7 @@ function createLandingPage(vscode, context, services) {
       disposed = true;
       receive.dispose();
       agentChanges.dispose();
+      componentChanges.dispose();
       registryChanges?.dispose();
       if (panel === current) panel = undefined;
     });

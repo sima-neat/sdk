@@ -160,17 +160,26 @@ function renderAgents(states) {
     const status = item.querySelector(".install-status");
     const progress = item.querySelector(".agent-progress");
     const next = item.querySelector(".agent-next");
-    button.disabled = Boolean(state.busy);
+    button.disabled = Boolean(state.busy || state.blocked);
     button.setAttribute("aria-busy", String(Boolean(state.busy)));
     button.classList.toggle("is-ready", state.status === "installed");
     status.classList.toggle("ready", state.status === "installed");
     status.textContent =
       {
+        checking: "Checking…",
+        blocked: "No qualified version",
         installing: "Installing…",
         installed: "✓ Installed",
         reload: "Reload needed",
         available: "Not installed",
       }[state.status] || "Not installed";
+    if (state.version) {
+      status.textContent += ` · SDK target ${state.version}`;
+      if (state.installedVersion && state.installedVersion !== state.version)
+        status.textContent += ` · Installed ${state.installedVersion}`;
+    } else if (state.installedVersion) {
+      status.textContent += ` · Installed ${state.installedVersion}`;
+    }
     button.textContent =
       state.status === "installing"
         ? "Installing…"
@@ -199,7 +208,7 @@ document.querySelectorAll(".install-agent").forEach((button) => {
   button.addEventListener("click", () => {
     const agent = button.dataset.provider;
     const status = agentStates[agent]?.status;
-    if (!status || status === "installing") return;
+    if (!status || status === "installing" || status === "blocked" || status === "checking") return;
     if (status === "available") {
       renderAgents({ [agent]: { status: "installing", busy: true } });
     }
@@ -229,3 +238,13 @@ window.addEventListener("message", ({ data }) => {
 });
 // Announce only after the agent state listener is registered.
 vscode.postMessage({ type: "agents-ready" });
+
+window.addEventListener("message", ({ data }) => {
+  if (data?.type !== "components") return;
+  const state = data.value;
+  const element = document.getElementById("sdk-components");
+  if (!element) return;
+  element.textContent = state.available
+    ? `${state.status === "candidate" ? "Candidate test" : "Qualified"} for SDK ${state.sdkVersion} · Codex ${state.components.codex.version} · Claude ${state.components.claude.version} · Codex CLI ${state.components["codex-cli"].version} (installed: ${state.installedCliVersion})${state.source === "offline" ? " · Offline manifest" : ""}`
+    : `${state.error}${state.installedCliVersion ? ` · Installed Codex CLI ${state.installedCliVersion}` : ""}`;
+});

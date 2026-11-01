@@ -1345,3 +1345,5 @@ body:not(.vscode-light).vscode-dark .task-panel,
   margin: 12px 0 0;
   font-size: 12px;
 }
+
+#sdk-components { margin-top: 12px; font-size: 12px; line-height: 1.5; color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }

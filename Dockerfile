@@ -44,7 +44,6 @@ ARG NEAT_VERSION=latest
 ARG NEAT_CORE_TARGET=
 ARG NEAT_INSIGHT_BRANCH=
 ARG NEAT_INSIGHT_VERSION=
-ARG CODEX_CLI_VERSION=0.153.4
 ARG DOCKER_CLI_VERSION=29.8.2
 ARG DOCKER_BUILDX_VERSION=0.37.2
 ARG TARGETARCH
@@ -131,12 +130,16 @@ RUN apt-get update --allow-releaseinfo-change && \
       plantuml \
       supervisor \
       mkcert && \
-    npm install -g "@openai/codex@${CODEX_CLI_VERSION}" && \
-    npm cache clean --force && \
-    test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}" && \
     npm --version && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+COPY components.json /usr/local/share/sima-sdk/components.json
+COPY vscode-extension/src/components.js /usr/local/lib/sima-sdk/components.js
+COPY scripts/components-catalog.js /usr/local/bin/components-catalog.js
+
+RUN node /usr/local/bin/components-catalog.js install-cli /usr/local/share/sima-sdk/components.json && \
+    npm cache clean --force
 
 # Install only the Docker client and Buildx plugin. The SDK deliberately does
 # not run dockerd; sima-cli can opt in to mounting an existing builder socket.
@@ -332,13 +335,12 @@ RUN chmod 755 /etc/profile.d/neat-sdk-prompt.sh \
 
 WORKDIR /workspace
 
-# Editor changes must not invalidate the platform sysroot or GCC compilation.
-ARG CODE_SERVER_VERSION=4.140.0
-ARG CODE_SERVER_SHA256_AMD64=864c5d01c808ade57e4d12c708717be7a187219fded60428f263b9e2da9f6b48
-ARG CODE_SERVER_SHA256_ARM64=ae4b07153f2037b06d24749bc8004221fcbf3ffe317038401be0452f541bf200
-ENV CODE_SERVER_VERSION=${CODE_SERVER_VERSION}
+COPY scripts/sdk-component-pins.py /usr/local/bin/sdk-component-pins.py
 
+# Install the exact code-server release from the SDK dependency manifest.
 RUN set -eux; \
+    component_pins="$(python3 /usr/local/bin/sdk-component-pins.py /usr/local/share/sima-sdk/deps/manifest.json)"; \
+    eval "${component_pins}"; \
     case "$(dpkg --print-architecture)" in \
       amd64) code_server_arch="amd64"; code_server_sha256="${CODE_SERVER_SHA256_AMD64}" ;; \
       arm64) code_server_arch="arm64"; code_server_sha256="${CODE_SERVER_SHA256_ARM64}" ;; \
@@ -355,9 +357,16 @@ RUN set -eux; \
     chmod -R a+rX "${CODE_SERVER_DIR}"; \
     "${CODE_SERVER_DIR}/bin/code-server" --config /dev/null --version
 
+# SDK setup and Palette use the same qualification policy for managed agent installs.
+COPY scripts/sdk-code-server-cli.js /usr/local/bin/sdk-code-server-cli.js
+RUN mv "${CODE_SERVER_DIR}/bin/code-server" "${CODE_SERVER_DIR}/bin/code-server-upstream" && \
+    printf '#!/bin/sh\nexec node /usr/local/bin/sdk-code-server-cli.js "$@"\n' > "${CODE_SERVER_DIR}/bin/code-server" && \
+    chmod 755 "${CODE_SERVER_DIR}/bin/code-server"
+
 # Bundle our own extension from this SDK revision; setup copies it per user offline.
 COPY vscode-extension/package.json vscode-extension/LICENSE /opt/sima-neat/vscode-extension/
 COPY vscode-extension/src/ /opt/sima-neat/vscode-extension/src/
+COPY components.json /opt/sima-neat/vscode-extension/components.json
 COPY vscode-extension/media/ /opt/sima-neat/vscode-extension/media/
 COPY vscode-extension/themes/ /opt/sima-neat/vscode-extension/themes/
 # Brand the installed login page and browser icons before publishing the image.
@@ -407,7 +416,8 @@ LABEL org.opencontainers.image.source="https://github.com/sima-neat/sdk" \
       com.sima.sdk.code-ui="code-server-v1"
 
 COPY scripts/write-sdk-release.sh /usr/local/bin/write-sdk-release.sh
-RUN chmod 755 /usr/local/bin/write-sdk-release.sh && \
+RUN node /usr/local/bin/components-catalog.js check-release /usr/local/share/sima-sdk/components.json "${SDK_RELEASE_REF}" && \
+    chmod 755 /usr/local/bin/write-sdk-release.sh && \
     BASE_SDK_VERSION="$(cat "${SDK_PLATFORM_VERSION_FILE}")" write-sdk-release.sh
 
 # Expose required ports

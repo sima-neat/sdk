@@ -14,10 +14,11 @@ test("install acknowledges the click before dispatch and rejects a second click"
   const messages = [];
   const context = {
     document: {
+      getElementById: () => null,
       querySelector: selector => selector.includes('"codex"') ? card : null,
       querySelectorAll: selector => selector === ".install-agent" ? [button] : [],
     },
-    window: { addEventListener: (_, fn) => { receive = fn; } },
+    window: { addEventListener: (_, fn) => { if (!receive) receive = fn; } },
     vscode: { postMessage(message) {
       if (message.type === "agent") {
         assert.equal(button.disabled, true);

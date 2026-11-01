@@ -11,5 +11,12 @@
   "insight": {
     "ref": "v0.0.10"
   },
-  "platform-version": "3.0.0"
+  "platform-version": "3.0.0",
+  "code-server": {
+    "version": "4.144.0",
+    "sha256": {
+      "amd64": "710f749c40a0f3d0ab3be09c0de65314e5c2907cc50646f5fbc0f24c0e8fba2d",
+      "arm64": "4404c784f541bd56a2a8d6e2a9474ed0b4e37bc8502aa3a247898ca933434482"
+    }
+  }
 }

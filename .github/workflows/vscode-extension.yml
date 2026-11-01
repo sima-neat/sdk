@@ -51,6 +51,12 @@ jobs:
           python3 -m unittest discover -s tests -p test_code_server_branding.py
           node --test tests/test_browser_trust.cjs
 
+      - name: Validate SDK component catalog and publication gate
+        run: |
+          node scripts/components-catalog.js validate
+          python3 tests/sdk/test-components-publication.py
+          node --test tests/sdk/test-code-server-components.cjs
+
       - name: Test VS Code extension
         working-directory: vscode-extension
         run: npm test
