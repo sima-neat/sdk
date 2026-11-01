@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "revision": 1,
+  "revision": 2,
   "build_sdk_version": "3.0.0",
   "sdks": {
     "3.0.0": {
@@ -23,13 +23,6 @@
           "vscode": "1.144.0"
         }
       ],
-      "qualification": {
-        "evidence": [
-          "https://github.com/sima-neat/sdk/issues/314",
-          "https://github.com/openai/codex/issues/57422"
-        ],
-        "notes": "Test candidate only. Archive checksums are from Open VSX. SDK-specific Chrome and authenticated agent qualification is pending. Codex 26.1021.22027 froze code-server 4.140.0 in the local arm64 test; it is intentionally excluded."
-      },
       "components": {
         "codex": {
           "id": "openai.chatgpt",

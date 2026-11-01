@@ -9,7 +9,7 @@ release and its two archive checksums.
 The schema version is `1`. `revision` increases when compatibility data changes.
 `build_sdk_version` selects the Codex CLI for an SDK image build. Each exact SDK
 key in `sdks` declares explicit SDK release aliases, supported host architectures,
-code-server/VS Code engine **pairs**, qualification status/evidence, and exact
+code-server/VS Code engine **pairs**, qualification status, and exact
 component IDs, versions, URLs and SHA-256 values. SDK identity comes from
 `SDK Release` in `/etc/sdk-release`, not the platform/sysroot version. Tagged SDK
 image builds additionally require the selected build cohort to be qualified and
@@ -74,9 +74,11 @@ For each supported architecture and engine pair:
    and extension-host diagnostics on failure.
 4. Complete account sign-in and basic authenticated agent use manually where
    automation cannot do it. Do not record credentials or chat content in evidence.
-5. Add qualification results for every declared architecture plus approval owner
-   and time, and change status to `qualified` only when the matrix has passed.
-   Validation rejects qualified rows missing Chrome/authenticated-use evidence.
+5. Record results for every declared architecture/engine pair and the approval
+   in the PR and qualification documentation. Change status to `qualified` only
+   when the matrix has passed. Review the recorded results before promotion; CI
+   validates compatibility data and the publication gate. The runtime catalog
+   carries status, not evidence links, notes, or approval records.
 
 Run `node --test vscode-extension/test/*.test.js`,
 `python3 tests/sdk/test-components-publication.py`, and

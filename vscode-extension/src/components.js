@@ -41,21 +41,7 @@ function validateCatalog(value) {
     if (row.components?.['codex-cli']?.package !== '@openai/codex' ||
         !VERSION.test(row.components['codex-cli'].version)) throw Error('Invalid Codex CLI component');
     artifact(row.components['codex-cli'].artifact);
-    const q = row.qualification;
-    if (!q || !Array.isArray(q.evidence) || !q.evidence.length || q.evidence.some(e => typeof e !== 'string' || !e))
-      throw Error('Qualification provenance is required');
-    if (row.status === 'qualified') {
-      if (!q.approved_by || !Number.isFinite(Date.parse(q.approved_at))) throw Error('Qualification approval is required');
-      for (const arch of row.architectures) {
-        for (const engine of row.engines) {
-          const result = q.results?.[arch]?.[engine.code_server];
-          if (!result || result.status !== 'passed' || result.vscode !== engine.vscode ||
-              !/^sha256:[a-f0-9]{64}$/.test(result.sdk_image_digest) ||
-              !result.browser?.includes('Chrome') || !result.report || result.authenticated_agent_use !== true)
-            throw Error('Qualification must include Chrome and authenticated agent evidence for every architecture/engine pair');
-        }
-      }
-    }
+
   }
   return value;
 }

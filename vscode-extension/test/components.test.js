@@ -11,12 +11,6 @@ const options = { release: 'v3.0.0.0', arch: 'arm64', codeServer: '4.144.0', vsc
 function qualified() {
   const catalog = clone(), row = catalog.sdks['3.0.0'];
   row.status = 'qualified';
-  row.qualification.approved_by = 'test fixture';
-  row.qualification.approved_at = '2026-11-01T00:00:00Z';
-  row.qualification.results = Object.fromEntries(row.architectures.map(arch => [arch, Object.fromEntries(row.engines.map(engine => [engine.code_server, {
-    vscode: engine.vscode, status: 'passed', sdk_image_digest: 'sha256:' + '0'.repeat(64), browser: 'Chrome test fixture',
-    authenticated_agent_use: true, report: 'test fixture',
-  }]))]));
   return catalog;
 }
 test('candidate releases require explicit testing, and platform identity cannot select a development SDK', () => {
@@ -35,12 +29,12 @@ test('matching is exact for SDK release, engine pair and architecture', () => {
   c.sdks['3.0.0'].status = 'revoked';
   assert.throws(() => resolveCatalog(c, {...options, allowCandidate:true}), /revoked/);
 });
-test('qualification evidence, artifact integrity and trusted locations are mandatory', () => {
+test('artifact integrity, supported status and trusted locations are mandatory', () => {
   for (const mutate of [c=>c.schema_version=2, c=>delete c.sdks['3.0.0'].components.claude.artifacts.arm64,
     c=>c.sdks['3.0.0'].components.codex.id='other.agent',
     c=>c.sdks['3.0.0'].components.codex.artifacts.amd64.url='http://localhost/evil',
     c=>c.sdks['3.0.0'].components.codex.artifacts.amd64.sha256='bad',
-    c=>c.sdks['3.0.0'].qualification.results.arm64['4.144.0'].authenticated_agent_use=false]) {
+    c=>c.sdks['3.0.0'].status='untested']) {
     const c=qualified(); mutate(c); assert.throws(()=>validateCatalog(c));
   }
 });
@@ -87,7 +81,7 @@ test('engine detection reads installed metadata without spawning code-server ins
 test('a newer or rejected online policy cannot be replaced with stale cached qualification',async t=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'sdk-components-revision-'));
  t.after(()=>fs.rm(dir,{recursive:true,force:true}));
- let catalog=qualified(),offline=false;catalog.revision=2;
+ let catalog=qualified(),offline=false;catalog.revision=original.revision+1;
  const service=new ComponentCatalog({globalStorageUri:{fsPath:dir},extensionPath:dir},{
   releaseText:'SDK Release = v3.0.0.0',codeServer:'4.144.0',vscodeVersion:'1.144.0',execute:async()=>({stdout:'codex-cli 0.153.4'}),
   fetchCatalog:async()=>{if(offline)throw Error('network');return catalog;},
@@ -108,4 +102,10 @@ test('tagged image builds require a qualified matching cohort while development 
  await fs.writeFile(file,JSON.stringify(qualified()));
  assert.equal(spawnSync(process.execPath,[command,'check-release',file,'v3.0.0.0']).status,0);
  assert.notEqual(spawnSync(process.execPath,[command,'check-release',file,'v3.1.0']).status,0);
+});
+
+test('qualified runtime mappings do not require embedded qualification records',()=>{
+ const catalog=qualified();
+ assert.equal(Object.hasOwn(catalog.sdks['3.0.0'],'qualification'),false);
+ assert.equal(resolveCatalog(catalog,options).status,'qualified');
 });
