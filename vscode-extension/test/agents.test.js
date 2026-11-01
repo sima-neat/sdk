@@ -32,7 +32,7 @@ function harness(execute) {
   vscode.Uri = { file: p => ({ fsPath: p }) };
   const manager = createAgentManager(vscode, catalog);
   const subscription = manager.subscribe((value) => updates.push(value));
-  return { manager, installed, calls, updates, changes, subscription, unpinned };
+  return { manager, installed, calls, updates, changes, subscription, unpinned, catalog };
 }
 for (const [key, id, command] of [
   ["codex", "openai.chatgpt", "chatgpt.openSidebar"],
@@ -191,5 +191,24 @@ test("a matching gallery version offers repair and is reinstalled to establish i
   assert.equal(h.calls[0][1].fsPath, "/verified/codex.vsix");
   assert.equal(h.manager.snapshot().codex.status, "installed");
   await h.manager.action("codex", "install");
+  assert.equal(h.calls.length, 1);
+});
+
+test("offline policy still opens installed agents and missing packages give a reconnect action", async () => {
+  const h = harness();
+  const snapshot = h.catalog.snapshot;
+  h.catalog.snapshot = () => ({...snapshot(), source: "offline"});
+  let activated = false;
+  h.installed.set("openai.chatgpt", {packageJSON: {version: "1.2.3"}, activate: async () => {activated = true;}});
+  assert.equal(h.manager.snapshot().codex.offline, true);
+  assert.equal(h.manager.snapshot().codex.status, "installed");
+  await h.manager.action("codex", "open");
+  assert.equal(activated, true);
+  assert.deepEqual(h.calls.at(-1), ["chatgpt.openSidebar"]);
+  h.catalog.artifact = async () => {throw Object.assign(Error("private details"), {code: "OFFLINE_ARTIFACT_UNAVAILABLE"});};
+  await h.manager.action("claude", "install");
+  assert.match(h.manager.snapshot().claude.error, /Offline.*not cached.*Reconnect/);
+  assert.doesNotMatch(h.manager.snapshot().claude.error, /private details/);
+  assert.equal(h.manager.snapshot().claude.busy, false);
   assert.equal(h.calls.length, 1);
 });

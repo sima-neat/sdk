@@ -196,7 +196,7 @@ function renderAgents(states) {
     progress.textContent =
       state.error ||
       (state.status === "installing"
-        ? "Downloading through the editor. These extensions are large and may take several minutes. Check notifications for publisher prompts; you can keep working."
+        ? "Installing the SDK extension package. These extensions are large and may take several minutes. Check notifications for publisher prompts; you can keep working."
         : state.status === "reload"
           ? "Installation finished. Reload to enable the extension; if unavailable, check Extensions."
           : state.status === "update"
@@ -205,7 +205,9 @@ function renderAgents(states) {
               : state.candidate
                 ? "The installed extension differs from the SDK test candidate. This candidate is not yet SiMa qualified."
                 : "The currently installed extension is not the SiMa qualified version for this SDK."
-            : "");
+            : state.offline
+              ? "Offline component catalog: installed extensions can open; installs require a previously cached package. AI services require an internet connection."
+              : "");
     progress.classList.toggle("error", Boolean(state.error));
     next.textContent =
       state.status === "installed"
@@ -254,6 +256,6 @@ window.addEventListener("message", ({ data }) => {
   const element = document.getElementById("sdk-components");
   if (!element) return;
   element.textContent = state.available
-    ? `${state.status === "candidate" ? "Candidate test" : "Qualified"} for SDK ${state.sdkVersion} · Codex ${state.components.codex.version} · Claude ${state.components.claude.version} · Codex CLI ${state.components["codex-cli"].version} (installed: ${state.installedCliVersion})${state.source === "offline" ? " · Offline manifest" : ""}`
+    ? `${state.status === "candidate" ? "Candidate test" : "Qualified"} for SDK ${state.sdkVersion} · Codex ${state.components.codex.version} · Claude ${state.components.claude.version} · Codex CLI ${state.components["codex-cli"].version} (installed: ${state.installedCliVersion})${state.source === "offline" ? " · Offline catalog (cached or bundled); installs require cached packages" : ""}`
     : `${state.error}${state.installedCliVersion ? ` · Installed Codex CLI ${state.installedCliVersion}` : ""}`;
 });

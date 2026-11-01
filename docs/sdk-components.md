@@ -41,6 +41,14 @@ administrator replacement of files or packages.
 
 The last validated online catalog and artifacts are cached in the extension's
 global storage. A network outage can use that catalog or the image-bundled copy.
+Palette environment details are read locally, and catalog/registry checks run
+independently of the page. Online catalog checks time out after eight seconds.
+Installed matching, pinned extensions remain openable without internet access.
+Offline install/update uses only a previously cached VSIX, rechecks its checksum,
+and immediately asks the user to reconnect if the package is missing or corrupt.
+The bundled catalog alone does not include the extension packages. Palette labels
+the offline catalog and explains the cache requirement; cloud agent use, fresh
+downloads, GitHub links, and repository cloning still require internet access.
 Malformed online data and known revocations fail closed instead of using stale
 qualified data. Downloaded cache files are hashed again before use. Downloads
 have time/size limits and redirects remain restricted to known artifact hosts.

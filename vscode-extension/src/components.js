@@ -97,11 +97,16 @@ async function digest(file) {
   finally { await handle.close(); }
   return hash.digest('hex');
 }
-async function downloadArtifact(item, directory, fetcher = fetch, suffix = '.vsix') {
+async function downloadArtifact(item, directory, fetcher = fetch, suffix = '.vsix', { cacheOnly = false } = {}) {
   artifact(item);
   await fs.mkdir(directory, { recursive: true, mode: 0o700 });
   const file = path.join(directory, item.sha256 + suffix);
   try { if (await digest(file) === item.sha256) return file; } catch { /* Download below. */ }
+  if (cacheOnly) {
+    const error = Error('Offline: this extension package is not cached. Reconnect and retry the installation.');
+    error.code = 'OFFLINE_ARTIFACT_UNAVAILABLE';
+    throw error;
+  }
   const temporary = file + '.' + crypto.randomUUID();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10 * 60 * 1000);
@@ -200,7 +205,7 @@ class ComponentCatalog {
     const state = await this.refresh();
     if (!state.available) throw Error(state.error);
     const target = state.components[key];
-    const file = await downloadArtifact(target.artifacts[ARCHES[process.arch]], path.join(this.directory, 'component-artifacts'));
+    const file = await downloadArtifact(target.artifacts[ARCHES[process.arch]], path.join(this.directory, 'component-artifacts'), fetch, '.vsix', { cacheOnly: state.source === 'offline' });
     const run = this.options.execute || promisify(execFile);
     const contents = (await run('python3', ['-c',
       'import json,sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); print(z.read("extension/package.json").decode())', file],

@@ -28,6 +28,7 @@ function createAgentManager(vscode, catalog) {
           {
             busy: pending.has(key),
             version: state.components?.[key]?.version,
+            offline: state.source === "offline",
             candidate: state.status === "candidate",
             unpinned: Boolean(extension) && extension.packageJSON?.version === state.components?.[key]?.version && !installed,
             installedVersion: extension?.packageJSON?.version,
@@ -107,10 +108,12 @@ function createAgentManager(vscode, catalog) {
       }
       // A concurrent Manage failure must not survive a successful operation.
       errors.delete(key);
-    } catch {
+    } catch (error) {
       errors.set(
         key,
-        action === "install"
+        error.code === "OFFLINE_ARTIFACT_UNAVAILABLE"
+          ? "Offline: this extension package is not cached. Reconnect and retry the installation."
+          : action === "install"
           ? "Installation did not finish. Check your connection and editor notifications, then retry or use Manage in Extensions."
           : "Unable to open the extension. Check that it is enabled in Extensions, or reload the editor and try again.",
       );
