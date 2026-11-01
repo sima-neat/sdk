@@ -109,3 +109,28 @@ test('qualified runtime mappings do not require embedded qualification records',
  assert.equal(Object.hasOwn(catalog.sdks['3.0.0'],'qualification'),false);
  assert.equal(resolveCatalog(catalog,options).status,'qualified');
 });
+
+test('installed profile must match both version and persistent update pin', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sdk-pins-'));
+  try {
+    const service = new ComponentCatalog({globalStorageUri: {fsPath: dir}, extensionPath: path.join(dir, 'sima-neat')});
+    const target = {id: 'openai.chatgpt', version: '1.2.3'};
+    for (const entry of [
+      {identifier: {id: target.id}, version: target.version},
+      {identifier: {id: target.id}, version: target.version, metadata: {pinned: false}},
+      {identifier: {id: target.id}, version: '9.9.9', metadata: {pinned: true}},
+    ]) {
+      await fs.writeFile(path.join(dir, 'extensions.json'), JSON.stringify([entry]));
+      await assert.rejects(service.verifyInstalled(target), /did not pin/);
+      assert.equal(service.isPinned(target), false);
+    }
+    await fs.writeFile(path.join(dir, 'extensions.json'), JSON.stringify([
+      {identifier: {id: target.id}, version: target.version, metadata: {pinned: true}},
+    ]));
+    await service.verifyInstalled(target);
+    assert.equal(service.isPinned(target), true);
+    await fs.rm(path.join(dir, 'extensions.json'));
+    await service.readInstalledProfile();
+    assert.equal(service.isPinned(target), false);
+  } finally { await fs.rm(dir, {recursive: true, force: true}); }
+});

@@ -140,6 +140,7 @@ class ComponentCatalog {
     return this.pending;
   }
   async load() {
+    await this.readInstalledProfile();
     const env = this.options.env || process.env;
     let catalog, source = 'online';
     const cache = path.join(this.directory, 'components-cache.json');
@@ -181,10 +182,19 @@ class ComponentCatalog {
       allowCandidate: env.SIMA_SDK_COMPONENTS_ALLOW_CANDIDATE === '1' });
     this.value = { ...resolved, available: true, source, installedCliVersion: cliVersion, error: '' };
   }
+  async readInstalledProfile() {
+    try {
+      const profile = JSON.parse(await fs.readFile(path.join(path.dirname(this.context.extensionPath), 'extensions.json'), 'utf8'));
+      this.installedProfile = Array.isArray(profile) ? profile : [];
+    } catch { this.installedProfile = []; }
+  }
+  isPinned(target) {
+    return Boolean(this.installedProfile?.some(entry => entry.identifier?.id?.toLowerCase() === target.id &&
+      entry.version === target.version && entry.metadata?.pinned === true));
+  }
   async verifyInstalled(target) {
-    const profile = JSON.parse(await fs.readFile(path.join(path.dirname(this.context.extensionPath), 'extensions.json'), 'utf8'));
-    if (!Array.isArray(profile) || !profile.some(entry => entry.identifier?.id?.toLowerCase() === target.id && entry.version === target.version))
-      throw Error('The editor did not install the expected component version');
+    await this.readInstalledProfile();
+    if (!this.isPinned(target)) throw Error('The editor did not pin the expected component version');
   }
   async artifact(key) {
     const state = await this.refresh();

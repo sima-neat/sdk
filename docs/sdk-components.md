@@ -19,9 +19,13 @@ releases and development branches do not inherit a stable release mapping.
 The Palette SDK environment card displays the selected cohort, target versions,
 and installed CLI version; agent cards show installed and target versions.
 Install verifies the downloaded VSIX checksum and package identity/version.
-A successful editor command must expose the expected installed version or its
-verified profile entry before the UI offers Reload. A different installed version
-can be explicitly repaired/downgraded with Install. Open is blocked for mismatches.
+A successful editor command must retain the expected version and persistent
+update pin in the editor profile before the UI offers Reload. A different installed
+version shows a warning and **Update to Qualified Version**; a matching but unpinned
+installation offers the same repair action with an automatic-update warning.
+The action reinstalls the exact VSIX and verifies its pin. Candidate test sessions
+use **Update to Candidate Version** and do not claim qualification. Open is blocked
+until the active version and persistent pin match the selected cohort.
 
 If an already installed extension has frozen the editor, close the browser and
 repair it from the SDK shell with `code-server --install-extension openai.chatgpt

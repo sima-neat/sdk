@@ -172,6 +172,7 @@ function renderAgents(states) {
         installed: "✓ Installed",
         reload: "Reload needed",
         available: "Not installed",
+        update: "Update available",
       }[state.status] || "Not installed";
     if (state.version) {
       status.textContent += ` · SDK target ${state.version}`;
@@ -189,14 +190,22 @@ function renderAgents(states) {
             : `Open ${name} →`
           : state.status === "reload"
             ? "Reload editor"
-            : `Install ${name} ↓`;
+            : state.status === "update"
+              ? `Update to ${state.candidate ? "Candidate" : "Qualified"} Version`
+              : `Install ${name} ↓`;
     progress.textContent =
       state.error ||
       (state.status === "installing"
         ? "Downloading through the editor. These extensions are large and may take several minutes. Check notifications for publisher prompts; you can keep working."
         : state.status === "reload"
           ? "Installation finished. Reload to enable the extension; if unavailable, check Extensions."
-          : "");
+          : state.status === "update"
+            ? state.unpinned
+              ? "This version is not pinned and may update automatically. Reinstall the SDK version to keep it pinned."
+              : state.candidate
+                ? "The installed extension differs from the SDK test candidate. This candidate is not yet SiMa qualified."
+                : "The currently installed extension is not the SiMa qualified version for this SDK."
+            : "");
     progress.classList.toggle("error", Boolean(state.error));
     next.textContent =
       state.status === "installed"
@@ -209,7 +218,7 @@ document.querySelectorAll(".install-agent").forEach((button) => {
     const agent = button.dataset.provider;
     const status = agentStates[agent]?.status;
     if (!status || status === "installing" || status === "blocked" || status === "checking") return;
-    if (status === "available") {
+    if (status === "available" || status === "update") {
       renderAgents({ [agent]: { status: "installing", busy: true } });
     }
     vscode.postMessage({

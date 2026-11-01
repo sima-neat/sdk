@@ -10,7 +10,8 @@ const AGENTS = Object.freeze({
 function createAgentManager(vscode, catalog) {
   const compatible = () => catalog?.snapshot() || { available: false, error: "Component compatibility is unavailable" };
   const matches = (key, extension) => Boolean(extension) && compatible().available &&
-    extension.packageJSON?.version === compatible().components[key].version;
+    extension.packageJSON?.version === compatible().components[key].version &&
+    catalog.isPinned(compatible().components[key]);
   const pending = new Map();
   const reload = new Set();
   const errors = new Map();
@@ -27,6 +28,8 @@ function createAgentManager(vscode, catalog) {
           {
             busy: pending.has(key),
             version: state.components?.[key]?.version,
+            candidate: state.status === "candidate",
+            unpinned: Boolean(extension) && extension.packageJSON?.version === state.components?.[key]?.version && !installed,
             installedVersion: extension?.packageJSON?.version,
             blocked: !state.available,
             status:
@@ -40,7 +43,7 @@ function createAgentManager(vscode, catalog) {
                   ? "installed"
                   : reload.has(key)
                     ? "reload"
-                    : "available",
+                    : extension ? "update" : "available",
             error: errors.get(key) || (!state.available ? state.error : ""),
           },
         ];
@@ -88,8 +91,8 @@ function createAgentManager(vscode, catalog) {
             vscode.Uri.file(prepared.file),
             { enable: true, donotSync: true },
           );
+          await catalog.verifyInstalled(prepared.target);
           if (!matches(key, vscode.extensions.getExtension(agent.id))) {
-            await catalog.verifyInstalled(prepared.target);
             reload.add(key);
           }
         }
@@ -121,7 +124,10 @@ function createAgentManager(vscode, catalog) {
     action,
     subscribe(listener) {
       listeners.add(listener);
-      const changed = vscode.extensions.onDidChange(() => listener(snapshot()));
+      const changed = vscode.extensions.onDidChange(async () => {
+        await catalog?.readInstalledProfile();
+        notify();
+      });
       const componentChanges = catalog?.subscribe(() => listener(snapshot()));
       return {
         dispose() {

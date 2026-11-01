@@ -21,15 +21,18 @@ function harness(execute) {
       },
     },
   };
+  const unpinned = new Set();
   const targets = { codex: { id: "openai.chatgpt", version: "1.2.3" }, claude: { id: "anthropic.claude-code", version: "2.3.4" } };
   const catalog = { snapshot: () => ({ available: true, components: targets }),
     refresh: async () => {}, subscribe: () => ({ dispose() {} }),
-    verifyInstalled: async () => {},
+    readInstalledProfile: async () => {},
+    isPinned: target => !unpinned.has(target.id),
+    verifyInstalled: async target => { unpinned.delete(target.id); },
     artifact: async key => ({ file: `/verified/${key}.vsix`, target: targets[key] }) };
   vscode.Uri = { file: p => ({ fsPath: p }) };
   const manager = createAgentManager(vscode, catalog);
   const subscription = manager.subscribe((value) => updates.push(value));
-  return { manager, installed, calls, updates, changes, subscription };
+  return { manager, installed, calls, updates, changes, subscription, unpinned };
 }
 for (const [key, id, command] of [
   ["codex", "openai.chatgpt", "chatgpt.openSidebar"],
@@ -105,10 +108,10 @@ test("untrusted provider/action messages cannot choose commands or install URLs"
 test("extension changes update status and listeners are removed on disposal", async () => {
   const h = harness();
   h.installed.set("openai.chatgpt", {packageJSON: {version: "1.2.3"}});
-  for (const change of h.changes) change();
+  for (const change of h.changes) await change();
   assert.equal(h.updates.at(-1).codex.status, "installed");
   h.installed.delete("openai.chatgpt");
-  for (const change of h.changes) change();
+  for (const change of h.changes) await change();
   assert.equal(h.updates.at(-1).codex.status, "available");
   h.subscription.dispose();
   assert.equal(h.changes.size, 0);
@@ -171,9 +174,22 @@ test("successful install clears a concurrent management error and publishes inst
 test("an existing incompatible version offers a pinned repair and cannot be opened",async()=>{
  const h=harness();
  h.installed.set('openai.chatgpt',{packageJSON:{version:'9.9.9'},activate:()=>assert.fail('must not activate an incompatible version')});
- assert.equal(h.manager.snapshot().codex.status,'available');
+ assert.equal(h.manager.snapshot().codex.status,'update');
  await h.manager.action('codex','open');assert.equal(h.calls.length,0);
  await h.manager.action('codex','install');
  assert.equal(h.calls[0][1].fsPath,'/verified/codex.vsix');
  assert.equal(h.manager.snapshot().codex.status,'reload');
+});
+
+test("a matching gallery version offers repair and is reinstalled to establish its pin", async () => {
+  const h = harness();
+  h.installed.set("openai.chatgpt", {packageJSON: {version: "1.2.3"}});
+  h.unpinned.add("openai.chatgpt");
+  assert.equal(h.manager.snapshot().codex.status, "update");
+  assert.equal(h.manager.snapshot().codex.unpinned, true);
+  await h.manager.action("codex", "install");
+  assert.equal(h.calls[0][1].fsPath, "/verified/codex.vsix");
+  assert.equal(h.manager.snapshot().codex.status, "installed");
+  await h.manager.action("codex", "install");
+  assert.equal(h.calls.length, 1);
 });
