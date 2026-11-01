@@ -96,6 +96,11 @@ jobs:
           docker info
           df -h
 
+      - name: Set up Node.js for component policy tests
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
       - name: Run SDK build and package tests
         run: |
           tests/sdk/test-install-sdk-stub.sh
