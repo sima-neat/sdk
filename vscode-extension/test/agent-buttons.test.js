@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 
-test("install acknowledges the click before dispatch and rejects a second click", () => {
+for (const initialStatus of ["available", "update"]) test(`${initialStatus} acknowledges the click before dispatch and rejects a second click`, () => {
   const element = () => ({ textContent: "", setAttribute() {}, classList: { toggle() {} } });
   const button = { ...element(), dataset: { provider: "codex" },
     addEventListener: (_, fn) => { button.click = fn; } };
@@ -14,10 +14,11 @@ test("install acknowledges the click before dispatch and rejects a second click"
   const messages = [];
   const context = {
     document: {
+      getElementById: () => null,
       querySelector: selector => selector.includes('"codex"') ? card : null,
       querySelectorAll: selector => selector === ".install-agent" ? [button] : [],
     },
-    window: { addEventListener: (_, fn) => { receive = fn; } },
+    window: { addEventListener: (_, fn) => { if (!receive) receive = fn; } },
     vscode: { postMessage(message) {
       if (message.type === "agent") {
         assert.equal(button.disabled, true);
@@ -29,7 +30,16 @@ test("install acknowledges the click before dispatch and rejects a second click"
   };
   const script = fs.readFileSync(require.resolve("../media/landing/landing.js"), "utf8");
   vm.runInNewContext(script.slice(script.indexOf("const agentNames =")), context);
-  receive({ data: { type: "agents", value: { codex: { status: "available" } } } });
+  receive({ data: { type: "agents", value: { codex: { status: initialStatus } } } });
+  if (initialStatus === "update") {
+    assert.equal(button.textContent, "Update to Qualified Version");
+    assert.match(fields[".agent-progress"].textContent, /not the SiMa qualified version/);
+    receive({ data: { type: "agents", value: { codex: { status: "update", unpinned: true } } } });
+    assert.match(fields[".agent-progress"].textContent, /not pinned/);
+    receive({ data: { type: "agents", value: { codex: { status: "update", candidate: true } } } });
+    assert.equal(button.textContent, "Update to Candidate Version");
+    assert.match(fields[".agent-progress"].textContent, /not yet SiMa qualified/);
+  }
   button.click();
   button.click();
   assert.equal(messages.filter(message => message.type === "agent").length, 1);

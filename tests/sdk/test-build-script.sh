@@ -110,9 +110,9 @@ import sys
 source = pathlib.Path(sys.argv[1]).read_text()
 platform, final = source.rsplit("FROM sdk-platform\n", 1)
 for editor_input in (
-    "ARG CODE_SERVER_",
-    "ENV CODE_SERVER_VERSION=",
-    "COPY vscode-extension/",
+    "COPY scripts/sdk-component-pins.py",
+    "    component_pins=",
+    "COPY vscode-extension/package.json",
     "COPY tools/brand_code_server.py",
     "COPY scripts/install-neat-vscode-extension.py",
 ):
@@ -120,7 +120,7 @@ for editor_input in (
     assert editor_input in final, f"Editor input missing from final image: {editor_input}"
 PYTEST
 grep -Fq '      binutils \' "${dockerfile}"
-grep -Eq '^ARG CODEX_CLI_VERSION=[0-9]+[.][0-9]+[.][0-9]+$' "${dockerfile}"
+node "${ROOT_DIR}/scripts/components-catalog.js" validate
 grep -Eq '^ARG DOCKER_CLI_VERSION=[0-9]+[.][0-9]+[.][0-9]+$' "${dockerfile}"
 grep -Eq '^ARG DOCKER_BUILDX_VERSION=[0-9]+[.][0-9]+[.][0-9]+$' "${dockerfile}"
 grep -Fq '/usr/local/lib/docker/cli-plugins/docker-buildx' "${dockerfile}"
@@ -133,13 +133,13 @@ grep -Fq "Hello from sima-neat" "${ROOT_DIR}/tests/sdk/container-build/run.sh"
 grep -Fq 'ENTRYPOINT ["/usr/local/bin/sima_neat_hello"]' "${ROOT_DIR}/tests/sdk/container-build/context/Dockerfile"
 grep -Fq 'Neat SDK 3.0 and newer containers automatically receive access' "${readme}"
 grep -Fq 'com.sima.sdk.platform.version="${BASE_SDK_VERSION}"' "${dockerfile}"
-grep -Fq 'npm install -g "@openai/codex@${CODEX_CLI_VERSION}"' "${dockerfile}"
-grep -Fq 'test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}"' "${dockerfile}"
+grep -Fq 'node /usr/local/bin/components-catalog.js install-cli /usr/local/share/sima-sdk/components.json' "${dockerfile}"
+if grep -q '^ARG CODEX_CLI_VERSION=' "${dockerfile}"; then exit 1; fi
 if grep -Fq 'apt-get purge -y npm' "${dockerfile}"; then
   echo "The SDK must retain npm so sudo codex update can update the global Codex installation." >&2
   exit 1
 fi
-grep -Fq 'sudo codex update' "${readme}"
+grep -Fq 'components.json' "${readme}"
 grep -Fq -- '--mount=type=cache,id=sima-sdk-debs-v1,target=/var/cache/sima-sdk-debs,sharing=locked' "${dockerfile}"
 grep -Fq 'SYSROOT_UPDATE_DOWNLOAD_DIR=/var/cache/sima-sdk-debs' "${dockerfile}"
 grep -Fq 'path: .buildkit-cache/sima-sdk-debs' "${workflow}"

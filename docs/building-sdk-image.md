@@ -259,3 +259,12 @@ the architecture flag controls permitted instructions, while the tuning flag
 optimizes scheduling for Cortex-A65 without selecting additional ISA features.
 The smoke suite compiles C and C++ with the exported flags and `-Werror` to catch
 conflicting target options in initialized interactive environments.
+
+### Code-server pin
+
+`deps/manifest.json` owns the exact `code-server.version` and archive SHA-256
+values for both amd64 and arm64. The Docker install layer reads and validates
+these pins directly, including when invoking Docker without `build.sh`; there
+are no separate version defaults or checksum overrides in the Dockerfile.
+Update the version and both hashes together in a reviewed PR. Image smoke tests
+compare the installed server with this manifest.

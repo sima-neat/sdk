@@ -7,7 +7,11 @@ const AGENTS = Object.freeze({
     command: "claude-vscode.sidebar.open",
   },
 });
-function createAgentManager(vscode) {
+function createAgentManager(vscode, catalog) {
+  const compatible = () => catalog?.snapshot() || { available: false, error: "Component compatibility is unavailable" };
+  const matches = (key, extension) => Boolean(extension) && compatible().available &&
+    extension.packageJSON?.version === compatible().components[key].version &&
+    catalog.isPinned(compatible().components[key]);
   const pending = new Map();
   const reload = new Set();
   const errors = new Map();
@@ -15,21 +19,33 @@ function createAgentManager(vscode) {
   const snapshot = () =>
     Object.fromEntries(
       Object.entries(AGENTS).map(([key, agent]) => {
-        const installed = Boolean(vscode.extensions.getExtension(agent.id));
+        const extension = vscode.extensions.getExtension(agent.id);
+        const installed = matches(key, extension);
+        const state = compatible();
         if (installed) reload.delete(key);
         return [
           key,
           {
             busy: pending.has(key),
+            version: state.components?.[key]?.version,
+            offline: state.source === "offline",
+            candidate: state.status === "candidate",
+            unpinned: Boolean(extension) && extension.packageJSON?.version === state.components?.[key]?.version && !installed,
+            installedVersion: extension?.packageJSON?.version,
+            blocked: !state.available,
             status:
               pending.get(key) === "install"
                 ? "installing"
+                : state.loading
+                  ? "checking"
+                : !state.available
+                  ? "blocked"
                 : installed
                   ? "installed"
                   : reload.has(key)
                     ? "reload"
-                    : "available",
-            error: errors.get(key) || "",
+                    : extension ? "update" : "available",
+            error: errors.get(key) || (!state.available ? state.error : ""),
           },
         ];
       }),
@@ -63,19 +79,27 @@ function createAgentManager(vscode) {
     pending.set(key, action);
     notify();
     try {
+      if (action !== "reload") {
+        await catalog?.refresh();
+        if (!compatible().available) throw Error("No qualified SDK component mapping");
+      }
       if (action === "install") {
-        if (!vscode.extensions.getExtension(agent.id)) {
-          // The editor handles gallery selection, compatibility, and trust UI.
+        if (!matches(key, vscode.extensions.getExtension(agent.id))) {
+          // Local VSIX installation pins the exact version and suppresses automatic gallery upgrades.
+          const prepared = await catalog.artifact(key);
           await vscode.commands.executeCommand(
             "workbench.extensions.installExtension",
-            agent.id,
+            vscode.Uri.file(prepared.file),
             { enable: true, donotSync: true },
           );
-          if (!vscode.extensions.getExtension(agent.id)) reload.add(key);
+          await catalog.verifyInstalled(prepared.target);
+          if (!matches(key, vscode.extensions.getExtension(agent.id))) {
+            reload.add(key);
+          }
         }
       } else if (action === "open") {
         const extension = vscode.extensions.getExtension(agent.id);
-        if (!extension) throw new Error("Extension unavailable");
+        if (!matches(key, extension)) throw new Error("Install the qualified extension version first");
         await extension.activate();
         await vscode.commands.executeCommand(agent.command);
       } else if (action === "reload") {
@@ -84,10 +108,12 @@ function createAgentManager(vscode) {
       }
       // A concurrent Manage failure must not survive a successful operation.
       errors.delete(key);
-    } catch {
+    } catch (error) {
       errors.set(
         key,
-        action === "install"
+        error.code === "OFFLINE_ARTIFACT_UNAVAILABLE"
+          ? "Offline: this extension package is not cached. Reconnect and retry the installation."
+          : action === "install"
           ? "Installation did not finish. Check your connection and editor notifications, then retry or use Manage in Extensions."
           : "Unable to open the extension. Check that it is enabled in Extensions, or reload the editor and try again.",
       );
@@ -101,11 +127,16 @@ function createAgentManager(vscode) {
     action,
     subscribe(listener) {
       listeners.add(listener);
-      const changed = vscode.extensions.onDidChange(() => listener(snapshot()));
+      const changed = vscode.extensions.onDidChange(async () => {
+        await catalog?.readInstalledProfile();
+        notify();
+      });
+      const componentChanges = catalog?.subscribe(() => listener(snapshot()));
       return {
         dispose() {
           listeners.delete(listener);
           changed.dispose();
+          componentChanges?.dispose();
         },
       };
     },

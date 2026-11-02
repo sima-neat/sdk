@@ -75,6 +75,8 @@ function fixture({ tabs = [], preference, web = true, fail = false } = {}) {
     },
   };
   const services = {
+    components: { snapshot: () => ({ available: false, error: "Test unavailable" }),
+      refresh: async () => {}, subscribe: () => ({ dispose() {} }) },
     getDevkitConfig: async () => ({}),
     openInsight: async () => actions.push("insight"),
     modelsEnabled: true,
