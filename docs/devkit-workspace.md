@@ -1,6 +1,8 @@
 # DevKit Workspace
 
-The DevKit workspace flow uses NFS. The workspace is shared bi-directionally between the host and the DevKit.
+The DevKit workspace flow prefers NFS, which shares the workspace bi-directionally
+between the host and the DevKit. If the host export cannot be configured or the
+DevKit cannot mount it, setup falls back to rsync over SSH.
 
 ## Start The SDK Container
 
@@ -24,7 +26,18 @@ Inside the SDK container, source the setup helper:
 source devkit.sh
 ```
 
-This configures the remote DevKit mount, updates DevKit `/etc/fstab`, enables a watchdog timer for stale mount recovery, and sets Git `safe.directory` for the mounted workspace path.
+When host NFS is available, this configures the remote DevKit mount, updates
+DevKit `/etc/fstab`, enables a watchdog timer for stale mount recovery, and sets
+Git `safe.directory` for the mounted workspace path.
+
+When `sima-cli` cannot configure the host export, it sets
+`DEVKIT_HOST_NFS_AVAILABLE=0`. `devkit.sh` then skips the NFS mount and initializes
+the rsync workspace directly. Older `sima-cli` versions do not set the variable,
+so NFS remains the default.
+
+Use `dk status` to see the active sync method. With rsync active, `dk <path>`
+synchronizes the relevant top-level workspace folder before running the remote
+command; `dk sync --all` synchronizes the entire workspace explicitly.
 
 ## NEAT Framework Sync
 
