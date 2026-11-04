@@ -1243,6 +1243,15 @@ devkit-container-remote() {
 devkit-container-install-docker() {
   local assume_yes="${1:-0}"
   local answer=""
+  local existing_status=0
+  if devkit-container-remote managed-docker-check; then
+    # An existing managed runtime needs no installation or sudo prompt.
+    devkit-container-remote setup "${SIMA_DEVKIT_CONTAINER_REGISTRY:-}"
+    return $?
+  else
+    existing_status=$?
+    [[ "$existing_status" == 42 ]] || return "$existing_status"
+  fi
 
   if [[ "${assume_yes}" != 1 ]]; then
     if [[ ! -t 0 || ! -t 1 || ! -e /dev/tty ]]; then

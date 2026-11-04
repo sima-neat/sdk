@@ -143,3 +143,17 @@ installation, run:
 ```bash
 dk container setup --yes
 ```
+
+
+### Kerrigan-managed Docker
+
+When Kerrigan's device bundle includes rootless Docker, `dk container` detects its
+helper and uses the `sima` runtime. `dk container setup` reuses that runtime and
+configures the SDK registry without installing Docker, changing sudo permissions,
+or adding the user to the Docker group. An unavailable managed runtime reports a
+Kerrigan repair error instead of attempting a privileged installation.
+
+On a managed DevKit without Docker enabled, ask the administrator to enable Docker
+in its device bundle and roll it out. Unmanaged DevKits keep the existing explicit
+Docker setup flow. Rootless container device access and networking differ from
+rootful Docker; enabling the bundle does not qualify accelerator passthrough.
