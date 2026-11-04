@@ -24,11 +24,28 @@ Inside the SDK container, source the setup helper:
 source devkit.sh
 ```
 
-This configures the remote DevKit mount, updates DevKit `/etc/fstab`, enables a watchdog timer for stale mount recovery, and sets Git `safe.directory` for the mounted workspace path.
+Setup probes for `/usr/local/sbin/kerrigan-sdk-nfs` on the DevKit before checking
+general sudo access. When the helper is available, it mounts the approved CloudEx
+host export at `/workspace` using the existing restricted sudo permission. SSH key
+setup still runs as the selected DevKit user. Setup leaves sudoers unchanged and
+does not install an fstab entry or a watchdog for this session-scoped mount.
+
+The helper must support `/workspace`, and the CloudEx session must permit the
+export. An unusable helper, rejected export or SSH failure stops setup with an
+error. Ask the Kerrigan administrator to update or repair the helper if necessary.
+Setup does not fall back to granting unrestricted sudo after these errors.
+
+If the helper is absent, the existing setup flow applies: configure the remote
+mount, update `/etc/fstab`, enable a watchdog timer for stale mount recovery, and
+set Git `safe.directory`. This flow requires root or general passwordless sudo.
 
 ## NEAT Framework Sync
 
-During setup, `devkit.sh` compares the SDK NEAT framework package versions cached under:
+For a Kerrigan-managed DevKit with the NFS helper, Neat/PyNeat are supplied by the
+Kerrigan device bundle. Pairing skips SDK package synchronization; ask the
+administrator to update the bundle when a different Neat version is needed.
+
+For other DevKits, `devkit.sh` compares the SDK NEAT framework package versions cached under:
 
 ```text
 ${SYSROOT:-/opt/toolchain/aarch64/modalix}/neat-install-packages

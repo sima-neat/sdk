@@ -65,6 +65,54 @@ check_remote_passwordless_sudo() {
   return 2
 }
 
+# Return 1 only when the helper is absent. SSH/status errors must never fall
+# through to the unmanaged path that offers to change sudoers.
+check_remote_kerrigan_nfs() {
+  local user="$1" ip="$2" port="$3" status=0
+  timeout --foreground 20 ssh -T -n -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 \
+    "${user}@${ip}" 'helper=/usr/local/sbin/kerrigan-sdk-nfs; if [ ! -e "$helper" ] && [ ! -L "$helper" ]; then exit 44; fi; test -f "$helper" && test -x "$helper" || exit 45' || status=$?
+  case "${status}" in
+    0) return 0 ;;
+    44) return 1 ;;
+    45) echo "Kerrigan NFS helper is present but unusable; ask the Kerrigan administrator to repair it." >&2; return 2 ;;
+    *) echo "Could not detect Kerrigan NFS support; leaving device permissions unchanged." >&2; return 2 ;;
+  esac
+}
+
+mount_kerrigan_sdk_workspace() {
+  local user="$1" ip="$2" port="$3" host="$4" export_path="$5" version="$6"
+  local remote_command
+  printf -v remote_command 'bash -s -- %q %q' "${host}:${export_path}" "${version}"
+  timeout --foreground 50 ssh -T -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 \
+    "${user}@${ip}" "${remote_command}" <<'KERRIGAN_NFS'
+set -euo pipefail
+source="$1"
+version="$2"
+helper=/usr/local/sbin/kerrigan-sdk-nfs
+# Check the helper contract before mounting; older controllers use another path.
+sudo -n "$helper" status | python3 -c '
+import json,sys
+s=json.load(sys.stdin)
+if s.get("mount_point") != "/workspace":
+    sys.exit("Kerrigan NFS helper needs an update to support /workspace; ask the Kerrigan administrator.")
+'
+sudo -n "$helper" mount --source "$source" --version "$version"
+sudo -n "$helper" status | python3 -c '
+import json,sys
+s=json.load(sys.stdin); m=s.get("mount") or {}
+if not (s.get("managed") is True and s.get("mount_point") == "/workspace"
+        and m.get("target") == "/workspace" and m.get("source") == sys.argv[1]
+        and m.get("fstype") in ("nfs", "nfs4")):
+    sys.exit("Kerrigan NFS mount verification failed")
+' "$source"
+# User-owned Git settings only; never change fstab or install a root watchdog.
+if command -v git >/dev/null 2>&1; then
+  git config --global --get-all safe.directory | grep -qxF /workspace || \
+    git config --global --add safe.directory /workspace
+fi
+KERRIGAN_NFS
+}
+
 sdk_platform_version_from_release_file() {
   local sdk_release="$1"
   local platform_version=""
@@ -577,17 +625,6 @@ printf "DevKit: %s@%s:%s\n" "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"
 printf "Host export: %s:%s\n" "${_HOST_IP}" "${_HOST_EXPORT_PATH}"
 printf "Reminder: NFS workspace is shared bi-directionally.\n\n"
 
-if devkit_sync_noninteractive; then
-  _MOUNT_POINT="${_DEFAULT_MOUNT_PATH}"
-  echo "Non-interactive mode: using default DevKit mount path ${_MOUNT_POINT}"
-else
-  read -r -p "Destination mount path on DevKit [${_DEFAULT_MOUNT_PATH}]: " _MOUNT_POINT
-  _MOUNT_POINT="${_MOUNT_POINT:-${_DEFAULT_MOUNT_PATH}}"
-fi
-if [[ "${_MOUNT_POINT}" != /* ]]; then
-  echo "Please provide an absolute path (must start with '/')." >&2
-  return 2
-fi
 if [[ "${_HOST_PLATFORM}" == "darwin" ]]; then
   _NFS_OPTS="vers=3,proto=tcp,mountproto=tcp,nolock,soft,timeo=50,retrans=1,_netdev,nofail,x-systemd.automount"
 else
@@ -635,7 +672,35 @@ if (( _DEVKIT_COMPAT_STATUS != 0 )); then
   return "${_DEVKIT_COMPAT_STATUS}"
 fi
 
-if [[ "${_DEVKIT_USER}" != "root" ]]; then
+_KERRIGAN_NFS=0
+_KERRIGAN_PROBE_STATUS=0
+check_remote_kerrigan_nfs "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}" || _KERRIGAN_PROBE_STATUS=$?
+case "${_KERRIGAN_PROBE_STATUS}" in
+  0)
+    _KERRIGAN_NFS=1
+    _MOUNT_POINT=/workspace
+    echo "Kerrigan-managed DevKit: using the approved NFS helper at /workspace."
+    echo "Keeping device permissions unchanged; Neat/PyNeat are managed by Kerrigan."
+    ;;
+  1) ;; # Unmanaged DevKit: retain the existing setup flow.
+  *) return 1 ;;
+esac
+
+if [[ "${_KERRIGAN_NFS}" == "0" ]]; then
+  if devkit_sync_noninteractive; then
+    _MOUNT_POINT="${_DEFAULT_MOUNT_PATH}"
+    echo "Non-interactive mode: using default DevKit mount path ${_MOUNT_POINT}"
+  else
+    read -r -p "Destination mount path on DevKit [${_DEFAULT_MOUNT_PATH}]: " _MOUNT_POINT
+    _MOUNT_POINT="${_MOUNT_POINT:-${_DEFAULT_MOUNT_PATH}}"
+  fi
+  if [[ "${_MOUNT_POINT}" != /* ]]; then
+    echo "Please provide an absolute path (must start with '/')." >&2
+    return 2
+  fi
+fi
+
+if [[ "${_KERRIGAN_NFS}" == "0" && "${_DEVKIT_USER}" != "root" ]]; then
   _DEVKIT_SUDO_STATUS=0
   check_remote_passwordless_sudo "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}" || _DEVKIT_SUDO_STATUS=$?
   if (( _DEVKIT_SUDO_STATUS == 2 )); then
@@ -712,13 +777,21 @@ EOS
   fi
 fi
 
-if ! sync_neat_framework_to_devkit "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"; then
+if [[ "${_KERRIGAN_NFS}" == "0" ]] && ! sync_neat_framework_to_devkit "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}"; then
   return 1
 fi
 
 echo "Configuring remote NFS mount..."
 _NFS_CONFIGURED=0
-if ! ssh -T -p "${_DEVKIT_PORT}" -o BatchMode=yes -o ConnectTimeout=8 "${_DEVKIT_USER}@${_DEVKIT_IP}" bash -s -- "${_HOST_IP}" "${_HOST_EXPORT_PATH}" "${_MOUNT_POINT}" "${_NFS_OPTS}" "${_DEVKIT_USER}" <<'EOS'
+if [[ "${_KERRIGAN_NFS}" == "1" ]]; then
+  _KERRIGAN_NFS_VERSION=4
+  [[ "${_HOST_PLATFORM}" != "darwin" ]] || _KERRIGAN_NFS_VERSION=3
+  if ! mount_kerrigan_sdk_workspace "${_DEVKIT_USER}" "${_DEVKIT_IP}" "${_DEVKIT_PORT}" "${_HOST_IP}" "${_HOST_EXPORT_PATH}" "${_KERRIGAN_NFS_VERSION}"; then
+    echo "Kerrigan NFS setup failed. Check the active CloudEx connection and approved export with the administrator; no sudoers changes were attempted." >&2
+    return 1
+  fi
+  _NFS_CONFIGURED=1
+elif ! ssh -T -p "${_DEVKIT_PORT}" -o BatchMode=yes -o ConnectTimeout=8 "${_DEVKIT_USER}@${_DEVKIT_IP}" bash -s -- "${_HOST_IP}" "${_HOST_EXPORT_PATH}" "${_MOUNT_POINT}" "${_NFS_OPTS}" "${_DEVKIT_USER}" <<'EOS'
 set -euo pipefail
 host_ip="$1"
 host_export="$2"
