@@ -5,6 +5,7 @@ DEVKIT_SH_FUNCTIONS_ONLY=1 source "${ROOT_DIR}/scripts/devkit.sh"
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 export TEST_NFS_STATE="$tmpdir/state" TEST_NFS_CALLS="$tmpdir/calls"
+export TEST_GIT_CALLS="$tmpdir/git-calls"
 export TEST_HELPER_PATH=/workspace TEST_PROBE=0 TEST_MOUNT_FAIL=0
 # Execute the actual remote shell program, replacing only SSH and privileged IO.
 timeout() { shift 2; "$@"; }
@@ -40,7 +41,9 @@ PY
     *) return 97 ;;
   esac
 }
-git() { return 0; }
+# Git is optional to pairing. Fail if the remote mount path tries to read or
+# change the user's Git configuration, including broad safe.directory entries.
+git() { printf '%s\n' "$*" >> "$TEST_GIT_CALLS"; return 93; }
 export -f ssh sudo git
 check_remote_kerrigan_nfs sima example 22
 TEST_PROBE=44; rc=0; check_remote_kerrigan_nfs sima example 22 || rc=$?
@@ -109,4 +112,5 @@ rc=0
 (source "$tmpdir/pairing.sh"; exit $?) > "$tmpdir/pairing.log" 2>&1 || rc=$?
 [[ $rc != 0 ]]
 [[ ! -e "${TEST_NFS_STATE}.sudo" && ! -e "${TEST_NFS_STATE}.neat" && ! -e "${TEST_NFS_STATE}.unmanaged" ]]
+[[ ! -e "$TEST_GIT_CALLS" ]] || { echo 'Managed pairing changed Git trust configuration' >&2; exit 1; }
 echo 'Kerrigan managed and unmanaged pairing tests passed'

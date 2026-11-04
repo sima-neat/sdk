@@ -30,6 +30,17 @@ host export at `/workspace` using the existing restricted sudo permission. SSH k
 setup still runs as the selected DevKit user. Setup leaves sudoers unchanged and
 does not install an fstab entry or a watchdog for this session-scoped mount.
 
+Managed pairing also leaves Git trust settings unchanged. If Git reports
+`detected dubious ownership` for a host-owned repository on the share, first verify
+that you trust that repository. Then, as the DevKit user who runs Git, add an
+exception for that repository's exact path, for example:
+
+```bash
+git config --global --add safe.directory /workspace/project
+```
+
+This is optional for Git operations; NFS mounting and SDK pairing do not require it.
+
 The helper must support `/workspace`, and the CloudEx session must permit the
 export. An unusable helper, rejected export or SSH failure stops setup with an
 error. Ask the Kerrigan administrator to update or repair the helper if necessary.

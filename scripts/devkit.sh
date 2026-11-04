@@ -105,11 +105,6 @@ if not (s.get("managed") is True and s.get("mount_point") == "/workspace"
         and m.get("fstype") in ("nfs", "nfs4")):
     sys.exit("Kerrigan NFS mount verification failed")
 ' "$source"
-# User-owned Git settings only; never change fstab or install a root watchdog.
-if command -v git >/dev/null 2>&1; then
-  git config --global --get-all safe.directory | grep -qxF /workspace || \
-    git config --global --add safe.directory /workspace
-fi
 KERRIGAN_NFS
 }
 
