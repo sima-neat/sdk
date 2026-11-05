@@ -4,6 +4,9 @@ Experimental VS Code extension scaffold for Palette SDK workspaces.
 
 ## Features
 
+- Embedded camera preview requires the SDK code-server camera delegation patch (`tools/patch_insight_camera_permissions.py`), applied during image build. Camera delegation is limited to Palette webviews and the detected Insight origin; browser camera permission is still required.
+- Launch Insight from the Palette SDK page or Palette panel in a dedicated editor tab. Repeated launches reuse the tab and preserve its current view; closing it ends the embedded session. The tab is restored when the editor reloads.
+
 - Adds a Palette activity bar container.
 - Opens Insight using the current URL reported by `neat --json`.
 - Initializes the browser editor menu bar to always visible (`window.menuBarVisibility: visible`) when no explicit user/workspace value exists. Users can change it afterward; desktop VS Code preferences are untouched.

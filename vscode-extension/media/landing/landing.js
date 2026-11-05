@@ -130,7 +130,7 @@ window.addEventListener("message", ({ data }) => {
   text(
     "insight-note",
     insight.url
-      ? "Same launch destination as the Palette panel."
+      ? "Opens in an Insight tab inside the SDK."
       : "No launch URL detected. Configure Insight access, then refresh.",
   );
   $("launch-insight").disabled = !insight.url;

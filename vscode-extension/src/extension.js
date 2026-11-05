@@ -1,6 +1,7 @@
 const vscode = require("vscode");
 const { RegistryState } = require("./registry-state");
-const { insightOpenUrl } = require("./insight-launcher");
+const { createInsightView } = require("./insight-view");
+let insightView;
 const { loadStatuses } = require("./panel-status");
 const { registerGettingStarted } = require("./getting-started");
 const { modelRegistryAvailable } = require("./sdk-capabilities");
@@ -190,6 +191,8 @@ async function activate(context) {
   brand.command = "simaNeat.showPanel";
   brand.show();
   context.subscriptions.push(brand);
+
+  insightView = createInsightView(vscode, context, getInsightWebUiUrl);
 
   const provider = new NeatPanelProvider(context.extensionUri);
   provider.updateRegistryState(registryState.snapshot());
@@ -483,13 +486,7 @@ function validateDependencyRef(raw, key) {
 }
 
 async function openInsight() {
-  const insightUrl = await getInsightWebUiUrl();
-  if (!insightUrl) {
-    vscode.window.showErrorMessage("Unable to acquire Insight link");
-    return;
-  }
-
-  await vscode.env.openExternal(vscode.Uri.parse(insightOpenUrl(insightUrl, vscode.env.uiKind === vscode.UIKind.Web)));
+  await insightView.open();
 }
 
 async function getInsightWebUiUrl() {
