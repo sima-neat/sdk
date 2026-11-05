@@ -374,6 +374,8 @@ COPY vscode-extension/themes/ /opt/sima-neat/vscode-extension/themes/
 COPY tools/brand_code_server.py /usr/local/bin/sima-brand-code-server
 COPY tools/patch_insight_browser_resolver.py /usr/local/bin/sima-patch-insight-browser-resolver
 RUN python3 /usr/local/bin/sima-patch-insight-browser-resolver --server-dir "${CODE_SERVER_DIR}"
+COPY tools/patch_insight_camera_permissions.py /usr/local/bin/sima-patch-insight-camera-permissions
+RUN python3 /usr/local/bin/sima-patch-insight-camera-permissions --server-dir "${CODE_SERVER_DIR}"
 COPY tools/browser-trust/ /usr/local/bin/browser-trust/
 RUN python3 /usr/local/bin/sima-brand-code-server --server-dir "${CODE_SERVER_DIR}" \
     --icon /opt/sima-neat/vscode-extension/media/neat-logo.png
