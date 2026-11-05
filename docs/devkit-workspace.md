@@ -24,11 +24,45 @@ Inside the SDK container, source the setup helper:
 source devkit.sh
 ```
 
-This configures the remote DevKit mount, updates DevKit `/etc/fstab`, enables a watchdog timer for stale mount recovery, and sets Git `safe.directory` for the mounted workspace path.
+Setup probes for `/usr/local/sbin/kerrigan-sdk-nfs` on the DevKit before checking
+general sudo access. When the helper is available, it mounts the approved CloudEx
+host export at `/workspace` using the existing restricted sudo permission. SSH key
+setup still runs as the selected DevKit user. Setup leaves sudoers unchanged and
+does not install an fstab entry or a watchdog for this session-scoped mount.
+
+Managed pairing also leaves Git trust settings unchanged. If Git reports
+`detected dubious ownership` for a host-owned repository on the share, first verify
+that you trust that repository. Then, as the DevKit user who runs Git, add an
+exception for that repository's exact path, for example:
+
+```bash
+git config --global --add safe.directory /workspace/project
+```
+
+This is optional for Git operations; NFS mounting and SDK pairing do not require it.
+
+The helper must support `/workspace`, and the CloudEx session must permit the
+export. An unusable helper, rejected export or SSH failure stops setup with an
+error. Ask the Kerrigan administrator to update or repair the helper if necessary.
+Setup does not fall back to granting unrestricted sudo after these errors.
+
+For all DevKits, helper detection retries SSH connection failures and timeouts
+once before stopping setup. Only a confirmed absent helper selects the unmanaged
+flow. A helper left on a formerly managed device still selects managed behavior;
+ask the administrator to properly remove its Kerrigan configuration if the device
+is no longer managed.
+
+If the helper is absent, the existing setup flow applies: configure the remote
+mount, update `/etc/fstab`, enable a watchdog timer for stale mount recovery, and
+set Git `safe.directory`. This flow requires root or general passwordless sudo.
 
 ## NEAT Framework Sync
 
-During setup, `devkit.sh` compares the SDK NEAT framework package versions cached under:
+For a Kerrigan-managed DevKit with the NFS helper, Neat/PyNeat are supplied by the
+Kerrigan device bundle. Pairing skips SDK package synchronization; ask the
+administrator to update the bundle when a different Neat version is needed.
+
+For other DevKits, `devkit.sh` compares the SDK NEAT framework package versions cached under:
 
 ```text
 ${SYSROOT:-/opt/toolchain/aarch64/modalix}/neat-install-packages
@@ -115,3 +149,17 @@ installation, run:
 ```bash
 dk container setup --yes
 ```
+
+
+### Kerrigan-managed Docker
+
+When Kerrigan's device bundle includes rootless Docker, `dk container` detects its
+helper and uses the `sima` runtime. `dk container setup` reuses that runtime and
+configures the SDK registry without installing Docker, changing sudo permissions,
+or adding the user to the Docker group. An unavailable managed runtime reports a
+Kerrigan repair error instead of attempting a privileged installation.
+
+On a managed DevKit without Docker enabled, ask the administrator to enable Docker
+in its device bundle and roll it out. Unmanaged DevKits keep the existing explicit
+Docker setup flow. Rootless container device access and networking differ from
+rootful Docker; enabling the bundle does not qualify accelerator passthrough.

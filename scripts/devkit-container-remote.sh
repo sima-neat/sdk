@@ -382,7 +382,34 @@ PY
   echo "Docker installation completed on the DevKit."
 )
 
-if [[ "${action}" == setup ]]; then
+# Kerrigan installs and owns the runtime; all runtime actions stay as the user.
+managed_helper=/usr/local/bin/kerrigan-docker
+managed=0
+if [[ -e "$managed_helper" || -L "$managed_helper" ]]; then
+  if [[ ! -f "$managed_helper" || ! -x "$managed_helper" ]]; then
+    echo "Kerrigan Docker helper needs administrator repair." >&2; exit 2
+  fi
+  managed=1
+  if ! "$managed_helper" status >/dev/null; then
+    echo "Managed Docker is unavailable. Check its device-bundle status in Kerrigan." >&2; exit 2
+  fi
+  case "$action" in
+    docker-check|managed-docker-check) exit 0 ;;
+    setup)
+      if [[ -n "${1:-}" ]]; then "$managed_helper" registry-setup "$1"; fi
+      exit 0 ;;
+    registry-setup) "$managed_helper" registry-setup "${1:-}"; exit $? ;;
+  esac
+elif [[ -e /usr/local/sbin/kerrigan-sdk-nfs ]]; then
+  echo "Docker is not enabled in this Kerrigan-managed DevKit's device bundle. Ask the administrator to enable it." >&2
+  exit 2
+fi
+
+if [[ "$managed" == 0 && "${action}" == managed-docker-check ]]; then
+  exit 42
+fi
+
+if [[ "$managed" == 0 && "${action}" == setup ]]; then
   registry="${1:-}"
   if [[ -e "${install_marker}" ]]; then
     if docker_install_postconditions_ready; then
@@ -401,7 +428,7 @@ if [[ "${action}" == setup ]]; then
   exit $?
 fi
 
-if [[ "${action}" == docker-check ]]; then
+if [[ "$managed" == 0 && "${action}" == docker-check ]]; then
   if docker_is_usable && [[ ! -e "${install_marker}" ]]; then
     exit 0
   fi
@@ -415,7 +442,7 @@ if [[ "${action}" == docker-check ]]; then
   exit 42
 fi
 
-if ! command -v docker >/dev/null 2>&1; then
+if [[ "$managed" == 0 ]] && ! command -v docker >/dev/null 2>&1; then
   echo "Docker is not installed on the DevKit." >&2
   exit 2
 fi
@@ -426,7 +453,9 @@ if [[ "${action}" == registry-setup ]]; then
 fi
 
 DOCKER=(docker)
-if ! docker info >/dev/null 2>&1; then
+if [[ "$managed" == 1 ]]; then
+  DOCKER=("$managed_helper" docker)
+elif ! docker info >/dev/null 2>&1; then
   if command -v sudo >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; then
     DOCKER=(sudo -n docker)
   else
