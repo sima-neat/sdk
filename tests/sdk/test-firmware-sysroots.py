@@ -173,5 +173,5 @@ def test_release_master_uses_official_release_sysroot():
         calls.append(url)
         return [package(version='3.0.0')]
     result = m.check([image], reader)
-    assert all(url.endswith('/release') for url in calls)
+    assert calls == ['http://sw-web.eng.sima.ai/deb/release', 'https://repo.sima.ai/elxr/deb/release']
     assert all(result['builds'][0][where]['status'] == 'available' for where in ('internal', 'external'))
