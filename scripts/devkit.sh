@@ -68,15 +68,28 @@ check_remote_passwordless_sudo() {
 # Return 1 only when the helper is absent. SSH/status errors must never fall
 # through to the unmanaged path that offers to change sudoers.
 check_remote_kerrigan_nfs() {
-  local user="$1" ip="$2" port="$3" status=0
-  timeout --foreground 20 ssh -T -n -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 \
-    "${user}@${ip}" 'helper=/usr/local/sbin/kerrigan-sdk-nfs; if [ ! -e "$helper" ] && [ ! -L "$helper" ]; then exit 44; fi; test -f "$helper" && test -x "$helper" || exit 45' || status=$?
-  case "${status}" in
-    0) return 0 ;;
-    44) return 1 ;;
-    45) echo "Kerrigan NFS helper is present but unusable; ask the Kerrigan administrator to repair it." >&2; return 2 ;;
-    *) echo "Could not detect Kerrigan NFS support; leaving device permissions unchanged." >&2; return 2 ;;
-  esac
+  local user="$1" ip="$2" port="$3" status=0 attempt="" reason=""
+  for attempt in 1 2; do
+    status=0
+    timeout --foreground 20 ssh -T -n -p "${port}" -o BatchMode=yes -o ConnectTimeout=8 \
+      "${user}@${ip}" 'helper=/usr/local/sbin/kerrigan-sdk-nfs; if [ ! -e "$helper" ] && [ ! -L "$helper" ]; then exit 44; fi; test -f "$helper" && test -x "$helper" || exit 45' || status=$?
+    case "${status}" in
+      0) return 0 ;;
+      44) return 1 ;;
+      45)
+        echo "DevKit ${user}@${ip}:${port} appears Kerrigan-managed: /usr/local/sbin/kerrigan-sdk-nfs is present but is not an executable file (it may be a broken symlink)." >&2
+        echo "Ask the Kerrigan administrator to repair it, or properly remove the Kerrigan configuration if this device is no longer managed. Setup stopped without granting unrestricted sudo." >&2
+        return 2 ;;
+      124) reason="timed out after 20s" ;;
+      255) reason="failed to connect over SSH" ;;
+      *)
+        echo "Kerrigan NFS detection on ${user}@${ip}:${port} failed with exit status ${status}. Check the local timeout/SSH tools and the remote shell, then rerun setup; device permissions were left unchanged." >&2
+        return 2 ;;
+    esac
+    echo "Kerrigan NFS detection on ${user}@${ip}:${port} ${reason} (attempt ${attempt}/2)." >&2
+  done
+  echo "Could not determine whether the DevKit is Kerrigan-managed after 2 attempts. Check SSH connectivity and rerun setup; no fallback to unrestricted sudo was attempted." >&2
+  return 2
 }
 
 mount_kerrigan_sdk_workspace() {

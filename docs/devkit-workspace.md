@@ -46,6 +46,12 @@ export. An unusable helper, rejected export or SSH failure stops setup with an
 error. Ask the Kerrigan administrator to update or repair the helper if necessary.
 Setup does not fall back to granting unrestricted sudo after these errors.
 
+For all DevKits, helper detection retries SSH connection failures and timeouts
+once before stopping setup. Only a confirmed absent helper selects the unmanaged
+flow. A helper left on a formerly managed device still selects managed behavior;
+ask the administrator to properly remove its Kerrigan configuration if the device
+is no longer managed.
+
 If the helper is absent, the existing setup flow applies: configure the remote
 mount, update `/etc/fstab`, enable a watchdog timer for stale mount recovery, and
 set Git `safe.directory`. This flow requires root or general passwordless sudo.

@@ -12,6 +12,14 @@ timeout() { shift 2; "$@"; }
 ssh() {
   local command="${!#}"
   if [[ "$command" == *'helper=/usr/local/sbin/kerrigan-sdk-nfs;'* ]]; then
+    if [[ -n "${TEST_PROBE_RESULTS:-}" ]]; then
+      local calls=0
+      local -a results
+      [[ ! -f "$tmpdir/probe-count" ]] || read -r calls < "$tmpdir/probe-count"
+      read -r -a results <<< "$TEST_PROBE_RESULTS"
+      printf '%s\n' "$((calls + 1))" > "$tmpdir/probe-count"
+      return "${results[calls]:?unexpected extra probe}"
+    fi
     return "$TEST_PROBE"
   fi
   if [[ "$command" == 'bash -s -- '* ]]; then
@@ -45,6 +53,29 @@ PY
 # change the user's Git configuration, including broad safe.directory entries.
 git() { printf '%s\n' "$*" >> "$TEST_GIT_CALLS"; return 93; }
 export -f ssh sudo git
+expect_probe() {
+  local TEST_PROBE_RESULTS="$1" expected_status="$2" expected_calls="$3" rc=0
+  rm -f "$tmpdir/probe-count"
+  check_remote_kerrigan_nfs sima example 22 2> "$tmpdir/probe-error" || rc=$?
+  [[ $rc == "$expected_status" && "$(cat "$tmpdir/probe-count")" == "$expected_calls" ]]
+}
+expect_probe '0' 0 1
+expect_probe '44' 1 1
+expect_probe '45' 2 1
+grep -Fq 'appears Kerrigan-managed' "$tmpdir/probe-error"
+grep -Fq 'no longer managed' "$tmpdir/probe-error"
+for first_failure in 124 255; do
+  expect_probe "$first_failure 0" 0 2
+  expect_probe "$first_failure 44" 1 2
+  expect_probe "$first_failure 45" 2 2
+  expect_probe "$first_failure $first_failure" 2 2
+  grep -Fq 'after 2 attempts' "$tmpdir/probe-error"
+  grep -Fq 'no fallback to unrestricted sudo' "$tmpdir/probe-error"
+done
+for terminal_failure in 1 125 127; do
+  expect_probe "$terminal_failure" 2 1
+  grep -Fq "exit status $terminal_failure" "$tmpdir/probe-error"
+done
 check_remote_kerrigan_nfs sima example 22
 TEST_PROBE=44; rc=0; check_remote_kerrigan_nfs sima example 22 || rc=$?
 [[ $rc == 1 ]]
