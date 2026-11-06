@@ -82,3 +82,17 @@ test('published HTTP scheme and default ports survive browser resolution', async
   assert.equal(await resolveInsightBrowserUrl(browserVscode('localhost:10000'), 'https://10.252.185.1/'),
     'https://localhost/');
 });
+
+test('scheme changes preserve published ports that defaulted under the status scheme', async () => {
+  for (const [statusScheme, scheme, port] of [
+    ['https', 'http', 443],
+    ['http', 'https', 80]
+  ]) {
+    const config = options();
+    config.reader = async file => file.endsWith('/neat-port-map.json')
+      ? JSON.stringify({ mainUI: { host: port, scheme } }) : '';
+    const advertised = { insight: { webUiUrl: `${statusScheme}://192.0.2.10:9900/` } };
+    assert.equal(await getInsightUrl(advertised, config),
+      `${scheme}://192.168.76.60:${port}/`);
+  }
+});

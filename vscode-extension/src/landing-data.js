@@ -187,8 +187,8 @@ async function getInsightUrl(
           if (/^(?:[a-zA-Z0-9][a-zA-Z0-9._-]*|\[[a-fA-F0-9:]+\]|[a-fA-F0-9:]+)$/.test(host)) {
             const target = new URL(url || "https://localhost/");
             target.hostname = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
-            target.port = String(port);
             target.protocol = `${ports.mainUI?.scheme || "https"}:`;
+            target.port = String(port);
             url = normalizeHttpUrl(target.href);
           }
         }
