@@ -137,16 +137,20 @@ test('sidebar Insight lookup keeps offline resolution and a hard process deadlin
   const calls = [];
   const context = {
     readNeatStatus,
-    getInsightUrl: async status => status.insight.webUiUrl,
+    vscode: { env: { uiKind: 2 }, UIKind: { Web: 2 } },
+    resolveInsightBrowserUrl: async (_vscode, url) => url.replace('localhost', 'browser.example'),
+    getInsightUrl: async (status, options) => options.resolveBrowserUrl(status.insight.webUiUrl),
     execFilePromise: async (file, args, options, uiOptions) => {
       calls.push({file, args, options, uiOptions});
       return JSON.stringify({insight: {webUiUrl: 'http://localhost:9900'}});
     }
   };
   vm.createContext(context);
-  vm.runInContext(source.slice(source.indexOf('async function getInsightWebUiUrl('),
+  vm.runInContext(source.slice(source.indexOf('function insightUrlOptions('),
     source.indexOf('async function getDevKitSyncState(')), context);
-  assert.equal(await context.getInsightWebUiUrl(), 'http://localhost:9900');
+  assert.equal(await context.getInsightWebUiUrl(), 'http://browser.example:9900');
+  context.vscode.env.uiKind = 1;
+  assert.equal(Object.keys(context.insightUrlOptions()).length, 0);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].file, 'neat');
   assert.deepEqual(calls[0].args, ['--json', '--offline']);
