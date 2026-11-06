@@ -14,7 +14,8 @@ const https = require("https");
 const os = require("os");
 const path = require("path");
 const { URLSearchParams } = require("url");
-const { getInsightUrl, readNeatStatus } = require("./landing-data");
+const { resolveInsightBrowserUrl } = require("./insight-browser-url");
+const { getInsightUrl, readNeatStatus, loadLandingData } = require("./landing-data");
 
 const APPS_REPO_URL = "https://github.com/sima-neat/apps";
 const SIMA_CLI_DIR = path.join(os.homedir(), ".sima-cli");
@@ -215,6 +216,7 @@ async function activate(context) {
   );
   await registerGettingStarted(vscode, context, {
     getDevkitConfig: getDevKitSyncConfig, openInsight, modelsEnabled, registryState,
+    loadData: getConfig => loadLandingData(getConfig, insightUrlOptions()),
     getAppsState: () => getSamplesState(getWorkspaceRoot()), cloneApps: cloneSamples
   });
 }
@@ -489,10 +491,16 @@ async function openInsight() {
   await insightView.open();
 }
 
+function insightUrlOptions() {
+  return vscode.env.uiKind === vscode.UIKind.Web
+    ? { resolveBrowserUrl: url => resolveInsightBrowserUrl(vscode, url) }
+    : {};
+}
+
 async function getInsightWebUiUrl() {
   return getInsightUrl(await readNeatStatus((file, args) =>
     execFilePromise(file, args, { timeout: 5000, killSignal: "SIGKILL" }, { showError: false })
-  ));
+  ), insightUrlOptions());
 }
 
 async function getDevKitSyncState() {

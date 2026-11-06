@@ -8,7 +8,7 @@ Experimental VS Code extension scaffold for Palette SDK workspaces.
 - Launch Insight from the Palette SDK page or Palette panel in a dedicated editor tab. Repeated launches reuse the tab and preserve its current view; closing it ends the embedded session. The tab is restored when the editor reloads.
 
 - Adds a Palette activity bar container.
-- Opens Insight using the current URL reported by `neat --json`.
+- Opens Insight on the SDK browser hostname and published mainUI port, with explicit gateway URL overrides supported.
 - Initializes the browser editor menu bar to always visible (`window.menuBarVisibility: visible`) when no explicit user/workspace value exists. Users can change it afterward; desktop VS Code preferences are untouched.
 - Shows a Palette webview panel with SDK controls.
 - Supports opt-in, host-controlled expiration reminders for Arthas; ordinary local environments remain silent.
@@ -26,7 +26,16 @@ the corresponding file in the container-specific host directory:
 ```
 
 The file must contain one HTTP or HTTPS URL. If it is missing, empty, or
-invalid, the extension falls back to `insight.webUiUrl` from `neat --json`.
+invalid, the browser extension uses the hostname of the SDK browser session
+and the published `mainUI.host` port from the port map. For example, opening
+`https://127.0.0.1:10000` launches `https://127.0.0.1:9900`, while opening
+`https://192.168.76.60:10000` launches `https://192.168.76.60:9900`.
+The extension discovers this hostname through code-server's external URI resolver,
+then builds a direct Insight URL; HTTPS Insight does not use its HTTP proxy.
+Explicit overrides retain their host, port, path, query, and fragment unchanged.
+Older images without a port map use the port advertised by `neat --json`.
+Native VS Code retains the advertised host. DevKit transport and WebRTC ICE
+addresses are independent of the browser launch URL.
 
 ## Development
 
@@ -231,8 +240,9 @@ are rejected. No firmware or device settings are modified.
 Insight version comes from `neat --json --offline`, with an installed Python
 package metadata fallback for platform-only SDK images. Both the landing page
 and Palette panel share the launch resolver: `/home/docker/.insight-config/launch-url`
-first, then `neat`'s `insight.webUiUrl`, then the published mainUI port and
-`CONTAINER_HOST_IP` when Core is absent. Missing URLs disable the launch action.
+first, then the SDK browser hostname and published mainUI port (falling back
+to the port in `neat`'s `insight.webUiUrl` for older images). `CONTAINER_HOST_IP`
+is only a host fallback outside browser sessions. Missing URLs disable the launch action.
 
 Quick-access actions open Insight, the Apps repository, the existing Neat model
 browser (SDK 3.0+), the Getting Started documentation, or the Neat sidebar. Remote
