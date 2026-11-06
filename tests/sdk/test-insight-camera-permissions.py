@@ -21,11 +21,34 @@ class CameraPolicyTest(unittest.TestCase):
 const assert = require('node:assert/strict');
 const document = {createElement: () => ({setAttribute(key, value) { this[key] = value; }})};
 const view = {METHOD};
-assert.equal(view._createElement({}, {id:{value:'sima-neat.sima-neat'}}).allow, 'autoplay; camera *');
-assert.equal(view._createElement({}, {id:{value:'other.extension'}}).allow, 'autoplay');
+// _createElement receives options and contentOptions, not extension metadata.
+view.extension = {id:{value:'sima-neat.sima-neat'}};
+assert.equal(view._createElement({}, {}).allow, 'autoplay; camera *');
+assert.equal(view._createElement({}, {enableScripts:true}).allow, 'autoplay; camera *');
+view.extension = {id:{value:'other.extension'}};
+assert.equal(view._createElement({}, {id:{value:'sima-neat.sima-neat'}}).allow, 'autoplay');
+view.extension = undefined;
+assert.equal(view._createElement({}, {}).allow, 'autoplay');
 assert.equal(view._createElement({}, undefined).allow, 'autoplay');
+view.extension = {};
+assert.equal(view._createElement({}, {}).allow, 'autoplay');
 '''.replace('METHOD', updated)
         subprocess.run(['node', '-e', script], check=True)
+
+    def test_existing_guard_is_upgraded(self):
+        source = ('_createElement(e,t){let i=document.createElement("iframe");'
+                  'let n=["autoplay"];/* palette-insight-camera-outer */'
+                  't?.id.value==="sima-neat.sima-neat"&&n.push("camera *"),'
+                  'i.setAttribute("allow",n.join("; "));return i}')
+        updated = patch.patch_workbench(source)
+        self.assertNotIn('t?.id.value', updated)
+        self.assertIn('this.extension?.id?.value', updated)
+        self.assertEqual(updated, patch.patch_workbench(updated))
+        self.assertEqual(updated.count('camera *'), 1)
+
+    def test_unknown_existing_guard_fails_closed(self):
+        with self.assertRaises(ValueError):
+            patch.patch_workbench('/* palette-insight-camera-outer */unknown')
 
     def test_inner_policy_is_scoped_to_palette(self):
         source = "const searchParams = new URLSearchParams(query); const allowRules = ['autoplay;']; newFrame.setAttribute('allow', allowRules.join(' '));"

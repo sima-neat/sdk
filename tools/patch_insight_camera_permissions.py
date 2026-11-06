@@ -15,7 +15,16 @@ import re
 def patch_workbench(source):
     marker = '/* palette-insight-camera-outer */'
     if marker in source:
-        return source
+        # Normalize the original guard too, so existing SDK containers can be
+        # repaired by rerunning this script. Fail closed on an unknown patch.
+        guard_pattern = (
+            re.escape(marker)
+            + r'(?:\w+\?\.id\.value|this\.extension\?\.id\?\.value)'
+            + r'==="sima-neat\.sima-neat"&&\w+\.push\("camera \*"\),'
+        )
+        source, count = re.subn(guard_pattern, '', source)
+        if count != 1:
+            raise ValueError('Unrecognized existing webview camera guard')
     pattern = (r'(_createElement\((\w+),(\w+)\)\{let (\w+)=document\.createElement\("iframe"\);)'
                r'(.*?)((\w+)\.setAttribute\("allow",(\w+)\.join\("; "\)\))')
     matches = list(re.finditer(pattern, source, re.S))
@@ -24,7 +33,7 @@ def patch_workbench(source):
     m = matches[0]
     if m[4] != m[7]:
         raise ValueError('Webview iframe variable changed')
-    guard = marker + f'{m[3]}?.id.value==="sima-neat.sima-neat"&&{m[8]}.push("camera *"),'
+    guard = marker + f'this.extension?.id?.value==="sima-neat.sima-neat"&&{m[8]}.push("camera *"),'
     return source[:m.start(6)] + guard + source[m.start(6):]
 
 
