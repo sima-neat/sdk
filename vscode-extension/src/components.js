@@ -45,20 +45,23 @@ function validateCatalog(value) {
   }
   return value;
 }
-function resolveCatalog(catalog, { release, arch, codeServer, vscode, testVersion, allowCandidate = false }) {
+function resolveCatalog(catalog, { release, arch, codeServer, vscode, testVersion, allowCandidate = false, allowSdkFallback = false }) {
   validateCatalog(catalog);
   const normalized = /^v?(\d+\.\d+\.\d+(?:\.\d+)?)$/.exec(release || '')?.[1];
-  // Development images require an explicit test-only SDK selection, never a platform-version fallback.
-  const sdk = testVersion && allowCandidate ? testVersion : Object.keys(catalog.sdks).find(
+  // Explicit test selections and known SDK policies always take precedence.
+  let sdk = testVersion && allowCandidate ? testVersion : Object.keys(catalog.sdks).find(
     key => catalog.sdks[key].sdk_releases.includes(normalized));
+  const fallback = allowSdkFallback && !(testVersion && allowCandidate) &&
+    (!sdk || catalog.sdks[sdk]?.status === 'candidate');
+  if (!sdk && fallback) sdk = catalog.build_sdk_version;
   const row = sdk && catalog.sdks[sdk];
   if (!row) throw Error('No compatible component mapping for this SDK release');
-  if (row.status !== 'qualified' && !(allowCandidate && row.status === 'candidate'))
+  if (row.status !== 'qualified' && !((fallback || allowCandidate) && row.status === 'candidate'))
     throw Error(`SDK ${sdk} components are ${row.status}; no qualified installation is available`);
   if (!row.architectures.includes(arch)) throw Error('This SDK architecture has not been qualified');
   if (!row.engines.some(engine => engine.code_server === codeServer && engine.vscode === vscode))
     throw Error('This code-server / VS Code engine pair has not been qualified');
-  return { sdkVersion: sdk, status: row.status, ...row };
+  return { sdkVersion: sdk, status: row.status, ...row, sdkFallback: fallback, sdkRelease: release };
 }
 async function responseFrom(url, fetcher, signal) {
   for (let redirects = 0; redirects < 5; redirects++) {
@@ -184,7 +187,8 @@ class ComponentCatalog {
     this.detected = { sdkRelease: release, codeServer: server, installedCliVersion: cliVersion };
     const resolved = resolveCatalog(catalog, { release, arch: ARCHES[process.arch], codeServer: server,
       vscode: this.options.vscodeVersion, testVersion: env.SIMA_SDK_COMPONENT_TEST_VERSION,
-      allowCandidate: env.SIMA_SDK_COMPONENTS_ALLOW_CANDIDATE === '1' });
+      allowCandidate: env.SIMA_SDK_COMPONENTS_ALLOW_CANDIDATE === '1',
+      allowSdkFallback: this.options.allowSdkFallback === true });
     this.value = { ...resolved, available: true, source, installedCliVersion: cliVersion, error: '' };
   }
   async readInstalledProfile() {

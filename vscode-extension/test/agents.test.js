@@ -38,6 +38,23 @@ for (const [key, id, command] of [
   ["codex", "openai.chatgpt", "chatgpt.openSidebar"],
   ["claude", "anthropic.claude-code", "claude-vscode.sidebar.open"],
 ]) {
+  test(`${key} installs and opens pinned candidate fallback without a qualified SDK mapping`, async () => {
+    let activated = false;
+    const h = harness(async name => {
+      if (name === 'workbench.extensions.installExtension')
+        h.installed.set(id, {packageJSON: {version: key === 'codex' ? '1.2.3' : '2.3.4'}, activate: async () => {activated = true;}});
+    });
+    const originalSnapshot = h.catalog.snapshot;
+    h.catalog.snapshot = () => ({...originalSnapshot(), status: 'candidate', sdkFallback: true});
+    assert.equal(h.manager.snapshot()[key].blocked, false);
+    assert.equal(h.manager.snapshot()[key].candidate, true);
+    assert.equal(h.manager.snapshot()[key].sdkFallback, true);
+    await h.manager.action(key, 'install');
+    assert.equal(h.manager.snapshot()[key].status, 'installed');
+    await h.manager.action(key, 'open');
+    assert.equal(activated, true);
+    assert.deepEqual(h.calls[0][1], {fsPath: `/verified/${key}.vsix`});
+  });
   test(`${key} installs the allowlisted extension and opens its verified command`, async () => {
     let activated = 0;
     const h = harness(async (name) => {

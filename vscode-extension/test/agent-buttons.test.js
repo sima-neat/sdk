@@ -39,11 +39,36 @@ for (const initialStatus of ["available", "update"]) test(`${initialStatus} ackn
     receive({ data: { type: "agents", value: { codex: { status: "update", candidate: true } } } });
     assert.equal(button.textContent, "Update to Candidate Version");
     assert.match(fields[".agent-progress"].textContent, /not yet SiMa qualified/);
+    receive({ data: { type: "agents", value: { codex: { status: "update", sdkFallback: true } } } });
+    assert.equal(button.textContent, "Update to Fallback Version");
+    assert.match(fields[".agent-progress"].textContent, /pinned fallback version/);
   }
+  receive({ data: { type: "agents", value: { codex: { status: "available", sdkFallback: true } } } });
+  assert.equal(button.disabled, false);
+  assert.match(fields[".agent-progress"].textContent, /no qualified mapping/);
   button.click();
   button.click();
   assert.equal(messages.filter(message => message.type === "agent").length, 1);
   receive({ data: { type: "agents", value: { codex: { status: "available", error: "Please retry" } } } });
   assert.equal(button.disabled, false);
   assert.equal(fields[".agent-progress"].textContent, "Please retry");
+});
+
+test('environment card labels fallback without claiming SDK qualification', () => {
+  const element = {textContent: ''};
+  let receive;
+  const context = {
+    document: {getElementById: () => element},
+    window: {addEventListener: (_, fn) => {receive = fn;}},
+  };
+  const script = fs.readFileSync(require.resolve('../media/landing/landing.js'), 'utf8');
+  vm.runInNewContext(script.slice(script.lastIndexOf('window.addEventListener')), context);
+  receive({data: {type: 'components', value: {
+    available: true, sdkFallback: true, status: 'candidate', sdkVersion: '3.0.0', sdkRelease: 'develop-test',
+    components: {codex: {version: '1.2.3'}, claude: {version: '2.3.4'}, 'codex-cli': {version: '0.153.4'}},
+    installedCliVersion: '0.153.4', source: 'offline',
+  }}});
+  assert.match(element.textContent, /Pinned candidate fallback from SDK 3.0.0.*no qualified mapping for develop-test/);
+  assert.match(element.textContent, /Offline catalog/);
+  assert.doesNotMatch(element.textContent, /Qualified for/);
 });

@@ -13,8 +13,20 @@ code-server/VS Code engine **pairs**, qualification status, and exact
 component IDs, versions, URLs and SHA-256 values. SDK identity comes from
 `SDK Release` in `/etc/sdk-release`, not the platform/sysroot version. Tagged SDK
 image builds additionally require the selected build cohort to be qualified and
-to explicitly list that tag as a supported SDK release. Unknown
-releases and development branches do not inherit a stable release mapping.
+to explicitly list that tag as a supported SDK release.
+
+In the Neat panel, an unknown release or development branch falls back to the
+`build_sdk_version` entry when no exact SDK release mapping exists. The default
+entry may be `qualified` or `candidate` and must match the current architecture and exact
+code-server/VS Code engine pair. Its exact extension versions, artifact checksums,
+and persistent update pins still apply. The panel labels this as a pinned fallback;
+it does not claim qualification for the SDK release. An exact candidate mapping
+also permits installation in the panel using its own pins, without candidate test
+environment flags. Candidate fallbacks are labelled **Pinned candidate fallback**.
+An existing SDK mapping (including a candidate or revoked entry) or an explicit
+test selection never falls through to the default entry. Revoked entries remain
+blocked. Shell installation and tagged image
+builds retain their exact SDK mapping requirements.
 
 The Palette SDK environment card displays the selected cohort, target versions,
 and installed CLI version; agent cards show installed and target versions.
@@ -70,9 +82,11 @@ SIMA_SDK_COMPONENTS_ALLOW_CANDIDATE=1
 SIMA_SDK_COMPONENT_TEST_VERSION=3.0.0
 ```
 
-The second setting is required for development images. It is an exact test SDK
+The second setting selects a candidate for development images. Without it, the
+panel can fall back to a qualified or candidate default entry. It is an exact test SDK
 key, not a general fallback. Palette labels the result **Candidate test**.
-Ordinary customer sessions accept only `qualified` cohorts.
+Shell installation accepts candidates only with the explicit test settings;
+the panel also allows visibly labelled pinned candidate fallbacks.
 
 For each supported architecture and engine pair:
 
