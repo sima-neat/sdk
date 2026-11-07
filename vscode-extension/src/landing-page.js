@@ -29,7 +29,7 @@ async function landingHtml(vscode, context, webview) {
 }
 function createLandingPage(vscode, context, services) {
   let panel;
-  const catalog = services.components || new ComponentCatalog(context, { vscodeVersion: vscode.version });
+  const catalog = services.components || new ComponentCatalog(context, { vscodeVersion: vscode.version, allowSdkFallback: true });
   const agents = createAgentManager(vscode, catalog);
   return async function open(restored) {
     if (panel && !restored) {

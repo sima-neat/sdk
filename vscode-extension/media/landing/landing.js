@@ -191,7 +191,7 @@ function renderAgents(states) {
           : state.status === "reload"
             ? "Reload editor"
             : state.status === "update"
-              ? `Update to ${state.candidate ? "Candidate" : "Qualified"} Version`
+              ? `Update to ${state.candidate ? "Candidate" : state.sdkFallback ? "Fallback" : "Qualified"} Version`
               : `Install ${name} ↓`;
     progress.textContent =
       state.error ||
@@ -204,10 +204,14 @@ function renderAgents(states) {
               ? "This version is not pinned and may update automatically. Reinstall the SDK version to keep it pinned."
               : state.candidate
                 ? "The installed extension differs from the SDK test candidate. This candidate is not yet SiMa qualified."
-                : "The currently installed extension is not the SiMa qualified version for this SDK."
+                : state.sdkFallback
+                  ? "The installed extension differs from the pinned fallback version."
+                  : "The currently installed extension is not the SiMa qualified version for this SDK."
             : state.offline
               ? "Offline component catalog: installed extensions can open; installs require a previously cached package. AI services require an internet connection."
-              : "");
+              : state.sdkFallback
+                ? "Using pinned fallback versions because this SDK release has no qualified mapping. This SDK release has not been qualified with these extensions."
+                : "");
     progress.classList.toggle("error", Boolean(state.error));
     next.textContent =
       state.status === "installed"
@@ -255,7 +259,10 @@ window.addEventListener("message", ({ data }) => {
   const state = data.value;
   const element = document.getElementById("sdk-components");
   if (!element) return;
+  const selection = state.sdkFallback
+    ? `Pinned ${state.status === "candidate" ? "candidate " : ""}fallback from SDK ${state.sdkVersion} (no qualified mapping for ${state.sdkRelease || "this SDK"})`
+    : `${state.status === "candidate" ? "Candidate test" : "Qualified"} for SDK ${state.sdkVersion}`;
   element.textContent = state.available
-    ? `${state.status === "candidate" ? "Candidate test" : "Qualified"} for SDK ${state.sdkVersion} · Codex ${state.components.codex.version} · Claude ${state.components.claude.version} · Codex CLI ${state.components["codex-cli"].version} (installed: ${state.installedCliVersion})${state.source === "offline" ? " · Offline catalog (cached or bundled); installs require cached packages" : ""}`
+    ? `${selection} · Codex ${state.components.codex.version} · Claude ${state.components.claude.version} · Codex CLI ${state.components["codex-cli"].version} (installed: ${state.installedCliVersion})${state.source === "offline" ? " · Offline catalog (cached or bundled); installs require cached packages" : ""}`
     : `${state.error}${state.installedCliVersion ? ` · Installed Codex CLI ${state.installedCliVersion}` : ""}`;
 });

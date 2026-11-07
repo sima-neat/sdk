@@ -255,9 +255,14 @@ The landing page's **Agents** tab installs **OpenAI Codex** (`openai.chatgpt`)
 and **Claude Code** (`anthropic.claude-code`) through the editor's configured
 SDK compatibility catalog at `https://artifacts.neat.sima.ai/sdk/components.json`.
 The SDK environment card shows qualified target versions and the installed CLI
-version; each agent card shows its installed/target version. Exact SDK release,
-code-server/VS Code pair, architecture, and qualification status must match.
-Unmapped, candidate, revoked, or incompatible entries disable installation.
+version; each agent card shows its installed/target version. Exact SDK release
+mappings take precedence. If the SDK release is unmapped (including development
+images), the panel uses the catalog's `build_sdk_version` entry as a labelled
+pinned fallback. Both qualified and candidate entries are allowed, provided the
+current code-server/VS Code pair and architecture match. Exact candidate SDK
+mappings also allow installation using their own pins without test flags.
+Candidate fallbacks are labelled **Pinned candidate fallback**; SDK qualification
+is not implied. Revoked or incompatible entries still disable installation.
 Install downloads and checksum-verifies the exact VSIX and checks its identity
 and version. Local VSIX installation pins that release against gallery auto-updates;
 installations are not synced to other editors. An installed mismatch offers Install
@@ -268,10 +273,11 @@ The last validated online catalog and downloaded artifacts are cached in the
 extension's global storage. During a network outage the cached or image-bundled
 catalog may be used; malformed online data and explicit revocations never fall
 back to older qualified data. A missing artifact fails without installing latest.
-Candidate testing requires `SIMA_SDK_COMPONENTS_ALLOW_CANDIDATE=1`; development
-images additionally require `SIMA_SDK_COMPONENT_TEST_VERSION=<exact SDK key>` in
+Explicit candidate testing uses `SIMA_SDK_COMPONENTS_ALLOW_CANDIDATE=1`; selecting a
+candidate on development images requires `SIMA_SDK_COMPONENT_TEST_VERSION=<exact SDK key>` in
 the extension host's environment. These are operator test settings and are visibly
-labelled Candidate test; customer qualification requires the recorded matrix.
+labelled Candidate test. The panel's candidate fallback does not require these
+settings; customer qualification requires the recorded matrix.
 
 Each agent reports its own installation state immediately. Gallery downloads
 can take several minutes; publisher prompts appear in the editor. **Manage in

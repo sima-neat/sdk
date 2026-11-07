@@ -30,6 +30,7 @@ function createAgentManager(vscode, catalog) {
             version: state.components?.[key]?.version,
             offline: state.source === "offline",
             candidate: state.status === "candidate",
+            sdkFallback: state.sdkFallback === true,
             unpinned: Boolean(extension) && extension.packageJSON?.version === state.components?.[key]?.version && !installed,
             installedVersion: extension?.packageJSON?.version,
             blocked: !state.available,

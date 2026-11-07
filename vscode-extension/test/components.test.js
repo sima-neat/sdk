@@ -29,6 +29,46 @@ test('matching is exact for SDK release, engine pair and architecture', () => {
   c.sdks['3.0.0'].status = 'revoked';
   assert.throws(() => resolveCatalog(c, {...options, allowCandidate:true}), /revoked/);
 });
+test('panel SDK fallback uses default pins for unmapped releases and preserves exact pins', () => {
+  const catalog = qualified();
+  for (const release of ['v3.0.0.1', 'v3.1.0', 'develop-1234567', undefined]) {
+    const selected = resolveCatalog(catalog, {...options, release, allowSdkFallback: true});
+    assert.equal(selected.sdkFallback, true);
+    assert.equal(selected.sdkRelease, release);
+    assert.equal(selected.sdkVersion, catalog.build_sdk_version);
+    assert.deepEqual(selected.components, catalog.sdks[catalog.build_sdk_version].components);
+  }
+  const exact = resolveCatalog(catalog, {...options, allowSdkFallback: true});
+  assert.equal(exact.sdkFallback, false);
+  catalog.sdks['3.1.0'] = structuredClone(catalog.sdks['3.0.0']);
+  catalog.sdks['3.1.0'].sdk_releases = ['3.1.0'];
+  catalog.sdks['3.1.0'].components.codex.version = '1.2.3';
+  assert.equal(resolveCatalog(catalog, {...options, release: '3.1.0', allowSdkFallback: true}).components.codex.version, '1.2.3');
+  catalog.sdks['3.1.0'].status = 'revoked';
+  assert.throws(() => resolveCatalog(catalog, {...options, release: '3.1.0', allowSdkFallback: true}), /revoked/);
+  catalog.sdks['3.1.0'].status = 'candidate';
+  const candidate = resolveCatalog(catalog, {...options, release: '3.1.0', allowSdkFallback: true});
+  assert.equal(candidate.sdkFallback, true);
+  assert.equal(candidate.status, 'candidate');
+  assert.equal(candidate.components.codex.version, '1.2.3');
+});
+test('panel candidate fallback needs no test flags and preserves engine, architecture and revocation checks', () => {
+  const fallbackOptions = {...options, release: 'develop-test', allowSdkFallback: true};
+  for (const release of ['v3.0.0.0', 'v3.0.0.1', 'develop-test']) {
+    const selected = resolveCatalog(clone(), {...fallbackOptions, release});
+    assert.equal(selected.sdkFallback, true);
+    assert.equal(selected.status, 'candidate');
+    assert.deepEqual(selected.components, original.sdks['3.0.0'].components);
+  }
+  for (const change of [{arch: 'riscv64'}, {codeServer: '4.137.0'}, {vscode: '1.140.0'}])
+    assert.throws(() => resolveCatalog(clone(), {...fallbackOptions, ...change}), /not been qualified/);
+  const revoked = clone();
+  revoked.sdks['3.0.0'].status = 'revoked';
+  assert.throws(() => resolveCatalog(revoked, fallbackOptions), /revoked/);
+  assert.throws(() => resolveCatalog(clone(), {...options}), /candidate/);
+  assert.throws(() => resolveCatalog(qualified(), {...fallbackOptions, testVersion: '9.0.0', allowCandidate: true}), /No compatible/);
+  assert.equal(resolveCatalog(clone(), {...fallbackOptions, testVersion: '3.0.0', allowCandidate: true}).sdkFallback, false);
+});
 test('artifact integrity, supported status and trusted locations are mandatory', () => {
   for (const mutate of [c=>c.schema_version=2, c=>delete c.sdks['3.0.0'].components.claude.artifacts.arm64,
     c=>c.sdks['3.0.0'].components.codex.id='other.agent',
@@ -174,10 +214,10 @@ test('offline installs reuse checksum-verified cached packages and immediately r
   assert.equal(requests, 1);
 });
 
-test('offline artifact preparation validates cached package identity without downloading', async t => {
+test('panel candidate fallback prepares cached pinned artifacts offline without downloading', async t => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sdk-offline-prepare-'));
   t.after(() => fs.rm(dir, {recursive: true, force: true}));
-  const catalog = qualified();
+  const catalog = clone();
   const target = catalog.sdks['3.0.0'].components.codex;
   const contents = Buffer.from('offline package fixture');
   const sha256 = crypto.createHash('sha256').update(contents).digest('hex');
@@ -190,13 +230,15 @@ test('offline artifact preparation validates cached package identity without dow
   const file = path.join(packages, sha256 + '.vsix');
   await fs.writeFile(file, contents);
   const service = new ComponentCatalog(context, {
-    releaseText: 'SDK Release = v3.0.0.0', codeServer: '4.144.0', vscodeVersion: '1.144.0',
+    releaseText: 'SDK Release = develop-test', codeServer: '4.144.0', vscodeVersion: '1.144.0', allowSdkFallback: true,
     fetchCatalog: async () => {throw Error('No internet');},
     execute: async name => ({stdout: name === 'codex' ? 'codex-cli 0.153.4' :
       JSON.stringify({publisher: 'openai', name: 'chatgpt', version: target.version})}),
   });
   assert.equal((await service.artifact('codex')).file, file);
   assert.equal(service.snapshot().source, 'offline');
+  assert.equal(service.snapshot().sdkFallback, true);
+  assert.equal(service.snapshot().status, 'candidate');
   await fs.rm(file);
   await assert.rejects(service.artifact('codex'), {code: 'OFFLINE_ARTIFACT_UNAVAILABLE'});
 });
