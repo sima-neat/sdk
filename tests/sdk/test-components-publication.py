@@ -7,10 +7,48 @@ import io
 import os
 import tempfile
 import contextlib
+import itertools
 
 spec = importlib.util.spec_from_file_location('publisher', Path(__file__).resolve().parents[2] / 'scripts/publish-components.py')
 publisher = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(publisher)
+
+
+class ArtifactEncryptionKeyTests(unittest.TestCase):
+    arn = 'arn:aws:kms:us-west-2:' + publisher.ACCOUNT + ':key/test'
+
+    def test_alias_and_key_arn_resolve_to_validated_customer_key_arn(self):
+        for key_id in ('alias/sima-neat-artifacts-production', self.arn):
+            with self.subTest(key_id=key_id):
+                session = mock.Mock()
+                session.client.return_value.describe_key.return_value = {
+                    'KeyMetadata': {'Arn': self.arn, 'KeyManager': 'CUSTOMER'}}
+                self.assertEqual(publisher.resolve_artifact_kms_key(session, key_id), self.arn)
+                session.client.assert_called_once_with('kms')
+                session.client.return_value.describe_key.assert_called_once_with(KeyId=key_id)
+
+    def test_missing_key_is_rejected_before_aws_lookup(self):
+        session = mock.Mock()
+        with self.assertRaisesRegex(ValueError, 'SSE_KMS_KEY_ID'):
+            publisher.resolve_artifact_kms_key(session, '')
+        session.client.assert_not_called()
+
+    def test_resolved_key_must_be_customer_managed_in_production_account_and_region(self):
+        for arn, manager in ((self.arn.replace('us-west-2', 'us-east-1'), 'CUSTOMER'),
+                             (self.arn.replace(publisher.ACCOUNT, '123456789012'), 'CUSTOMER'),
+                             (self.arn, 'AWS'), ('', 'CUSTOMER')):
+            with self.subTest(arn=arn, manager=manager):
+                session = mock.Mock()
+                session.client.return_value.describe_key.return_value = {
+                    'KeyMetadata': {'Arn': arn, 'KeyManager': manager}}
+                with self.assertRaisesRegex(ValueError, 'customer-managed'):
+                    publisher.resolve_artifact_kms_key(session, 'alias/sima-neat-artifacts-production')
+
+    def test_lookup_failure_stops_publication(self):
+        session = mock.Mock()
+        session.client.return_value.describe_key.side_effect = RuntimeError('KMS lookup denied')
+        with self.assertRaisesRegex(RuntimeError, 'KMS lookup denied'):
+            publisher.resolve_artifact_kms_key(session, 'alias/sima-neat-artifacts-production')
 
 
 class PublicationGateTests(unittest.TestCase):
@@ -39,8 +77,9 @@ class PublicationGateTests(unittest.TestCase):
     def test_conditional_write_and_main_race(self):
         root = Path(__file__).resolve().parents[2]
         catalog = json.loads((root / 'components.json').read_text())
-        for advance in (False, True):
-            with self.subTest(advance=advance), tempfile.TemporaryDirectory() as tmp:
+        key_arn = ArtifactEncryptionKeyTests.arn
+        for advance, key_id in itertools.product((False, True), (key_arn, 'alias/sima-neat-artifacts-production')):
+            with self.subTest(advance=advance, key_id=key_id), tempfile.TemporaryDirectory() as tmp:
                 event = Path(tmp) / 'event.json'; event.write_text(json.dumps(self.event()))
                 manifest = Path(tmp) / 'manifest.json'; manifest.write_text(json.dumps(catalog))
                 previous = dict(catalog, publication={'manual_test': True})
@@ -49,8 +88,10 @@ class PublicationGateTests(unittest.TestCase):
                 s3.put_object.return_value = {'ETag': 'new-etag', 'VersionId': 'new-version'}
                 sts = mock.MagicMock(); sts.get_caller_identity.return_value = {'Account': publisher.ACCOUNT}
                 cdn = mock.MagicMock(); cdn.create_invalidation.return_value = {'Invalidation': {'Id': 'test-invalidation'}}
+                kms = mock.MagicMock()
+                kms.describe_key.return_value = {'KeyMetadata': {'Arn': key_arn, 'KeyManager': 'CUSTOMER'}}
                 boto = mock.MagicMock()
-                boto.Session.return_value.client.side_effect = lambda name: {'s3':s3,'sts':sts,'cloudfront':cdn}[name]
+                boto.Session.return_value.client.side_effect = lambda name: {'s3':s3,'sts':sts,'cloudfront':cdn,'kms':kms}[name]
                 head_reads = []
                 def run(*args):
                     if args[:3] == ('gh','api','repos/sima-neat/sdk/commits/main'):
@@ -62,7 +103,7 @@ class PublicationGateTests(unittest.TestCase):
                     if args[0] == 'git': return 'a'*40
                     return ''
                 env = {'GITHUB_EVENT_PATH':str(event),'GITHUB_EVENT_NAME':'workflow_run',
-                    'SSE_KMS_KEY_ID':'arn:aws:kms:us-west-2:'+publisher.ACCOUNT+':key/test'}
+                    'SSE_KMS_KEY_ID':key_id}
                 with mock.patch.dict(os.environ, env), mock.patch.dict('sys.modules', {'boto3':boto}), \
                      mock.patch.object(publisher, 'run', side_effect=run), \
                      mock.patch('sys.argv',['publish-components','--manifest',str(manifest),'--output',str(Path(tmp)/'out.json')]), \
@@ -73,7 +114,8 @@ class PublicationGateTests(unittest.TestCase):
                     else:
                         publisher.main()
                         self.assertEqual(s3.put_object.call_args.kwargs['IfMatch'],'prior-etag')
-                        self.assertEqual(s3.put_object.call_args.kwargs['SSEKMSKeyId'],env['SSE_KMS_KEY_ID'])
+                        self.assertEqual(s3.put_object.call_args.kwargs['SSEKMSKeyId'],key_arn)
+                        kms.describe_key.assert_called_once_with(KeyId=key_id)
                         self.assertIn('must-revalidate',s3.put_object.call_args.kwargs['CacheControl'])
 
 
