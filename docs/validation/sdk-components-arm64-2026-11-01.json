@@ -1,0 +1,59 @@
+{
+  "status": "passed",
+  "authenticated_agent_use": false,
+  "checks": [
+    "codex: exact install, reload, account setup UI and responsive startup",
+    "claude: exact install, reload, account setup UI and responsive startup",
+    "workspace edit/save, terminal creation, browser reload/reconnect",
+    "code-server service restart and workbench recovery"
+  ],
+  "sdk_image_digest": "sha256:8ac38dd43b7d71bd22ad2504b490b13b74c3a4d1daa0ae4995affefaf8f4f5de",
+  "server": "4.144.0 ee31cdbe02c07b3ba718007f221d14c890696c61 with Code 1.144.0",
+  "browser": "Chrome 156.0.8078.79",
+  "installed": [
+    {
+      "id": "anthropic.claude-code",
+      "version": "2.1.316",
+      "metadata": {
+        "installedTimestamp": 1793553795299,
+        "pinned": true,
+        "source": "vsix",
+        "id": "3c13ae49-babe-45fe-8c48-5e45077a62bf",
+        "publisherDisplayName": "Anthropic",
+        "publisherId": "89769da0-cc4b-40b0-8216-93ffb5a96b56",
+        "isPreReleaseVersion": false,
+        "hasPreReleaseVersion": false,
+        "preRelease": false
+      }
+    },
+    {
+      "id": "openai.chatgpt",
+      "version": "26.908.40401",
+      "metadata": {
+        "installedTimestamp": 1793553795298,
+        "pinned": true,
+        "source": "vsix",
+        "id": "90b52117-6fd1-4f1c-9e14-256bd6e21d79",
+        "publisherDisplayName": "openai",
+        "publisherId": "584b523d-f9d7-4f93-87bb-e40e32a65698",
+        "isPreReleaseVersion": false
+      }
+    }
+  ],
+  "console_errors": [],
+  "architecture": "arm64",
+  "codex_cli_version": "codex-cli 0.153.4",
+  "components_manifest_sha256": "1353c7b4fd21f21b7b8bf4f64c73bb6cc2fd91a6849e39d770e32b1eb3f59bb7",
+  "candidate_testing_enabled": true,
+  "cli_policy": {
+    "bare_agent_ids_installed_exact_pinned_versions": true,
+    "unmapped_sdk_blocked": true,
+    "explicit_incompatible_version_blocked": true
+  },
+  "source_files_sha256": {
+    "vscode-extension/src/components.js": "f065c940af0f309edd5424050ffeba9824e56ea832717bdf28873578ffec0290",
+    "scripts/sdk-code-server-cli.js": "835f6c447a026d0b676154660fe4a4d1d9dbbd37993019858db43e3739d4ed02",
+    "scripts/components-catalog.js": "b24fb1e360a187385774c572f82942d74ca5f992e8113df33776fece5826e191"
+  },
+  "qualification_scope": "Local native arm64 Chrome smoke. No authenticated agent messages were sent; amd64 and authenticated/manual qualification remain pending."
+}

@@ -90,8 +90,12 @@ trap cleanup EXIT
 artifacts_dir="${tmp_dir}/artifacts"
 mkdir -p "${artifacts_dir}"
 
+mkdir -p "${tmp_dir}/extension"
+cp -R "${EXTENSION_DIR}/." "${tmp_dir}/extension/"
+cp "${ROOT_DIR}/components.json" "${tmp_dir}/extension/components.json"
+
 (
-  cd "${EXTENSION_DIR}"
+  cd "${tmp_dir}/extension"
   npx --yes @vscode/vsce package \
     --no-dependencies \
     --out "${artifacts_dir}/${VSIX_NAME}"

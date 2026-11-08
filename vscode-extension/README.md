@@ -4,8 +4,11 @@ Experimental VS Code extension scaffold for Palette SDK workspaces.
 
 ## Features
 
+- Embedded camera preview requires the SDK code-server camera delegation patch (`tools/patch_insight_camera_permissions.py`), applied during image build. Camera delegation is limited to Palette webviews and the detected Insight origin; browser camera permission is still required.
+- Launch Insight from the Palette SDK page or Palette panel in a dedicated editor tab. Repeated launches reuse the tab and preserve its current view; closing it ends the embedded session. The tab is restored when the editor reloads.
+
 - Adds a Palette activity bar container.
-- Opens Insight using the current URL reported by `neat --json`.
+- Opens Insight on the SDK browser hostname and published mainUI port, with explicit gateway URL overrides supported.
 - Initializes the browser editor menu bar to always visible (`window.menuBarVisibility: visible`) when no explicit user/workspace value exists. Users can change it afterward; desktop VS Code preferences are untouched.
 - Shows a Palette webview panel with SDK controls.
 - Supports opt-in, host-controlled expiration reminders for Arthas; ordinary local environments remain silent.
@@ -23,7 +26,16 @@ the corresponding file in the container-specific host directory:
 ```
 
 The file must contain one HTTP or HTTPS URL. If it is missing, empty, or
-invalid, the extension falls back to `insight.webUiUrl` from `neat --json`.
+invalid, the browser extension uses the hostname of the SDK browser session
+and the published `mainUI.host` port from the port map. For example, opening
+`https://127.0.0.1:10000` launches `https://127.0.0.1:9900`, while opening
+`https://192.168.76.60:10000` launches `https://192.168.76.60:9900`.
+The extension discovers this hostname through code-server's external URI resolver,
+then builds a direct Insight URL; HTTPS Insight does not use its HTTP proxy.
+Explicit overrides retain their host, port, path, query, and fragment unchanged.
+Older images without a port map use the port advertised by `neat --json`.
+Native VS Code retains the advertised host. DevKit transport and WebRTC ICE
+addresses are independent of the browser launch URL.
 
 ## Development
 
@@ -228,8 +240,9 @@ are rejected. No firmware or device settings are modified.
 Insight version comes from `neat --json --offline`, with an installed Python
 package metadata fallback for platform-only SDK images. Both the landing page
 and Palette panel share the launch resolver: `/home/docker/.insight-config/launch-url`
-first, then `neat`'s `insight.webUiUrl`, then the published mainUI port and
-`CONTAINER_HOST_IP` when Core is absent. Missing URLs disable the launch action.
+first, then the SDK browser hostname and published mainUI port (falling back
+to the port in `neat`'s `insight.webUiUrl` for older images). `CONTAINER_HOST_IP`
+is only a host fallback outside browser sessions. Missing URLs disable the launch action.
 
 Quick-access actions open Insight, the Apps repository, the existing Neat model
 browser (SDK 3.0+), the Getting Started documentation, or the Neat sidebar. Remote
@@ -240,8 +253,31 @@ bundled locally and uses a restrictive webview Content Security Policy.
 
 The landing page's **Agents** tab installs **OpenAI Codex** (`openai.chatgpt`)
 and **Claude Code** (`anthropic.claude-code`) through the editor's configured
-extension gallery. The editor selects a compatible release and presents any
-publisher-trust prompts; installations are not synced to other editors.
+SDK compatibility catalog at `https://artifacts.neat.sima.ai/sdk/components.json`.
+The SDK environment card shows qualified target versions and the installed CLI
+version; each agent card shows its installed/target version. Exact SDK release
+mappings take precedence. If the SDK release is unmapped (including development
+images), the panel uses the catalog's `build_sdk_version` entry as a labelled
+pinned fallback. Both qualified and candidate entries are allowed, provided the
+current code-server/VS Code pair and architecture match. Exact candidate SDK
+mappings also allow installation using their own pins without test flags.
+Candidate fallbacks are labelled **Pinned candidate fallback**; SDK qualification
+is not implied. Revoked or incompatible entries still disable installation.
+Install downloads and checksum-verifies the exact VSIX and checks its identity
+and version. Local VSIX installation pins that release against gallery auto-updates;
+installations are not synced to other editors. An installed mismatch offers Install
+to repair/downgrade, followed by Reload when the extension host still has the old
+version loaded. Manage remains available for troubleshooting.
+
+The last validated online catalog and downloaded artifacts are cached in the
+extension's global storage. During a network outage the cached or image-bundled
+catalog may be used; malformed online data and explicit revocations never fall
+back to older qualified data. A missing artifact fails without installing latest.
+Explicit candidate testing uses `SIMA_SDK_COMPONENTS_ALLOW_CANDIDATE=1`; selecting a
+candidate on development images requires `SIMA_SDK_COMPONENT_TEST_VERSION=<exact SDK key>` in
+the extension host's environment. These are operator test settings and are visibly
+labelled Candidate test. The panel's candidate fallback does not require these
+settings; customer qualification requires the recorded matrix.
 
 Each agent reports its own installation state immediately. Gallery downloads
 can take several minutes; publisher prompts appear in the editor. **Manage in
