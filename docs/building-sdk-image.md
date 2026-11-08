@@ -131,6 +131,12 @@ The firmware release is `3.0.0_master_B2501`; the Palette Debian package version
 is `3.0.0`. Target dependencies continue to come from Debian 13 Trixie.
 
 CI uses the official release by default on develop, other branches, and tags.
+The manifest's `sdk-version` defines the SDK identity for branch images, including
+`develop-latest`. It is independent of `platform-version`, which selects the
+underlying platform packages. SDK `3.0.0.1` therefore selects Model Compiler
+`3.0.0.1` even when built on platform `3.0.0`. Numeric release tags override the
+manifest SDK identity for tagged images.
+
 An empty workflow platform selector uses the manifest's `platform-version`.
 An explicit `3.0.0` selector requests the latest daily revision; an exact
 `3.0.0~gitTIMESTAMP.COMMIT-BUILD` or `3.0.0~preBUILD` selects daily or pre-release
