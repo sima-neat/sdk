@@ -6,18 +6,22 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { validateCatalog, resolveCatalog, fetchCatalog, downloadArtifact, ComponentCatalog } = require('../src/components');
 const original = require('../../components.json');
-const clone = () => structuredClone(original);
+const candidate = () => {
+  const catalog = structuredClone(original);
+  catalog.sdks['3.0.0'].status = 'candidate';
+  return catalog;
+};
 const options = { release: 'v3.0.0.0', arch: 'arm64', codeServer: '4.144.0', vscode: '1.144.0' };
 function qualified() {
-  const catalog = clone(), row = catalog.sdks['3.0.0'];
+  const catalog = candidate(), row = catalog.sdks['3.0.0'];
   row.status = 'qualified';
   return catalog;
 }
 test('candidate releases require explicit testing, and platform identity cannot select a development SDK', () => {
-  assert.throws(() => resolveCatalog(clone(), options), /candidate/);
-  assert.equal(resolveCatalog(clone(), {...options, allowCandidate: true}).components.codex.version, original.sdks['3.0.0'].components.codex.version);
+  assert.throws(() => resolveCatalog(candidate(), options), /candidate/);
+  assert.equal(resolveCatalog(candidate(), {...options, allowCandidate: true}).components.codex.version, original.sdks['3.0.0'].components.codex.version);
   assert.throws(() => resolveCatalog(qualified(), {...options, release: 'develop-1234567'}), /No compatible/);
-  assert.equal(resolveCatalog(clone(), {...options, release: 'develop-1234567', testVersion: '3.0.0', allowCandidate: true}).status, 'candidate');
+  assert.equal(resolveCatalog(candidate(), {...options, release: 'develop-1234567', testVersion: '3.0.0', allowCandidate: true}).status, 'candidate');
 });
 test('matching is exact for SDK release, engine pair and architecture', () => {
   const c = qualified();
@@ -61,19 +65,19 @@ test('panel SDK fallback uses default pins for unmapped releases and preserves e
 test('panel candidate fallback needs no test flags and preserves engine, architecture and revocation checks', () => {
   const fallbackOptions = {...options, release: 'develop-test', allowSdkFallback: true};
   for (const release of ['v3.0.0.0', 'v3.0.0.1', 'develop-test']) {
-    const selected = resolveCatalog(clone(), {...fallbackOptions, release});
+    const selected = resolveCatalog(candidate(), {...fallbackOptions, release});
     assert.equal(selected.sdkFallback, true);
     assert.equal(selected.status, 'candidate');
     assert.deepEqual(selected.components, original.sdks['3.0.0'].components);
   }
   for (const change of [{arch: 'riscv64'}, {codeServer: '4.137.0'}, {vscode: '1.140.0'}])
-    assert.throws(() => resolveCatalog(clone(), {...fallbackOptions, ...change}), /not been qualified/);
-  const revoked = clone();
+    assert.throws(() => resolveCatalog(candidate(), {...fallbackOptions, ...change}), /not been qualified/);
+  const revoked = candidate();
   revoked.sdks['3.0.0'].status = 'revoked';
   assert.throws(() => resolveCatalog(revoked, fallbackOptions), /revoked/);
-  assert.throws(() => resolveCatalog(clone(), {...options}), /candidate/);
+  assert.throws(() => resolveCatalog(candidate(), {...options}), /candidate/);
   assert.throws(() => resolveCatalog(qualified(), {...fallbackOptions, testVersion: '9.0.0', allowCandidate: true}), /No compatible/);
-  assert.equal(resolveCatalog(clone(), {...fallbackOptions, testVersion: '3.0.0', allowCandidate: true}).sdkFallback, false);
+  assert.equal(resolveCatalog(candidate(), {...fallbackOptions, testVersion: '3.0.0', allowCandidate: true}).sdkFallback, false);
 });
 test('artifact integrity, supported status and trusted locations are mandatory', () => {
   for (const mutate of [c=>c.schema_version=2, c=>delete c.sdks['3.0.0'].components.claude.artifacts.arm64,
@@ -142,12 +146,14 @@ test('tagged image builds require a qualified matching cohort while development 
  t.after(()=>fs.rm(dir,{recursive:true,force:true}));
  const file=path.join(dir,'components.json');
  const command=path.resolve(__dirname,'../../scripts/components-catalog.js');
- await fs.writeFile(file,JSON.stringify(clone()));
+ await fs.writeFile(file,JSON.stringify(candidate()));
  assert.notEqual(spawnSync(process.execPath,[command,'check-release',file,'v3.0.0.0']).status,0);
  assert.equal(spawnSync(process.execPath,[command,'check-release',file,'develop-test']).status,0);
  await fs.writeFile(file,JSON.stringify(qualified()));
  assert.equal(spawnSync(process.execPath,[command,'check-release',file,'v3.0.0.0']).status,0);
  assert.notEqual(spawnSync(process.execPath,[command,'check-release',file,'v3.1.0']).status,0);
+ await fs.writeFile(file,JSON.stringify(original));
+ assert.equal(spawnSync(process.execPath,[command,'check-release',file,'v3.0.0.1']).status,0);
 });
 
 test('qualified runtime mappings do not require embedded qualification records',()=>{
@@ -223,7 +229,7 @@ test('offline installs reuse checksum-verified cached packages and immediately r
 test('panel candidate fallback prepares cached pinned artifacts offline without downloading', async t => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sdk-offline-prepare-'));
   t.after(() => fs.rm(dir, {recursive: true, force: true}));
-  const catalog = clone();
+  const catalog = candidate();
   const target = catalog.sdks['3.0.0'].components.codex;
   const contents = Buffer.from('offline package fixture');
   const sha256 = crypto.createHash('sha256').update(contents).digest('hex');
