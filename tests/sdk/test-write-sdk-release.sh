@@ -10,6 +10,8 @@ fail() {
   exit 1
 }
 
+export SDK_DEPS_MANIFEST="${ROOT_DIR}/deps/manifest.json"
+
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "${tmpdir}"' EXIT
 
@@ -28,6 +30,7 @@ grep -Fxq 'Platform Base = 3.0.0' "${tmpdir}/platform-release" || fail "platform
 grep -Fxq 'Platform Channel = pre-release' "${tmpdir}/platform-release" || fail "channel missing"
 grep -Fxq 'Requested Pre-release Base = 3.0.0' "${tmpdir}/platform-release" || fail "requested selector missing"
 grep -Fxq 'Neat Core = not bundled' "${tmpdir}/platform-release" || fail "Core status missing"
+grep -Fxq 'SDK Version = 3.0.0.1_Palette_SDK_neat_develop_abcdef1' "${tmpdir}/platform-release" || fail "develop SDK version must come from the manifest"
 
 SDK_RELEASE_FILE="${tmpdir}/stable-release" \
 SDK_RELEASE_REF=v3.0.0 \
@@ -37,6 +40,17 @@ SDK_APT_CHANNEL=release \
 
 grep -Fxq 'Neat Core = bundled' "${tmpdir}/stable-release" || fail "stable Core status changed"
 grep -Fxq 'SDK Version = 3.0.0_Palette_SDK_neat_v3.0.0' "${tmpdir}/stable-release" || fail "tag release format changed"
+
+# SDK patch releases retain their identity independently of the platform base.
+SDK_RELEASE_FILE="${tmpdir}/patch-release" \
+SDK_RELEASE_REF=v3.0.0.1 \
+BASE_SDK_VERSION=3.0.0 \
+SDK_APT_CHANNEL=release \
+  "${WRITER}"
+grep -Fxq 'SDK Release = v3.0.0.1' "${tmpdir}/patch-release" || fail "SDK patch release missing"
+grep -Fxq 'SDK Version = 3.0.0.1_Palette_SDK_neat_v3.0.0.1' "${tmpdir}/patch-release" || fail "SDK patch version lost"
+grep -Fxq 'Platform Version = 3.0.0' "${tmpdir}/patch-release" || fail "platform version changed"
+grep -Fxq 'Platform Base = 3.0.0' "${tmpdir}/patch-release" || fail "platform base changed"
 
 cat > "${tmpdir}/core-status" <<'EOF'
 Neat Core = not bundled

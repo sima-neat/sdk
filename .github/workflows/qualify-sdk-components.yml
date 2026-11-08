@@ -1,0 +1,79 @@
+name: Qualify SDK component candidate
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'SDK image at immutable digest (repository@sha256:...)'
+        required: true
+        type: string
+      sdk_version:
+        description: 'Exact components.json SDK key'
+        required: true
+        default: '3.0.0'
+        type: string
+permissions:
+  contents: read
+  packages: read
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Prepare Chrome test runner
+        run: |
+          npm install --prefix /tmp/browser-smoke playwright@1.64.1
+          /tmp/browser-smoke/node_modules/.bin/playwright install --with-deps chrome
+      - name: Launch isolated candidate SDK
+        env:
+          SDK_TEST_IMAGE: ${{ inputs.image }}
+          SDK_TEST_VERSION: ${{ inputs.sdk_version }}
+          SDK_TEST_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          [[ "${SDK_TEST_IMAGE}" =~ @sha256:[a-f0-9]{64}$ ]]
+          node scripts/components-catalog.js validate
+          python3 -c 'import secrets,pathlib; pathlib.Path("/tmp/sdk-test-password").write_text(secrets.token_urlsafe(24))'
+          chmod 600 /tmp/sdk-test-password
+          {
+            echo 'CODE_SERVER_USER=sdk-test'
+            echo 'SIMA_SDK_COMPONENTS_ALLOW_CANDIDATE=1'
+            echo "SIMA_SDK_COMPONENT_TEST_VERSION=${SDK_TEST_VERSION}"
+            echo "CODE_SERVER_PASSWORD=$(cat /tmp/sdk-test-password)"
+          } > /tmp/sdk-test-env
+          chmod 600 /tmp/sdk-test-env
+          docker run -d --name sdk-component-test --init --platform "linux/${SDK_TEST_ARCH}" \
+            --env-file /tmp/sdk-test-env -p 127.0.0.1:39999:9999 "${SDK_TEST_IMAGE}" sleep infinity
+          docker exec sdk-component-test bash -ec 'useradd -m -s /bin/bash sdk-test; chown sdk-test:sdk-test /workspace; runuser -u sdk-test -- sima-install-neat-extension /home/sdk-test/.local/share/code-server/extensions'
+          for attempt in $(seq 1 90); do
+            if curl -fs http://127.0.0.1:39999/healthz; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Test exact agent installation and editor responsiveness
+        env:
+          PLAYWRIGHT_MODULE: /tmp/browser-smoke/node_modules/playwright
+          SDK_CONTAINER_NAME: sdk-component-test
+          SDK_TEST_URL: http://127.0.0.1:39999/?folder=/workspace
+          SDK_TEST_PASSWORD_FILE: /tmp/sdk-test-password
+          SDK_TEST_VERSION: ${{ inputs.sdk_version }}
+          QUALIFICATION_OUTPUT: qualification
+        run: node tests/sdk/components-browser-smoke.cjs
+      - name: Preserve qualification report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sdk-component-qualification-${{ matrix.arch }}
+          path: qualification/
+      - name: Clean up disposable SDK
+        if: always()
+        run: docker rm -f sdk-component-test || true

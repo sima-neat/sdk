@@ -168,40 +168,41 @@ async function readNeatStatus(execute = run) {
 }
 async function getInsightUrl(
   status,
-  { reader = fs.readFile, env = process.env } = {},
+  { reader = fs.readFile, env = process.env, resolveBrowserUrl } = {},
 ) {
   return resolveInsightLaunchUrl(
     async () => {
-      const fromStatus = normalizeHttpUrl(status?.insight?.webUiUrl);
-      if (fromStatus) return fromStatus;
-      // Platform-only SDK images have Insight but do not necessarily bundle Core's neat CLI.
-      const host = (env.CONTAINER_HOST_IP || "").trim();
-      if (!/^(?:[a-zA-Z0-9][a-zA-Z0-9._-]*|[a-fA-F0-9:]+)$/.test(host))
-        return "";
+      let url = normalizeHttpUrl(status?.insight?.webUiUrl);
+      // The port map describes published host ports, including remapped ports.
+      // CONTAINER_HOST_IP is a DevKit transport address, not a browser address.
       try {
-        const ports = JSON.parse(
-          await read(
-            env.NEAT_PORT_MAP_FILE ||
-              "/home/docker/.insight-config/neat-port-map.json",
-            reader,
-          ),
-        );
+        const ports = JSON.parse(await read(
+          env.NEAT_PORT_MAP_FILE || "/home/docker/.insight-config/neat-port-map.json",
+          reader,
+        ));
         const port = Number(ports.mainUI?.host);
-        if (!Number.isInteger(port) || port < 1 || port > 65535) return "";
-        const scheme = ports.mainUI?.scheme || "https";
-        return normalizeHttpUrl(
-          `${scheme}://${host.includes(":") ? "[" + host + "]" : host}:${port}`,
-        );
+        if (Number.isInteger(port) && port >= 1 && port <= 65535) {
+          const host = url ? new URL(url).hostname :
+            resolveBrowserUrl ? "localhost" : (env.CONTAINER_HOST_IP || "").trim();
+          if (/^(?:[a-zA-Z0-9][a-zA-Z0-9._-]*|\[[a-fA-F0-9:]+\]|[a-fA-F0-9:]+)$/.test(host)) {
+            const target = new URL(url || "https://localhost/");
+            target.hostname = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+            target.protocol = `${ports.mainUI?.scheme || "https"}:`;
+            target.port = String(port);
+            url = normalizeHttpUrl(target.href);
+          }
+        }
       } catch {
-        return "";
+        // Older images may only advertise the Insight URL through neat status.
       }
+      return url && resolveBrowserUrl ? resolveBrowserUrl(url) : url;
     },
     { readFile: reader },
   );
 }
 async function readInsight(
   status,
-  { execute = run, reader = fs.readFile, env = process.env } = {},
+  { execute = run, reader = fs.readFile, env = process.env, resolveBrowserUrl } = {},
 ) {
   let version = status?.components?.insight?.version || "";
   if (!version) {
@@ -218,7 +219,7 @@ async function readInsight(
       ).trim();
     } catch {}
   }
-  return { version, url: await getInsightUrl(status, { reader, env }) };
+  return { version, url: await getInsightUrl(status, { reader, env, resolveBrowserUrl }) };
 }
 const DEVICE_COMMAND =
   "printf '__MODEL__\\n'; cat /proc/device-tree/model 2>/dev/null; printf '\\n__BUILD__\\n'; cat /etc/build /etc/buildinfo 2>/dev/null; printf '\\n__END__\\n'";

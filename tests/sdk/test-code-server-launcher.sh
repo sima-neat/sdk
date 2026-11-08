@@ -99,7 +99,7 @@ grep -F "code-server supervision disabled" "${tmpdir}/supervised-out"
 OPENVSCODE_SERVER_SUPERVISED=0 "${supervised_launcher}" >"${tmpdir}/legacy-supervised-out"
 grep -F "code-server supervision disabled" "${tmpdir}/legacy-supervised-out"
 
-grep -F 'ARG CODE_SERVER_VERSION=' "${repo_root}/Dockerfile"
+grep -F 'component_pins="$(python3 /usr/local/bin/sdk-component-pins.py' "${repo_root}/Dockerfile"
 grep -F 'sha256sum -c -' "${repo_root}/Dockerfile"
 grep -F 'com.sima.sdk.code-ui="code-server-v1"' "${repo_root}/Dockerfile"
 if grep -Eq '^ENV CODE_SERVER_(PORT|HTTPS_PORT|SUPERVISED)=' "${repo_root}/Dockerfile"; then

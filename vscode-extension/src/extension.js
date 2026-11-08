@@ -1,6 +1,7 @@
 const vscode = require("vscode");
 const { RegistryState } = require("./registry-state");
-const { insightOpenUrl } = require("./insight-launcher");
+const { createInsightView } = require("./insight-view");
+let insightView;
 const { loadStatuses } = require("./panel-status");
 const { registerGettingStarted } = require("./getting-started");
 const { modelRegistryAvailable } = require("./sdk-capabilities");
@@ -13,7 +14,8 @@ const https = require("https");
 const os = require("os");
 const path = require("path");
 const { URLSearchParams } = require("url");
-const { getInsightUrl, readNeatStatus } = require("./landing-data");
+const { resolveInsightBrowserUrl } = require("./insight-browser-url");
+const { getInsightUrl, readNeatStatus, loadLandingData } = require("./landing-data");
 
 const APPS_REPO_URL = "https://github.com/sima-neat/apps";
 const SIMA_CLI_DIR = path.join(os.homedir(), ".sima-cli");
@@ -191,6 +193,8 @@ async function activate(context) {
   brand.show();
   context.subscriptions.push(brand);
 
+  insightView = createInsightView(vscode, context, getInsightWebUiUrl);
+
   const provider = new NeatPanelProvider(context.extensionUri);
   provider.updateRegistryState(registryState.snapshot());
   context.subscriptions.push(registryState.subscribe(state => provider.updateRegistryState(state)));
@@ -212,6 +216,7 @@ async function activate(context) {
   );
   await registerGettingStarted(vscode, context, {
     getDevkitConfig: getDevKitSyncConfig, openInsight, modelsEnabled, registryState,
+    loadData: getConfig => loadLandingData(getConfig, insightUrlOptions()),
     getAppsState: () => getSamplesState(getWorkspaceRoot()), cloneApps: cloneSamples
   });
 }
@@ -483,19 +488,19 @@ function validateDependencyRef(raw, key) {
 }
 
 async function openInsight() {
-  const insightUrl = await getInsightWebUiUrl();
-  if (!insightUrl) {
-    vscode.window.showErrorMessage("Unable to acquire Insight link");
-    return;
-  }
+  await insightView.open();
+}
 
-  await vscode.env.openExternal(vscode.Uri.parse(insightOpenUrl(insightUrl, vscode.env.uiKind === vscode.UIKind.Web)));
+function insightUrlOptions() {
+  return vscode.env.uiKind === vscode.UIKind.Web
+    ? { resolveBrowserUrl: url => resolveInsightBrowserUrl(vscode, url) }
+    : {};
 }
 
 async function getInsightWebUiUrl() {
   return getInsightUrl(await readNeatStatus((file, args) =>
     execFilePromise(file, args, { timeout: 5000, killSignal: "SIGKILL" }, { showError: false })
-  ));
+  ), insightUrlOptions());
 }
 
 async function getDevKitSyncState() {
