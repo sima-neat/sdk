@@ -60,8 +60,8 @@ case "${core_status}" in
     ;;
 esac
 
-if [[ "${sdk_release_ref}" =~ ^v[0-9]+[.][0-9]+[.][0-9]+ ]]; then
-  sdk_version="${platform_version}_Palette_SDK_neat_${sdk_release_ref}"
+if [[ "${sdk_release_ref}" =~ ^v([0-9]+[.][0-9]+[.][0-9]+([.][0-9]+)?)$ ]]; then
+  sdk_version="${BASH_REMATCH[1]}_Palette_SDK_neat_${sdk_release_ref}"
   elxr_version="${platform_version}_release_neat_${sdk_release_ref}"
 else
   sdk_version="${platform_version}_Palette_SDK_neat_${sdk_git_branch}_${sdk_git_hash}"
