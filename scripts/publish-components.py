@@ -33,6 +33,18 @@ def merged_revision(event, event_name):
     return revision
 
 
+def resolve_artifact_kms_key(session, key_id):
+    if not key_id:
+        raise ValueError('SSE_KMS_KEY_ID must identify the Vulcan artifact encryption key')
+    # Terraform supplies an alias; resolve it before enforcing account/region policy.
+    metadata = session.client('kms').describe_key(KeyId=key_id)['KeyMetadata']
+    arn = metadata.get('Arn', '')
+    if (not arn.startswith('arn:aws:kms:us-west-2:' + ACCOUNT + ':key/')
+            or metadata.get('KeyManager') != 'CUSTOMER'):
+        raise ValueError('The Vulcan customer-managed artifact encryption key is required')
+    return arn
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--manifest', default='components.json')
@@ -59,9 +71,7 @@ def main():
     identity = session.client('sts').get_caller_identity()
     if identity['Account'] != ACCOUNT:
         raise ValueError('Wrong AWS account for SDK component publication')
-    kms_key = os.environ.get('SSE_KMS_KEY_ID', '')
-    if not kms_key.startswith('arn:aws:kms:us-west-2:' + ACCOUNT + ':key/'):
-        raise ValueError('The Vulcan customer-managed artifact encryption key is required')
+    kms_key = resolve_artifact_kms_key(session, os.environ.get('SSE_KMS_KEY_ID', ''))
     s3 = session.client('s3')
     previous = None
     try:
