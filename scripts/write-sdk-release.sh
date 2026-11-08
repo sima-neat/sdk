@@ -64,7 +64,25 @@ if [[ "${sdk_release_ref}" =~ ^v([0-9]+[.][0-9]+[.][0-9]+([.][0-9]+)?)$ ]]; then
   sdk_version="${BASH_REMATCH[1]}_Palette_SDK_neat_${sdk_release_ref}"
   elxr_version="${platform_version}_release_neat_${sdk_release_ref}"
 else
-  sdk_version="${platform_version}_Palette_SDK_neat_${sdk_git_branch}_${sdk_git_hash}"
+  # Branch images have a versioned SDK identity independent of their platform packages.
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  manifest="${SDK_DEPS_MANIFEST:-/usr/local/share/sima-sdk/deps/manifest.json}"
+  if [[ -z "${SDK_DEPS_MANIFEST:-}" && ! -f "${manifest}" ]]; then
+    manifest="${script_dir}/../deps/manifest.json"
+  fi
+  sdk_base_version="$(python3 - "${manifest}" <<'PYVERSION'
+import json
+import re
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    version = json.load(handle).get("sdk-version", "")
+if not isinstance(version, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+){2,3}", version):
+    raise SystemExit("deps manifest must define a numeric sdk-version")
+print(version)
+PYVERSION
+  )"
+  sdk_version="${sdk_base_version}_Palette_SDK_neat_${sdk_git_branch}_${sdk_git_hash}"
   elxr_version="${platform_version}_release_neat_${sdk_git_branch}_${sdk_git_hash}"
 fi
 
