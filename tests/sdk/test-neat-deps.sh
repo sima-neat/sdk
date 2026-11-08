@@ -30,7 +30,7 @@ assert_dependency_ref() {
   fi
 }
 assert_dependency_ref core v0.6.1
-assert_dependency_ref apps v0.6.0
+assert_dependency_ref apps v0.6.1
 assert_dependency_ref insight v0.0.11
 assert_dependency_ref sima-cli v2.1.21
 
