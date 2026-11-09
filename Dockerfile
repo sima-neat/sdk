@@ -358,8 +358,12 @@ RUN set -eux; \
     "${CODE_SERVER_DIR}/bin/code-server" --config /dev/null --version
 
 # SDK setup and Palette use the same qualification policy for managed agent installs.
+COPY scripts/sdk-component-service.js /usr/local/lib/sima-sdk/component-service.js
+COPY scripts/sdk-components.js /usr/local/bin/sdk-components.js
 COPY scripts/sdk-code-server-cli.js /usr/local/bin/sdk-code-server-cli.js
-RUN mv "${CODE_SERVER_DIR}/bin/code-server" "${CODE_SERVER_DIR}/bin/code-server-upstream" && \
+RUN printf '#!/bin/sh\nexec node /usr/local/bin/sdk-components.js "$@"\n' > /usr/local/bin/sdk-components && \
+    chmod 755 /usr/local/bin/sdk-components && \
+    mv "${CODE_SERVER_DIR}/bin/code-server" "${CODE_SERVER_DIR}/bin/code-server-upstream" && \
     printf '#!/bin/sh\nexec node /usr/local/bin/sdk-code-server-cli.js "$@"\n' > "${CODE_SERVER_DIR}/bin/code-server" && \
     chmod 755 "${CODE_SERVER_DIR}/bin/code-server"
 

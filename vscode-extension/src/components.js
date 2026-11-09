@@ -193,7 +193,7 @@ class ComponentCatalog {
   }
   async readInstalledProfile() {
     try {
-      const profile = JSON.parse(await fs.readFile(path.join(path.dirname(this.context.extensionPath), 'extensions.json'), 'utf8'));
+      const profile = JSON.parse(await fs.readFile(this.options.profileFile || path.join(path.dirname(this.context.extensionPath), 'extensions.json'), 'utf8'));
       this.installedProfile = Array.isArray(profile) ? profile : [];
     } catch { this.installedProfile = []; }
   }
