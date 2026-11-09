@@ -164,6 +164,8 @@ On success, stdout contains `schema_version: 1`, `installed: true`, and
 Failures return nonzero and a JSON object with `schema_version: 1`,
 `available: false`, and `error`. Consumers must not treat an unavailable mapping,
 revocation, unsupported engine, corrupt catalog or network/cache failure as an
-invitation to choose another version. Older SDKs without this interface remain
-legacy clients; qualification-aware SDK images must be rebuilt to provide the
-interface before using sima-cli's resolver integration.
+invitation to choose another version. This interface is optional for sima-cli setup: existing qualification-aware
+images continue to install managed agents through the shipped code-server
+wrapper, with versions reported after installation. New images can provide this
+interface to also expose structured version previews. No SDK patch is required
+for the companion CLI fix to work with the existing wrapper.
