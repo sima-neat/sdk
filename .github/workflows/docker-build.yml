@@ -105,7 +105,7 @@ jobs:
       - name: Run SDK build and package tests
         run: |
           tests/sdk/test-install-sdk-stub.sh
-          node --test tests/sdk/test-code-server-components.cjs
+          node --test tests/sdk/test-code-server-components.cjs tests/sdk/test-sdk-components.cjs
           python3 tests/sdk/test-components-publication.py
           node scripts/components-catalog.js validate
           python3 tests/sdk/test-sdk-component-pins.py

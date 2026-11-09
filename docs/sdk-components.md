@@ -133,3 +133,39 @@ The initial manual **candidate-only** upload was explicitly authorized for this
 task before merge. It is marked `publication.manual_test: true`, uses the same
 checksum/schema validation, and does not establish a general bypass of the
 normal merge gate. The one-time operator script is outside the repository.
+
+## Setup resolver interface
+
+SDK images expose a versioned JSON interface for external setup clients:
+
+```sh
+sdk-components resolve --json
+sdk-components install --json --extension anthropic.claude-code@2.1.316 \
+  --extensions-dir "$HOME/.local/share/code-server/extensions"
+```
+
+Run both operations as the editor user with that user's `HOME`. `resolve` emits
+one JSON object with `schema_version: 1`, `available: true`, `sdk_release`,
+`cohort`, `status`, `source` (`online` or `offline`), `architecture`, `code_server`,
+`vscode`, and an `extensions` map from managed extension IDs to exact versions.
+It uses the same `ComponentCatalog` resolver, SDK release aliases, architecture,
+engine detection, catalog cache, revocation rules and candidate-test settings as
+the SDK code-server wrapper. It does not enable the panel's SDK fallback policy.
+
+`install` accepts one managed ID with an exact expected version and an absolute
+extension-directory path. It routes through the enforcing code-server wrapper,
+which rechecks qualification, downloads/verifies the selected VSIX, and verifies
+both the installed version and persistent profile pin. A changed target version
+is rejected rather than silently replacing the version shown during setup.
+Installation always runs even for a matching version so missing pins are repaired.
+On success, stdout contains `schema_version: 1`, `installed: true`, and
+`extension: "publisher.name@version"`; installer diagnostics go to stderr.
+
+Failures return nonzero and a JSON object with `schema_version: 1`,
+`available: false`, and `error`. Consumers must not treat an unavailable mapping,
+revocation, unsupported engine, corrupt catalog or network/cache failure as an
+invitation to choose another version. This interface is optional for sima-cli setup: existing qualification-aware
+images continue to install managed agents through the shipped code-server
+wrapper, with versions reported after installation. New images can provide this
+interface to also expose structured version previews. No SDK patch is required
+for the companion CLI fix to work with the existing wrapper.
