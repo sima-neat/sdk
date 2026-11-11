@@ -1,13 +1,13 @@
 # SDK component compatibility and qualification
 
 `components.json` is the reviewed compatibility catalog for Codex, Claude, and the
-image-bundled Codex CLI. `deps/manifest.json` separately selects the code-server
+image-bundled Codex and Claude Code CLIs. `deps/manifest.json` separately selects the code-server
 release and its two archive checksums.
 
 ## Selection and installation
 
 The schema version is `1`. `revision` increases when compatibility data changes.
-`build_sdk_version` selects the Codex CLI for an SDK image build. Each exact SDK
+`build_sdk_version` selects the CLI versions for an SDK image build. Each exact SDK
 key in `sdks` declares explicit SDK release aliases, supported host architectures,
 code-server/VS Code engine **pairs**, qualification status, and exact
 component IDs, versions, URLs and SHA-256 values. SDK identity comes from
@@ -67,6 +67,13 @@ have time/size limits and redirects remain restricted to known artifact hosts.
 The Codex CLI installer consumes the same catalog, verifies the pinned npm
 archive, and checks `codex --version` after installing it. Its native optional
 packages are versioned by the pinned upstream npm package.
+The Claude Code installer verifies the exact Anthropic Linux binary checksum for
+the image architecture, installs the binary in `/usr/local/bin`, and checks
+`claude --version`. For pin updates, use the checksums from [Anthropic's signed
+release manifest](https://code.claude.com/docs/en/setup#binary-integrity-and-code-signing).
+SDK images set `DISABLE_AUTOUPDATER=1` to keep background updates from changing
+the bundled version. The SDK pull request builds also verify Claude Code and
+`tmux` as an unprivileged user on both architectures.
 
 ## Candidate qualification
 

@@ -126,24 +126,25 @@ The application should be cross-compiled against the Modalix sysroot before
 the image build. Avoid target-architecture `RUN` commands when building on a
 non-ARM64 host unless the selected builder has ARM64 emulation available.
 
-The SDK image also preinstalls a tested, pinned version of the OpenAI Codex CLI.
-From the SDK shell, run:
+The SDK image includes pinned versions of the OpenAI Codex CLI and Claude Code,
+along with `tmux`. Run `codex` or `claude` from the SDK shell. To keep a Claude Code
+session running while you detach from the terminal, start it inside `tmux`:
 
 ```bash
-codex
+tmux new -s claude
+claude
 ```
 
-The Codex CLI version is selected from the checked-in `components.json` compatibility
-catalog and checksum-verified during the image build. Upgrade through a reviewed
-SDK component update and rebuilt image to retain the qualified version selection.
+Sign in using your own Claude account or credentials. Press Ctrl+B, then D to
+detach. Run `tmux attach -t claude` to reconnect to the session in the same container.
 
-
-The update remains in the current container. Recreating the container restores
-the version bundled with the SDK image.
+The image build selects both CLI versions from `components.json` and verifies
+the artifact checksums. Claude Code background auto-updates are disabled in the
+image. SDK releases update the bundled versions through reviewed component pins.
 
 The Neat VS Code extension lives in `vscode-extension/`. It adds a SiMa Neat activity bar panel and light/dark themes. SDK assembly bundles its runtime files at `/opt/sima-neat/vscode-extension`. Updated sima-cli setup runs `sima-install-neat-extension` as the mapped SDK user to copy and register this bundled version in that user's code-server extensions directory, without a prompt or download. Repeated setup preserves other extensions and refreshes Neat when the bundled contents change.
 
-Codex and Claude extensions remain optional downloads during sima-cli setup. Set `SDK_SKIP_CODING_AGENT_INSTALL=1` in the host environment to bypass their prompts and installation, even with `--all-extensions`; Neat still installs automatically. On new code-server images, both setup and Palette installs resolve exact versions through the SDK compatibility catalog; unavailable or unqualified combinations are blocked. This setting does not remove existing extensions or the Codex CLI included in the SDK image.
+Codex and Claude extensions remain optional downloads during sima-cli setup. Set `SDK_SKIP_CODING_AGENT_INSTALL=1` in the host environment to bypass their prompts and installation, even with `--all-extensions`; Neat still installs automatically. On new code-server images, both setup and Palette installs resolve exact versions through the SDK compatibility catalog; unavailable or unqualified combinations are blocked. Existing extensions and the bundled terminal tools remain available when this setting is enabled.
 
 You can run Docker directly for low-level debugging:
 

@@ -109,6 +109,7 @@ RUN apt-get update --allow-releaseinfo-change && \
       git \
       curl \
       htop \
+      tmux \
       file \
       libgmp10 \
       libisl23 \
@@ -140,6 +141,9 @@ COPY scripts/components-catalog.js /usr/local/bin/components-catalog.js
 
 RUN node /usr/local/bin/components-catalog.js install-cli /usr/local/share/sima-sdk/components.json && \
     npm cache clean --force
+
+ENV DISABLE_AUTOUPDATER=1
+RUN node /usr/local/bin/components-catalog.js install-claude-cli /usr/local/share/sima-sdk/components.json
 
 # Install only the Docker client and Buildx plugin. The SDK deliberately does
 # not run dockerd; sima-cli can opt in to mounting an existing builder socket.
