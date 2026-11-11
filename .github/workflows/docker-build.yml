@@ -260,11 +260,21 @@ jobs:
           EXPECTED_ARCH: ${{ matrix.runner_arch }}
         run: |
           set -euo pipefail
-          docker run --rm --network none --user nobody --entrypoint /bin/bash \
-            "sdk:ci-${IMAGE_SUFFIX}" -ec '
+          docker run --rm --network none --user nobody -e HOME=/tmp -e SHELL=/bin/bash \
+            --entrypoint /bin/bash "sdk:ci-${IMAGE_SUFFIX}" -ec '
               test "$(dpkg --print-architecture)" = "$1"
               node /usr/local/bin/components-catalog.js check-claude-cli /usr/local/share/sima-sdk/components.json
               tmux -V
+              tmux new-session -d -x 120 -y 40 "claude doctor; sleep 30"
+              for attempt in {1..20}; do
+                pane="$(tmux capture-pane -p -S -100)"
+                if grep -F "Auto-updates: disabled (set by env: DISABLE_AUTOUPDATER)" <<< "${pane}"; then
+                  exit 0
+                fi
+                sleep 1
+              done
+              printf "%s\n" "${pane}" >&2
+              exit 1
             ' verify-sdk-terminal-tools "${EXPECTED_ARCH}"
 
   publish-manifest:
