@@ -253,6 +253,20 @@ jobs:
           REQUESTED_PRE_RELEASE_BASE: ${{ needs.resolve-platform-config.outputs.requested_pre_release_base }}
           BASE_SDK_VERSION: ${{ needs.resolve-platform-config.outputs.base_sdk_version }}
 
+      - name: Verify SDK terminal tools
+        if: github.event_name == 'pull_request'
+        env:
+          IMAGE_SUFFIX: ${{ matrix.image_suffix }}
+          EXPECTED_ARCH: ${{ matrix.runner_arch }}
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --user nobody --entrypoint /bin/bash \
+            "sdk:ci-${IMAGE_SUFFIX}" -ec '
+              test "$(dpkg --print-architecture)" = "$1"
+              node /usr/local/bin/components-catalog.js check-claude-cli /usr/local/share/sima-sdk/components.json
+              tmux -V
+            ' verify-sdk-terminal-tools "${EXPECTED_ARCH}"
+
   publish-manifest:
     name: Publish multi-arch manifest
     if: github.event_name != 'pull_request'

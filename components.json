@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "revision": 4,
+  "revision": 5,
   "build_sdk_version": "3.0.0",
   "sdks": {
     "3.0.0": {
@@ -59,6 +59,19 @@
           "artifact": {
             "url": "https://registry.npmjs.org/@openai/codex/-/codex-0.153.4.tgz",
             "sha256": "fd04263c1adfa1d285c6c0ad86a97cab508d3012ee9eab80a99f773cc4b2fb3a"
+          }
+        },
+        "claude-cli": {
+          "version": "2.1.311",
+          "artifacts": {
+            "amd64": {
+              "url": "https://downloads.claude.ai/claude-code-releases/2.1.311/linux-x64/claude",
+              "sha256": "86dc1fcc69498159eaf15f446613e847010f9036bfbbdffd4c49350be8489ada"
+            },
+            "arm64": {
+              "url": "https://downloads.claude.ai/claude-code-releases/2.1.311/linux-arm64/claude",
+              "sha256": "2e2496c9a8065df93acb0fca2d341f59a6b8777649b2e025ab8c9bcd5eef61f3"
+            }
           }
         }
       }

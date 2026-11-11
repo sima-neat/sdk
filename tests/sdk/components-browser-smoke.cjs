@@ -128,7 +128,7 @@ async function main() {
     report.checks.push('code-server service restart and workbench recovery');
     report.installed=JSON.parse(execute('import json,pathlib; p=pathlib.Path.home()/".local/share/code-server/extensions/extensions.json"; print(json.dumps([{ "id":x["identifier"]["id"], "version":x["version"], "metadata":x.get("metadata",{}) } for x in json.loads(p.read_text()) if x["identifier"]["id"].lower() in ("openai.chatgpt","anthropic.claude-code")]))'));
     for(const [key,item] of Object.entries(row.components)) {
-      if(key==='codex-cli')continue;
+      if (!item.id) continue; // Image-bundled CLIs have no VS Code extension ID.
       const installed=report.installed.find(x=>x.id.toLowerCase()===item.id);
       if(installed?.version!==item.version || installed.metadata.pinned!==true)throw Error(`${key}: installed version/update pin not retained`);
     }
