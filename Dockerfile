@@ -386,7 +386,7 @@ RUN chmod 755 /usr/local/bin/sima-install-neat-extension && \
 # Preinstall Neat Framework and resources
 COPY scripts/install-neat-resources.sh /usr/local/bin/install-neat-resources.sh
 RUN chmod 755 /usr/local/bin/install-neat-resources.sh
-ARG SDK_PLATFORM_ONLY=1
+ARG SDK_PLATFORM_ONLY=0
 ARG NEAT_CORE_SOURCE_REF=
 ARG NEAT_CORE_SOURCE_REASON=
 ARG NEAT_APPS_SOURCE_REF=

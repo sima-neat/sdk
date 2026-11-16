@@ -12,7 +12,6 @@
     "ref": "v0.0.11"
   },
   "platform-version": "3.0.1",
-  "platform-only": true,
   "code-server": {
     "version": "4.144.0",
     "sha256": {
