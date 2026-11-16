@@ -92,7 +92,7 @@ def format_version(kind, version):
     label = html.escape(version, quote=False)
     match = IMAGE_BUILD_RE.fullmatch(version)
     if kind == 'images' and match and ('_daily_develop_' in version or '_pre-release_master_' in version or '_release_master_' in version):
-        url = f'https://jenkins.eng.sima.ai/job/soc-jobs/job/elxr-builder/{match.group(1)}/console'
+        url = f"https://jenkins.eng.sima.ai/job/soc-jobs/job/elxr-builder/{match['number']}/console"
         return f'<{url}|{label}>'
     return label
 
