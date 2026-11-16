@@ -4,7 +4,7 @@ Use this skill when triaging GitHub issues in the `sima-neat/sdk` repository.
 
 ## Repository Scope
 
-`sdk` packages the SiMa.ai Neat SDK as Docker images for supported host
+`sdk` packages the SiMa.ai Palette SDK as Docker images for supported host
 architectures. It covers SDK image builds, image publishing, GHCR package
 cleanup, SDK smoke tests, DevKit workspace helper behavior, SDK documentation,
 and scripts/configuration that shape the container environment.
