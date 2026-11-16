@@ -127,22 +127,16 @@ SiMa repository uses the `agate` suite and verifies packages with the SiMa key:
 deb [arch=arm64 signed-by=/etc/apt/trusted.gpg.d/simaai.gpg] https://repo.sima.ai/elxr/deb/release agate non-free
 ```
 
-The 3.0.1 firmware release is `3.0.1_master_B2798`. The official Palette
-Debian package version is `3.0.1`, and its base-files package records
-`3.0.1_master_B2796` in `/etc/packageinfo`. Target dependencies come from Debian
-13 Trixie.
-
-The `3.0.1-prep` branch sets `platform-only` in `deps/manifest.json`. Its SDK
-image bundles the release sysroot and toolchain for building Neat components in
-Vulcan. The SDK build publishes to `ghcr.io/sima-neat/sdk-3.0.1-prep`. Once
-the build succeeds, use branch `3.0.1-prep` and cache label
-`sdk-3.0.1-develop` with Vulcan's SDK snapshot workflow.
+The firmware release is `3.0.1_master_B2798`. The official Palette Debian
+package version is `3.0.1`, and its base-files package records
+`3.0.1_master_B2796` in `/etc/packageinfo`. Target dependencies continue to come
+from Debian 13 Trixie.
 
 CI uses the official release by default on develop, other branches, and tags.
 The manifest's `sdk-version` defines the SDK identity for branch images, including
 `develop-latest`. It is independent of `platform-version`, which selects the
 underlying platform packages. SDK `3.0.0.1` therefore selects Model Compiler
-`3.0.0.1` even when built on platform `3.0.0`. Numeric release tags override the
+`3.0.0.1` when built on platform `3.0.1`. Numeric release tags override the
 manifest SDK identity for tagged images.
 
 An empty workflow platform selector uses the manifest's `platform-version`.

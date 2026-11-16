@@ -26,20 +26,9 @@ printf '%s' 'abcdef123456'
 SH
 chmod +x "${TMP_DIR}/bin/curl"
 
-python3 - "${ROOT_DIR}/deps/manifest.json" "${TMP_DIR}/interim-manifest.json" <<'PYMANIFEST'
-import json
-import sys
-from pathlib import Path
-
-manifest = json.loads(Path(sys.argv[1]).read_text())
-manifest["platform-only"] = True
-Path(sys.argv[2]).write_text(json.dumps(manifest))
-PYMANIFEST
-
 run_build() {
   DOCKER_ARGS_LOG="${TMP_DIR}/docker-args" \
     PATH="${TMP_DIR}/bin:${PATH}" \
-    SDK_DEPS_MANIFEST="${SDK_DEPS_MANIFEST:-${ROOT_DIR}/deps/manifest.json}" \
     SDK_APT_CHANNEL="${SDK_APT_CHANNEL:-release}" \
     DOCKER_PLATFORM=linux/amd64 \
     NEAT_CORE_SOURCE_REF=1111111111111111111111111111111111111111 \
@@ -200,7 +189,6 @@ Version: 3.0.0~git202609090314.abcdef0-1218
 Architecture: all
 EOF
 env -u SDK_APT_CHANNEL -u BASE_SDK_VERSION \
-  SDK_DEPS_MANIFEST="${ROOT_DIR}/deps/manifest.json" \
   DOCKER_ARGS_LOG="${TMP_DIR}/docker-args" PATH="${TMP_DIR}/bin:${PATH}" \
   PRE_RELEASE_PACKAGES_FILE="${TMP_DIR}/Packages" SDK_PKG_LIST=libpgm-dev DOCKER_PLATFORM=linux/amd64 \
   GITHUB_REF_NAME=3.0.0-prep GITHUB_REF_TYPE=branch \
@@ -213,16 +201,6 @@ assert_arg BASE_SDK_VERSION=3.0.1
 assert_arg NEAT_CORE_SOURCE_REF=1111111111111111111111111111111111111111
 assert_arg NEAT_APPS_SOURCE_REF=2222222222222222222222222222222222222222
 assert_arg SDK_PKG_LIST=libpgm-dev
-
-# The interim profile uses official packages without resolving Core or Apps.
-SDK_DEPS_MANIFEST="${TMP_DIR}/interim-manifest.json" \
-  run_build "${ROOT_DIR}/build.sh" example/sdk interim
-assert_arg SDK_APT_CHANNEL=release
-assert_arg BASE_SDK_VERSION=3.0.1
-assert_arg SDK_PLATFORM_ONLY=1
-assert_arg NEAT_CORE_SOURCE_REF=
-assert_arg 'NEAT_CORE_SOURCE_REASON=platform-only SDK does not bundle Core'
-assert_arg NEAT_APPS_SOURCE_REF=
 
 # Master pre-release builds retain Core and Apps without an override flag.
 SDK_APT_CHANNEL=pre-release BASE_SDK_VERSION=3.0.0~pre2372 \
@@ -291,18 +269,17 @@ with tempfile.TemporaryDirectory() as directory:
         path = root / name
         path.write_text('#!/bin/sh\n' + script + '\n')
         path.chmod(0o755)
-    for channel, platform_only, apt_status, core_status, expected, status in (
-        ('daily', '0', 0, 0, ['core --skip platform-only SDK does not bundle Core'], 0),
-        ('release', '1', 0, 0, ['core --skip platform-only SDK does not bundle Core'], 0),
-        ('pre-release', '0', 0, 0, ['apt', 'core ', 'cleanup'], 0),
-        ('release', '0', 0, 0, ['apt', 'core ', 'cleanup'], 0),
-        ('pre-release', '0', 42, 0, ['apt'], 42),
-        ('pre-release', '0', 0, 43, ['apt', 'core '], 43),
+    for channel, apt_status, core_status, expected, status in (
+        ('daily', 0, 0, ['core --skip platform-only SDK does not bundle Core'], 0),
+        ('pre-release', 0, 0, ['apt', 'core ', 'cleanup'], 0),
+        ('release', 0, 0, ['apt', 'core ', 'cleanup'], 0),
+        ('pre-release', 42, 0, ['apt'], 42),
+        ('pre-release', 0, 43, ['apt', 'core '], 43),
     ):
         log = root / 'calls'
         log.write_text('')
         env = dict(os.environ, PATH=str(root) + ':' + os.environ['PATH'],
-                   CALL_LOG=str(log), SDK_APT_CHANNEL=channel, SDK_PLATFORM_ONLY=platform_only,
+                   CALL_LOG=str(log), SDK_APT_CHANNEL=channel,
                    APT_STATUS=str(apt_status), CORE_STATUS=str(core_status))
         result = subprocess.run(['/bin/sh', '-c', command], env=env, capture_output=True, text=True)
         assert result.returncode == status, (channel, result)

@@ -14,10 +14,7 @@ MINIMAL_IMAGE="${MINIMAL_IMAGE:-0}"
 SDK_PKG_LIST="${SDK_PKG_LIST:-}"
 SDK_BASE_IMAGE="${SDK_BASE_IMAGE:-ubuntu:24.04}"
 DOCKER_PLATFORM="${DOCKER_PLATFORM:-}"
-BASE_SDK_VERSION="${BASE_SDK_VERSION:-$(
-  SDK_DEPS_MANIFEST="$(neat_deps_manifest_path)" PRE_RELEASE_BASE= \
-    "${SCRIPT_DIR}/scripts/resolve-platform-config.sh" | sed -n 's/^base_sdk_version=//p'
-)}"
+BASE_SDK_VERSION="${BASE_SDK_VERSION:-3.0.1}"
 SDK_APT_CHANNEL="${SDK_APT_CHANNEL:-release}"
 SDK_CROSS_TOOLCHAIN_IMAGE="${SDK_CROSS_TOOLCHAIN_IMAGE:-debian:trixie}"
 REQUESTED_PRE_RELEASE_BASE="${REQUESTED_PRE_RELEASE_BASE:-}"
@@ -120,22 +117,7 @@ if [[ "${SDK_APT_CHANNEL}" == daily && "${BASE_SDK_VERSION}" != *~git* ]]; then
   [[ -n "${BASE_SDK_VERSION}" ]] || { echo "Platform version resolution failed" >&2; exit 1; }
 fi
 
-SDK_PLATFORM_ONLY="$(python3 - "$(neat_deps_manifest_path)" <<'PYPROFILE'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as manifest:
-    value = json.load(manifest).get("platform-only", False)
-if not isinstance(value, bool):
-    raise SystemExit("platform-only must be a boolean in the SDK dependency manifest")
-print(int(value))
-PYPROFILE
-)"
 if [[ "${SDK_APT_CHANNEL}" == daily ]]; then
-  SDK_PLATFORM_ONLY=1
-fi
-
-if [[ "${SDK_PLATFORM_ONLY}" == 1 ]]; then
   NEAT_CORE_SOURCE_REF=""
   NEAT_CORE_SOURCE_REASON="platform-only SDK does not bundle Core"
   NEAT_APPS_SOURCE_REF=""
@@ -154,7 +136,7 @@ elif [[ -z "${NEAT_CORE_SOURCE_REF}" ]]; then
     fi
   fi
 fi
-if [[ "${SDK_PLATFORM_ONLY}" != 1 ]]; then
+if [[ "${SDK_APT_CHANNEL}" != daily ]]; then
   NEAT_APPS_SOURCE_REF="${NEAT_APPS_SOURCE_REF:-$(
     neat_resolve_dependency_source_ref apps https://github.com/sima-neat/apps.git
   )}"
@@ -292,7 +274,6 @@ if docker buildx version >/dev/null 2>&1; then
     --build-arg NEAT_CORE_TARGET="${NEAT_CORE_TARGET}"
     --build-arg NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH}"
     --build-arg NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION}"
-    --build-arg SDK_PLATFORM_ONLY="${SDK_PLATFORM_ONLY}"
     --build-arg NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}"
     --build-arg NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON}"
     --build-arg NEAT_CORE_RESOLUTION_ATTEMPT="${NEAT_CORE_RESOLUTION_ATTEMPT}"
@@ -358,7 +339,6 @@ build_cmd=(
   --build-arg NEAT_CORE_TARGET="${NEAT_CORE_TARGET}"
   --build-arg NEAT_INSIGHT_BRANCH="${NEAT_INSIGHT_BRANCH}"
   --build-arg NEAT_INSIGHT_VERSION="${NEAT_INSIGHT_VERSION}"
-  --build-arg SDK_PLATFORM_ONLY="${SDK_PLATFORM_ONLY}"
   --build-arg NEAT_CORE_SOURCE_REF="${NEAT_CORE_SOURCE_REF}"
   --build-arg NEAT_CORE_SOURCE_REASON="${NEAT_CORE_SOURCE_REASON}"
   --build-arg NEAT_CORE_RESOLUTION_ATTEMPT="${NEAT_CORE_RESOLUTION_ATTEMPT}"

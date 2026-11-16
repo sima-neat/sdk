@@ -386,12 +386,11 @@ RUN chmod 755 /usr/local/bin/sima-install-neat-extension && \
 # Preinstall Neat Framework and resources
 COPY scripts/install-neat-resources.sh /usr/local/bin/install-neat-resources.sh
 RUN chmod 755 /usr/local/bin/install-neat-resources.sh
-ARG SDK_PLATFORM_ONLY=0
 ARG NEAT_CORE_SOURCE_REF=
 ARG NEAT_CORE_SOURCE_REASON=
 ARG NEAT_APPS_SOURCE_REF=
 RUN echo "Neat Core resolution attempt: ${NEAT_CORE_RESOLUTION_ATTEMPT}" && \
-    if [ "${SDK_APT_CHANNEL}" = daily ] || [ "${SDK_PLATFORM_ONLY}" = 1 ]; then \
+    if [ "${SDK_APT_CHANNEL}" = daily ]; then \
       install-neat-resources.sh --skip "platform-only SDK does not bundle Core"; \
     else \
       apt-get update --allow-releaseinfo-change && \
