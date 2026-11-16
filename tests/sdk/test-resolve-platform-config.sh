@@ -90,7 +90,7 @@ done
 
 manifest_stable="$(STABLE_BASE_SDK_VERSION='' PRE_RELEASE_BASE='' PRE_RELEASE_PACKAGES_FILE=/missing GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop run_resolver)"
 grep -Fxq 'sdk_apt_channel=release' <<< "${manifest_stable}" || fail "develop did not default to release"
-grep -Fxq 'base_sdk_version=3.0.0' <<< "${manifest_stable}" || fail "manifest platform version was not selected"
+grep -Fxq 'base_sdk_version=3.0.1' <<< "${manifest_stable}" || fail "manifest platform version was not selected"
 floating="$(PRE_RELEASE_BASE=3.0.0 GITHUB_REF_TYPE=branch GITHUB_REF_NAME=develop run_resolver)"
 grep -Fxq 'sdk_apt_channel=daily' <<< "${floating}" || fail "explicit daily channel was not selected"
 grep -Fxq 'base_sdk_version=3.0.0~git202609090314.abcdef0-4460' <<< "${floating}" || fail "floating selector did not choose newest version"

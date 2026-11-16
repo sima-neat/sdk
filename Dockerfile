@@ -35,7 +35,7 @@ RUN --mount=type=cache,id=sima-sdk-gcc16-v1,target=/var/cache/sima-sdk-gcc16,sha
 FROM ${SDK_BASE_IMAGE} AS sdk-platform
 
 ARG SDK_PKG_LIST
-ARG BASE_SDK_VERSION=3.0.0
+ARG BASE_SDK_VERSION=3.0.1
 ARG SDK_APT_CHANNEL=release
 ARG REQUESTED_PRE_RELEASE_BASE=
 ARG MINIMAL_IMAGE=0

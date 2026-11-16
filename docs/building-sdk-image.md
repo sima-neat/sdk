@@ -119,7 +119,7 @@ the Docker build, so a new branch artifact invalidates the cached installation l
 
 ## Platform 3.0 package selection
 
-`build.sh` and Dockerfile-only builds default to platform `3.0.0`, the official
+`build.sh` and Dockerfile-only builds default to platform `3.0.1`, the official
 `release` APT channel, and the `debian:trixie` GCC 14 toolchain. The official
 SiMa repository uses the `agate` suite and verifies packages with the SiMa key:
 
@@ -127,14 +127,16 @@ SiMa repository uses the `agate` suite and verifies packages with the SiMa key:
 deb [arch=arm64 signed-by=/etc/apt/trusted.gpg.d/simaai.gpg] https://repo.sima.ai/elxr/deb/release agate non-free
 ```
 
-The firmware release is `3.0.0_master_B2501`; the Palette Debian package version
-is `3.0.0`. Target dependencies continue to come from Debian 13 Trixie.
+The firmware release is `3.0.1_master_B2798`. The official Palette Debian
+package version is `3.0.1`, and its base-files package records
+`3.0.1_master_B2796` in `/etc/packageinfo`. Target dependencies continue to come
+from Debian 13 Trixie.
 
 CI uses the official release by default on develop, other branches, and tags.
 The manifest's `sdk-version` defines the SDK identity for branch images, including
 `develop-latest`. It is independent of `platform-version`, which selects the
 underlying platform packages. SDK `3.0.0.1` therefore selects Model Compiler
-`3.0.0.1` even when built on platform `3.0.0`. Numeric release tags override the
+`3.0.0.1` when built on platform `3.0.1`. Numeric release tags override the
 manifest SDK identity for tagged images.
 
 An empty workflow platform selector uses the manifest's `platform-version`.
