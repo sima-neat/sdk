@@ -224,10 +224,12 @@ redirects. Missing authentication, an empty source listing, checksum errors, or 
 previously published builds fail the step without
 replacing the index or pruning old builds.
 
-Directory names matching `3.0.0_daily_<channel>_B<number>` or
-`3.0.0_pre-release_master_B<number>` or `3.0.0_release_master_B<number>` are eligible.
+Directory names matching `3.x.y_daily_<branch>_B<number>`,
+`3.x.y_pre-release_master_B<number>`, or `3.x.y_release_master_B<number>` are
+eligible, where `x` and `y` are numeric (for example, `3.0.1` and `3.1.0`).
 Completed builds are ordered by numeric build number, newest first (with directory
-name as a deterministic tie breaker). The latest 21 completed daily/pre-release builds are kept across those channels;
+name as a deterministic tie breaker). The latest 21 completed daily/pre-release
+builds are kept across all supported versions and both channels;
 release-master builds are retained permanently in addition to that window.
 Pending uploads do not evict completed builds.
 Successfully mirrored builds remain eligible if Artifactory removes them.
@@ -271,7 +273,7 @@ The image client uses refreshable GitHub OIDC credentials for the entire phase.
 Before its one-hour STS session expires, Botocore requests a fresh GitHub identity
 token and assumes the same publisher role again, including between multipart
 upload requests. Static credentials exported by the workflow are not used by the
-image client. The existing role duration and IAM permissions remain unchanged.
+image client. The existing role duration remains unchanged.
 OIDC renewal requires the job's existing `id-token: write` permission. Outside
 GitHub Actions, the script uses the normal Boto3 credential provider chain.
 If renewal fails, the job reports an error; completed S3 files remain reusable
@@ -284,8 +286,8 @@ builds succeed, then permanently deletes **all object versions and delete marker
 for older matching daily/pre-release build directories. It also removes abandoned
 partial uploads under those older rolling-build directories. Release-master
 objects, versions, delete markers, and partial directories are never pruned,
-regardless of whether the caller includes them in its retained set. Other release
-lines and bucket prefixes are untouched. Multipart uploads are aborted by the SDK
+regardless of whether the caller includes them in its retained set. Other major
+versions and bucket prefixes are untouched. Multipart uploads are aborted by the SDK
 on ordinary transfer failures. Count retention is owned by this workflow, not
 Vulcan's generic branch artifact cleanup.
 
@@ -298,13 +300,15 @@ Consumers should refresh the index when an old selection is no longer available.
 ### CLI index contract (schema version 1)
 
 Read `s3://sima-neat-artifacts-production/daily-platform-images/index-v2.json`.
-The legacy `index.json` exposes only the rolling daily/pre-release builds.
+The legacy `index.json` exposes only the 3.0.0 daily/pre-release builds that
+remain in the shared rolling window, with its original `3.0.0_` prefix.
+Use `index-v2.json` for other 3.x versions and pinned releases.
 The object is published with JSON content type and `no-cache, max-age=0`.
 The index is unchanged on a no-op run and contains:
 
 - `schema_version`: `1`.
 - `generated_at`: UTC ISO 8601 publication timestamp.
-- `platform`: `modalix`; `version_prefix`: `3.0.0_`.
+- `platform`: `modalix`; `version_prefix`: `3.`.
 - `bucket`, `prefix`, and `retention_count` (`21` daily/pre-release builds).
 - `retention_scope`: `daily-and-pre-release`.
 - `pinned_builds`: permanently retained release-master build names.
@@ -516,15 +520,11 @@ Master synchronization results are uploaded separately and included in immediate
 version notifications. The existing daily digest remains scoped to the daily
 APT result artifact.
 
-Image discovery also accepts `3.0.0_pre-release_master_B<number>` and
-`3.0.0_release_master_B<number>`. Pre-release master and
-daily develop compete for **21 rolling completed builds**; release master builds
-are pinned permanently outside that window, ordered by numeric build
-number with the full name as tie breaker. There is no per-channel quota. The
-existing `daily-platform-images/` URLs and schema-v1 index remain in use;
-`version_prefix` is now `3.0.0_`. APT retention follows upstream indexes, not
-this image count. The publisher IAM policy permits deletion only under
-`3.0.0_daily_*` and `3.0.0_pre-release_master_B*`. An explicit deny protects
+APT retention follows upstream indexes independently of the image retention
+window. Before enabling 3.x image discovery in production, apply Vulcan's
+`envs/debian-production` publisher policy for
+`3.*.*_daily_*_B*` and `3.*.*_pre-release_master_B*` objects. The SDK validates
+the full build name before pruning, and an explicit deny protects
 release-master objects and versions from publisher deletion.
 
 For a master SDK build, select an exact version such as `3.0.0~pre2254` through
@@ -554,11 +554,11 @@ Release image package-readiness checks use the official repository for the
 external observation.
 
 The complete image pool is published at `daily-platform-images/index-v2.json`.
-The legacy `index.json` omits release-master entries for older clients.
 The complete catalog retains unretired release-master builds plus the latest
-21 daily/pre-release builds; the legacy catalog contains only those rolling
-builds. Automatic pruning never deletes release-master objects or versions,
-and the publisher role explicitly denies deletion of release-master paths.
+21 daily/pre-release builds across 3.x. The legacy `index.json` exposes only
+the 3.0.0 entries from that rolling window. Automatic pruning never deletes
+release-master objects or versions, and the publisher role explicitly denies
+deletion of release-master paths.
 
 ## Explicit image retirement
 
