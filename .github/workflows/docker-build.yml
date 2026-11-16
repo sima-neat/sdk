@@ -570,10 +570,11 @@ jobs:
           echo "Generated /etc/sdk-release (${SMOKE_ARCH}):"
           printf '%s\n' "${sdk_release}"
 
-          # A successful manual non-daily build must prove Core integration,
-          # rather than silently accepting a platform-only fallback image.
           grep -Fxq "Platform Version = ${EXPECTED_PLATFORM}" <<< "${sdk_release}"
-          if [[ "${REQUIRE_CORE}" == true ]]; then
+          if jq -e '."platform-only" == true' deps/manifest.json >/dev/null; then
+            grep -Fxq 'SDK Profile = platform-cross' <<< "${sdk_release}"
+            grep -Fxq 'Neat Core = not bundled' <<< "${sdk_release}"
+          elif [[ "${REQUIRE_CORE}" == true ]]; then
             source scripts/neat-deps.sh
             expected_core="$(neat_dependency_target core core)"
             grep -Fxq 'SDK Profile = full' <<< "${sdk_release}"

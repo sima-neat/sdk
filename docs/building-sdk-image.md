@@ -119,7 +119,7 @@ the Docker build, so a new branch artifact invalidates the cached installation l
 
 ## Platform 3.0 package selection
 
-`build.sh` and Dockerfile-only builds default to platform `3.0.0`, the official
+`build.sh` and Dockerfile-only builds default to platform `3.0.1`, the official
 `release` APT channel, and the `debian:trixie` GCC 14 toolchain. The official
 SiMa repository uses the `agate` suite and verifies packages with the SiMa key:
 
@@ -127,8 +127,16 @@ SiMa repository uses the `agate` suite and verifies packages with the SiMa key:
 deb [arch=arm64 signed-by=/etc/apt/trusted.gpg.d/simaai.gpg] https://repo.sima.ai/elxr/deb/release agate non-free
 ```
 
-The firmware release is `3.0.0_master_B2501`; the Palette Debian package version
-is `3.0.0`. Target dependencies continue to come from Debian 13 Trixie.
+The 3.0.1 firmware release is `3.0.1_master_B2798`. The official Palette
+Debian package version is `3.0.1`, and its base-files package records
+`3.0.1_master_B2796` in `/etc/packageinfo`. Target dependencies come from Debian
+13 Trixie.
+
+The `3.0.1-prep` branch sets `platform-only` in `deps/manifest.json`. Its SDK
+image bundles the release sysroot and toolchain for building Neat components in
+Vulcan. The SDK build publishes to `ghcr.io/sima-neat/sdk-3.0.1-prep`. Once
+the build succeeds, use branch `3.0.1-prep` and cache label
+`sdk-3.0.1-develop` with Vulcan's SDK snapshot workflow.
 
 CI uses the official release by default on develop, other branches, and tags.
 The manifest's `sdk-version` defines the SDK identity for branch images, including

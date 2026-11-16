@@ -35,7 +35,7 @@ RUN --mount=type=cache,id=sima-sdk-gcc16-v1,target=/var/cache/sima-sdk-gcc16,sha
 FROM ${SDK_BASE_IMAGE} AS sdk-platform
 
 ARG SDK_PKG_LIST
-ARG BASE_SDK_VERSION=3.0.0
+ARG BASE_SDK_VERSION=3.0.1
 ARG SDK_APT_CHANNEL=release
 ARG REQUESTED_PRE_RELEASE_BASE=
 ARG MINIMAL_IMAGE=0
@@ -386,11 +386,12 @@ RUN chmod 755 /usr/local/bin/sima-install-neat-extension && \
 # Preinstall Neat Framework and resources
 COPY scripts/install-neat-resources.sh /usr/local/bin/install-neat-resources.sh
 RUN chmod 755 /usr/local/bin/install-neat-resources.sh
+ARG SDK_PLATFORM_ONLY=1
 ARG NEAT_CORE_SOURCE_REF=
 ARG NEAT_CORE_SOURCE_REASON=
 ARG NEAT_APPS_SOURCE_REF=
 RUN echo "Neat Core resolution attempt: ${NEAT_CORE_RESOLUTION_ATTEMPT}" && \
-    if [ "${SDK_APT_CHANNEL}" = daily ]; then \
+    if [ "${SDK_APT_CHANNEL}" = daily ] || [ "${SDK_PLATFORM_ONLY}" = 1 ]; then \
       install-neat-resources.sh --skip "platform-only SDK does not bundle Core"; \
     else \
       apt-get update --allow-releaseinfo-change && \

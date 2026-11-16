@@ -11,7 +11,8 @@
   "insight": {
     "ref": "v0.0.11"
   },
-  "platform-version": "3.0.0",
+  "platform-version": "3.0.1",
+  "platform-only": true,
   "code-server": {
     "version": "4.144.0",
     "sha256": {
@@ -19,5 +20,5 @@
       "arm64": "4404c784f541bd56a2a8d6e2a9474ed0b4e37bc8502aa3a247898ca933434482"
     }
   },
-  "sdk-version": "3.0.0.1"
+  "sdk-version": "3.0.1"
 }
