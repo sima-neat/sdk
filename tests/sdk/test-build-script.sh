@@ -131,7 +131,7 @@ grep -Fq '"${SCRIPT_DIR}/container-build/run-sdk-image.sh" "${IMAGE_REF}"' "${RO
 grep -Fq 'Skipping SDK container-build smoke test: Neat Core is not installed.' "${ROOT_DIR}/tests/sdk/container-build/run.sh"
 grep -Fq "Hello from sima-neat" "${ROOT_DIR}/tests/sdk/container-build/run.sh"
 grep -Fq 'ENTRYPOINT ["/usr/local/bin/sima_neat_hello"]' "${ROOT_DIR}/tests/sdk/container-build/context/Dockerfile"
-grep -Fq 'Neat SDK 3.0 and newer containers automatically receive access' "${readme}"
+grep -Fq 'Palette SDK 3.0 and newer containers automatically receive access' "${readme}"
 grep -Fq 'com.sima.sdk.platform.version="${BASE_SDK_VERSION}"' "${dockerfile}"
 grep -Fq 'node /usr/local/bin/components-catalog.js install-cli /usr/local/share/sima-sdk/components.json' "${dockerfile}"
 if grep -q '^ARG CODEX_CLI_VERSION=' "${dockerfile}"; then exit 1; fi
