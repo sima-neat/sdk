@@ -27,7 +27,8 @@ from typing import Any
 
 BUCKET = "sima-neat-artifacts-production"
 PREFIX = "daily-platform-images/"
-BUILD_RE = runpy.run_path(str(Path(__file__).with_name('platform-builds.py')))['BUILD']
+BUILD_MODEL = runpy.run_path(str(Path(__file__).with_name('platform-builds.py')))
+BUILD_RE = BUILD_MODEL['BUILD']
 GIT_VERSION_RE = re.compile(
     r"(?:~|[.+-])git(?:[0-9]{12})?[.]([0-9a-fA-F]{7,40})(?:\b|\Z)"
 )
@@ -922,7 +923,7 @@ def generate(build: str, manifest_text: str, output_dir: Path,
     context_path = output_dir / f"{build}.json"
     jenkins_url = (JENKINS_BASE_URL.rstrip("/") + "/" +
                    JENKINS_BUILDER_PATH.strip("/") +
-                   f"/{match.group(1)}/")
+                   f"/{match['number']}/")
     context = {"schema_version": 1, "build": build, "jenkins_url": jenkins_url, "packages": sections}
     encoded = (json.dumps(context, indent=2) + "\n").encode()
     if len(encoded) > MAX_CODEX_CONTEXT_BYTES:
@@ -992,11 +993,13 @@ def main() -> int:
                 builds.append((name, read_s3_manifest(s3, name)))
             except MissingChangeManifest as exc:
                 print(str(exc), flush=True)
-    master_index = PackageVersionIndex(args.master_package_index)
-    release_index = PackageVersionIndex(args.release_package_index)
+    indexes = {
+        "daily": package_index,
+        "pre-release": PackageVersionIndex(args.master_package_index),
+        "release": PackageVersionIndex(args.release_package_index),
+    }
     for build, manifest_text in builds:
-        selected_index = (release_index if build.startswith("3.0.0_release_master_") else
-                          master_index if build.startswith("3.0.0_pre-release_master_") else package_index)
+        selected_index = indexes[BUILD_MODEL['channel'](build)]
         paths = generate(build, manifest_text, args.output_dir, args.cache_root,
                          args.codex_timeout, jenkins, selected_index)
         if args.evidence_dir:
