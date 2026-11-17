@@ -9,7 +9,7 @@ Usage: tools/prepare_s3_artifacts.sh \
   [--version <package-version>] \
   [--release <release-id>]
 
-Builds the Vulcan/sima-cli install stub package for the Neat SDK.
+Builds the Vulcan/sima-cli install stub package for the Palette SDK.
 The SDK image itself remains a GHCR container resource; this script only
 prepares metadata and the installer hook used by `sima-cli neat install`.
 Also writes metadata-edgematic-studio.json for setup with Edgematic Studio enabled.
@@ -101,7 +101,7 @@ install -m 0755 "${ROOT_DIR}/tools/${INSTALL_SCRIPT_NAME}" "${artifacts_dir}/${I
 SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli packages build "${artifacts_dir}" \
   --name "${PACKAGE_NAME}" \
   --version "${PACKAGE_VERSION}" \
-  --description "SiMa.ai Neat SDK install stub" \
+  --description "SiMa.ai Palette SDK install stub" \
   --install-script "bash ./${INSTALL_SCRIPT_NAME}" \
   --host-platform "ubuntu@22.04,ubuntu@24.04" \
   --host-platform "windows" \
@@ -132,11 +132,11 @@ metadata["size"] = {
 }
 metadata["installation"]["post-message"] = (
     "[bold green]SDK setup complete.[/bold green]\n"
-    "Run [cyan]sima-cli sdk neat[/cyan] to open the Neat SDK container.\n"
+    "Run [cyan]sima-cli sdk neat[/cyan] to open the Palette SDK container.\n"
 )
 metadata_path.write_text(json.dumps(metadata, indent=4) + "\n", encoding="utf-8")
 
-metadata["description"] = "SiMa.ai Neat SDK with Edgematic Studio install stub"
+metadata["description"] = "SiMa.ai Palette SDK with Edgematic Studio install stub"
 metadata["installation"]["script"] += " --edgematic-studio"
 metadata_path.with_name("metadata-edgematic-studio.json").write_text(
     json.dumps(metadata, indent=4) + "\n", encoding="utf-8"

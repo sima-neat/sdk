@@ -4,7 +4,7 @@ set -euo pipefail
 
 output="${SDK_RELEASE_FILE:-/etc/sdk-release}"
 sdk_release_ref="${SDK_RELEASE_REF:-unknown-nogit}"
-platform_version="${BASE_SDK_VERSION:-3.0.0}"
+platform_version="${BASE_SDK_VERSION:-3.0.1}"
 platform_base="${platform_version%%~*}"
 platform_channel="${SDK_APT_CHANNEL:-release}"
 requested_pre_release_base="${REQUESTED_PRE_RELEASE_BASE:-none}"

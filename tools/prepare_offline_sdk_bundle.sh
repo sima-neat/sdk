@@ -136,7 +136,7 @@ docker system prune -af >/dev/null 2>&1 || true
 install -m 0755 "${ROOT_DIR}/tools/install_offline_sdk.sh" "${artifacts_dir}/install_offline_sdk.sh"
 
 cat > "${artifacts_dir}/${readme_name}" <<EOF
-SiMa.ai Neat SDK offline bundle
+SiMa.ai Palette SDK offline bundle
 ================================
 
 Image: ${IMAGE_REF}
@@ -154,7 +154,7 @@ EOF
 SIMA_CLI_CHECK_FOR_UPDATE=0 sima-cli packages build "${artifacts_dir}" \
   --name "${package_name}" \
   --version "${PACKAGE_VERSION}" \
-  --description "SiMa.ai Neat SDK offline install bundle (${TARGET_ARCH})" \
+  --description "SiMa.ai Palette SDK offline install bundle (${TARGET_ARCH})" \
   --install-script "install_offline_sdk.sh" \
   --host-platform "ubuntu@22.04,ubuntu@24.04" \
   --host-platform "windows" \

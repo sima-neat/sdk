@@ -1,6 +1,6 @@
 # SDK Smoke Tests
 
-This directory contains CI smoke tests that validate a published Neat SDK
+This directory contains CI smoke tests that validate a published Palette SDK
 container after `sima-cli sdk setup -y -n` starts it.
 
 ## Layout
