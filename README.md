@@ -2,7 +2,7 @@
   <img src="images/simaai_logo.png" alt="SiMa.ai Logo" width="30%">
 </p>
 
-# SiMa.ai Neat SDK
+# SiMa.ai Palette SDK
 
 [![Build Docker Image](https://github.com/sima-neat/sdk/actions/workflows/docker-build.yml/badge.svg)](https://github.com/sima-neat/sdk/actions/workflows/docker-build.yml)
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-supported-E95420?logo=ubuntu&logoColor=white)
@@ -11,7 +11,7 @@
 ![eLxr Platform 3.0.0](https://img.shields.io/badge/eLxr%20Platform-3.0.0%20compatible-2E7D32)
 ![Modalix](https://img.shields.io/badge/Modalix-supported-4B5563)
 
-This repository packages the SiMa.ai Neat SDK as a Docker image for `x86_64` and `arm64` Linux hosts.
+This repository packages the SiMa.ai Palette SDK as a Docker image for `x86_64` and `arm64` Linux hosts.
 
 This branch defaults to the official eLxr 3.0.0 release, with an Agate/Trixie
 ARM64 sysroot and GCC 14. Neat Core is bundled when a compatible package is available.
@@ -99,7 +99,7 @@ The SDK workspace is mounted at `/workspace` inside the container.
 
 ### Build ARM64 Application Images
 
-Neat SDK 3.0 and newer containers automatically receive access to the host
+Palette SDK 3.0 and newer containers automatically receive access to the host
 Docker builder during setup:
 
 ```bash
@@ -177,7 +177,7 @@ headers, `libstdc++`, and `libgcc`; the compiler installation is deliberately
 kept outside the platform sysroot. Applications must deploy a compatible
 target `libstdc++.so.6` runtime or package their required runtime closure.
 
-The browser-based VS Code environment is provided by code-server and starts automatically with the SDK container. Full Neat SDK containers keep the HTTP editor endpoint on port `9999` for trusted reverse proxies such as an AWS ALB, and also expose a local HTTPS endpoint using the SDK certificate mounted at `/sdk-cert`. Open the credential-free `codeUI` URL printed by `sima-cli sdk setup`, then sign in with the generated password shown by the CLI. Browsers may require trusting the local certificate before loading editor webviews.
+The browser-based VS Code environment is provided by code-server and starts automatically with the SDK container. Full Palette SDK containers keep the HTTP editor endpoint on port `9999` for trusted reverse proxies such as an AWS ALB, and also expose a local HTTPS endpoint using the SDK certificate mounted at `/sdk-cert`. Open the credential-free `codeUI` URL printed by `sima-cli sdk setup`, then sign in with the generated password shown by the CLI. Browsers may require trusting the local certificate before loading editor webviews.
 
 To start it manually if supervision is disabled:
 
@@ -261,7 +261,7 @@ first `dk container` command offers to install it with the required Modalix
 
 ## Advanced Topics
 
-- [Official Neat SDK installation guide](https://docs.sima-neat.com/getting-started/installation/neat-elxr-sdk)
+- [Official Palette SDK installation guide](https://docs.sima-neat.com/getting-started/installation/neat-elxr-sdk)
 - [Build the SDK image locally](docs/building-sdk-image.md)
 - [Manage Neat Insight in the SDK container](docs/neat-insight.md)
 - [Use the DevKit NFS workspace](docs/devkit-workspace.md)

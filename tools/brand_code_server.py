@@ -109,7 +109,7 @@ for template in templates:
         parser.error(f'Expected two favicon links in {template}; found {count[0]}')
     if template == templates[0] and 'id="neat-password-help"' not in updated:
         replacements = {
-            '<title>{{I18N_LOGIN_TITLE}}</title>': '<title>Sign in · SiMa Neat SDK</title>',
+            '<title>{{I18N_LOGIN_TITLE}}</title>': '<title>Sign in · SiMa.ai Palette SDK</title>',
             '<h1 class="main">{{WELCOME_TEXT}}</h1>\n          <div class="sub">{{I18N_LOGIN_BELOW}} {{PASSWORD_MSG}}</div>': LOGIN_HEADER.replace('NEAT_ICON', name),
             '<div class="field">': '<label for="neat-password">Environment password</label>\n            <div class="field">',
             'class="password"': 'class="password" id="neat-password"',
