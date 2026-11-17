@@ -8,3 +8,6 @@
 
 *.swp
 *.tmp
+
+# Runs in desktop VS Code on the host, not in the image.
+vscode-desktop-extension

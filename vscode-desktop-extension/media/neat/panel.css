@@ -1,0 +1,213 @@
+/* Palette panel styles from the SDK extension (src/extension.js getPanelHtml). */
+body {
+  margin: 0;
+  padding: 16px;
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background);
+  font-family: var(--vscode-font-family);
+}
+
+.masthead {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.logo {
+  display: block;
+  width: 56px;
+  height: auto;
+}
+
+.title {
+  margin: 0 0 3px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+p {
+  margin: 0 0 14px;
+  line-height: 1.45;
+  color: var(--vscode-descriptionForeground);
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 12px;
+}
+
+.panel-section {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--vscode-editor-background);
+  margin-bottom: 12px;
+}
+
+.section-title {
+  margin-bottom: 8px;
+  color: var(--vscode-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.stack {
+  display: grid;
+  gap: 8px;
+}
+
+.quick-links {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+button {
+  width: 100%;
+  min-height: 34px;
+  border: 0;
+  border-radius: 4px;
+  padding: 7px 10px;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.action-button {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  gap: 9px;
+  align-items: center;
+  min-height: 48px;
+  border: 1px solid var(--vscode-panel-border);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  text-align: left;
+  padding: 8px;
+}
+
+.action-button:hover:not(:disabled) {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.icon-badge {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.icon-badge.secondary {
+  color: var(--vscode-button-secondaryForeground);
+  background: var(--vscode-button-secondaryBackground);
+}
+
+.icon-badge.teal {
+  color: #ffffff;
+  background: #008c95;
+}
+
+.badge-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.github-icon {
+  fill: currentColor;
+  stroke: none;
+}
+
+.action-copy {
+  min-width: 0;
+}
+
+.action-title {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--vscode-foreground);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.action-description {
+  display: block;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.external-mark {
+  color: var(--vscode-descriptionForeground);
+  font-size: 14px;
+}
+
+button:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+button.secondary {
+  border: 1px solid var(--vscode-button-border, transparent);
+  color: var(--vscode-button-secondaryForeground);
+  background: var(--vscode-button-secondaryBackground);
+}
+
+button.secondary:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.status {
+  margin: 0;
+  font-size: 12px;
+}
+
+.detail {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+code {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  padding: 1px 4px;
+  color: var(--vscode-textPreformat-foreground);
+  background: var(--vscode-textCodeBlock-background);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
+}
+
+.inline-detail {
+  display: inline;
+}
+
+.container-line {
+  margin: 0 0 12px;
+  font-size: 11px;
+}

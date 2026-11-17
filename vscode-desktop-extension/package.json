@@ -1,0 +1,276 @@
+{
+  "name": "sima-neat-desktop",
+  "displayName": "SiMa Neat Tools",
+  "description": "Installs sima-cli and the SiMa Neat SDK, opens the SDK container in VS Code, and brings the SDK pages (Getting Started, Palette panel, Insight, Models) to your desktop.",
+  "version": "0.0.21",
+  "publisher": "sima-neat",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sima-neat/sdk.git",
+    "directory": "vscode-desktop-extension"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "sima",
+    "neat",
+    "sima-cli",
+    "modalix"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "extensionPack": [
+    "ms-vscode-remote.remote-containers"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:simaNeatTools.panel",
+    "onWebviewPanel:simaNeatTools.landing",
+    "onWebviewPanel:simaNeatTools.insight"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "simaNeat.openSetup",
+        "title": "Open Neat Setup",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.openSdkInVsCode",
+        "title": "Open SDK in VS Code",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.openGettingStarted",
+        "title": "Getting Started",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.openPalettePanel",
+        "title": "Open Palette Panel",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.openInsight",
+        "title": "Open Insight",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.browseModelRegistry",
+        "title": "Browse Models",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.connectClaudeCode",
+        "title": "Connect Claude Code to VS Code",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.disconnectClaudeCode",
+        "title": "Disconnect Claude Code from VS Code",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.showAgentLog",
+        "title": "Show Agent Tool Log",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.installSimaCli",
+        "title": "Install or Update sima-cli",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.checkSimaCli",
+        "title": "Check sima-cli",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.openSimaCliTerminal",
+        "title": "Open sima-cli Terminal",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.showMenu",
+        "title": "Show sima-cli Menu",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.login",
+        "title": "Log In to Developer Portal",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.logout",
+        "title": "Log Out of Developer Portal",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.loginInternal",
+        "title": "Log In (Internal)",
+        "category": "SiMa Neat"
+      },
+      {
+        "command": "simaNeat.logoutInternal",
+        "title": "Log Out (Internal)",
+        "category": "SiMa Neat"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "simaNeatTools",
+          "title": "SiMa Neat",
+          "icon": "media/neat/neat-logo.png"
+        }
+      ]
+    },
+    "views": {
+      "simaNeatTools": [
+        {
+          "id": "simaNeatTools.panel",
+          "name": "Palette",
+          "type": "webview"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "SiMa Neat",
+      "properties": {
+        "simaNeat.promptToInstall": {
+          "type": "boolean",
+          "default": true,
+          "description": "Offer to install sima-cli at startup when it is not found."
+        },
+        "simaNeat.showInternalLogin": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show internal (SiMa employee, Artifactory) login and logout actions. They are always shown while an internal login exists."
+        },
+        "simaNeat.sdk.version": {
+          "type": "string",
+          "default": "",
+          "description": "Neat SDK version to install: a release tag such as v3.0.0.1, or a branch such as main or develop. Empty means the latest release."
+        },
+        "simaNeat.sdk.devkitMode": {
+          "type": "string",
+          "enum": [
+            "none",
+            "pair"
+          ],
+          "enumDescriptions": [
+            "Set up the SDK without a DevKit.",
+            "Pair the SDK with the DevKit at simaNeat.sdk.devkitIp."
+          ],
+          "default": "none",
+          "description": "Whether SDK setup pairs with a Modalix DevKit."
+        },
+        "simaNeat.sdk.devkitIp": {
+          "type": "string",
+          "default": "",
+          "description": "IP address or host name of the DevKit to pair with."
+        },
+        "simaNeat.sdk.modelCompiler": {
+          "type": "string",
+          "enum": [
+            "skip",
+            "install"
+          ],
+          "default": "skip",
+          "description": "Whether SDK setup installs the Model Compiler extension."
+        },
+        "simaNeat.sdk.codingAgents": {
+          "type": "string",
+          "enum": [
+            "skip",
+            "install"
+          ],
+          "enumDescriptions": [
+            "Don't install coding agent extensions.",
+            "Install the Claude Code and Codex extensions."
+          ],
+          "default": "skip",
+          "description": "Coding agent extensions for the SDK's browser IDE. Setup runs without questions, so choose here. (Desktop VS Code installs Claude Code through simaNeat.sdk.containerExtensions.)"
+        },
+        "simaNeat.sdk.edgematicStudio": {
+          "type": "boolean",
+          "default": false,
+          "description": "Install Edgematic Studio during SDK setup."
+        },
+        "simaNeat.sdk.workspace": {
+          "type": "string",
+          "default": "~/workspace",
+          "description": "Folder on this computer shared with the SDK container as /workspace."
+        },
+        "simaNeat.sdk.pullRetries": {
+          "type": "number",
+          "default": 4,
+          "minimum": 0,
+          "maximum": 10,
+          "description": "How many times to retry the SDK image download after a network error. Each retry continues from the layers already downloaded."
+        },
+        "simaNeat.sdk.openAfterSetup": {
+          "type": "boolean",
+          "default": true,
+          "description": "After SDK setup succeeds, switch VS Code into the SDK container."
+        },
+        "simaNeat.sdk.openOnStartup": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "always",
+            "never"
+          ],
+          "enumDescriptions": [
+            "Ask in a notification.",
+            "Switch the empty window into the SDK container.",
+            "Don't offer it."
+          ],
+          "default": "ask",
+          "description": "What to do when VS Code opens an empty window and a Neat SDK container exists on this computer."
+        },
+        "simaNeat.sdk.containerExtensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "anthropic.claude-code"
+          ],
+          "description": "Marketplace extensions installed in the SDK container while VS Code opens it, so they are ready when the window appears. Remove \"anthropic.claude-code\" to not install Claude Code."
+        },
+        "simaNeat.sdk.installSdkExtension": {
+          "type": "boolean",
+          "default": false,
+          "description": "Also install the SDK image's own SiMa Neat extension when VS Code opens the SDK container. This extension already shows its pages from your computer, so turning this on shows them twice."
+        },
+        "simaNeat.sdk.windowLayout": {
+          "type": "boolean",
+          "default": true,
+          "description": "When a window opens in a Neat SDK container: close Welcome pages, open SiMa Getting Started if no other editors are open, open a terminal in /workspace at the bottom and, if it is installed there, Claude Code on the right."
+        },
+        "simaNeat.agents.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let coding agents such as Claude Code act in this VS Code window (for now: open Insight). Each window serves its tools on 127.0.0.1 with a private token; agents reach them through ~/.sima-neat-vscode/bridge.js. Takes effect after a window reload."
+        },
+        "simaNeat.agents.connectClaudeCode": {
+          "type": "boolean",
+          "default": true,
+          "description": "Connect Claude Code to VS Code automatically, so Claude can open SiMa pages such as Insight: Claude Code on this computer (when it's installed), and Claude Code inside the SDK container of a window attached to it. It registers the sima-neat-vscode MCP server in that Claude Code's user settings. \"Disconnect Claude Code from VS Code\" turns this off."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "package": "npx --yes @vscode/vsce package"
+  }
+}
