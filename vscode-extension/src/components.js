@@ -8,7 +8,7 @@ const IDS = { codex: 'openai.chatgpt', claude: 'anthropic.claude-code' };
 const ARCHES = { x64: 'amd64', arm64: 'arm64' };
 const VERSION = /^\d+\.\d+\.\d+(?:\.\d+)?$/;
 const SHA = /^[a-f0-9]{64}$/;
-const HOSTS = new Set(['artifacts.neat.sima.ai', 'open-vsx.org', 'openvsx.eclipsecontent.org', 'registry.npmjs.org']);
+const HOSTS = new Set(['artifacts.neat.sima.ai', 'open-vsx.org', 'openvsx.eclipsecontent.org', 'registry.npmjs.org', 'downloads.claude.ai']);
 function artifact(value) {
   if (!value || !SHA.test(value.sha256 || '')) throw Error('Missing artifact SHA-256');
   const url = new URL(value.url);
@@ -41,6 +41,14 @@ function validateCatalog(value) {
     if (row.components?.['codex-cli']?.package !== '@openai/codex' ||
         !VERSION.test(row.components['codex-cli'].version)) throw Error('Invalid Codex CLI component');
     artifact(row.components['codex-cli'].artifact);
+
+    // Published catalogs predating the image-bundled Claude CLI omit this entry.
+    if (Object.hasOwn(row.components, 'claude-cli')) {
+      const cli = row.components['claude-cli'];
+      if (typeof cli?.version !== 'string' || !VERSION.test(cli.version))
+        throw Error('Invalid Claude Code CLI component');
+      for (const arch of row.architectures) artifact(cli.artifacts?.[arch]);
+    }
 
   }
   return value;
