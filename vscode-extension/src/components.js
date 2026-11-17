@@ -19,6 +19,20 @@ function validateCatalog(value) {
   if (!value || value.schema_version !== 1 || !Number.isSafeInteger(value.revision) || value.revision < 1 ||
       !value.sdks || Array.isArray(value.sdks) || !Object.hasOwn(value.sdks, value.build_sdk_version))
     throw Error('Unsupported SDK component manifest');
+  // Optional for older published catalogs; compiler setup requires an exact entry.
+  if (Object.hasOwn(value, 'model_compiler')) {
+    const mappings = value.model_compiler;
+    if (!mappings || typeof mappings !== 'object' || Array.isArray(mappings) || !Object.keys(mappings).length)
+      throw Error('Invalid Model Compiler compatibility mapping');
+    for (const [sdk, compiler] of Object.entries(mappings)) {
+      if (!VERSION.test(sdk) || typeof compiler?.version !== 'string' || !VERSION.test(compiler.version) ||
+          !['neat', 'legacy'].includes(compiler.installer) ||
+          !Array.isArray(compiler.architectures) || !compiler.architectures.length ||
+          new Set(compiler.architectures).size !== compiler.architectures.length ||
+          compiler.architectures.some(arch => !['amd64', 'arm64'].includes(arch)))
+        throw Error('Invalid Model Compiler compatibility entry');
+    }
+  }
   const releases = new Set();
   for (const [sdk, row] of Object.entries(value.sdks)) {
     if (!VERSION.test(sdk) || !['candidate', 'qualified', 'revoked'].includes(row.status) ||

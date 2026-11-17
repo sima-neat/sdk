@@ -256,3 +256,26 @@ test('panel candidate fallback prepares cached pinned artifacts offline without 
   await fs.rm(file);
   await assert.rejects(service.artifact('codex'), {code: 'OFFLINE_ARTIFACT_UNAVAILABLE'});
 });
+
+test('Model Compiler mappings retain exact SDK release versions independently of editor cohorts', () => {
+  const c = validateCatalog(structuredClone(original));
+  for (const [release, version] of [['3.0.0', '3.0.0'], ['3.0.0.0', '3.0.0'],
+                                  ['3.0.0.1', '3.0.0.1'], ['3.0.0.2', '3.0.0.2']]) {
+    assert.deepEqual(c.model_compiler[release], {version, installer: 'neat', architectures: ['amd64', 'arm64']});
+  }
+  assert.equal(c.model_compiler['3.0.0.3'], undefined);
+  assert.equal(c.model_compiler['2.2.0'], undefined);
+});
+
+test('invalid compiler mappings cannot pass catalog publication validation', () => {
+  for (const change of [null, [], {}, {'3.0.0.2': null},
+      {'3.0.0.2': {version: '3.0.0.2; echo bad', installer: 'neat', architectures: ['amd64']}},
+      {'3.0.0.2': {version: '3.0.0.2', installer: 'shell', architectures: ['amd64']}},
+      {'3.0.0.2': {version: '3.0.0.2', installer: 'neat', architectures: ['riscv64']}},
+      {'3.0.0.2': {version: '3.0.0.2', installer: 'neat', architectures: ['amd64', 'amd64']}}]) {
+    const c = structuredClone(original); c.model_compiler = change;
+    assert.throws(() => validateCatalog(c), /Model Compiler/);
+  }
+  const old = structuredClone(original); delete old.model_compiler;
+  assert.doesNotThrow(() => validateCatalog(old)); // Existing editor clients remain compatible.
+});
