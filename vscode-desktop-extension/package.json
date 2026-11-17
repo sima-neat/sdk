@@ -1,7 +1,8 @@
 {
   "name": "sima-neat-desktop",
-  "displayName": "SiMa Neat Tools",
-  "description": "Installs sima-cli and the SiMa Neat SDK, opens the SDK container in VS Code, and brings the SDK pages (Getting Started, Palette panel, Insight, Models) to your desktop.",
+  "displayName": "Neat Studio",
+  "icon": "media/marketplace/icon.png",
+  "description": "DevKits, examples on DevKit, Model Registry and Insight for SiMa developers.",
   "version": "0.0.21",
   "publisher": "sima-neat",
   "license": "UNLICENSED",
