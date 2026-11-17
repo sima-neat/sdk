@@ -189,7 +189,11 @@ compiler `3.0.0`. Sharing an editor cohort never implies compiler compatibility.
 `SDK Version` in `/etc/sdk-release` (retaining all four numeric components).
 The `neat` installer uses `model-compiler/{arch}@v{version}`; `legacy` uses
 `install -v {version} tools/model-compiler/{arch}`. Catalog data cannot supply
-arbitrary shell commands. Package metadata and installation checks still apply.
+arbitrary shell commands. Optional `bundle_sdk_version` declares the version
+inside a compatible offline ZIP when it differs from the online compiler version
+(for example, compiler 2.1.3.1 uses bundle SDK version 2.1.3). Otherwise the bundle
+version defaults to the compiler version. Known legacy SDK 2.1.2.3 explicitly maps
+to compiler/bundle 2.1.2. Package metadata and installation checks still apply.
 Missing mappings, unsupported architectures, invalid data, and network failures
 stop compiler setup with a clear error; there is no default compiler or version
 range fallback. `--no-model-compiler` skips the optional compiler setup entirely.
