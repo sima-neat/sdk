@@ -135,8 +135,8 @@ from Debian 13 Trixie.
 CI uses the official release by default on develop, other branches, and tags.
 The manifest's `sdk-version` defines the SDK identity for branch images, including
 `develop-latest`. It is independent of `platform-version`, which selects the
-underlying platform packages. SDK `3.0.0.1` therefore selects Model Compiler
-`3.0.0.1` when built on platform `3.0.1`. Numeric release tags override the
+underlying platform packages. SDK `3.0.0.2` therefore selects Model Compiler
+`3.0.0.2` when built on platform `3.0.1`. Numeric release tags override the
 manifest SDK identity for tagged images.
 
 An empty workflow platform selector uses the manifest's `platform-version`.
