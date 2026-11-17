@@ -1,13 +1,17 @@
 """Shared Modalix build identity; release-master builds are pinned; other channels share 21 slots."""
 import re
 
-# Keep existing daily branch names readable, but allow only master pre-release and release builds.
-BUILD = re.compile(r'3\.0\.0_(?:daily_[A-Za-z0-9_-]+|(?:pre-release|release)_master)_B([0-9]+)\Z')
+VERSION_PREFIX = '3.'
+# Daily builds can come from any branch; pre-release and release builds must be from master.
+BUILD = re.compile(
+    rf'(?P<release>{re.escape(VERSION_PREFIX)}[0-9]+\.[0-9]+)_'
+    r'(?:(?P<daily>daily)_[A-Za-z0-9_-]+|(?P<master>pre-release|release)_master)'
+    r'_B(?P<number>[0-9]+)\Z'
+)
 
 
 def channel(build):
-    if not BUILD.fullmatch(build):
+    match = BUILD.fullmatch(build)
+    if not match:
         raise ValueError(f'Invalid platform build: {build}')
-    if build.startswith('3.0.0_release_master_'):
-        return 'release'
-    return 'pre-release' if build.startswith('3.0.0_pre-release_master_') else 'daily'
+    return match['master'] or match['daily']

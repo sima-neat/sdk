@@ -123,7 +123,7 @@ main() {
     exit 1
   fi
 
-  echo "SiMa.ai Neat SDK image is loaded locally."
+  echo "SiMa.ai Palette SDK image is loaded locally."
   echo "Starting SDK setup."
 
   if prompt_yes_no "Do you want to pair this SDK with a DevKit now?"; then

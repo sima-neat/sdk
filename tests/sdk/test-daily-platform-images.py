@@ -91,7 +91,13 @@ def test_retention_deletes_versions_markers_and_partial_builds_only(s3):
     s3.delete_object(Bucket=m.BUCKET, Key=old_key)
     partial = m.PREFIX + name(0) + '/partial.wic'
     s3.put_object(Bucket=m.BUCKET, Key=partial, Body=b'partial')
-    protected = [m.PREFIX + '2.0.0_daily_develop_B1/image.wic', 'sdk/keep', m.PREFIX + 'notes.txt']
+    protected = [
+        m.PREFIX + '2.0.0_daily_develop_B1/image.wic',
+        m.PREFIX + '4.0.0_daily_develop_B1/image.wic',
+        m.PREFIX + '3.1.0_release_feature_B1/image.wic',
+        m.PREFIX + '3.1.0_daily_develop_B1',
+        'sdk/keep', m.PREFIX + 'notes.txt',
+    ]
     for key in protected:
         s3.put_object(Bucket=m.BUCKET, Key=key, Body=b'keep')
     result = mirror(Source(range(2, 23)), s3, True)
@@ -116,7 +122,7 @@ def test_failed_upload_preserves_index_and_old_builds(s3):
 def test_preview_and_empty_source_never_write(s3):
     assert len(mirror(Source([1]), s3)['builds']) == 1
     assert s3.list_objects_v2(Bucket=m.BUCKET)['KeyCount'] == 0
-    with pytest.raises(ValueError, match='No 3.0.0'):
+    with pytest.raises(ValueError, match=r'No supported 3\.x\.y'):
         mirror(Source([]), s3, True)
 
 
@@ -150,11 +156,14 @@ def test_listing_filters_other_release_lines():
     source = artifactory()
     source.info = lambda path: {'children': [
         {'uri': '/' + name(1168), 'folder': True},
+        {'uri': '/3.0.1_daily_develop_B1169', 'folder': True},
         {'uri': '/3.1.0_daily_develop_B1169', 'folder': True},
+        {'uri': '/4.0.0_daily_develop_B1169', 'folder': True},
+        {'uri': '/3.1.bad_daily_develop_B1169', 'folder': True},
         {'uri': '/3.0.0_release_B1170', 'folder': True},
         {'uri': '/' + name(1171), 'folder': False},
     ]}
-    assert source.builds() == {name(1168)}
+    assert source.builds() == {name(1168), '3.0.1_daily_develop_B1169', '3.1.0_daily_develop_B1169'}
 
 
 def test_missing_image_fails_closed():
@@ -502,7 +511,7 @@ def test_index_publication_retry_reports_new_build_without_reupload(s3, tmp_path
 
 def test_master_and_develop_share_retention_and_pruning(s3):
     master_channel = "pre-release"
-    master = lambda n: f'3.0.0_{master_channel}_master_B{n}'
+    master = lambda n: f'3.1.0_{master_channel}_master_B{n}'
     source = Source(range(1, 21))
     source.names.add(master(21))
     mirror(source, s3, True)
@@ -522,7 +531,7 @@ def test_master_discovery_excludes_unrelated_prerelease_branches():
     names = ['3.0.0_pre-release_master_B2254', '3.0.0_pre-release_feature_B2255',
              '3.1.0_pre-release_master_B2256']
     source.info = lambda path: {'children': [{'uri': '/' + n, 'folder': True} for n in names]}
-    assert source.builds() == {names[0]}
+    assert source.builds() == {names[0], names[2]}
 
 
 def test_release_master_discovery_and_retention(s3):
@@ -530,20 +539,25 @@ def test_release_master_discovery_and_retention(s3):
     source = artifactory()
     names = [release, '3.0.0_release_feature_B2480', '3.1.0_release_master_B2481']
     source.info = lambda path: {'children': [{'uri': '/' + n, 'folder': True} for n in names]}
-    assert source.builds() == {release}
+    assert source.builds() == {release, names[2]}
     assert m.rank(release)[0] == 2479
 
 
 def test_release_catalog_preserves_legacy_readers_and_announcements(s3, tmp_path):
-    release = '3.0.0_release_master_B2479'
+    release = '3.0.1_release_master_B2479'
+    daily = '3.1.0_daily_develop_B2480'
     source = Source([2478])
-    source.names.add(release)
+    source.names.update({release, daily})
     report = tmp_path / 'report.json'
     mirror(source, s3, True, report_path=report)
     legacy = m.read_json(s3, m.PREFIX + 'index.json')
     complete = m.read_json(s3, m.PREFIX + 'index-v2.json')
+    assert legacy['version_prefix'] == '3.0.0_'
     assert [b['name'] for b in legacy['builds']] == [name(2478)]
-    assert [b['name'] for b in complete['builds']] == [release, name(2478)]
+    assert complete['version_prefix'] == '3.'
+    assert complete['pinned_builds'] == [release]
+    assert [b['name'] for b in complete['builds']] == [daily, release, name(2478)]
+    assert json.loads(report.read_text())['copied_versions'] == [daily, release, name(2478)]
     mirror(source, s3, True, report_path=report)
     assert json.loads(report.read_text())['copied_versions'] == []
 
@@ -552,8 +566,9 @@ def test_release_catalog_preserves_legacy_readers_and_announcements(s3, tmp_path
 def test_release_catalog_retry_announces_new_builds_once(s3, tmp_path, monkeypatch, failed_index):
     mirror(Source([1]), s3, True)
     source = Source([1, 2])
-    release = '3.0.0_release_master_B2479'
-    source.names.add(release)
+    release = '3.0.1_release_master_B2479'
+    daily = '3.1.0_daily_develop_B2480'
+    source.names.update({release, daily})
     report = tmp_path / 'report.json'
     original = m.put_json
     def fail(client, key, value):
@@ -566,8 +581,8 @@ def test_release_catalog_retry_announces_new_builds_once(s3, tmp_path, monkeypat
     assert not report.exists()
     monkeypatch.setattr(m, 'put_json', original)
     mirror(source, s3, True, report_path=report)
-    assert json.loads(report.read_text())['copied_versions'] == [release, name(2)]
-    assert source.downloads == [release, name(2)]
+    assert json.loads(report.read_text())['copied_versions'] == [daily, release, name(2)]
+    assert source.downloads == [daily, release, name(2)]
     mirror(source, s3, True, report_path=report)
     assert json.loads(report.read_text())['copied_versions'] == []
 
@@ -591,7 +606,7 @@ def test_release_master_survives_newer_rolling_builds_and_upstream_removal(s3):
 
 
 def test_prune_never_deletes_release_versions_markers_or_partial_uploads(s3):
-    prefix = m.PREFIX + '3.0.0_release_master_B2479/'
+    prefix = m.PREFIX + '3.0.1_release_master_B2479/'
     key = prefix + 'image.wic.gz'
     s3.put_object(Bucket=m.BUCKET, Key=key, Body=b'first')
     s3.put_object(Bucket=m.BUCKET, Key=key, Body=b'second')
@@ -605,7 +620,7 @@ def test_prune_never_deletes_release_versions_markers_or_partial_uploads(s3):
 
 
 def test_multiple_old_release_masters_do_not_consume_rolling_slots(s3):
-    releases = {'3.0.0_release_master_B10', '3.0.0_release_master_B20'}
+    releases = {'3.0.0_release_master_B10', '3.0.1_release_master_B20'}
     source = Source(range(100, 125))
     source.names.update(releases)
     result = mirror(source, s3, True)

@@ -26,13 +26,13 @@ test('candidate releases require explicit testing, and platform identity cannot 
 test('matching is exact for SDK release, engine pair and architecture', () => {
   const c = qualified();
   assert.equal(resolveCatalog(c, options).sdkVersion, '3.0.0');
-  for (const release of ['3.0.0.1', 'v3.0.0.1']) {
+  for (const release of ['3.0.0.1', 'v3.0.0.1', '3.0.0.2', 'v3.0.0.2']) {
     const selected = resolveCatalog(c, {...options, release});
     assert.equal(selected.sdkVersion, '3.0.0');
     assert.equal(selected.sdkFallback, false);
     assert.deepEqual(selected.components, c.sdks['3.0.0'].components);
   }
-  for (const change of [{release:'v3.0.0.2'}, {arch:'riscv64'}, {codeServer:'4.137.0'}, {vscode:'1.140.0'}])
+  for (const change of [{release:'v3.0.0.3'}, {arch:'riscv64'}, {codeServer:'4.137.0'}, {vscode:'1.140.0'}])
     assert.throws(() => resolveCatalog(c, {...options, ...change}));
   c.sdks['3.1.0'] = structuredClone(c.sdks['3.0.0']); c.sdks['3.1.0'].sdk_releases=['3.1.0'];
   assert.equal(resolveCatalog(c, {...options, release:'v3.1.0'}).sdkVersion,'3.1.0');
@@ -41,7 +41,7 @@ test('matching is exact for SDK release, engine pair and architecture', () => {
 });
 test('panel SDK fallback uses default pins for unmapped releases and preserves exact pins', () => {
   const catalog = qualified();
-  for (const release of ['v3.0.0.2', 'v3.1.0', 'develop-1234567', undefined]) {
+  for (const release of ['v3.0.0.3', 'v3.1.0', 'develop-1234567', undefined]) {
     const selected = resolveCatalog(catalog, {...options, release, allowSdkFallback: true});
     assert.equal(selected.sdkFallback, true);
     assert.equal(selected.sdkRelease, release);
@@ -153,7 +153,9 @@ test('tagged image builds require a qualified matching cohort while development 
  assert.equal(spawnSync(process.execPath,[command,'check-release',file,'v3.0.0.0']).status,0);
  assert.notEqual(spawnSync(process.execPath,[command,'check-release',file,'v3.1.0']).status,0);
  await fs.writeFile(file,JSON.stringify(original));
- assert.equal(spawnSync(process.execPath,[command,'check-release',file,'v3.0.0.1']).status,0);
+ for (const release of ['v3.0.0.1', 'v3.0.0.2']) {
+  assert.equal(spawnSync(process.execPath,[command,'check-release',file,release]).status,0);
+ }
 });
 
 test('qualified runtime mappings do not require embedded qualification records',()=>{

@@ -25,6 +25,18 @@ def test_exact_release_build_and_architecture():
     assert m.available([package()], 'unknown')['status'] == 'unknown'
 
 
+@pytest.mark.parametrize('image,exact,wrong', [
+    ('3.1.0_daily_develop_B1371', '3.1.0~git202609120138.abcdef-1371', VERSION),
+    ('3.1.0_pre-release_master_B2254', '3.1.0~pre2254', '3.0.0~pre2254'),
+    ('3.0.1_release_master_B2789', '3.0.1', '3.0.0'),
+])
+def test_exact_sysroot_version_across_release_lines(image, exact, wrong):
+    assert m.available([package(version=wrong)], image)['status'] == 'missing'
+    assert m.available([package(version=wrong), package(version=exact)], image) == {
+        'status': 'available', 'version': exact,
+    }
+
+
 def test_dependency_chain_alternatives_and_cycles():
     anchor = package(Depends='vendor (= 2.1.1+neat1), libc6 (>= 2.36)')
     assert m.available([anchor, package('vendor', '2.1.1')], IMAGE)['status'] == 'incomplete'

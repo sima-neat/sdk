@@ -2,7 +2,7 @@
   <img src="images/simaai_logo.png" alt="SiMa.ai Logo" width="30%">
 </p>
 
-# SiMa.ai Neat SDK
+# SiMa.ai Palette SDK
 
 [![Build Docker Image](https://github.com/sima-neat/sdk/actions/workflows/docker-build.yml/badge.svg)](https://github.com/sima-neat/sdk/actions/workflows/docker-build.yml)
 ![Ubuntu](https://img.shields.io/badge/Ubuntu-supported-E95420?logo=ubuntu&logoColor=white)
@@ -11,7 +11,7 @@
 ![eLxr Platform 3.0.0](https://img.shields.io/badge/eLxr%20Platform-3.0.0%20compatible-2E7D32)
 ![Modalix](https://img.shields.io/badge/Modalix-supported-4B5563)
 
-This repository packages the SiMa.ai Neat SDK as a Docker image for `x86_64` and `arm64` Linux hosts.
+This repository packages the SiMa.ai Palette SDK as a Docker image for `x86_64` and `arm64` Linux hosts.
 
 This branch defaults to the official eLxr 3.0.0 release, with an Agate/Trixie
 ARM64 sysroot and GCC 14. Neat Core is bundled when a compatible package is available.
@@ -99,7 +99,7 @@ The SDK workspace is mounted at `/workspace` inside the container.
 
 ### Build ARM64 Application Images
 
-Neat SDK 3.0 and newer containers automatically receive access to the host
+Palette SDK 3.0 and newer containers automatically receive access to the host
 Docker builder during setup:
 
 ```bash
@@ -126,24 +126,25 @@ The application should be cross-compiled against the Modalix sysroot before
 the image build. Avoid target-architecture `RUN` commands when building on a
 non-ARM64 host unless the selected builder has ARM64 emulation available.
 
-The SDK image also preinstalls a tested, pinned version of the OpenAI Codex CLI.
-From the SDK shell, run:
+The SDK image includes pinned versions of the OpenAI Codex CLI and Claude Code,
+along with `tmux`. Run `codex` or `claude` from the SDK shell. To keep a Claude Code
+session running while you detach from the terminal, start it inside `tmux`:
 
 ```bash
-codex
+tmux new -s claude
+claude
 ```
 
-The Codex CLI version is selected from the checked-in `components.json` compatibility
-catalog and checksum-verified during the image build. Upgrade through a reviewed
-SDK component update and rebuilt image to retain the qualified version selection.
+Sign in using your own Claude account or credentials. Press Ctrl+B, then D to
+detach. Run `tmux attach -t claude` to reconnect to the session in the same container.
 
-
-The update remains in the current container. Recreating the container restores
-the version bundled with the SDK image.
+The image build selects both CLI versions from `components.json` and verifies
+the artifact checksums. Claude Code background auto-updates are disabled in the
+image. SDK releases update the bundled versions through reviewed component pins.
 
 The Neat VS Code extension lives in `vscode-extension/`. It adds a SiMa Neat activity bar panel and light/dark themes. SDK assembly bundles its runtime files at `/opt/sima-neat/vscode-extension`. Updated sima-cli setup runs `sima-install-neat-extension` as the mapped SDK user to copy and register this bundled version in that user's code-server extensions directory, without a prompt or download. Repeated setup preserves other extensions and refreshes Neat when the bundled contents change.
 
-Codex and Claude extensions remain optional downloads during sima-cli setup. Set `SDK_SKIP_CODING_AGENT_INSTALL=1` in the host environment to bypass their prompts and installation, even with `--all-extensions`; Neat still installs automatically. On new code-server images, both setup and Palette installs resolve exact versions through the SDK compatibility catalog; unavailable or unqualified combinations are blocked. This setting does not remove existing extensions or the Codex CLI included in the SDK image.
+Codex and Claude extensions remain optional downloads during sima-cli setup. Set `SDK_SKIP_CODING_AGENT_INSTALL=1` in the host environment to bypass their prompts and installation, even with `--all-extensions`; Neat still installs automatically. On new code-server images, both setup and Palette installs resolve exact versions through the SDK compatibility catalog; unavailable or unqualified combinations are blocked. Existing extensions and the bundled terminal tools remain available when this setting is enabled.
 
 You can run Docker directly for low-level debugging:
 
@@ -177,7 +178,7 @@ headers, `libstdc++`, and `libgcc`; the compiler installation is deliberately
 kept outside the platform sysroot. Applications must deploy a compatible
 target `libstdc++.so.6` runtime or package their required runtime closure.
 
-The browser-based VS Code environment is provided by code-server and starts automatically with the SDK container. Full Neat SDK containers keep the HTTP editor endpoint on port `9999` for trusted reverse proxies such as an AWS ALB, and also expose a local HTTPS endpoint using the SDK certificate mounted at `/sdk-cert`. Open the credential-free `codeUI` URL printed by `sima-cli sdk setup`, then sign in with the generated password shown by the CLI. Browsers may require trusting the local certificate before loading editor webviews.
+The browser-based VS Code environment is provided by code-server and starts automatically with the SDK container. Full Palette SDK containers keep the HTTP editor endpoint on port `9999` for trusted reverse proxies such as an AWS ALB, and also expose a local HTTPS endpoint using the SDK certificate mounted at `/sdk-cert`. Open the credential-free `codeUI` URL printed by `sima-cli sdk setup`, then sign in with the generated password shown by the CLI. Browsers may require trusting the local certificate before loading editor webviews.
 
 To start it manually if supervision is disabled:
 
@@ -261,7 +262,7 @@ first `dk container` command offers to install it with the required Modalix
 
 ## Advanced Topics
 
-- [Official Neat SDK installation guide](https://docs.sima-neat.com/getting-started/installation/neat-elxr-sdk)
+- [Official Palette SDK installation guide](https://docs.sima-neat.com/getting-started/installation/neat-elxr-sdk)
 - [Build the SDK image locally](docs/building-sdk-image.md)
 - [Manage Neat Insight in the SDK container](docs/neat-insight.md)
 - [Use the DevKit NFS workspace](docs/devkit-workspace.md)

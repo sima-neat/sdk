@@ -20,7 +20,10 @@ SOURCE = 'https://artifacts.eng.sima.ai/artifactory'
 ROOT = 'soc-images/elxr/bsp/modalix'
 BUCKET = 'sima-neat-artifacts-production'
 PREFIX = 'daily-platform-images/'
-BUILD = runpy.run_path(str(Path(__file__).with_name('platform-builds.py')))['BUILD']
+BUILD_MODEL = runpy.run_path(str(Path(__file__).with_name('platform-builds.py')))
+BUILD = BUILD_MODEL['BUILD']
+VERSION_PREFIX = BUILD_MODEL['VERSION_PREFIX']
+LEGACY_VERSION_PREFIX = '3.0.0_'
 IMAGES = ('.wic', '.wic.gz', '.wic.xz', '.wic.zst', '.img', '.img.gz', '.img.xz', '.img.zst', '.iso')
 KEEP = 21
 RETIRED_BUILDS = set(json.loads(Path(__file__).with_name("retired-platform-images.json").read_text()))
@@ -32,11 +35,15 @@ def rank(name):
     match = BUILD.fullmatch(name)
     if not match:
         raise ValueError(f'Invalid daily build name: {name}')
-    return int(match[1]), name
+    return int(match['number']), name
 
 
 def is_release_master(name):
-    return name.startswith('3.0.0_release_master_') and bool(BUILD.fullmatch(name))
+    return bool(BUILD.fullmatch(name)) and BUILD_MODEL['channel'](name) == 'release'
+
+
+def in_legacy_index(name):
+    return name.startswith(LEGACY_VERSION_PREFIX) and not is_release_master(name)
 
 
 def safe_path(value):
@@ -203,10 +210,10 @@ def existing_builds(s3):
 def prune(s3, retained):
     # Materialize before deleting so version pagination cannot skip objects.
     doomed = []
-    for page in s3.get_paginator('list_object_versions').paginate(Bucket=BUCKET, Prefix=PREFIX + '3.0.0_'):
+    for page in s3.get_paginator('list_object_versions').paginate(Bucket=BUCKET, Prefix=PREFIX + VERSION_PREFIX):
         for obj in page.get('Versions', []) + page.get('DeleteMarkers', []):
-            name = obj['Key'][len(PREFIX):].split('/')[0]
-            if BUILD.fullmatch(name) and not is_release_master(name) and name not in retained:
+            name, separator, _ = obj['Key'][len(PREFIX):].partition('/')
+            if separator and BUILD.fullmatch(name) and not is_release_master(name) and name not in retained:
                 doomed.append({'Key': obj['Key'], 'VersionId': obj['VersionId']})
     for offset in range(0, len(doomed), 1000):
         result = s3.delete_objects(Bucket=BUCKET, Delete={'Objects': doomed[offset:offset + 1000], 'Quiet': True})
@@ -224,7 +231,7 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
         readiness = BuildReadiness(work_root)
     upstream = source.builds()
     if not upstream:
-        raise ValueError('No 3.0.0 supported platform builds found; refusing publication and deletion')
+        raise ValueError('No supported 3.x.y platform builds found; refusing publication and deletion')
     stored = existing_builds(s3)
     # Keep successful builds even if Artifactory has already removed them.
     manifests = {name: read_json(s3, f'{PREFIX}{name}/manifest.json') for name in stored}
@@ -294,7 +301,7 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
                 })
                 copied_versions.add(name)
         builds.append(manifest)
-    index = {'schema_version': 1, 'platform': 'modalix', 'version_prefix': '3.0.0_',
+    index = {'schema_version': 1, 'platform': 'modalix', 'version_prefix': VERSION_PREFIX,
              'bucket': BUCKET, 'prefix': PREFIX, 'retention_count': KEEP,
              'retention_scope': 'daily-and-pre-release',
              'pinned_builds': [name for name in names if is_release_master(name)], 'builds': builds}
@@ -321,11 +328,11 @@ def mirror(source, s3, publish=False, work_root=None, report_path=None, readines
         previous_legacy = read_json(s3, PREFIX + 'index.json')
         legacy_versions = {build['name'] for build in (previous_legacy or {}).get('builds', [])}
         indexed_versions = {build['name'] for build in (old or {}).get('builds', [])
-                            if build['name'].startswith('3.0.0_release_master_') or build['name'] in legacy_versions}
+                            if not in_legacy_index(build['name']) or build['name'] in legacy_versions}
         copied_versions.update(set(names) - indexed_versions)
-        # Older consumers reject the whole catalog when they see release names.
-        # Keep their URL compatible while new consumers use the complete pool.
-        legacy = dict(index, pinned_builds=[], builds=[build for build in builds if not is_release_master(build['name'])])
+        # Older consumers accept only 3.0.0 rolling builds.
+        legacy = dict(index, version_prefix=LEGACY_VERSION_PREFIX, pinned_builds=[],
+                      builds=[build for build in builds if in_legacy_index(build['name'])])
         if previous_legacy is None or {k: v for k, v in previous_legacy.items() if k != 'generated_at'} != legacy:
             put_json(s3, PREFIX + 'index.json', dict(legacy, generated_at=datetime.now(timezone.utc).isoformat()))
         # Commit the complete catalog last so retries retain new-build announcements.

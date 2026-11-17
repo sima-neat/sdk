@@ -1,5 +1,5 @@
 name: Sync pre-release Debian mirror
-# Platform 3.0: internal deb/daily, suite agate, ARM64.
+# Platform 3.x: internal deb/daily, suite agate, ARM64.
 
 on:
   schedule:
@@ -43,7 +43,7 @@ concurrency:
 
 jobs:
   sync:
-    name: Validate and optionally publish Agate 3.0 mirror
+    name: Validate and optionally publish Agate mirror
     environment: production
     runs-on: [self-hosted, Linux, X64, apt-mirror]
     timeout-minutes: 720

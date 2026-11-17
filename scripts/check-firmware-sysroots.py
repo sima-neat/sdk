@@ -99,11 +99,12 @@ def available(records, image):
     match = IMAGE.fullmatch(image)
     if not match:
         return {'status': 'unknown', 'reason': 'Unrecognized firmware version'}
-    release, build = '3.0.0', match[1]
+    release, build = match['release'], match['number']
+    channel = BUILD_MODEL['channel'](image)
     version_re = re.compile(re.escape(release) + r'~git[0-9]+\.[A-Za-z0-9]+-' + re.escape(build) + r'\Z')
-    if BUILD_MODEL['channel'](image) == 'pre-release':
+    if channel == 'pre-release':
         version_re = re.compile(re.escape(f'{release}~pre{build}') + r'\Z')
-    if BUILD_MODEL['channel'](image) == 'release':
+    if channel == 'release':
         version_re = re.compile(re.escape(release) + r'\Z')
     anchors = [p for p in records if p['Package'] == ANCHOR and version_re.fullmatch(p['Version'])]
     if not anchors:

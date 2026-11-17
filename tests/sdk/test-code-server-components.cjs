@@ -3,13 +3,14 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../../scripts/sdk-code-server-cli.js'),'utf8');
-async function run(args, available=true) {
+async function run(args, available=true, pinned=true) {
  const calls=[], errors=[], process={argv:['node','wrapper',...args]};
  const ids={codex:'openai.chatgpt',claude:'anthropic.claude-code'};
  const components={codex:{id:ids.codex,version:'1.2.3'},claude:{id:ids.claude,version:'2.3.4'}};
  class Catalog {
   snapshot(){return {available,sdkVersion:'3.0.0',components,error:'Not qualified'};}
   async refresh(){return this.snapshot();}
+  async verifyInstalled(){if(!pinned)throw Error('The editor did not pin the expected component version');}
   async artifact(key){return {file:'/verified/'+key+'.vsix',target:components[key]};}
  }
  const spawnSync=(file,argv)=>{
@@ -20,7 +21,10 @@ async function run(args, available=true) {
  };
  await vm.runInNewContext(source,{process,console:{error:x=>errors.push(x)},require:name=>{
   if(name==='node:child_process')return {spawnSync};
-  if(name==='/usr/local/lib/sima-sdk/components.js')return {ComponentCatalog:Catalog,IDS:ids};
+  if(name==='/usr/local/lib/sima-sdk/components.js')return {IDS:ids};
+  if(name==='/usr/local/lib/sima-sdk/component-service.js')return {createComponentService:()=>{
+   spawnSync('', ['--config','/dev/null','--version']); return new Catalog();
+  }};
   return require(name);
  }});
  return {calls:JSON.parse(JSON.stringify(calls)),errors,code:process.exitCode};
@@ -46,4 +50,10 @@ test('unqualified SDKs and explicitly incompatible versions never reach installa
  const mismatch=await run(['--install-extension','openai.chatgpt@9.9.9']);
  assert.equal(mismatch.code,1);assert.equal(mismatch.calls.length,1);
  assert.match(mismatch.errors[0],/not qualified/);
+});
+
+test('matching installed versions without a persistent pin fail verification',async()=>{
+ const result=await run(['--extensions-dir','/test/extensions','--install-extension','openai.chatgpt'],true,false);
+ assert.equal(result.code,1);
+ assert.match(result.errors[0],/did not pin/);
 });

@@ -416,9 +416,11 @@ def test_readiness_preview_and_unknown_are_not_availability():
     assert 'wait for synchronization' not in m.sysroot_events(readiness(internal='unknown'))[0]
 
 
-@pytest.mark.parametrize('channel', ['pre-release', 'release'])
-def test_master_image_links_and_change_attachments(tmp_path, channel):
-    build = f'3.0.0_{channel}_master_B2254'
+@pytest.mark.parametrize('build', [
+    '3.0.1_release_master_B2254', '3.1.0_pre-release_master_B2254',
+    '3.1.0_daily_develop_B2254',
+])
+def test_image_links_and_change_attachments(tmp_path, build):
     assert '/2254/console|' in m.format_version('images', build)
     (tmp_path / f'{build}.html').write_text('report')
     attachments, _ = m.image_change_artifacts([{'kind': 'images', 'version': build}], tmp_path)

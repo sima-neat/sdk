@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       pre_release_base:
-        description: Optional daily/pre-release selector (empty = official release; 3.0.0 = latest daily)
+        description: Optional daily/pre-release selector (empty = official release; a base version selects its latest daily)
         required: false
         type: string
 
@@ -105,7 +105,7 @@ jobs:
       - name: Run SDK build and package tests
         run: |
           tests/sdk/test-install-sdk-stub.sh
-          node --test tests/sdk/test-code-server-components.cjs
+          node --test tests/sdk/test-code-server-components.cjs tests/sdk/test-sdk-components.cjs
           python3 tests/sdk/test-components-publication.py
           node scripts/components-catalog.js validate
           python3 tests/sdk/test-sdk-component-pins.py
@@ -252,6 +252,30 @@ jobs:
           SDK_APT_CHANNEL: ${{ needs.resolve-platform-config.outputs.sdk_apt_channel }}
           REQUESTED_PRE_RELEASE_BASE: ${{ needs.resolve-platform-config.outputs.requested_pre_release_base }}
           BASE_SDK_VERSION: ${{ needs.resolve-platform-config.outputs.base_sdk_version }}
+
+      - name: Verify SDK terminal tools
+        if: github.event_name == 'pull_request'
+        env:
+          IMAGE_SUFFIX: ${{ matrix.image_suffix }}
+          EXPECTED_ARCH: ${{ matrix.runner_arch }}
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --user nobody -e HOME=/tmp -e SHELL=/bin/bash \
+            --entrypoint /bin/bash "sdk:ci-${IMAGE_SUFFIX}" -ec '
+              test "$(dpkg --print-architecture)" = "$1"
+              node /usr/local/bin/components-catalog.js check-claude-cli /usr/local/share/sima-sdk/components.json
+              tmux -V
+              tmux new-session -d -x 120 -y 40 "claude doctor; sleep 30"
+              for attempt in {1..20}; do
+                pane="$(tmux capture-pane -p -S -100)"
+                if grep -F "Auto-updates: disabled (set by env: DISABLE_AUTOUPDATER)" <<< "${pane}"; then
+                  exit 0
+                fi
+                sleep 1
+              done
+              printf "%s\n" "${pane}" >&2
+              exit 1
+            ' verify-sdk-terminal-tools "${EXPECTED_ARCH}"
 
   publish-manifest:
     name: Publish multi-arch manifest

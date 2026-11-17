@@ -30,7 +30,7 @@ grep -Fxq 'Platform Base = 3.0.0' "${tmpdir}/platform-release" || fail "platform
 grep -Fxq 'Platform Channel = pre-release' "${tmpdir}/platform-release" || fail "channel missing"
 grep -Fxq 'Requested Pre-release Base = 3.0.0' "${tmpdir}/platform-release" || fail "requested selector missing"
 grep -Fxq 'Neat Core = not bundled' "${tmpdir}/platform-release" || fail "Core status missing"
-grep -Fxq 'SDK Version = 3.0.0.1_Palette_SDK_neat_develop_abcdef1' "${tmpdir}/platform-release" || fail "develop SDK version must come from the manifest"
+grep -Fxq 'SDK Version = 3.0.0.2_Palette_SDK_neat_develop_abcdef1' "${tmpdir}/platform-release" || fail "develop SDK version must come from the manifest"
 
 SDK_RELEASE_FILE="${tmpdir}/stable-release" \
 SDK_RELEASE_REF=v3.0.0 \
@@ -85,6 +85,6 @@ echo "sdk release metadata tests passed"
 
 SDK_RELEASE_FILE="${tmpdir}/defaults" NEAT_CORE_STATUS_FILE="${tmpdir}/missing" \
   env -u BASE_SDK_VERSION -u SDK_APT_CHANNEL "${WRITER}"
-grep -Fxq 'Platform Base = 3.0.0' "${tmpdir}/defaults"
+grep -Fxq 'Platform Base = 3.0.1' "${tmpdir}/defaults"
 grep -Fxq 'Platform Channel = release' "${tmpdir}/defaults"
 grep -Fxq 'Neat Core = bundled' "${tmpdir}/defaults"
