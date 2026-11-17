@@ -1,7 +1,7 @@
 # SDK component compatibility and qualification
 
-`components.json` is the reviewed compatibility catalog for Codex, Claude, and the
-image-bundled Codex and Claude Code CLIs. `deps/manifest.json` separately selects the code-server
+`components.json` is the reviewed compatibility catalog for Model Compiler, Codex,
+Claude, and the image-bundled Codex and Claude Code CLIs. `deps/manifest.json` separately selects the code-server
 release and its two archive checksums.
 
 ## Selection and installation
@@ -176,3 +176,27 @@ images continue to install managed agents through the shipped code-server
 wrapper, with versions reported after installation. New images can provide this
 interface to also expose structured version previews. No SDK patch is required
 for the companion CLI fix to work with the existing wrapper.
+
+## Model Compiler selection
+
+The top-level `model_compiler` map uses exact SDK versions as keys, separately
+from editor cohorts. Each entry declares the compiler `version`, supported
+`architectures` (`amd64` and/or `arm64`), and `installer` (`neat` or `legacy`).
+For example, SDK `3.0.0.2` selects compiler `3.0.0.2`; SDK `3.0.0.0` selects
+compiler `3.0.0`. Sharing an editor cohort never implies compiler compatibility.
+
+`sima-cli sdk setup` reads the published catalog directly and selects using
+`SDK Version` in `/etc/sdk-release` (retaining all four numeric components).
+The `neat` installer uses `model-compiler/{arch}@v{version}`; `legacy` uses
+`install -v {version} tools/model-compiler/{arch}`. Catalog data cannot supply
+arbitrary shell commands. Optional `bundle_sdk_version` declares the version
+inside a compatible offline ZIP when it differs from the online compiler version
+(for example, compiler 2.1.3.1 uses bundle SDK version 2.1.3). Otherwise the bundle
+version defaults to the compiler version. Known legacy SDK 2.1.2.3 explicitly maps
+to compiler/bundle 2.1.2. Package metadata and installation checks still apply.
+Missing mappings, unsupported architectures, invalid data, and network failures
+stop compiler setup with a clear error; there is no default compiler or version
+range fallback. `--no-model-compiler` skips the optional compiler setup entirely.
+Older catalogs without `model_compiler` remain valid for editor clients but cannot
+resolve a compiler. Add explicit entries and increase `revision` for new SDKs;
+the normal reviewed main-build publication workflow publishes the catalog.
