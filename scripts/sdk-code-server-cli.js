@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 // Preserve the upstream CLI contract while routing SDK-managed agents through qualification.
-const os = require('node:os');
-const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { ComponentCatalog, IDS } = require('/usr/local/lib/sima-sdk/components.js');
+const { IDS } = require('/usr/local/lib/sima-sdk/components.js');
+const { createComponentService } = require('/usr/local/lib/sima-sdk/component-service.js');
 const upstream = '/opt/code-server/bin/code-server-upstream';
 async function main() {
   const args = process.argv.slice(2), targets = [];
@@ -16,12 +15,10 @@ async function main() {
     const key = Object.keys(IDS).find(key => requested?.split('@')[0].toLowerCase() === IDS[key]);
     if (!key) continue;
     if (!service) {
-      const version = spawnSync(upstream, ['--config', '/dev/null', '--version'], { encoding: 'utf8' });
-      if (version.status !== 0) throw Error('Unable to detect code-server engine');
-      const codeServer = version.stdout.trim().split(/\s+/)[0];
-      const vscodeVersion = /with Code (\d+\.\d+\.\d+)/.exec(version.stdout)?.[1];
-      service = new ComponentCatalog({ globalStorageUri: {fsPath: path.join(os.homedir(), '.local/share/sima-sdk/components')},
-        extensionPath: '/usr/local/share/sima-sdk' }, { codeServer, vscodeVersion });
+      const dirIndex = args.indexOf('--extensions-dir');
+      const extensionsDir = dirIndex >= 0 ? args[dirIndex + 1]
+        : args.find(arg => arg.startsWith('--extensions-dir='))?.slice('--extensions-dir='.length);
+      service = createComponentService({ extensionsDir });
     }
     const state = await service.refresh();
     if (!state.available) throw Error(state.error);
@@ -43,6 +40,7 @@ async function main() {
     const installed = listing.stdout?.toLowerCase().split(/\r?\n/) || [];
     if (listing.status !== 0 || targets.some(target=>!installed.includes(`${target.id}@${target.version}`)))
       throw Error('Installed agent version does not match the SDK component manifest');
+    for (const target of targets) await service.verifyInstalled(target);
   }
 }
 main().catch(error => { console.error('SDK component installation blocked: ' + error.message); process.exitCode = 1; });
