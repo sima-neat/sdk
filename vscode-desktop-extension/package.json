@@ -272,6 +272,6 @@
   },
   "scripts": {
     "test": "node --test test/*.test.js",
-    "package": "npx --yes @vscode/vsce package"
+    "package": "npx --yes @vscode/vsce package --baseImagesUrl https://raw.githubusercontent.com/sima-neat/sdk/1566f597e3e09d6bca8c518d6e845e807f107c2a/vscode-desktop-extension/"
   }
 }
