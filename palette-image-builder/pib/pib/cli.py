@@ -1387,7 +1387,7 @@ def cmd_diff(a):
 
 
 def cmd_doctor(a):
-    """Read-only checks of the container and Linux Docker host requirements."""
+    """Check prerequisites after entrypoint emulation setup."""
     errors = []
     arch = run(["dpkg", "--print-architecture"]).strip()
     print(f"PIB {__version__}; platform {container_release()}; builder {arch}; target arm64")
@@ -1403,7 +1403,7 @@ def cmd_doctor(a):
                             "/proc/sys/fs/binfmt_misc"], capture_output=True)
         entry = Path("/proc/sys/fs/binfmt_misc/qemu-aarch64")
         if not entry.is_file() or not entry.read_text().startswith("enabled\n"):
-            errors.append("enable arm64 binfmt on the Linux Docker host (see the guide)")
+            errors.append("automatic ARM64 setup failed; use the PIB launcher with privileged Docker access")
         elif "F" not in next((ln for ln in entry.read_text().splitlines() if ln.startswith("flags:")), ""):
             errors.append("arm64 binfmt must have the F flag for chroot execution")
     elif arch != "arm64":

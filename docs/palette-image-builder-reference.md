@@ -4,6 +4,43 @@ Start with [Create a custom Modalix image](palette-image-builder.md). This page
 covers optional features and board operations; container maintenance belongs in
 the [builder README](../palette-image-builder/README.md).
 
+## Installation
+
+The standard installer is `sima-cli neat install sdk/pib`. It reads the `pib/`
+metadata subfolder of the selected SDK publication, pulls its qualified
+multi-platform image, and installs the portable host launcher. Python comes from
+your sima-cli setup; build tools remain in the container. The default target uses
+main; `sdk/pib@develop` and `sdk/pib@<release>` select other publications.
+
+On Windows, run from PowerShell with Docker Desktop in Linux-container mode. The
+installer creates a `pib.cmd` entry point and updates the user PATH. On Linux/macOS,
+it installs to `~/.local/bin` and updates the user shell profile if needed. These
+install paths select the same amd64/arm64 image automatically. Linux Docker hosts
+need kernel support for loop devices, device-mapper, and binfmt_misc; desktop VMs
+must expose those facilities. `pib doctor` performs the checks. Full image creation
+has been qualified on native Linux x86/ARM and locally with Apple Silicon/Colima;
+Windows installer tests do not constitute Windows full-image qualification.
+
+For manual Docker use without sima-cli, pull a published image and extract the
+launcher (Python 3 must be on PATH):
+
+```bash
+export PIB_IMAGE=ghcr.io/sima-neat/palette-image-builder-develop:latest
+docker pull "$PIB_IMAGE"
+mkdir -p "$HOME/.local/bin"
+docker run --rm --entrypoint cat "$PIB_IMAGE" \
+  /usr/local/share/pib/host/pib > "$HOME/.local/bin/pib"
+chmod +x "$HOME/.local/bin/pib"
+export PATH="$HOME/.local/bin:$PATH"
+pib doctor
+```
+
+The emulator is installed in the x86 image. At runtime, privileged PIB starts
+register it with the Docker host's Linux kernel only when a working ARM64 handler
+is missing. An existing working handler is preserved; native ARM64 needs no
+emulator registration. This runtime setup must be repeated after a Docker-host
+reboot and is automatic. It does not install packages on the host.
+
 ## Commands
 
 | Command | Purpose |

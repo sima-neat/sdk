@@ -263,8 +263,8 @@ first `dk container` command offers to install it with the required Modalix
 ## Palette Image Builder
 
 Build a custom Modalix image with the separate [Palette Image Builder container](docs/palette-image-builder.md).
-Pull the published image and use its `pib` launcher to generate signed SWU updates
-and provisioning disk images. It does not require the main SDK image or sima-cli.
+Install with `sima-cli neat install sdk/pib`, then use `pib` to generate signed
+SWU updates and provisioning disk images. It does not require the main SDK image.
 
 ## Advanced Topics
 

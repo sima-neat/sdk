@@ -1,8 +1,8 @@
 # Create a custom Modalix image
 
 Palette Image Builder (PIB) creates a custom eLxr image for Modalix. It is provided
-as a separate Docker container maintained in the Neat SDK repository. You do not
-need to install the main Neat SDK, sima-cli, or build the PIB container yourself.
+as a separate Docker container maintained in the Neat SDK repository. Install it
+with sima-cli; the main SDK container is not required.
 
 One project produces two deployment formats:
 
@@ -11,61 +11,33 @@ One project produces two deployment formats:
 
 ## 1. Install PIB
 
-You need Docker with privileged containers enabled, Bash, network access to the
-Debian/eLxr and SiMa package repositories, and a local folder with at least 10 GiB
-free for `minimal` or 20 GiB for `palette`. Allow similar free space in Docker's
-storage. Keep the project off NFS.
-
-Published images support native Linux x86_64 and ARM64 Docker hosts. Apple Silicon
-with Colima has also completed the minimal-image smoke test. Other Docker Desktop,
-WSL, and VM configurations must expose Linux loop devices and device-mapper; run
-`pib doctor` to check your configuration. The generated board image is always ARM64.
-
-Choose the development channel, pull the image, and extract its small launcher:
+With [sima-cli](https://docs.sima-neat.com/getting-started/installation) and Docker
+installed, run:
 
 ```bash
-export PIB_IMAGE=ghcr.io/sima-neat/palette-image-builder-develop:latest
-docker pull "$PIB_IMAGE"
-mkdir -p "$HOME/.local/bin"
-docker run --rm --entrypoint cat "$PIB_IMAGE" \
-  /usr/local/share/pib/host/pib > "$HOME/.local/bin/pib"
-chmod +x "$HOME/.local/bin/pib"
-export PATH="$HOME/.local/bin:$PATH"
-pib --version
+sima-cli neat install sdk/pib
 pib doctor
 ```
 
-The launcher invokes PIB inside the container and mounts your current directory
-as `/workspace`. It does not install Python packages or image-building tools on
-your computer. Published CI launchers embed their build's commit-tagged image reference, so
-they also work in a new terminal without restoring environment variables. The
-`PIB_IMAGE` override above selects a different image when needed; unset it to use
-the launcher's embedded reference.
+The installer downloads the matching x86_64 or ARM64 container and installs the
+`pib` command on Linux, macOS, or Windows. Open a new terminal if it updates PATH.
+PIB runs in Linux containers; Docker must be running and permit privileged access
+for image assembly. ARM64 emulation is included and configured automatically on
+x86 Docker hosts.
 
-For a released image, use
-`ghcr.io/sima-neat/palette-image-builder:v<SDK-version>` instead. Branch images use
-`palette-image-builder-<branch>:latest`, following the SDK naming scheme. Repeating
-the pull and extraction steps installs the matching launcher for a newer image.
-Check available tags before selecting a release; publication runs separately from
-editing these docs.
+Use a local project folder with at least 10 GiB free for `minimal`, or 20 GiB for
+`palette`, and similar space in Docker storage. The build needs access to the
+Debian/eLxr and SiMa package repositories. The generated board image is ARM64.
 
-On **Linux x86_64**, enable ARM64 execution on the Docker host once. For example,
-on an Ubuntu host:
-
-```bash
-sudo apt-get install qemu-user-static binfmt-support
-sudo update-binfmts --enable qemu-aarch64
-```
-
-Then rerun `pib doctor`. ARM64 hosts execute target binaries natively and do not
-need this step. Installing emulation inside the builder container alone does not
-register it in the Docker host's kernel.
+`sdk/pib` selects the latest published main package. To select another SDK
+branch or release, use the same syntax as the SDK, for example
+`sima-cli neat install sdk/pib@develop`. See the
+[installation reference](palette-image-builder-reference.md#installation) for
+manual Docker installation and host details.
 
 ## 2. Create an image project
 
 ```bash
-mkdir -p "$HOME/device-images"
-cd "$HOME/device-images"
 pib init my-image --flavor minimal
 cd my-image
 ```
@@ -100,12 +72,9 @@ For development, create a test CA and signing identity:
 
 ```bash
 pib keys init --cn 'My Company Development'
-mkdir -p ../secure
-chmod 700 ../secure
-mv keys/ca.key ../secure/
 ```
 
-Keep `ca.key` offline after setup. The signing leaf and its private key remain
+Move `keys/ca.key` to a secure offline location after setup. The signing leaf and its private key remain
 in `keys/`; generated `.gitignore` rules exclude private keys and build outputs.
 Back up your identity securely. Existing boards trust your CA, so keep that CA
 when moving to a new project or platform release.
@@ -116,11 +85,10 @@ The container includes no SiMa production signing keys.
 
 ## 4. Customize the image
 
-For a first build, add a marker file:
+For a first build, create `overlay/etc/motd` in your editor:
 
-```bash
-mkdir -p overlay/etc
-printf 'My custom Modalix image\n' > overlay/etc/motd
+```text
+My custom Modalix image
 ```
 
 Files under `overlay/` retain their permissions and become root-owned in the
@@ -201,8 +169,8 @@ before using it in production.
 
 - **Missing loop/device-mapper access:** run `pib doctor`. The launcher supplies
   the required privileges, but the Linux Docker host must provide those devices.
-- **Missing ARM64 emulation on x86:** register `qemu-aarch64` on the Docker host,
-  not just inside the image. It needs the `F` flag for chroot execution.
+- **ARM64 setup fails on x86:** PIB registers its packaged emulator automatically.
+  Check that the Linux Docker engine permits privileged binfmt access.
 - **Interrupted image build:** stop builds first, run `pib clean` to inspect
   leftover resources, then `pib clean --yes` to remove them. Cleanup can include
   other PIB projects on the same Docker host.

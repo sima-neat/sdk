@@ -8,8 +8,7 @@
 #
 # For "pib build" and a shell, prepares what "rs build" expects from its
 # surroundings, then runs the given command (bash when none); other pib commands run directly:
-#   - a check for the host's arm64 binfmt handler, so mmdebstrap can run arm64 maintainer
-#     scripts under qemu-user-static
+#   - automatic registration of the packaged arm64 emulator on x86 Docker hosts
 #   - a local apt repo at http://localhost/deb/custom holding every .deb in
 #     /workspace/custom-debs, signed with a key made for this run alone; the
 #     image's apt pinning ranks it above SiMa.ai's repo, so a customer
@@ -24,7 +23,8 @@ set -eo pipefail
 
 # Other pib commands need none of the set-up below.
 case "${1:-} ${2:-}" in
-    "pib build" | bash*) ;;
+    "pib doctor") python3 -m pib.emulation; exec "$@" ;;
+    "pib build" | bash*) python3 -m pib.emulation ;;
     *) exec "$@" ;;
 esac
 
@@ -33,30 +33,7 @@ CODENAME="$(< /etc/pib-codename)"  # the suite the local repo publishes
 REPO_DIR=/var/www/html/deb/custom
 KEY_UID="PIB local repo <pib-local-repo@localhost>"
 
-# --- arm64 emulation ----------------------------------------------------------
-# The host must provide the arm64 binfmt handler; mounting binfmt_misc only shows the host's entries.
-# Native ARM64 executes target package scripts without emulation.
-if [ "$(dpkg --print-architecture)" != arm64 ]; then
-if [ ! -e /proc/sys/fs/binfmt_misc/register ]; then
-    mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
-fi
-case "$(head -n1 /proc/sys/fs/binfmt_misc/qemu-aarch64 2>/dev/null)" in
-    enabled) ;;
-    disabled) echo "pib: the host's qemu-aarch64 binfmt handler is disabled;" \
-                   "enable it on the host" >&2; exit 1 ;;
-    *) echo "pib: no arm64 binfmt handler; install qemu-user-static on the host" >&2; exit 1 ;;
-esac
-# Without the F flag the interpreter must exist in the container; with it the kernel holds it open.
-entry=/proc/sys/fs/binfmt_misc/qemu-aarch64
-interp="$(sed -n 's/^interpreter //p' "$entry")"
-case "$(sed -n 's/^flags: //p' "$entry")" in
-    *F*) ;;
-    *) [ -x "$interp" ] || { echo "pib: the host's arm64 binfmt handler" \
-           "has no F flag and $interp is not in the container;" \
-           "re-register it with the F flag (qemu-user-static)" >&2; exit 1; } ;;
-esac
-
-fi
+# --- arm64 emulation is configured above by pib.emulation ---------------------
 
 # --- local repo signing key ---------------------------------------------------
 # Made fresh for each container run in a temporary directory: the repo below

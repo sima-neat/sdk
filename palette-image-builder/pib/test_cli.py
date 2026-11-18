@@ -794,6 +794,8 @@ with tempfile.TemporaryDirectory() as t:
 # entrypoint: only "pib build" and a shell get the build set-up; other pib commands run at once
 ep = (ROOT / "entrypoint.sh").read_text()
 case = ep[ep.index('case "${1:-} ${2:-}" in'):ep.index("# --- arm64 emulation")]
+# Emulation setup has its own kernel-boundary tests; isolate dispatch here.
+case = case.replace("python3 -m pib.emulation", "true")
 with tempfile.TemporaryDirectory() as t:
     (Path(t) / "pib").write_text('#!/bin/sh\necho "ran $*"\n'); (Path(t) / "pib").chmod(0o755)
     for argv, want in ((["pib", "sign", "x"], "ran sign x\n"), (["pib", "verify"], "ran verify\n"),

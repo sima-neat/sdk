@@ -9,14 +9,13 @@ After [installing the pib launcher](../../../docs/palette-image-builder.md), run
 pib init my-example --example custom-image
 cd my-example
 pib keys init --cn 'My Company Development'
-mkdir -p ../secure
-chmod 700 ../secure
-mv keys/ca.key ../secure/
 pib shell -c 'dpkg-deb --root-owner-group --build package-root custom-debs/pib-example-app_1.0.0_all.deb'
 pib sign-debs
 pib build --sign
 pib verify
 ```
+
+Move `keys/ca.key` to secure offline storage after key creation.
 
 `image.yaml` adds the example Debian package, copies `overlay/` into the image,
 and runs `hooks/enable-example.sh` to enable a systemd service and record a build

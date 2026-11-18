@@ -1,9 +1,10 @@
 # Palette Image Builder container
 
 A standalone companion to the Neat SDK. Customers start with
-[Create a custom Modalix image](../docs/palette-image-builder.md); they pull a
-published container and extract its self-contained `pib` launcher. This directory
-is not copied into the main SDK image and has no sima-cli dependency.
+[Create a custom Modalix image](../docs/palette-image-builder.md) and install with
+`sima-cli neat install sdk/pib`. This directory is not copied into the main SDK
+image. sima-cli uses the generic metadata installer; PIB commands stay in the
+container. Manual Docker installation is also supported.
 
 ## Maintainer layout
 
@@ -38,8 +39,8 @@ export PIB_IMAGE=palette-image-builder:local
 palette-image-builder/host/pib doctor
 ```
 
-On amd64, first register ARM64 binfmt on the host for target package scripts.
-ARM64 needs no target emulation. Use native runners for container builds: QEMU
+On amd64, the image configures its packaged ARM64 emulator automatically when
+started through the privileged PIB launcher. ARM64 needs no target emulation. Use native runners for container builds: QEMU
 amd64 on Apple Silicon segfaulted during setuptools package configuration in the
 initial PDF reproduction. That failure did not occur with the matching ARM64 base.
 
@@ -63,7 +64,8 @@ by CI; qualification logs, SBOM, checksums, and manifests are retained.
 
 ## CI and GHCR naming
 
-`.github/workflows/palette-image-builder.yml` builds natively on
+The SDK Docker workflow calls `.github/workflows/palette-image-builder.yml` for
+every source commit. PIB builds natively on
 `ubuntu-24.04` and `ubuntu-24.04-arm`. Each architecture must pass the regression
 suite and full custom minimal-SWU smoke test before its image is pushed. Pull
 requests from forks run the same qualification without logging in or publishing;
@@ -87,8 +89,16 @@ sanitization rules. The launcher extracted from an image embeds its build commit
 convention and can be replaced by a rerun; use `PIB_IMAGE=repository@sha256:...`
 when you require an immutable registry identity.
 
-This workflow uses only GHCR and the GitHub Actions token; it does not create a
-Vulcan SDK install stub. GHCR packages must be made customer-readable by repository
+After GHCR promotion, the workflow publishes an installer and metadata through
+the existing Vulcan publisher with `artifact_folder: pib`. This creates
+`sdk/<ref>/<commit>/pib/metadata.json` without replacing the main SDK metadata or
+changing its root `latest.tag` itself. The SDK workflow advances that shared pointer
+only after PIB publication and install verification succeed, keeping the subfolder
+available at the selected SDK commit. The package references the qualified multi-platform
+index by digest, so Docker selects the native image. Host installer tests run on
+Linux, macOS and Windows; post-publication jobs install the exact subfolder package
+on native Linux x86 and ARM. The bare `sdk/pib` command becomes available when this
+workflow publishes from main; feature branches use `sdk/pib@<branch>`. GHCR packages must be made customer-readable by repository
 maintainers before advertising them publicly. The existing SDK package cleanup
 workflow is scoped to SDK packages; automatic PIB retention/cleanup is not added
 by this port.

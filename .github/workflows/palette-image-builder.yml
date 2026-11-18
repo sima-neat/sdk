@@ -1,25 +1,16 @@
 name: Build Palette Image Builder
 
 on:
-  push:
-    branches: ['**']
-    tags: ['v*']
-    paths:
-      - 'palette-image-builder/**'
-      - 'docs/palette-image-builder*'
-      - '.github/workflows/palette-image-builder.yml'
-  pull_request:
-    paths:
-      - 'palette-image-builder/**'
-      - 'docs/palette-image-builder*'
-      - '.github/workflows/palette-image-builder.yml'
+  # The SDK workflow calls this for every source commit so sdk/pib is present
+  # at the same commit selected by the SDK's shared latest.tag pointer.
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: palette-image-builder-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -48,11 +39,6 @@ jobs:
       - name: Resolve SDK-style repository and tags
         id: image
         run: python3 palette-image-builder/ci/image-config.py
-      - name: Enable ARM64 target execution on x86 host
-        if: matrix.arch == 'x86_64'
-        uses: docker/setup-qemu-action@v4
-        with:
-          platforms: arm64
       - uses: docker/setup-buildx-action@v4
       - name: Build native container
         uses: docker/build-push-action@v7
@@ -74,11 +60,21 @@ jobs:
             -v "$PWD/palette-image-builder:/source" -w /source \
             palette-image-builder:ci -lc \
             'tests/run-unit-tests.sh'
+      - name: Test automatic emulator setup from an unregistered x86 host
+        if: matrix.arch == 'x86_64'
+        run: |
+          docker run --rm --privileged --entrypoint bash palette-image-builder:ci -lc '
+            mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
+            if [ -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+              echo -1 > /proc/sys/fs/binfmt_misc/qemu-aarch64
+            fi'
       - name: Build, sign, verify, and inspect the checked-in example SWU
         env:
           PIB_IMAGE: palette-image-builder:ci
           PIB_TEST_OUTPUT: ${{ runner.temp }}/pib-smoke
-        run: palette-image-builder/tests/smoke.sh > "${RUNNER_TEMP}/pib-smoke.log" 2>&1
+        run: |
+          set -o pipefail
+          palette-image-builder/tests/smoke.sh 2>&1 | tee "${RUNNER_TEMP}/pib-smoke.log"
       - name: Upload qualification logs and metadata
         if: always()
         uses: actions/upload-artifact@v7
@@ -120,11 +116,31 @@ jobs:
           path: ${{ runner.temp }}/pib-digests/*.txt
           if-no-files-found: error
 
+  package-tests:
+    name: Installer on ${{ matrix.os }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install metadata tooling
+        run: python -m pip install -r palette-image-builder/deps/install-requirements.txt
+      - name: Test portable installer and sdk/pib resolution
+        run: python -m unittest discover -s palette-image-builder/package-tests -p "test_*.py"
+
   publish:
     name: Publish qualified multi-platform image
     if: github.event_name != 'pull_request'
-    needs: build
+    needs: [build, package-tests]
     runs-on: ubuntu-24.04
+    outputs:
+      image_resource: ${{ steps.promote.outputs.image_resource }}
     permissions:
       contents: read
       packages: write
@@ -145,6 +161,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Stage and promote tested digests
+        id: promote
         env:
           IMAGE: ${{ steps.image.outputs.repository }}
           STAGED: ${{ steps.image.outputs.staged }}
@@ -165,9 +182,108 @@ jobs:
             [[ -z "$ref" ]] || tags+=(--tag "$ref")
           done <<< "$PROMOTION_TAGS"
           docker buildx imagetools create "${tags[@]}" "$STAGED"
+          digest="$(docker buildx imagetools inspect "$STAGED" | awk '$1 == "Digest:" { print $2; exit }')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "image_resource=ghcr:${IMAGE#ghcr.io/}@${digest}" >> "$GITHUB_OUTPUT"
           {
             echo "### Qualified Palette Image Builder images"
             echo "Native x86_64 and ARM64 custom-SWU tests passed."
             # shellcheck disable=SC2016
             printf '\n```text\n%s\n%s\n```\n' "$STAGED" "$PROMOTION_TAGS"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  prepare-install-package:
+    name: Prepare sdk/pib metadata package
+    if: github.event_name != 'pull_request'
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r palette-image-builder/deps/install-requirements.txt
+      - name: Prepare installer bound to the qualified multi-platform digest
+        env:
+          IMAGE_RESOURCE: ${{ needs.publish.outputs.image_resource }}
+        run: |
+          set -euo pipefail
+          version="$GITHUB_REF_NAME"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then version="${version#v}"; fi
+          python palette-image-builder/tools/prepare_package.py \
+            --output-dir pib-install-package --image-resource "$IMAGE_RESOURCE" \
+            --version "$version" --release "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sdk-pib-install-stub
+          path: pib-install-package/
+          if-no-files-found: error
+
+  publish-install-package:
+    name: Publish sdk/pib metadata to Vulcan
+    if: github.event_name != 'pull_request'
+    needs: prepare-install-package
+    permissions:
+      contents: read
+      actions: write
+      id-token: write
+    uses: sima-neat/.github/.github/workflows/vulcan-publish-artifacts.yml@main
+    with:
+      aws_region: us-west-2
+      environment_name: ${{ vars.VULCAN_ENV || 'production' }}
+      artifact_pattern: sdk-pib-install-stub
+      artifact_folder: pib
+      artifact_glob: "**/*"
+      min_artifact_count: 2
+
+  verify-install-package:
+    name: Install sdk/pib on ${{ matrix.arch }}
+    if: github.event_name != 'pull_request'
+    needs: publish-install-package
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    env:
+      SIMA_CLI_CHECK_FOR_UPDATE: '0'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r palette-image-builder/deps/install-requirements.txt
+      - name: Configure artifact authentication
+        env:
+          SIMA_CLI_ACCESS_TOKEN_FILE: ${{ secrets.SIMA_CLI_ACCESS_TOKEN_FILE }}
+        run: |
+          set -euo pipefail
+          set +x
+          test -n "$SIMA_CLI_ACCESS_TOKEN_FILE"
+          echo "::add-mask::${SIMA_CLI_ACCESS_TOKEN_FILE}"
+          mkdir -p "$HOME/.sima-cli"
+          umask 077
+          printf '%s' "$SIMA_CLI_ACCESS_TOKEN_FILE" > "$HOME/.sima-cli/.tokens.json"
+          cp "$HOME/.sima-cli/.tokens.json" "$HOME/.sima-cli/.token.json"
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install the published subfolder package using sima-cli
+        run: |
+          set -euo pipefail
+          target="sdk/pib@${GITHUB_REF_NAME}:${GITHUB_SHA:0:12}"
+          sima-cli neat install "$target" --install-dir "$RUNNER_TEMP/pib-download"
+          "$HOME/.local/bin/pib" --version
+          mkdir -p "$RUNNER_TEMP/pib-installed-project"
+          cd "$RUNNER_TEMP/pib-installed-project"
+          "$HOME/.local/bin/pib" init project --example custom-image
+          cmp "$GITHUB_WORKSPACE/palette-image-builder/examples/custom-image/image.yaml" project/image.yaml

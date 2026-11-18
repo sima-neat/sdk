@@ -25,6 +25,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  palette-image-builder:
+    name: Palette Image Builder
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    uses: ./.github/workflows/palette-image-builder.yml
+    secrets: inherit
+
   resolve-platform-config:
     name: Resolve platform package configuration
     runs-on: ubuntu-24.04
@@ -822,7 +828,7 @@ jobs:
   mark-vulcan-install-stub-latest:
     name: Mark SDK install stub as latest
     if: github.event_name != 'pull_request'
-    needs: publish-vulcan-install-stub
+    needs: [publish-vulcan-install-stub, palette-image-builder]
     uses: sima-neat/.github/.github/workflows/vulcan-update-latest-artifacts.yml@main
     with:
       aws_region: us-west-2
