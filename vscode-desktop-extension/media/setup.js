@@ -443,6 +443,8 @@
   const saved = vscode.getState() || {};
   // The step the user opened from the list; undefined means "the current step".
   let viewing = saved.viewing;
+  // The step on screen now; a button pressed on it keeps the page there.
+  let shownStep;
   // Configure has no natural "done": it counts once the user continues past it.
   let configConfirmed = Boolean(saved.configConfirmed);
 
@@ -557,10 +559,21 @@
     const status = stepStatus();
     const active = activeStep(status);
     const activeIndex = STEPS.findIndex((s) => s.id === active);
-    if (viewing === active) {
+    // Once the user acts on a step (a button on it, the step list or Continue), stay on it
+    // until they move on, so e.g. Check again shows its result instead of jumping ahead.
+    // Without that, follow the current step. Fall back to it when the open step is no longer
+    // reachable (e.g. after Start over).
+    const reachable = (id) => {
+      const i = STEPS.findIndex((st) => st.id === id);
+      const st = status[id];
+      return i >= 0 && (i <= activeIndex || st.done || st.busy || st.failed);
+    };
+    if (viewing && !reachable(viewing)) {
       viewing = undefined;
+      saveView();
     }
     const view = viewing || active;
+    shownStep = view;
     const viewIndex = STEPS.findIndex((s) => s.id === view);
 
     const list = $('rail-items');
@@ -576,7 +589,7 @@
       if (clickable) {
         item.title = 'Open this step';
         item.addEventListener('click', () => {
-          viewing = step.id === active ? undefined : step.id;
+          viewing = step.id;
           saveView();
           render();
         });
@@ -700,6 +713,10 @@
     }
     const button = /** @type {HTMLElement} */ (event.target).closest('button[data-action]');
     if (button && !(/** @type {HTMLButtonElement} */ (button)).disabled) {
+      if (button.closest('[data-pane]') && shownStep && viewing !== shownStep) {
+        viewing = shownStep;
+        saveView();
+      }
       post({ type: 'action', id: button.dataset.action, value: button.dataset.value });
     }
   });
