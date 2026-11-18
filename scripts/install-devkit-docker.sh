@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage: bash install-devkit-docker.sh install
 
-Install or repair Docker on a personally administered ARM64 Modalix DevKit.
+Install or repair Docker on an ARM64 Modalix DevKit.
 Run as your normal DevKit user; sudo prompts for a password when needed.
 Docker and containerd data use /data. Existing configuration is preserved.
 Run the same command again to recover an interrupted installation.
