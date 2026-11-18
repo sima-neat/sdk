@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
-export DEVKIT_CONTAINER_REMOTE_SCRIPT="${ROOT_DIR}/scripts/devkit-container-remote.sh"
+export DEVKIT_CONTAINER_REMOTE_SCRIPT="${ROOT_DIR}/scripts/install-devkit-docker.sh"
 
 fail() {
   echo "FAIL: $*" >&2
@@ -265,33 +265,33 @@ if grep -Fqx 'INSTALL_REQUESTED' "${DOCKER_LOG}"; then
   fail "container exit status 42 was mistaken for missing Docker"
 fi
 
-grep -Fq '"data-root"] = "/data/docker"' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+grep -Fq '"data-root"] = "/data/docker"' "${ROOT_DIR}/scripts/install-devkit-docker.sh" || \
   fail "installer does not configure the Modalix Docker data root"
-grep -Fq '/data/containerd /var/lib/containerd none bind 0 0' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+grep -Fq '/data/containerd /var/lib/containerd none bind 0 0' "${ROOT_DIR}/scripts/install-devkit-docker.sh" || \
   fail "installer does not persist containerd storage under /data"
-grep -Fq 'docker-ce docker-ce-cli containerd.io' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+grep -Fq 'docker-ce docker-ce-cli containerd.io' "${ROOT_DIR}/scripts/install-devkit-docker.sh" || \
   fail "installer does not install the supported Docker CE packages"
-grep -Fq 'data["insecure-registries"]' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+grep -Fq 'data["insecure-registries"]' "${ROOT_DIR}/scripts/install-devkit-docker.sh" || \
   fail "installer does not configure the scoped SDK registry"
-grep -Fq '.sima-sdk-install-in-progress' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+grep -Fq '.sima-sdk-install-in-progress' "${ROOT_DIR}/scripts/install-devkit-docker.sh" || \
   fail "installer does not preserve retry state after an interrupted installation"
-grep -Fq 'Docker setup is incomplete on the DevKit.' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+grep -Fq 'Docker setup is incomplete on the DevKit.' "${ROOT_DIR}/scripts/install-devkit-docker.sh" || \
   fail "container preflight does not resume an incomplete Docker installation"
-grep -Fq 'containerd_entries' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+grep -Fq 'containerd_entries' "${ROOT_DIR}/scripts/install-devkit-docker.sh" || \
   fail "containerd migration is not resumable"
-grep -Fq 'Resuming an interrupted Docker installation.' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+grep -Fq 'Resuming an interrupted Docker installation.' "${ROOT_DIR}/scripts/install-devkit-docker.sh" || \
   fail "installer does not report or resume interrupted work"
-grep -Fq 'Resuming with the eLxr package mirror temporarily disabled.' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+grep -Fq 'Resuming with the eLxr package mirror temporarily disabled.' "${ROOT_DIR}/scripts/install-devkit-docker.sh" || \
   fail "installer does not restore the eLxr mirror after interruption"
-grep -Fq 'Docker services remain stopped until containerd storage setup is completed.' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+grep -Fq 'Docker services remain stopped until containerd storage setup is completed.' "${ROOT_DIR}/scripts/install-devkit-docker.sh" || \
   fail "installer can restart Docker before containerd storage migration is complete"
-grep -Fq '.sima-sdk-containerd-migrated' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+grep -Fq '.sima-sdk-containerd-migrated' "${ROOT_DIR}/scripts/install-devkit-docker.sh" || \
   fail "installer does not record completed containerd copies before deleting their source"
-grep -Fq 'sima-sdk-registry-applied' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+grep -Fq 'sima-sdk-registry-applied' "${ROOT_DIR}/scripts/install-devkit-docker.sh" || \
   fail "registry setup does not retry an interrupted Docker reload"
-grep -Fq 'sima-sdk-registry-address' "${ROOT_DIR}/scripts/devkit-container-remote.sh" || \
+grep -Fq 'sima-sdk-registry-address' "${ROOT_DIR}/scripts/install-devkit-docker.sh" || \
   fail "SDK does not own the DevKit registry state"
-grep -Fq 'COPY scripts/devkit-container-remote.sh /usr/local/libexec/sima-sdk/devkit-container-remote.sh' \
+grep -Fq 'COPY scripts/install-devkit-docker.sh /usr/local/libexec/sima-sdk/devkit-container-remote.sh' \
   "${ROOT_DIR}/Dockerfile" || fail "SDK image does not install the DevKit container helper"
 
 resolved="$(devkit-container-image-ref hello-neat:develop)"
@@ -444,5 +444,5 @@ bash "${DEVKIT_CONTAINER_REMOTE_SCRIPT}" setup
 grep -Fqx 'SUDO_MODE=noninteractive' "${DOCKER_LOG}" || \
   fail "SDK setup stopped requiring noninteractive sudo"
 
-bash -n "${ROOT_DIR}/scripts/devkit.sh" "${ROOT_DIR}/scripts/devkit-container-remote.sh"
+bash -n "${ROOT_DIR}/scripts/devkit.sh" "${ROOT_DIR}/scripts/install-devkit-docker.sh"
 echo "DevKit container command tests passed"

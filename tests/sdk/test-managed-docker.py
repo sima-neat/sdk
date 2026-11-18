@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 
-SCRIPT = Path(__file__).resolve().parents[2] / 'scripts/devkit-container-remote.sh'
+SCRIPT = Path(__file__).resolve().parents[2] / 'scripts/install-devkit-docker.sh'
 
 
 class ManagedDockerTests(unittest.TestCase):

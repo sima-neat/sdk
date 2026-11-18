@@ -155,12 +155,12 @@ dk container setup --yes
 
 On a personally administered ARM64 Modalix DevKit, the same installer can run
 locally without the Palette SDK. Run these commands on the DevKit as your normal
-user with sudo access and an Internet connection. The download is pinned to a
-reviewable SDK revision:
+user with sudo access and an Internet connection. Download the installer
+maintained in the SDK repository:
 
 ```bash
 curl --fail --location --output install-devkit-docker.sh \
-  https://raw.githubusercontent.com/sima-neat/sdk/73c284873a2cbea70a688f9aa90f0b9b34be54e0/scripts/devkit-container-remote.sh
+  https://raw.githubusercontent.com/sima-neat/sdk/main/scripts/install-devkit-docker.sh
 bash install-devkit-docker.sh install
 ```
 
