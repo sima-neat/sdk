@@ -304,7 +304,7 @@ COPY scripts/neat-insight-supervised.sh /usr/local/bin/neat-insight-supervised
 COPY scripts/insight-network-test.sh /usr/local/bin/insight-network-test
 COPY scripts/code-server-supervised.sh /usr/local/bin/code-server-supervised
 COPY scripts/devkit.sh /usr/local/bin/devkit.sh
-COPY scripts/devkit-container-remote.sh /usr/local/libexec/sima-sdk/devkit-container-remote.sh
+COPY scripts/install-devkit-docker.sh /usr/local/libexec/sima-sdk/devkit-container-remote.sh
 COPY scripts/devkit-sync-rsync.sh /usr/local/bin/devkit-sync-rsync.sh
 RUN chmod 755 /usr/local/bin/install-sysroot-overlay.sh && \
     chmod 755 /usr/local/bin/install-sdk-sysroot-overlay.sh && \
