@@ -2,35 +2,66 @@
 @import '@fontsource/ibm-plex-sans/500.css';
 @import '@fontsource/ibm-plex-sans/600.css';
 
+/* Corporate tokens from releases.neat.sima.ai/brand.css and sima.ai. */
 :root {
-  --ifm-color-primary: #1f6feb;
-  --ifm-color-primary-dark: #155ed2;
-  --ifm-color-primary-darker: #1458c6;
-  --ifm-color-primary-darkest: #1049a3;
-  --ifm-color-primary-light: #397ff0;
-  --ifm-color-primary-lighter: #4888f1;
-  --ifm-color-primary-lightest: #70a1f5;
+  --sima-white: #ffffff;
+  --sima-ink: #0b1220;
+  --sima-muted: #6e6e73;
+  --sima-blue: #5998dd;
+  --sima-blue-text: #346ca9;
+  --sima-blue-hover: #376ba7;
+  --sima-blue-heading: #4a85c8;
+  --sima-green: #2a9c4f;
+  --sima-lime: #a4cc2d;
+  --sima-purple: #4a4276;
+  --sima-lavender: #d1cee6;
+  --sima-mint: #c0e8db;
+  --sima-orange: #d26728;
+  --sima-surface: #f5f5f7;
+  --sima-sky: #eaf2fc;
+  --sima-border: #e5e5ea;
+  --ifm-color-primary: var(--sima-blue-text);
+  --ifm-color-primary-dark: #2f6198;
+  --ifm-color-primary-darker: #2c5c90;
+  --ifm-color-primary-darkest: #244c76;
+  --ifm-color-primary-light: #3977ba;
+  --ifm-color-primary-lighter: #3f7dc4;
+  --ifm-color-primary-lightest: var(--sima-blue);
   --ifm-font-family-base: 'IBM Plex Sans', 'Noto Sans', 'Segoe UI', sans-serif;
   --ifm-heading-font-weight: 600;
   --ifm-line-height-base: 1.7;
-  --ifm-background-color: #fdfefe;
-  --ifm-font-color-base: #24354a;
+  --ifm-background-color: var(--sima-white);
+  --ifm-background-surface-color: var(--sima-white);
+  --ifm-font-color-base: var(--sima-ink);
   --ifm-code-font-size: 88%;
   --ifm-navbar-shadow: none;
-  --ifm-footer-background-color: #f3f6fa;
+  --ifm-navbar-background-color: var(--sima-white);
+  --ifm-footer-background-color: var(--sima-surface);
+  --ifm-color-emphasis-100: var(--sima-surface);
+  --ifm-color-emphasis-200: var(--sima-border);
+  --ifm-color-emphasis-300: var(--sima-border);
+  --ifm-code-background: var(--sima-sky);
 }
 [data-theme='dark'] {
-  --ifm-color-primary: #8fc0f0;
-  --ifm-color-primary-dark: #71afea;
-  --ifm-color-primary-darker: #62a6e7;
-  --ifm-color-primary-darkest: #348cde;
-  --ifm-color-primary-light: #add1f6;
-  --ifm-color-primary-lighter: #bcdbf9;
-  --ifm-color-primary-lightest: #e9f4fe;
-  --ifm-background-color: #142030;
-  --ifm-font-color-base: #dfebf6;
-  --ifm-footer-background-color: #18283a;
+  --ifm-color-primary: var(--sima-blue);
+  --ifm-color-primary-dark: #4088d6;
+  --ifm-color-primary-darker: #3380d3;
+  --ifm-color-primary-darkest: var(--sima-blue-hover);
+  --ifm-color-primary-light: #72a8e2;
+  --ifm-color-primary-lighter: #7eafe5;
+  --ifm-color-primary-lightest: #a4c7ee;
+  --ifm-background-color: #0d1117;
+  --ifm-background-surface-color: #171c25;
+  --ifm-font-color-base: var(--sima-surface);
+  --ifm-navbar-background-color: #0d1117;
+  --ifm-footer-background-color: #171c25;
+  --ifm-color-emphasis-100: #171c25;
+  --ifm-color-emphasis-200: #303744;
+  --ifm-color-emphasis-300: #404857;
+  --ifm-code-background: #171c25;
 }
+.button--primary {background: var(--sima-blue); border-color: var(--sima-blue); color: var(--sima-ink);}
+.button--primary:hover {background: var(--sima-blue-hover); border-color: var(--sima-blue-hover); color: var(--sima-white);}
 .navbar {border-bottom: 1px solid var(--ifm-color-emphasis-200);}
 .navbar__logo {height: 1.25rem; width: 5.4rem; margin-right: .75rem; flex-shrink: 0;}
 .navbar__logo img {width: 100%; height: 100%; object-fit: contain;}
@@ -61,6 +92,9 @@
 .sdk-workflow ol {list-style: none; counter-reset: step; display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; margin: 0; padding: 0;}
 .sdk-workflow li {counter-increment: step; border-top: 2px solid var(--ifm-color-emphasis-300); padding-top: 20px;}
 .sdk-workflow li::before {content: '0' counter(step); font-size: .83rem; color: var(--ifm-color-primary); font-weight: 600;}
+.sdk-workflow li:nth-child(1) {border-top-color: var(--sima-green);}
+.sdk-workflow li:nth-child(2) {border-top-color: var(--sima-blue);}
+.sdk-workflow li:nth-child(3) {border-top-color: var(--sima-orange);}
 .sdk-workflow h3 {font-size: 1.1rem; margin: 9px 0;}
 .sdk-workflow p {font-size: .96rem;}
 .sdk-reference {display: flex; justify-content: space-between; gap: 16px; align-items: baseline; padding: 28px 0 44px; border-top: 1px solid var(--ifm-color-emphasis-300);}
