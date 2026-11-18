@@ -86,10 +86,14 @@ cat > "${TMP_DIR}/bin/sudo" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "${1:-}" == -n ]]; then
+  echo SUDO_MODE=noninteractive >> "${DOCKER_LOG:?}"
   shift
+else
+  echo SUDO_MODE=interactive >> "${DOCKER_LOG:?}"
 fi
 printf 'SUDO_ARG=%s\n' "$@" >> "${DOCKER_LOG:?}"
 case "${1:-}" in
+  -v) exit "${FAKE_SUDO_AUTH_STATUS:-0}" ;;
   true|usermod|systemctl) exit 0 ;;
   test)
     shift
@@ -407,6 +411,38 @@ unset SIMA_DEVKIT_CONTAINER_REGISTRY
 if devkit-container-image-ref hello-neat:develop >/dev/null 2>&1; then
   fail "missing registry configuration should fail"
 fi
+
+# The downloadable entry point uses the same setup path with interactive sudo,
+# while existing SDK setup above remains noninteractive.
+: > "${DOCKER_LOG}"
+bash "${DEVKIT_CONTAINER_REMOTE_SCRIPT}" --help > "${TMP_DIR}/standalone-help.out"
+grep -Fq 'install-devkit-docker.sh install' "${TMP_DIR}/standalone-help.out" || \
+  fail "standalone installer help is missing"
+[[ ! -s "${DOCKER_LOG}" ]] || fail "help attempted a privileged operation"
+if bash "${DEVKIT_CONTAINER_REMOTE_SCRIPT}" install unexpected > /dev/null 2>&1; then
+  fail "standalone installer accepted unexpected arguments"
+fi
+[[ ! -s "${DOCKER_LOG}" ]] || fail "invalid install arguments changed the device"
+bash "${DEVKIT_CONTAINER_REMOTE_SCRIPT}" install
+# Log the original sudo arguments separately to distinguish sudo from sudo -n.
+grep -Fqx 'SUDO_MODE=interactive' "${DOCKER_LOG}" || \
+  fail "standalone installation did not allow sudo authentication"
+if grep -Fqx 'SUDO_MODE=noninteractive' "${DOCKER_LOG}"; then
+  fail "standalone installation unexpectedly used noninteractive sudo"
+fi
+grep -Fqx 'SUDO_ARG=usermod' "${DOCKER_LOG}" || \
+  fail "standalone installer did not use the shared Docker setup"
+: > "${DOCKER_LOG}"
+if FAKE_SUDO_AUTH_STATUS=1 bash "${DEVKIT_CONTAINER_REMOTE_SCRIPT}" install > /dev/null 2>&1; then
+  fail "failed sudo authentication did not stop standalone installation"
+fi
+if grep -Fqx 'SUDO_ARG=usermod' "${DOCKER_LOG}"; then
+  fail "failed sudo authentication changed Docker access"
+fi
+: > "${DOCKER_LOG}"
+bash "${DEVKIT_CONTAINER_REMOTE_SCRIPT}" setup
+grep -Fqx 'SUDO_MODE=noninteractive' "${DOCKER_LOG}" || \
+  fail "SDK setup stopped requiring noninteractive sudo"
 
 bash -n "${ROOT_DIR}/scripts/devkit.sh" "${ROOT_DIR}/scripts/devkit-container-remote.sh"
 echo "DevKit container command tests passed"
