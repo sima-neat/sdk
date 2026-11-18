@@ -19,7 +19,8 @@ jobs:
     # A distinct fork check name prevents skipped PR jobs masking push failures.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     name: ${{ github.event_name == 'pull_request' && 'Qualify fork' || 'Qualify' }} ${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
+    environment: ${{ vars.VULCAN_ENV || 'production' }}
+    runs-on: [self-hosted, linux, "${{ matrix.runner_arch }}", "vulcan-${{ vars.VULCAN_ENV || 'production' }}", ubuntu, default]
     timeout-minutes: 45
     permissions:
       contents: read
@@ -29,13 +30,25 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            runner: ubuntu-24.04
+            runner_arch: amd64
             platform: linux/amd64
           - arch: aarch64
-            runner: ubuntu-24.04-arm
+            runner_arch: arm64
             platform: linux/arm64
     steps:
       - uses: actions/checkout@v5
+      - name: Verify native Vulcan build host
+        env:
+          EXPECTED_ARCH: ${{ matrix.runner_arch }}
+        run: |
+          set -euo pipefail
+          source /etc/os-release
+          test "${ID}" = ubuntu
+          test "${VERSION_ID}" = 24.04
+          test "$(dpkg --print-architecture)" = "${EXPECTED_ARCH}"
+          docker version
+          docker info
+          df -h
       - name: Resolve SDK-style repository and tags
         id: image
         run: python3 palette-image-builder/ci/image-config.py

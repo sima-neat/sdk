@@ -65,8 +65,9 @@ by CI; qualification logs, SBOM, checksums, and manifests are retained.
 ## CI and GHCR naming
 
 The SDK Docker workflow calls `.github/workflows/palette-image-builder.yml` for
-every source commit. PIB builds natively on
-`ubuntu-24.04` and `ubuntu-24.04-arm`. Each architecture must pass the regression
+every source commit, in parallel with the SDK build. PIB builds natively on the
+Vulcan Ubuntu 24.04 `amd64` and `arm64` runner pools used by the SDK. Each
+architecture must pass the regression
 suite and full custom minimal-SWU smoke test before its image is pushed. Pull
 requests from forks run the same qualification without logging in or publishing;
 same-repository PRs use their push-run results and skip duplicate builds. A merge job
