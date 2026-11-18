@@ -28,7 +28,10 @@ npm run serve -- --host 127.0.0.1 --port 3040 --no-open
 `../docs/` are copied into the generated site. Links to unpublished documents
 inside `docs/` fail preparation. Other repository references link to GitHub.
 Generated content, installed dependencies, and build output are excluded from Git.
-The existing repository logo is copied during preparation and used as the favicon.
+The existing repository wordmark is copied during preparation for the navigation.
+The favicon is the square SiMa brand mark from
+<https://developer.sima.ai/img/sima-logo.png>, stored at
+`static/img/sima-favicon.png`.
 
 The manifest records the hostname, source branch, and install target. Examples
 use the released `sdk/pib` package and source links point to `main`. The GitHub

@@ -8,7 +8,7 @@ module.exports = {
   baseUrl: '/',
   organizationName: 'sima-neat',
   projectName: 'sdk',
-  favicon: 'img/simaai-logo.png',
+  favicon: 'img/sima-favicon.png',
   trailingSlash: true,
   onBrokenLinks: 'throw',
   markdown: {hooks: {onBrokenMarkdownLinks: 'throw'}},
