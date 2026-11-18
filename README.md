@@ -260,6 +260,12 @@ first `dk container` command offers to install it with the required Modalix
 `/data` storage, nftables, and scoped registry configuration. Use
 `dk container setup --yes` for an explicitly approved noninteractive install.
 
+## Palette Image Builder
+
+Build a custom Modalix image with the separate [Palette Image Builder container](docs/palette-image-builder.md).
+Pull the published image and use its `pib` launcher to generate signed SWU updates
+and provisioning disk images. It does not require the main SDK image or sima-cli.
+
 ## Advanced Topics
 
 - [Official Palette SDK installation guide](https://docs.sima-neat.com/getting-started/installation/neat-elxr-sdk)

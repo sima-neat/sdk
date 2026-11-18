@@ -1,0 +1,13 @@
+*
+!entrypoint.sh
+!RELEASE
+!CODENAME
+!pib/
+pib/build/
+pib/*.egg-info/
+**/__pycache__/
+
+!host/
+!UPSTREAM
+!examples/
+!deps/

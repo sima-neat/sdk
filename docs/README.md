@@ -2,6 +2,11 @@
 
 Start with the repository [README](../README.md) for SDK installation and first-run instructions.
 
+Image creation:
+
+- [Create a custom Modalix image with Palette Image Builder](palette-image-builder.md)
+- [Palette Image Builder reference](palette-image-builder-reference.md)
+
 Advanced topics:
 
 - [Build the SDK image locally](building-sdk-image.md)

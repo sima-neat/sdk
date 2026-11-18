@@ -1,0 +1,173 @@
+name: Build Palette Image Builder
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+    paths:
+      - 'palette-image-builder/**'
+      - 'docs/palette-image-builder*'
+      - '.github/workflows/palette-image-builder.yml'
+  pull_request:
+    paths:
+      - 'palette-image-builder/**'
+      - 'docs/palette-image-builder*'
+      - '.github/workflows/palette-image-builder.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Same-repository PRs use the push run; only forks need a separate PR build.
+    # A distinct fork check name prevents skipped PR jobs masking push failures.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    name: ${{ github.event_name == 'pull_request' && 'Qualify fork' || 'Qualify' }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            platform: linux/amd64
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v5
+      - name: Resolve SDK-style repository and tags
+        id: image
+        run: python3 palette-image-builder/ci/image-config.py
+      - name: Enable ARM64 target execution on x86 host
+        if: matrix.arch == 'x86_64'
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v4
+      - name: Build native container
+        uses: docker/build-push-action@v7
+        with:
+          context: palette-image-builder
+          file: palette-image-builder/Dockerfile
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: palette-image-builder:ci
+          build-args: |
+            PIB_DEFAULT_IMAGE=${{ steps.image.outputs.repository }}:${{ github.sha }}
+          cache-from: |
+            type=gha,scope=pib-${{ steps.image.outputs.cache_scope }}-${{ matrix.arch }}
+            type=gha,scope=pib-develop-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,scope=pib-{0}-{1},mode=max', steps.image.outputs.cache_scope, matrix.arch) || '' }}
+      - name: Run CLI, signing, launcher, and publication-policy tests
+        run: |
+          docker run --rm --network none --entrypoint bash \
+            -v "$PWD/palette-image-builder:/source" -w /source \
+            palette-image-builder:ci -lc \
+            'tests/run-unit-tests.sh'
+      - name: Build, sign, verify, and inspect the checked-in example SWU
+        env:
+          PIB_IMAGE: palette-image-builder:ci
+          PIB_TEST_OUTPUT: ${{ runner.temp }}/pib-smoke
+        run: palette-image-builder/tests/smoke.sh > "${RUNNER_TEMP}/pib-smoke.log" 2>&1
+      - name: Upload qualification logs and metadata
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pib-qualification-${{ matrix.arch }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/pib-smoke.log
+            ${{ runner.temp }}/pib-smoke/workspace/configs/images/mmdebstrap.log
+            ${{ runner.temp }}/pib-smoke/workspace/image.yaml
+            ${{ runner.temp }}/pib-smoke/workspace/out/*.manifest.json
+            ${{ runner.temp }}/pib-smoke/workspace/out/*.cdx.json
+            ${{ runner.temp }}/pib-smoke/workspace/out/SHA256SUMS
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push qualified architecture image
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE: ${{ steps.image.outputs.repository }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          ref="${IMAGE}:${GITHUB_SHA}-${ARCH}"
+          docker tag palette-image-builder:ci "$ref"
+          docker push "$ref"
+          mkdir -p "${RUNNER_TEMP}/pib-digests"
+          digest="$(docker image inspect "$ref" --format '{{index .RepoDigests 0}}')"
+          printf '%s\n' "$digest" > "${RUNNER_TEMP}/pib-digests/${ARCH}.txt"
+      - name: Upload immutable image reference
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pib-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/pib-digests/*.txt
+          if-no-files-found: error
+
+  publish:
+    name: Publish qualified multi-platform image
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Resolve SDK-style repository and tags
+        id: image
+        run: python3 palette-image-builder/ci/image-config.py
+      - uses: docker/setup-buildx-action@v4
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: pib-digest-*
+          path: .pib-digests
+          merge-multiple: true
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Stage and promote tested digests
+        env:
+          IMAGE: ${{ steps.image.outputs.repository }}
+          STAGED: ${{ steps.image.outputs.staged }}
+          PROMOTION_TAGS: ${{ steps.image.outputs.promotion_tags }}
+        run: |
+          set -euo pipefail
+          sources=()
+          for arch in x86_64 aarch64; do
+            ref="$(cat ".pib-digests/${arch}.txt")"
+            [[ "$ref" == "${IMAGE}@sha256:"* ]]
+            sources+=("$ref")
+          done
+          docker buildx imagetools create \
+            --tag "${IMAGE}:${GITHUB_SHA}" --tag "$STAGED" "${sources[@]}"
+          docker buildx imagetools inspect "$STAGED"
+          tags=()
+          while IFS= read -r ref; do
+            [[ -z "$ref" ]] || tags+=(--tag "$ref")
+          done <<< "$PROMOTION_TAGS"
+          docker buildx imagetools create "${tags[@]}" "$STAGED"
+          {
+            echo "### Qualified Palette Image Builder images"
+            echo "Native x86_64 and ARM64 custom-SWU tests passed."
+            # shellcheck disable=SC2016
+            printf '\n```text\n%s\n%s\n```\n' "$STAGED" "$PROMOTION_TAGS"
+          } >> "$GITHUB_STEP_SUMMARY"

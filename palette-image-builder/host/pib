@@ -1,0 +1,71 @@
+#!/bin/bash
+#
+# Copyright (c) 2026 SiMa.ai Technologies, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+# Host shim: runs the pib CLI inside the PIB container with the current
+# directory as the workspace. Needs --privileged and the host /dev for loop
+# devices and LVM.
+set -euo pipefail
+
+# Self-contained: this script can be copied out of the image to ~/.local/bin.
+# The published copy defaults to the commit-tagged ref used to build its container.
+IMAGE="${PIB_IMAGE:-ghcr.io/sima-neat/palette-image-builder:latest}"
+command -v docker >/dev/null 2>&1 || { echo "pib: Docker CLI is required" >&2; exit 1; }
+command_args=(pib "$@")
+[ "${1:-}" != shell ] || { shift; command_args=(bash "$@"); }
+# Only image assembly, cleanup, diagnostics and the interactive build shell need devices.
+devices=()
+case "${1:-}" in
+    build|clean|doctor) devices=(--privileged -v /dev:/dev) ;;
+esac
+[ "${command_args[0]}" != bash ] || devices=(--privileged -v /dev:/dev)
+
+tty=()
+[ -t 0 ] && [ -t 1 ] && tty=(-t)
+
+# Key files may live outside the workspace: mount each file alone read-only at
+# /keys/<variable> and point the container at it. PKCS#11 URIs pass through unchanged.
+# Signing (sign or build --sign) reads the pair; only build reads PIB_CREDENTIALS.
+case "${1:-}" in
+    sign)  vars=(SWU_SIGNING_KEY SWU_SIGNING_CERT) ;;
+    build)
+        vars=(PIB_CREDENTIALS)
+        for arg in "$@"; do
+            [ "$arg" != --sign ] || vars+=(SWU_SIGNING_KEY SWU_SIGNING_CERT)
+        done
+        ;;
+    *)     vars=() ;;
+esac
+keys=()
+for v in ${vars[@]+"${vars[@]}"}; do
+    f="${!v:-}"
+    [ -n "$f" ] || continue
+    case "$f" in
+        pkcs11:*) keys+=(-e "$v=$f") ;;
+        *) [ -f "$f" ] || { echo "pib: $v: $f is not a file" >&2; exit 1; }
+           keys+=(-v "$(CDPATH='' cd -- "$(dirname "$f")" && pwd)/$(basename "$f")":"/keys/$v":ro
+                  -e "$v=/keys/$v") ;;
+    esac
+done
+# pib sign reaches a token through the host pcscd, whichever way it gets the key.
+# Absolute: docker -v takes a bare name for a named volume.
+sock="$(CDPATH='' cd -- "${PIB_PCSCD_DIR:-/run/pcscd}" 2>/dev/null && pwd)" || sock=
+signing=false
+for v in ${vars[@]+"${vars[@]}"}; do [ "$v" != SWU_SIGNING_KEY ] || signing=true; done
+# A sign command may use the key from image.yaml rather than an environment variable.
+[ "${1:-}" != sign ] || signing=true
+if [ "$signing" = true ] && [ -n "$sock" ] && [ -S "$sock/pcscd.comm" ]; then keys+=(-v "$sock:/run/pcscd:ro"); fi
+
+# The reference configs (PIB_CONFIGS=<dir>/configs) may live outside the
+# workspace: mount their repo read-only and point the container at the mount.
+cfg=()
+if [ -n "${PIB_CONFIGS:-}" ]; then
+    d="$(CDPATH='' cd -- "$PIB_CONFIGS" && pwd)"
+    cfg=(-v "$(dirname "$d")":/pib-src:ro -e "PIB_CONFIGS=/pib-src/$(basename "$d")")
+fi
+
+exec docker run --rm -i --init ${tty[@]+"${tty[@]}"} ${devices[@]+"${devices[@]}"} \
+    -v "$PWD":/workspace -e PIB_UID="$(id -u)" -e PIB_GID="$(id -g)" \
+    ${keys[@]+"${keys[@]}"} ${cfg[@]+"${cfg[@]}"} "$IMAGE" "${command_args[@]}"

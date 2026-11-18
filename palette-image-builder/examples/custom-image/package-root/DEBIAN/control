@@ -1,0 +1,7 @@
+Package: pib-example-app
+Version: 1.0.0
+Architecture: all
+Maintainer: PIB Example <example@example.invalid>
+Section: misc
+Priority: optional
+Description: Example application for a custom Modalix image

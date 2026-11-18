@@ -1,0 +1,18 @@
+# A complete example input to PIB, used unchanged by the CI smoke test.
+base: minimal
+target: modalix
+slots: ab
+release: 3.0.0
+version: 3.0.0.1
+vendor: PIB Example
+packages:
+  add: [pib-example-app]
+  remove: []
+overlay: overlay/
+hooks: [hooks/enable-example.sh]
+signing:
+  ca: keys/ca.crt
+  cert: keys/swu-signing.crt
+  key: keys/swu-signing.key
+debs:
+  key: keys/debs-signing.asc
