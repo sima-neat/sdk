@@ -40,6 +40,7 @@ RUN printf 'Package: *\nPin: origin mirror.elxr.dev\nPin-Priority: 900\n' \
         python3-stevedore \
         python3-yaml \
         python3-rich \
+        python3-apt \
 # Rootfs bootstrap: mmdebstrap runs arm64 maintainer scripts under
 # qemu-user-static.
         mmdebstrap \
@@ -55,6 +56,7 @@ RUN printf 'Package: *\nPin: origin mirror.elxr.dev\nPin-Priority: 900\n' \
         e2fsprogs \
         cpio \
         gzip \
+        pigz \
         xz-utils \
         zstd \
 # Boot partition (FIT/boot.scr/env) and .swu signing.
@@ -142,6 +144,7 @@ COPY examples/ /usr/share/pib/examples/
 # Ship examples with consistent permissions, preserving executable bits.
 RUN chmod -R go-w /usr/share/pib/examples
 COPY --chmod=755 entrypoint.sh /usr/local/bin/pib-entrypoint
+COPY --chmod=755 runtime/gzip runtime/mmdebstrap /usr/local/bin/
 
 # SiMa.ai's repo for pib build, which makes the MIRROR_1 apt line of
 # configs/images/image-stages.yaml from it and /etc/pib-codename. No SWU signing

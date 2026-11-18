@@ -81,13 +81,36 @@ jobs:
             if [ -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
               echo -1 > /proc/sys/fs/binfmt_misc/qemu-aarch64
             fi'
+      - name: Restore verified Debian downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/pib-debs
+          key: pib-debs-v1-${{ matrix.arch }}-${{ hashFiles('palette-image-builder/RELEASE', 'palette-image-builder/CODENAME', 'palette-image-builder/deps/artifacts.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            pib-debs-v1-${{ matrix.arch }}-${{ hashFiles('palette-image-builder/RELEASE', 'palette-image-builder/CODENAME', 'palette-image-builder/deps/artifacts.json') }}-
+            pib-debs-v1-${{ matrix.arch }}-
       - name: Build, sign, verify, and inspect the checked-in example SWU
         env:
           PIB_IMAGE: palette-image-builder:ci
           PIB_TEST_OUTPUT: ${{ runner.temp }}/pib-smoke
+          PIB_DEB_CACHE: ${{ runner.temp }}/pib-debs
         run: |
           set -o pipefail
           palette-image-builder/tests/smoke.sh 2>&1 | tee "${RUNNER_TEMP}/pib-smoke.log"
+      - name: Report authenticated package-cache use
+        if: always()
+        env:
+          MMDEBSTRAP_LOG: ${{ runner.temp }}/pib-smoke/workspace/configs/images/mmdebstrap.log
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          log = Path(os.environ['MMDEBSTRAP_LOG'])
+          lines = [line for line in log.read_text().splitlines() if line.startswith('pib: Debian cache ')] if log.exists() else []
+          print('\n'.join(lines) or 'No package-cache report was produced.')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('\n### Verified Debian download cache\n\n```text\n' + '\n'.join(lines) + '\n```\n')
+          PY
       - name: Upload qualification logs and metadata
         if: always()
         uses: actions/upload-artifact@v7

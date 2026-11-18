@@ -43,6 +43,22 @@ reboot and is automatic. It does not install packages on the host.
 
 ## Commands
 
+Image compression uses pigz on the builder's available CPU cores. Outputs remain
+gzip-compatible; signing and verification still cover the actual compressed payloads.
+
+To reuse Debian downloads between builds, set a host cache directory before building:
+
+```bash
+export PIB_DEB_CACHE="$HOME/.cache/sima/pib-debs"
+pib build --sign
+```
+
+Only package bytes are cached. Each bootstrap downloads and authenticates current
+repository metadata, then checks cached packages against its SHA256 and size.
+Corrupted bytes are discarded and downloaded again. Root filesystems, package
+installation, customization hooks, signing, and verification are rebuilt each time.
+The cache can contain your custom packages; keep it in your own user directory.
+
 | Command | Purpose |
 |---|---|
 | `pib doctor` | Check tools, storage, loop devices, device-mapper, and emulation |

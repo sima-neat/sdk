@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""Add verified download-cache hooks without changing the bootstrap/package stages."""
+import os
+import sys
+
+args = sys.argv[1:]
+if os.environ.get('PIB_DEB_CACHE_DIR'):
+    hook = 'python3 -m pib.deb_cache'
+    # Save essentials before mmdebstrap unlinks them, and remaining downloads
+    # before the reference customization hooks clean the target APT cache.
+    args = [f'--extract-hook={hook} save "$1"', f'--customize-hook={hook} save "$1"', *args]
+    position = args.index('--') if '--' in args else len(args)
+    args.insert(position, f'--setup-hook={hook} restore "$1"')
+os.execv('/usr/bin/mmdebstrap', ['/usr/bin/mmdebstrap', *args])

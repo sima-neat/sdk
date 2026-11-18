@@ -120,6 +120,12 @@ class Workflow(unittest.TestCase):
             self.assertNotIn(f'{key}:/keys/SWU_SIGNING_KEY:ro', args)
             args = invoke('shell', '-c', 'echo hello')
             self.assertEqual(args[-4:], ['registry/branch:sha', 'bash', '-c', 'echo hello'])
+            env['PIB_DEB_CACHE'] = str(root / 'cached downloads')
+            args = invoke('build')
+            mount = f'{root / "cached downloads"}:/var/cache/pib-debs'
+            self.assertIn(mount, args)
+            self.assertIn('PIB_DEB_CACHE_DIR=/var/cache/pib-debs', args)
+            self.assertNotIn(mount, invoke('verify'))
 
 
 
