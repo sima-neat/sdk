@@ -70,21 +70,21 @@ def add_to_path(directory):
     else:
         shell = Path(os.environ.get('SHELL', '/bin/bash')).name
         home = Path.home()
-        if shell == 'bash':
-            # Bash login shells read only the first readable file in this order.
-            # Reuse it: creating .bash_profile could hide an existing .profile.
-            login_profiles = [home / name for name in ('.bash_profile', '.bash_login', '.profile')]
-            login_profile = next((path for path in login_profiles
-                                  if path.is_file() and os.access(path, os.R_OK)), login_profiles[0])
-            profiles = [home / '.bashrc', login_profile]
-        else:
-            profiles = [home / ('.zshrc' if shell == 'zsh' else '.profile')]
+        # $SHELL identifies the account's preferred shell, not necessarily the
+        # shell configured in Terminal. Make the launcher available in both.
+        login_profiles = [home / name for name in ('.bash_profile', '.bash_login', '.profile')]
+        login_profile = next((path for path in login_profiles
+                              if path.is_file() and os.access(path, os.R_OK)), login_profiles[0])
+        # Reuse Bash's active login profile so an existing .profile is not hidden.
+        profiles = [home / '.bashrc', login_profile, home / '.zshrc']
+        if shell not in ('bash', 'zsh'):
+            profiles.append(home / '.profile')
         line = f'export PATH={shlex.quote(directory)}:"$PATH"'
         # A login profile may source .bashrc; avoid adding the same PATH entry twice.
         block = ('\n# Palette Image Builder\ncase ":$PATH:" in\n'
                  f'    *:{shlex.quote(directory)}:*) ;;\n'
                  f'    *) {line} ;;\nesac\n')
-        for profile in profiles:
+        for profile in dict.fromkeys(profiles):
             existing = profile.read_text() if profile.exists() else ''
             if block not in existing and line not in existing.splitlines():
                 with profile.open('a') as output:

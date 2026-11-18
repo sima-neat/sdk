@@ -111,8 +111,9 @@ class PackageTests(unittest.TestCase):
     @unittest.skipIf(os.name == 'nt', 'POSIX Bash startup files')
     def test_fresh_bash_login_and_nonlogin_shells_find_pib(self):
         names = ('.bash_profile', '.bash_login', '.profile')
-        for active in (None, *names):
-            with self.subTest(active=active), tempfile.TemporaryDirectory() as tmp:
+        cases = ((active, shell) for active in (None, *names) for shell in ('/bin/bash', '/bin/zsh'))
+        for active, reported_shell in cases:
+            with self.subTest(active=active, reported_shell=reported_shell), tempfile.TemporaryDirectory() as tmp:
                 home = Path(tmp)
                 directory = home / "bin with 'quotes' [x]*"
                 directory.mkdir()
@@ -125,7 +126,7 @@ class PackageTests(unittest.TestCase):
                         (home / name).write_text(f'export PIB_LOGIN_PROFILE={name}\n'
                             'if [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi\n')
                 with patch.object(installer.Path, 'home', return_value=home), \
-                        patch.dict(os.environ, {'SHELL': '/bin/bash'}):
+                        patch.dict(os.environ, {'SHELL': reported_shell}):
                     installer.add_to_path(directory)
                     first = {path.name: path.read_text() for path in home.iterdir() if path.is_file()}
                     installer.add_to_path(directory)
@@ -138,7 +139,7 @@ class PackageTests(unittest.TestCase):
                         self.assertFalse((home / name).exists(), f'{name} would hide {active}')
                     for name in names[names.index(active) + 1:]:
                         self.assertNotIn('# Palette Image Builder', (home / name).read_text())
-                env = {**os.environ, 'HOME': str(home), 'PATH': '/usr/bin:/bin', 'SHELL': '/bin/bash'}
+                env = {**os.environ, 'HOME': str(home), 'PATH': '/usr/bin:/bin', 'SHELL': reported_shell}
                 for name in ('BASH_ENV', 'ENV', 'PIB_LOGIN_PROFILE'):
                     env.pop(name, None)
                 command = 'printf "%s\\n" "${PIB_LOGIN_PROFILE:-none}" "$(command -v pib)" "$PATH"; pib'
