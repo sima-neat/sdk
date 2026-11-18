@@ -51,3 +51,11 @@ structures, or changed executable examples. Localized headings retain English
 anchor IDs so cross-document links work in every language.
 
 Before pushing, run `npm run build` to check every locale and its internal links.
+
+## GitHub Pages workflow
+
+`.github/workflows/docs-pages.yml` builds all languages for documentation pull
+requests. Updates on `main` or `develop`, `sdk-docs-*` tags, and manual dispatches
+publish the validated artifact through the `github-pages` environment. Repository
+Pages settings and environment rules must permit that deployment; DNS is managed
+separately in Vulcan. A feature-branch push alone does not publish the site.

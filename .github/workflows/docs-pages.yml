@@ -1,0 +1,63 @@
+name: Systems Builder Guide
+
+on:
+  pull_request:
+    paths:
+      - 'website/**'
+      - 'docs/**'
+      - 'images/simaai_logo.png'
+      - '.github/workflows/docs-pages.yml'
+  push:
+    branches: [main, develop]
+    tags: ['sdk-docs-*']
+    paths:
+      - 'website/**'
+      - 'docs/**'
+      - 'images/simaai_logo.png'
+      - '.github/workflows/docs-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-docs-${{ github.event_name == 'pull_request' && github.ref || 'publication' }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build all documentation languages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+        working-directory: website
+      - name: Validate curated sources and build all languages
+        run: npm run build
+        working-directory: website
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: website/build
+
+  deploy:
+    name: Publish GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment
