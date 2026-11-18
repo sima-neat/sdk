@@ -108,6 +108,49 @@ class PackageTests(unittest.TestCase):
             self.assertTrue(first.startswith('# existing user settings\n'))
             self.assertEqual(first, profile.read_text())
 
+    @unittest.skipIf(os.name == 'nt', 'POSIX Bash startup files')
+    def test_fresh_bash_login_and_nonlogin_shells_find_pib(self):
+        names = ('.bash_profile', '.bash_login', '.profile')
+        for active in (None, *names):
+            with self.subTest(active=active), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                directory = home / "bin with 'quotes' [x]*"
+                directory.mkdir()
+                launcher = directory / 'pib'
+                launcher.write_text('#!/bin/sh\nprintf "installed\\n"\n')
+                launcher.chmod(0o755)
+                if active:
+                    # Keep lower-priority profiles to detect accidental shadowing.
+                    for name in names[names.index(active):]:
+                        (home / name).write_text(f'export PIB_LOGIN_PROFILE={name}\n'
+                            'if [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi\n')
+                with patch.object(installer.Path, 'home', return_value=home), \
+                        patch.dict(os.environ, {'SHELL': '/bin/bash'}):
+                    installer.add_to_path(directory)
+                    first = {path.name: path.read_text() for path in home.iterdir() if path.is_file()}
+                    installer.add_to_path(directory)
+                    self.assertEqual(first, {path.name: path.read_text() for path in home.iterdir() if path.is_file()})
+                selected = active or '.bash_profile'
+                self.assertIn('# Palette Image Builder', (home / selected).read_text())
+                if active:
+                    self.assertTrue((home / active).read_text().startswith(f'export PIB_LOGIN_PROFILE={active}\n'))
+                    for name in names[:names.index(active)]:
+                        self.assertFalse((home / name).exists(), f'{name} would hide {active}')
+                    for name in names[names.index(active) + 1:]:
+                        self.assertNotIn('# Palette Image Builder', (home / name).read_text())
+                env = {**os.environ, 'HOME': str(home), 'PATH': '/usr/bin:/bin', 'SHELL': '/bin/bash'}
+                for name in ('BASH_ENV', 'ENV', 'PIB_LOGIN_PROFILE'):
+                    env.pop(name, None)
+                command = 'printf "%s\\n" "${PIB_LOGIN_PROFILE:-none}" "$(command -v pib)" "$PATH"; pib'
+                for flags in (['--login', '-ic'], ['--noprofile', '-ic']):
+                    result = subprocess.run(['/bin/bash', *flags, command], env=env,
+                                            capture_output=True, text=True, check=True)
+                    profile, executable, search_path, output = result.stdout.splitlines()
+                    self.assertEqual(profile, (active or 'none') if '--login' in flags else 'none')
+                    self.assertEqual(executable, str(launcher.resolve()))
+                    self.assertEqual(search_path.split(':').count(str(directory.resolve())), 1)
+                    self.assertEqual(output, 'installed')
+
     @unittest.skipUnless(os.name == 'nt', 'Windows user PATH')
     def test_windows_path_update_uses_user_registry(self):
         import winreg
