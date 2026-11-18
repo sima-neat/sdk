@@ -85,7 +85,8 @@
 .sdk-paths {border-top: 1px solid var(--ifm-color-emphasis-300); padding: 38px 0 18px;}
 .sdk-home h2 {font-size: 1.65rem; letter-spacing: -.02em; margin-bottom: 28px;}
 .sdk-paths article {display: grid; grid-template-columns: 1fr 1.65fr; gap: 8px 36px; padding: 24px 0; border-top: 1px solid var(--ifm-color-emphasis-200);}
-.sdk-paths h3 {grid-row: span 2; font-size: 1.25rem; margin: 0;}
+.sdk-paths h3 {grid-row: span 2; display: flex; align-items: flex-start; gap: 14px; font-size: 1.25rem; margin: 0;}
+.sdk-path-icon {flex: 0 0 48px; width: 48px; height: 48px; margin-top: -4px; color: var(--ifm-color-primary);}
 .sdk-paths p {margin: 0;}
 .sdk-paths a {font-weight: 500; justify-self: start;}
 .sdk-workflow {padding: 38px 0 40px;}
@@ -110,5 +111,6 @@ a:focus-visible, button:focus-visible {outline: 3px solid var(--ifm-color-primar
   .sdk-workflow ol {grid-template-columns: 1fr; gap: 12px;}
   .sdk-paths article {grid-template-columns: 1fr;}
   .sdk-paths h3 {grid-row: auto; margin-bottom: 7px;}
+  .sdk-path-icon {flex-basis: 40px; width: 40px; height: 40px;}
   .sdk-reference {flex-direction: column;}
 }

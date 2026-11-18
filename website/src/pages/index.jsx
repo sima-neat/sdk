@@ -5,6 +5,9 @@ import CodeBlock from '@theme/CodeBlock';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import copy from '../content/site-copy.json';
 import manifest from '../../docs-manifest.json';
+import ImageBuilderIcon from '../components/icons/image-builder.svg';
+import SdkStackIcon from '../components/icons/sdk-stack.svg';
+import LowLevelSoftwareIcon from '../components/icons/low-level-software.svg';
 
 export default function Home() {
   const {i18n} = useDocusaurusContext();
@@ -30,17 +33,17 @@ export default function Home() {
         <section className="sdk-paths" aria-labelledby="paths-title">
           <h2 id="paths-title">{text.pathsTitle}</h2>
           <article>
-            <h3>{text.pibTitle}</h3>
+            <h3><ImageBuilderIcon className="sdk-path-icon" aria-hidden="true" focusable="false" /><span>{text.pibTitle}</span></h3>
             <p>{text.pibDescription}</p>
             <Link to="/guides/pib-example/">{text.pibLink} <span aria-hidden="true">→</span></Link>
           </article>
           <article>
-            <h3>{text.sdkTitle}</h3>
+            <h3><SdkStackIcon className="sdk-path-icon" aria-hidden="true" focusable="false" /><span>{text.sdkTitle}</span></h3>
             <p>{text.sdkDescription}</p>
             <Link to="/guides/sdk-architecture/">{text.sdkLink} <span aria-hidden="true">→</span></Link>
           </article>
           <article>
-            <h3>{text.bspTitle}</h3>
+            <h3><LowLevelSoftwareIcon className="sdk-path-icon" aria-hidden="true" focusable="false" /><span>{text.bspTitle}</span></h3>
             <p>{text.bspDescription}</p>
             <Link to="/guides/system-software/">{text.bspLink} <span aria-hidden="true">→</span></Link>
           </article>
