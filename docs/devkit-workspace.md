@@ -151,6 +151,30 @@ dk container setup --yes
 ```
 
 
+### Install Docker without the SDK
+
+On a personally administered ARM64 Modalix DevKit, the same installer can run
+locally without the Palette SDK. Run these commands on the DevKit as your normal
+user with sudo access and an Internet connection. The download is pinned to a
+reviewable SDK revision:
+
+```bash
+curl --fail --location --output install-devkit-docker.sh \
+  https://raw.githubusercontent.com/sima-neat/sdk/73c284873a2cbea70a688f9aa90f0b9b34be54e0/scripts/devkit-container-remote.sh
+bash install-devkit-docker.sh install
+```
+
+The standalone `install` mode prompts for your sudo password when needed. The
+SDK's `setup` action continues to require noninteractive sudo; both use the same
+installation and recovery implementation. The installer preserves existing
+Docker configuration, uses `/data` for new Docker/containerd storage, and restores
+the eLxr package mirror after package installation. If interrupted, rerun the same
+command to resume. Log out and back in to activate Docker group membership, then
+verify with `docker info` and `docker run --rm hello-world`.
+
+For administrator-managed DevKits, use the provided Docker service instead of
+installing a separate daemon.
+
 ### Kerrigan-managed Docker
 
 When Kerrigan's device bundle includes rootless Docker, `dk container` detects its
