@@ -198,7 +198,9 @@ jobs:
             [[ -z "$ref" ]] || tags+=(--tag "$ref")
           done <<< "$PROMOTION_TAGS"
           docker buildx imagetools create "${tags[@]}" "$STAGED"
-          digest="$(docker buildx imagetools inspect "$STAGED" | awk '$1 == "Digest:" { print $2; exit }')"
+          # Consume all output: exiting awk early can close Buildx's pipe and
+          # fail this step under pipefail even after successful tag promotion.
+          digest="$(docker buildx imagetools inspect "$STAGED" | awk '$1 == "Digest:" { print $2 }')"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           echo "image_resource=ghcr:${IMAGE#ghcr.io/}@${digest}" >> "$GITHUB_OUTPUT"
           {
