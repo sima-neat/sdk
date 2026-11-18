@@ -15,6 +15,19 @@ const IS_WINDOWS = process.platform === 'win32';
 const DEFAULT_REQUIRED_GB = 20;
 const RETRY_DELAYS_SECONDS = [5, 15, 45, 90, 180];
 const MAX_LOG_LINES = 500;
+// Download speed: averaged over the last 20 s, shown once 3 s of data is there.
+const SPEED_WINDOW_MS = 20000;
+const MIN_SPEED_SECONDS = 3;
+
+/** "1.2GB" / "45.6 MB" / "512kB" / "12B" → bytes (decimal units, as docker prints them). */
+function parseBytes(text) {
+  const match = /^([\d.]+)\s*([kMG]?)B$/i.exec(String(text).trim());
+  if (!match) {
+    return 0;
+  }
+  const scale = { '': 1, k: 1e3, m: 1e6, g: 1e9 }[match[2].toLowerCase()];
+  return Math.round(Number(match[1]) * scale);
+}
 
 // ───────────────────────────── HTTP ─────────────────────────────
 
@@ -122,13 +135,14 @@ const MANIFEST_TYPES = [
 ].join(',');
 
 /**
- * Compressed layer sizes of a public ghcr.io image for this computer's architecture,
- * keyed by the 12-character id `docker pull` prints. Lets the page show "4.2 of 10.1 GB".
+ * What ghcr.io says about a public image for this computer's architecture: compressed layer
+ * sizes keyed by the 12-character id `docker pull` prints (for "4.2 of 10.1 GB"), and the
+ * Platform version from the image label (for "Platform 3.0.0" before the download).
  */
-async function imageLayerSizes(image) {
+async function registryImage(image) {
   const match = /^ghcr\.io\/([^:@]+)[:@](.+)$/.exec(image || '');
   if (!match) {
-    return new Map();
+    return { layers: new Map(), platform: '' };
   }
   const [, repo, ref] = match;
   const { token } = await getJson(`https://ghcr.io/token?scope=repository:${repo}:pull`);
@@ -140,7 +154,22 @@ async function imageLayerSizes(image) {
       || manifest.manifests[0];
     manifest = JSON.parse(await httpGet(`https://ghcr.io/v2/${repo}/manifests/${entry.digest}`, 3, headers));
   }
-  return new Map((manifest.layers || []).map((l) => [String(l.digest).replace(/^sha256:/, '').slice(0, 12), Number(l.size) || 0]));
+  const layers = new Map((manifest.layers || []).map((l) => [String(l.digest).replace(/^sha256:/, '').slice(0, 12), Number(l.size) || 0]));
+  let platform = '';
+  if (manifest.config && manifest.config.digest) {
+    try {
+      const config = JSON.parse(await httpGet(`https://ghcr.io/v2/${repo}/blobs/${manifest.config.digest}`, 3, headers));
+      platform = String(((config.config || {}).Labels || {})['com.sima.sdk.platform.version'] || '');
+    } catch {
+      // The sizes are still useful without the label.
+    }
+  }
+  return { layers, platform };
+}
+
+/** Compressed layer sizes of a public ghcr.io image (see registryImage). */
+async function imageLayerSizes(image) {
+  return (await registryImage(image)).layers;
 }
 
 /** The Platform version an SDK container or image was built for, e.g. "3.0.0". */
@@ -467,6 +496,10 @@ function createPull({ simaCliFile, env, resource, image, maxRetries, onUpdate, l
   let output = '';
   let partial = '';
 
+  // Bytes of a layer still downloading, when the output shows "Downloading … 1.2MB/4.5MB".
+  const partials = new Map();
+  // Recent (time, bytes) samples for the speed and the time left.
+  const samples = [];
   const snapshot = () => {
     const finished = (s) => /^(download complete|verifying checksum|extracting|pull complete|already exists)/i.test(s);
     const done = [...layers.values()].filter((s) => /^(pull complete|already exists)$/i.test(s)).length;
@@ -478,11 +511,35 @@ function createPull({ simaCliFile, env, resource, image, maxRetries, onUpdate, l
     for (const [id, s] of layers) {
       if (finished(s)) {
         bytesDone += sizes.get(id) || 0;
+      } else if (partials.has(id)) {
+        bytesDone += Math.min(partials.get(id), sizes.get(id) || partials.get(id));
+      }
+    }
+    if (bytesTotal) {
+      bytesDone = Math.min(bytesDone, bytesTotal);
+    }
+    const now = Date.now();
+    if (state === 'running' && bytesTotal) {
+      samples.push([now, bytesDone]);
+      while (samples.length > 2 && now - samples[0][0] > SPEED_WINDOW_MS) {
+        samples.shift();
+      }
+    } else {
+      samples.length = 0;
+    }
+    let speed = 0;
+    let secondsLeft;
+    if (samples.length > 1) {
+      const [t0, b0] = samples[0];
+      const seconds = (now - t0) / 1000;
+      if (seconds >= MIN_SPEED_SECONDS && bytesDone > b0) {
+        speed = (bytesDone - b0) / seconds;
+        secondsLeft = Math.round((bytesTotal - bytesDone) / speed);
       }
     }
     return {
       state, attempt, maxAttempts: maxRetries + 1, statusLine, error, retryAt,
-      progress: { done, total: layers.size, bytesDone, bytesTotal },
+      progress: { done, total: layers.size, bytesDone, bytesTotal, speed, secondsLeft },
       log: log.slice(-200),
     };
   };
@@ -506,6 +563,12 @@ function createPull({ simaCliFile, env, resource, image, maxRetries, onUpdate, l
     const layer = /^([0-9a-f]{12}): (.+)$/.exec(text);
     if (layer) {
       layers.set(layer[1], layer[2]);
+      const downloading = /^Downloading\b.*?([\d.]+\s*[kMG]?B)\s*\/\s*[\d.]+\s*[kMG]?B/i.exec(layer[2]);
+      if (downloading) {
+        partials.set(layer[1], parseBytes(downloading[1]));
+      } else {
+        partials.delete(layer[1]);
+      }
     }
     statusLine = text;
     emit();
@@ -681,6 +744,8 @@ module.exports = {
   listSdkContainers,
   listAllSdkContainers,
   imageLayerSizes,
+  registryImage,
+  parseBytes,
   platformVersion,
   readCodeUi,
   createPull,

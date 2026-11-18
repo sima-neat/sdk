@@ -253,6 +253,7 @@ class SetupPanel {
         return;
       }
       this.state.release = { status: 'ok', ...release };
+      this.loadRegistryInfo(release.image);
     } catch (err) {
       if (this.state.selectedRef !== ref) {
         return;
@@ -292,6 +293,23 @@ class SetupPanel {
     this.post();
   }
 
+  /** Platform version and download size from ghcr.io, for "Platform 3.0.0 · 10.1 GB download". */
+  loadRegistryInfo(image) {
+    const info = registryInfo(image);
+    info.then(({ layers, platform }) => {
+      const { release } = this.state;
+      if (release.status !== 'ok' || release.image !== image) {
+        return;
+      }
+      let downloadBytes = 0;
+      for (const size of layers.values()) {
+        downloadBytes += size;
+      }
+      this.state.release = { ...release, platform, downloadBytes };
+      this.post();
+    }, () => {});
+  }
+
   updateCommand() {
     const { cli, release, config } = this.state;
     if (cli.found && release.status === 'ok') {
@@ -306,19 +324,10 @@ class SetupPanel {
 
   startPull() {
     const { cli, release } = this.state;
-    if (activePull || !cli.found || release.status !== 'ok') {
+    if (!cli.found || release.status !== 'ok') {
       return;
     }
-    const target = { image: release.image, resource: release.resource };
-    extensionContext.globalState.update(PULL_MARKER_KEY, { ...target, startedAt: Date.now() });
-    activePull = sdk.createPull({
-      simaCliFile: cli.file,
-      env: api.cliEnv,
-      ...target,
-      maxRetries: vscode.workspace.getConfiguration('simaNeat.sdk').get('pullRetries', 4),
-      onUpdate: (snapshot) => onPullUpdate(snapshot, target),
-      layerSizes: sdk.imageLayerSizes(target.image),
-    });
+    startPullFor(cli.file, { image: release.image, resource: release.resource });
   }
 
   runPullInTerminal() {
@@ -591,6 +600,49 @@ class SetupPanel {
   }
 }
 
+// Registry answers per image, shared by the page and the download.
+const registryAnswers = new Map();
+function registryInfo(image) {
+  if (!registryAnswers.has(image)) {
+    const answer = sdk.registryImage(image);
+    answer.catch(() => registryAnswers.delete(image));
+    registryAnswers.set(image, answer);
+  }
+  return registryAnswers.get(image);
+}
+
+/** Starts (or resumes: Docker keeps finished layers) the download of an SDK image. */
+function startPullFor(simaCliFile, target) {
+  if (activePull) {
+    return;
+  }
+  extensionContext.globalState.update(PULL_MARKER_KEY, { ...target, startedAt: Date.now() });
+  activePull = sdk.createPull({
+    simaCliFile,
+    env: api.cliEnv,
+    ...target,
+    maxRetries: vscode.workspace.getConfiguration('simaNeat.sdk').get('pullRetries', 4),
+    onUpdate: (snapshot) => onPullUpdate(snapshot, target),
+    layerSizes: registryInfo(target.image).then((info) => info.layers),
+  });
+}
+
+/** "SDK download stopped at 61%: network connection lost." with Open setup and Retry (frame A3c). */
+function notifyPullFailed(snapshot, target) {
+  const reason = String((snapshot.error && snapshot.error.message) || 'the download failed').replace(/\.$/, '');
+  vscode.window.showWarningMessage(`SDK download stopped at ${pullPercent(snapshot)}%: ${reason}.`, 'Open setup', 'Retry')
+    .then((choice) => {
+      if (choice === 'Open setup') {
+        show();
+      } else if (choice === 'Retry') {
+        const cli = api.getSimaCli();
+        if (cli) {
+          startPullFor(cli.file, target);
+        }
+      }
+    });
+}
+
 function setPullSnapshot(snapshot) {
   pullSnapshot = snapshot;
   publishHostStatus();
@@ -608,10 +660,9 @@ function onPullUpdate(snapshot, target) {
   activePull = undefined;
   if (snapshot.state === 'done') {
     extensionContext.globalState.update(PULL_MARKER_KEY, undefined);
-    vscode.window.showInformationMessage(`Neat SDK image downloaded: ${target.image}`);
-  } else if (snapshot.state === 'failed' && !(currentPanel && currentPanel.panel.visible)) {
-    vscode.window.showErrorMessage(`Neat SDK download failed: ${snapshot.error.message}`, 'Open Setup')
-      .then((choice) => choice && show());
+    vscode.window.showInformationMessage(`SiMa SDK ${lastHost.version || hostStatus.versionFromImage(target.image)} downloaded.`);
+  } else if (snapshot.state === 'failed') {
+    notifyPullFailed(snapshot, target);
   }
   if (currentPanel) {
     currentPanel.refreshImage();

@@ -85,30 +85,39 @@
 
     <!-- 3. Download SDK -->
     <section class="pane" data-pane="download" hidden>
-      <div class="block" id="step-image">
-        <label class="field">
-          <span>Version</span>
-          <select id="version"></select>
-        </label>
-        <p class="detail" id="image-detail"></p>
-        <div class="progress" id="pull-progress" hidden>
-          <div class="bar"><div class="bar-fill" id="bar-fill"></div></div>
-          <p class="detail" id="pull-status"></p>
+      <div class="block dl" id="step-image">
+        <div class="dl-found" id="dl-found" hidden>
+          <i class="codicon codicon-pass-filled"></i>
+          <div class="dl-found-text"><span id="dl-found-title"></span><span class="dl-found-meta" id="dl-found-meta"></span></div>
         </div>
-        <div class="callout error" id="pull-error" hidden>
-          <strong id="pull-error-message"></strong>
-          <p id="pull-error-hint"></p>
+        <div class="dl-version" id="dl-version">
+          <label class="dl-label" for="version">SDK version</label>
+          <div class="dl-select">
+            <i class="codicon codicon-loading codicon-modifier-spin" id="version-spin" hidden></i>
+            <select id="version"></select>
+            <i class="codicon codicon-chevron-down dl-chevron"></i>
+          </div>
+          <span class="dl-meta" id="image-detail"></span>
         </div>
-        <div class="actions">
-          <button data-action="pull" id="pull-button">Download</button>
-          <button data-action="retryNow" id="retry-button">Retry now</button>
-          <button data-action="cancelPull" id="cancel-button" class="secondary">Cancel</button>
-          <button data-action="pullInTerminal" id="terminal-button" class="secondary">Download in a terminal</button>
+        <div class="dl-progress" id="pull-progress" hidden>
+          <div class="dl-progress-row"><span id="pull-label"></span><span class="dl-progress-meta" id="pull-meta"></span></div>
+          <div class="dl-bar"><div id="bar-fill"></div></div>
         </div>
+        <div class="dl-note" id="pull-note" hidden><i class="codicon codicon-info"></i><span id="pull-note-text"></span></div>
         <details id="pull-log-box" hidden>
           <summary>Download log</summary>
           <pre id="pull-log"></pre>
         </details>
+        <div class="dl-wait" id="dl-wait" hidden>
+          <span class="dl-wait-title">While you wait</span>
+          <div class="dl-card">
+            <i class="codicon codicon-chevron-left dl-arrow" id="slide-prev" title="Previous"></i>
+            <div class="dl-card-art" id="slide-art"></div>
+            <div class="dl-card-text"><span class="dl-card-title" id="slide-title"></span><span class="dl-card-desc" id="slide-text"></span></div>
+            <i class="codicon codicon-chevron-right dl-arrow" id="slide-next" title="Next"></i>
+          </div>
+          <div class="dl-dots" id="slide-dots"></div>
+        </div>
       </div>
     </section>
 
@@ -192,6 +201,12 @@
     <div class="nav">
       <div class="buttons" id="nav-buttons">
         <button id="continue-button" hidden>Continue</button>
+        <button data-action="pull" id="pull-button" data-keep-step hidden>Download</button>
+        <button id="use-sdk-button" hidden>Use this SDK</button>
+        <button id="another-button" class="secondary" hidden>Download another version</button>
+        <button data-action="cancelPull" id="cancel-button" class="secondary" data-keep-step hidden>Cancel download</button>
+        <button data-action="retryNow" id="retry-button" class="secondary" data-keep-step hidden>Retry now</button>
+        <button data-action="pullInTerminal" id="terminal-button" class="link" data-keep-step hidden>Download in a terminal</button>
         <button data-action="recheck" class="secondary" id="prereq-recheck" data-keep-step hidden>Check again</button>
       </div>
       <span class="nav-reason" id="nav-reason" hidden><i class="codicon codicon-lock"></i><span id="nav-reason-text"></span></span>

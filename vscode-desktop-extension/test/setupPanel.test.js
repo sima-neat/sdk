@@ -47,9 +47,9 @@ function openPage({ cli = { file: '/home/me/.sima-cli/.venv/bin/sima-cli', versi
     listAllSdkContainers: async () => containers,
     readCodeUi: () => undefined,
     platformVersion: async () => '3.0.0',
-    imageLayerSizes: (image) => {
+    registryImage: (image) => {
       layerSizeCalls.push(image);
-      return Promise.resolve(new Map());
+      return Promise.resolve({ layers: new Map([['aaaaaaaaaaaa', 6_000_000_000], ['bbbbbbbbbbbb', 4_100_000_000]]), platform: '3.0.0' });
     },
     createPull: (options) => {
       const pull = { options, cancelled: 0, cancel() { pull.cancelled += 1; } };
@@ -294,4 +294,68 @@ test('errors from a page action are shown under the new page name', async () => 
   webview.send({ type: 'action', id: 'signin' });
   await settle();
   assert.deepEqual(fake.calls.errors.at(-1), ['Studio: Set up SDK: boom']);
+});
+
+test('the page gets the Platform version and download size of the release from ghcr.io', async () => {
+  const { webview, lastState, layerSizeCalls } = openPage();
+  webview.send({ type: 'ready' });
+  await flush();
+  await flush();
+  assert.equal(lastState().release.platform, '3.0.0');
+  assert.equal(lastState().release.downloadBytes, 10_100_000_000);
+  assert.deepEqual(layerSizeCalls, [IMAGE], 'asked once');
+});
+
+test('the download reuses the registry answer for its layer sizes', async () => {
+  const { webview, pulls, layerSizeCalls } = openPage();
+  webview.send({ type: 'ready' });
+  await flush();
+  webview.send({ type: 'action', id: 'pull' });
+  await settle();
+  assert.equal(pulls.length, 1);
+  const sizes = await pulls[0].options.layerSizes;
+  assert.equal(sizes.get('aaaaaaaaaaaa'), 6_000_000_000);
+  assert.deepEqual(layerSizeCalls, [IMAGE]);
+});
+
+test('a failed download says where it stopped, with Open setup and Retry; Retry resumes it', async () => {
+  const { webview, pulls, fake } = openPage();
+  let answer;
+  fake.vscode.window.showWarningMessage = async (...args) => { fake.calls.warnings.push(args); return answer; };
+  webview.send({ type: 'ready' });
+  await flush();
+  webview.send({ type: 'action', id: 'pull' });
+  await settle();
+  answer = 'Retry';
+  pulls[0].options.onUpdate({ state: 'failed', error: { message: 'network connection lost.' }, progress: { done: 5, total: 9, bytesDone: 6_161_000_000, bytesTotal: 10_100_000_000 } });
+  await settle();
+  assert.deepEqual(fake.calls.warnings.at(-1), ['SDK download stopped at 61%: network connection lost.', 'Open setup', 'Retry']);
+  assert.equal(pulls.length, 2, 'Retry started the download again');
+  assert.equal(pulls[1].options.image, IMAGE);
+  assert.equal(pulls[1].options.resource, `ghcr:${IMAGE}`);
+});
+
+test('Open setup in the failure notification brings the page to the front', async () => {
+  const { webview, pulls, fake, panel } = openPage();
+  fake.vscode.window.showWarningMessage = async (...args) => { fake.calls.warnings.push(args); return 'Open setup'; };
+  webview.send({ type: 'ready' });
+  await flush();
+  webview.send({ type: 'action', id: 'pull' });
+  await settle();
+  pulls[0].options.onUpdate({ state: 'failed', error: {}, progress: { done: 0, total: 0 } });
+  await settle();
+  assert.deepEqual(fake.calls.warnings.at(-1), ['SDK download stopped at 0%: the download failed.', 'Open setup', 'Retry']);
+  assert.equal(panel.revealed, 1);
+  assert.equal(pulls.length, 1);
+});
+
+test('a finished download says "SiMa SDK v3.0.0.1 downloaded."', async () => {
+  const { webview, pulls, fake } = openPage();
+  webview.send({ type: 'ready' });
+  await flush();
+  webview.send({ type: 'action', id: 'pull' });
+  await settle();
+  pulls[0].options.onUpdate({ state: 'done', progress: { done: 9, total: 9 } });
+  await settle();
+  assert.deepEqual(fake.calls.info.at(-1), ['SiMa SDK v3.0.0.1 downloaded.']);
 });

@@ -209,28 +209,39 @@
 
   function renderVersionSelect() {
     const select = $('version');
-    const refs = state.versions.items.map((i) => i.ref).join('|');
+    const loading = state.versions.status === 'loading';
+    const refs = loading ? '(loading)' : state.versions.items.map((i) => i.ref).join('|');
     if (refs !== versionRefs) {
       versionRefs = refs;
       select.textContent = '';
-      for (const item of state.versions.items) {
+      if (loading) {
+        const option = document.createElement('option');
+        option.textContent = 'Loading versions…';
+        select.appendChild(option);
+      }
+      for (const item of loading ? [] : state.versions.items) {
         const option = document.createElement('option');
         option.value = item.ref;
         option.textContent = item.recommended ? `${item.label} (recommended)` : item.label;
         select.appendChild(option);
       }
     }
-    if (state.selectedRef) {
+    if (state.selectedRef && !loading) {
       select.value = state.selectedRef;
     }
     const pulling = ['running', 'waiting'].includes(state.pull.state);
-    select.disabled = state.versions.status === 'loading' || pulling;
+    select.disabled = loading || pulling;
+    $('version-spin').hidden = !loading;
+    select.closest('.dl-select').classList.toggle('busy', loading || pulling);
   }
 
+  const gb = (bytes) => (bytes / 1e9).toFixed(1);
+
+  /** "ghcr.io/sima-neat/sdk:v3.0.0.1 · Platform 3.0.0 · 10.1 GB download · ~20 GB on disk". */
   function imageDetail() {
-    const { versions, release, image, prereqs } = state;
+    const { versions, release, prereqs } = state;
     if (versions.status === 'loading') {
-      return 'Loading versions…';
+      return 'Loading available versions…';
     }
     if (release.status === 'loading') {
       return `Looking up ${release.ref}…`;
@@ -241,38 +252,98 @@
     if (release.status !== 'ok') {
       return versions.warning || '';
     }
-    const lines = [`Image: ${release.image}`];
-    if (image.status === 'present') {
-      lines.push(`On this computer: ${image.sizeGb} GB, created ${new Date(image.created).toLocaleString()}.`);
-    } else if (image.status === 'missing') {
-      lines.push('Not downloaded yet.');
-    }
+    const parts = [release.image];
+    if (release.platform) parts.push(`Platform ${release.platform}`);
+    if (release.downloadBytes) parts.push(`${gb(release.downloadBytes)} GB download`);
+    if (release.requiredGb) parts.push(`~${release.requiredGb} GB on disk`);
+    const lines = [parts.join(' · ')];
     if (!prereqs.dockerReady && prereqs.status !== 'checking') {
-      lines.push('Fix Docker in step 3 before downloading.');
+      lines.push('Fix Docker in Check this computer before downloading.');
     }
     return lines.join('\n');
   }
 
-  function pullStatusText(pull) {
-    const { done, total } = pull.progress || { done: 0, total: 0 };
-    const attempt = pull.maxAttempts > 1 ? ` · attempt ${pull.attempt} of ${pull.maxAttempts}` : '';
+  /** "4.2 of 10.1 GB · 38 MB/s · about 2 min left"; the parts that are known. */
+  function pullMeta(pull, withSpeed) {
+    const { done, total, bytesDone, bytesTotal, speed, secondsLeft } = pull.progress || {};
+    if (!bytesTotal) {
+      return total ? `${done} of ${total} layers` : '';
+    }
+    const parts = [`${gb(bytesDone)} of ${gb(bytesTotal)} GB`];
+    if (withSpeed && speed) {
+      parts.push(`${Math.round(speed / 1e6)} MB/s`);
+      if (secondsLeft !== undefined) {
+        parts.push(secondsLeft < 60 ? 'less than a minute left' : `about ${Math.round(secondsLeft / 60)} min left`);
+      }
+    }
+    return parts.join(' · ');
+  }
+
+  function pullLabel(pull) {
+    const pct = pullPercent(pull);
     if (pull.state === 'waiting') {
       const seconds = Math.max(0, Math.ceil((pull.retryAt - Date.now()) / 1000));
-      return `Retrying in ${seconds}s (attempt ${pull.attempt + 1} of ${pull.maxAttempts}).`;
+      return `Retrying in ${seconds} s · attempt ${pull.attempt + 1} of ${pull.maxAttempts}`;
     }
-    const layers = total ? `${done} of ${total} layers` : 'Preparing';
-    return `${layers}${attempt}\n${pull.statusLine || ''}`;
+    if (pull.state === 'failed') {
+      const reason = String((pull.error && pull.error.message) || '').replace(/\.$/, '');
+      return `Download failed at ${pct}%${reason ? ` · ${reason}` : ''}`;
+    }
+    if (pull.state === 'cancelled') {
+      return `Download cancelled at ${pct}%`;
+    }
+    if (pull.state === 'interrupted') {
+      return pct ? `Download stopped when VS Code closed at ${pct}%` : 'Download stopped when VS Code closed';
+    }
+    return `Downloading… ${pct}%`;
+  }
+
+  // "While you wait" cards (frame A3b).
+  const SLIDES = [
+    { title: 'Run examples on your DevKit', text: 'One click runs a prebuilt app with its model and sample video.', icons: [['device-desktop'], ['arrow-swap', true], ['circuit-board']] },
+    { title: 'Model Registry', text: 'Browse models and add them to your workspace.', icons: [['database'], ['arrow-right', true], ['folder']] },
+    { title: 'Insight', text: 'Watch live video and stats from the DevKit beside your code.', icons: [['device-camera-video'], ['arrow-right', true], ['graph-line']] },
+    { title: 'Devices', text: 'Pair several DevKits, check their health and switch between them.', icons: [['circuit-board'], ['circuit-board'], ['circuit-board']] },
+  ];
+  let slide = 0;
+  // "Download another version" on an SDK that is already here.
+  let showAnother = false;
+
+  function renderSlide() {
+    const s = SLIDES[slide];
+    const art = $('slide-art');
+    art.textContent = '';
+    for (const [name, small] of s.icons) {
+      const i = icon(name);
+      i.style.fontSize = small ? '14px' : name === 'circuit-board' && s.title === 'Devices' ? '24px' : '26px';
+      if (small) {
+        i.classList.add('small');
+      }
+      art.appendChild(i);
+    }
+    $('slide-title').textContent = s.title;
+    $('slide-text').textContent = s.text;
+    const dots = $('slide-dots');
+    dots.textContent = '';
+    SLIDES.forEach((_, i) => {
+      const dot = document.createElement('span');
+      dot.className = i === slide ? 'on' : '';
+      dot.addEventListener('click', () => { slide = i; renderSlide(); });
+      dots.appendChild(dot);
+    });
   }
 
   function renderImage() {
     renderVersionSelect();
-    const { cli, release, image, pull, prereqs } = state;
-    const imageDetailEl = $('image-detail');
-    imageDetailEl.textContent = imageDetail();
-    imageDetailEl.style.whiteSpace = 'pre-line';
+    const { cli, release, image, pull, prereqs, containers } = state;
+    $('image-detail').textContent = imageDetail();
 
     const active = pull.state === 'running' || pull.state === 'waiting';
     const failed = pull.state === 'failed';
+    const stopped = pull.state === 'cancelled' || pull.state === 'interrupted';
+    const present = image.status === 'present' && !active;
+    // Found on this computer (frame A3d), unless it was just downloaded here or another version is wanted.
+    const found = present && pull.state !== 'done' && !showAnother;
     let badge = '';
     if (active) {
       badge = 'running';
@@ -280,63 +351,76 @@
       badge = 'error';
     } else if (image.status === 'present') {
       badge = 'ok';
-    } else if (pull.state === 'cancelled' || pull.state === 'interrupted') {
+    } else if (stopped) {
       badge = 'warn';
     }
     setBadge('step-image', badge);
 
-    // Progress
-    $('pull-progress').hidden = !active;
+    $('dl-found').hidden = !found;
+    $('dl-version').hidden = found;
+    if (found) {
+      const running = containers.find((c) => c.state === 'running');
+      const version = versionLabel();
+      $('dl-found-title').textContent = running
+        ? `SDK ${version} is already running on this computer.`
+        : `SDK ${version} is already on this computer.`;
+      const meta = [];
+      if (running) meta.push(`Container ${running.name}`);
+      if (release.platform) meta.push(`Platform ${release.platform}`);
+      if (release.image) meta.push(release.image);
+      $('dl-found-meta').textContent = meta.join(' · ');
+    }
+
+    // Progress: while downloading, after a failure, or when a download was stopped.
+    const showProgress = active || failed || stopped;
+    $('pull-progress').hidden = !showProgress;
+    if (showProgress) {
+      const label = $('pull-label');
+      label.textContent = pullLabel(pull);
+      label.className = failed ? 'failed' : '';
+      $('pull-meta').textContent = pullMeta(pull, pull.state === 'running');
+      $('bar-fill').style.width = `${pullPercent(pull)}%`;
+      document.querySelector('#pull-progress .dl-bar').classList.toggle('failed', failed);
+    }
+
+    // The note under the progress: how Retry continues, or the fix for this error.
+    const note = $('pull-note');
+    let noteText = '';
+    if (failed && pull.error) {
+      noteText = pull.error.retryable
+        ? `Retry continues from ${pullPercent(pull)}%. Nothing downloaded so far is lost.`
+        : pull.error.hint || '';
+    } else if (pull.state === 'waiting' && pull.error) {
+      noteText = pull.error.message || '';
+    } else if (stopped) {
+      noteText = 'Layers already downloaded are kept. Resume to continue from there.';
+    }
+    note.hidden = !noteText;
+    setRichText($('pull-note-text'), noteText);
+
+    $('dl-wait').hidden = !active;
     if (active) {
-      const { done, total } = pull.progress || { done: 0, total: 0 };
-      $('bar-fill').style.width = total ? `${Math.round((done / total) * 100)}%` : '';
-      document.querySelector('#pull-progress .bar').classList.toggle('indeterminate', !total);
-      const status = $('pull-status');
-      status.textContent = pullStatusText(pull);
-      status.style.whiteSpace = 'pre-line';
+      renderSlide();
     }
 
-    // Errors and resume notes
-    const errorBox = $('pull-error');
-    const showError = (failed || pull.state === 'waiting') && pull.error;
-    errorBox.hidden = !showError && pull.state !== 'cancelled' && pull.state !== 'interrupted';
-    errorBox.className = `callout ${showError ? 'error' : 'warn'}`;
-    if (showError) {
-      $('pull-error-message').textContent = pull.error.message;
-      setRichText($('pull-error-hint'), pull.error.hint);
-    } else if (pull.state === 'cancelled') {
-      $('pull-error-message').textContent = 'Download cancelled.';
-      $('pull-error-hint').textContent = 'Layers already downloaded are kept. Resume to continue from there.';
-    } else if (pull.state === 'interrupted') {
-      $('pull-error-message').textContent = "A previous download didn't finish.";
-      $('pull-error-hint').textContent = 'Layers already downloaded are kept. Resume to continue from there.';
-    }
-
-    // Buttons
+    // Buttons (in the row under the step): one set per state, as in frames A3a–A3d.
+    const onStep = shownStep === 'download';
     const canPull = cli.found && prereqs.dockerReady && release.status === 'ok';
     const pullButton = $('pull-button');
-    pullButton.hidden = active;
+    pullButton.hidden = !onStep || active || found || (present && pull.state === 'done');
     pullButton.disabled = !canPull;
-    if (failed) {
-      pullButton.textContent = 'Retry';
-    } else if (pull.state === 'cancelled' || pull.state === 'interrupted') {
-      pullButton.textContent = 'Resume download';
-    } else if (image.status === 'present') {
-      pullButton.textContent = 'Check for updates';
-    } else {
-      pullButton.textContent = 'Download';
-    }
-    pullButton.classList.toggle('secondary', image.status === 'present' && !failed);
-    $('retry-button').hidden = pull.state !== 'waiting';
-    $('cancel-button').hidden = !active;
+    pullButton.textContent = failed ? 'Retry' : stopped ? 'Resume download' : 'Download';
+    $('use-sdk-button').hidden = !onStep || !found;
+    $('another-button').hidden = !onStep || !found;
+    $('cancel-button').hidden = !onStep || !active;
+    $('retry-button').hidden = !onStep || pull.state !== 'waiting';
     const terminalButton = $('terminal-button');
-    terminalButton.hidden = !failed;
+    terminalButton.hidden = !onStep || !failed;
     terminalButton.disabled = !canPull;
-    terminalButton.classList.toggle('secondary', !(pull.error && pull.error.needsTerminal));
 
     // Log
     const log = pull.log || [];
-    $('pull-log-box').hidden = !log.length;
+    $('pull-log-box').hidden = !log.length || !(active || failed);
     const pre = $('pull-log');
     const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
     pre.textContent = log.join('\n');
@@ -347,9 +431,8 @@
     clearInterval(countdownTimer);
     if (pull.state === 'waiting') {
       countdownTimer = setInterval(() => {
-        $('pull-status').textContent = pullStatusText(state.pull);
+        $('pull-label').textContent = pullLabel(state.pull);
       }, 1000);
-      $('pull-progress').hidden = false;
     }
   }
 
@@ -547,9 +630,11 @@
   let configConfirmed = Boolean(saved.configConfirmed);
   // Check this computer counts as done once its checks pass and the user continues past it (frame A2a).
   let checkConfirmed = Boolean(saved.checkConfirmed);
+  // Download SDK is passed once the user continues: while it downloads, or with the SDK already here (A3b, A3d).
+  let downloadConfirmed = Boolean(saved.downloadConfirmed);
 
   function saveView() {
-    vscode.setState({ viewing, configConfirmed, checkConfirmed });
+    vscode.setState({ viewing, configConfirmed, checkConfirmed, downloadConfirmed });
   }
 
   function pullPercent(pull) {
@@ -622,7 +707,7 @@
   function activeStep(status) {
     if (!status.signin.done) return 'signin';
     if (!status.check.done) return 'check';
-    if (!status.download.done && !status.download.busy) return 'download';
+    if (!downloadConfirmed || (!status.download.done && !status.download.busy)) return 'download';
     if (!status.configure.done) return 'configure';
     return 'start';
   }
@@ -727,7 +812,8 @@
         summary.textContent = s.summary;
         item.appendChild(summary);
       }
-      if (s.busy) {
+      // The bar under the step while it downloads, once setup is on a later step (frames A3b, A4).
+      if (s.busy && !isActive) {
         const bar = document.createElement('div');
         bar.className = 'rail-bar';
         const fill = document.createElement('div');
@@ -750,7 +836,12 @@
     const next = STEPS[viewIndex + 1];
     // Sign in has its own button row (Continue · Sign out), as in the design.
     // Check this computer always shows Continue, disabled until the required items pass (as in the design).
-    const canContinue = view !== 'signin' && Boolean(next) && (s.done || s.busy || view === 'configure' || view === 'check');
+    // Download SDK: Continue while downloading or right after the download; an SDK found here has "Use this SDK".
+    // (also after "Download another version", where Download is the one primary button).
+    const foundHere = view === 'download' && state.image.status === 'present' && state.pull.state !== 'done'
+      && !['running', 'waiting'].includes(state.pull.state);
+    const canContinue = view !== 'signin' && Boolean(next) && !foundHere
+      && (s.done || s.busy || view === 'configure' || view === 'check');
     const continueButton = $('continue-button');
     continueButton.hidden = !canContinue;
 
@@ -776,8 +867,22 @@
       if (view === 'check') {
         checkConfirmed = true;
       }
+      if (view === 'download') {
+        downloadConfirmed = true;
+      }
       viewing = next.id;
       saveView();
+      render();
+    };
+
+    $('use-sdk-button').onclick = () => {
+      downloadConfirmed = true;
+      viewing = 'configure';
+      saveView();
+      render();
+    };
+    $('another-button').onclick = () => {
+      showAnother = true;
       render();
     };
 
@@ -869,6 +974,9 @@
     }
     post({ type: 'action', id: 'resetRun', value: choices });
   });
+
+  $('slide-prev').addEventListener('click', () => { slide = (slide + SLIDES.length - 1) % SLIDES.length; renderSlide(); });
+  $('slide-next').addEventListener('click', () => { slide = (slide + 1) % SLIDES.length; renderSlide(); });
 
   $('version').addEventListener('change', (event) => {
     post({ type: 'action', id: 'selectVersion', value: event.target.value });

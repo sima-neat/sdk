@@ -57,6 +57,7 @@ function updateStatusBar() {
     return;
   }
   statusItem.color = undefined;
+  statusItem.backgroundColor = undefined;
   if (status.kind === 'progress' && status.downloading) {
     statusItem.text = `$(loading~spin) SiMa SDK ${status.pct}%`;
     statusItem.tooltip = `Downloading SDK ${status.version || ''} · click to open setup`.replace('  ', ' ');
@@ -65,7 +66,7 @@ function updateStatusBar() {
   } else if (status.kind === 'progress' && status.failed) {
     statusItem.text = '$(warning) SiMa SDK download failed';
     statusItem.tooltip = 'Click to open setup';
-    statusItem.color = new vscode.ThemeColor('editorWarning.foreground');
+    statusItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
     statusItem.command = 'simaNeat.openSetup';
     statusItem.show();
   } else if (status.kind === 'running') {

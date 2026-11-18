@@ -94,7 +94,8 @@ test('status bar warns when the download failed', () => {
   assert.equal(item.text, '$(warning) SiMa SDK download failed');
   assert.equal(item.tooltip, 'Click to open setup');
   assert.equal(item.command, 'simaNeat.openSetup');
-  assert.equal(item.color.id, 'editorWarning.foreground');
+  assert.equal(item.backgroundColor.id, 'statusBarItem.warningBackground', 'a warning item, as in frame A3c');
+  assert.equal(item.color, undefined);
 });
 
 test('status bar stays hidden on a setup step without a download', () => {

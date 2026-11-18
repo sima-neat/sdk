@@ -190,14 +190,14 @@ test('createPull counts downloaded bytes from the layer sizes', async (t) => {
   const snapshots = await pull;
   const last = snapshots[snapshots.length - 1];
   assert.equal(last.state, 'done');
-  assert.deepEqual(last.progress, { done: 1, total: 3, bytesDone: 10_100_000_000, bytesTotal: 10_100_000_000 });
+  assert.deepEqual(last.progress, { done: 1, total: 3, bytesDone: 10_100_000_000, bytesTotal: 10_100_000_000, speed: 0, secondsLeft: undefined });
 
   // Midway: only the first layer's bytes count after its download completes.
   const midway = snapshots.find((s) => s.statusLine === 'aaaaaaaaaaaa: Download complete');
   assert.equal(midway.progress.bytesTotal, 10_100_000_000);
   assert.equal(midway.progress.bytesDone, 4_200_000_000);
   const downloading = snapshots.find((s) => s.statusLine.startsWith('aaaaaaaaaaaa: Downloading'));
-  assert.equal(downloading.progress.bytesDone, 0, 'a layer still downloading does not count');
+  assert.equal(downloading.progress.bytesDone, 1_200_000_000, 'a layer still downloading counts what it has so far');
 });
 
 test('createPull without layer sizes reports zero bytes and counts layers', async (t) => {
@@ -205,7 +205,7 @@ test('createPull without layer sizes reports zero bytes and counts layers', asyn
     lines: ['aaaaaaaaaaaa: Pulling fs layer', 'aaaaaaaaaaaa: Pull complete'],
   });
   const last = snapshots[snapshots.length - 1];
-  assert.deepEqual(last.progress, { done: 1, total: 1, bytesDone: 0, bytesTotal: 0 });
+  assert.deepEqual(last.progress, { done: 1, total: 1, bytesDone: 0, bytesTotal: 0, speed: 0, secondsLeft: undefined });
 });
 
 test('createPull keeps going when the layer sizes cannot be read', async (t) => {
@@ -224,4 +224,63 @@ test('createPull ignores layer sizes that are not a Map', async (t) => {
     lines: ['aaaaaaaaaaaa: Pull complete'],
   });
   assert.equal(snapshots[snapshots.length - 1].progress.bytesTotal, 0);
+});
+
+test('parseBytes reads the sizes docker prints', () => {
+  assert.equal(sdk.parseBytes('1.2GB'), 1_200_000_000);
+  assert.equal(sdk.parseBytes('45.6 MB'), 45_600_000);
+  assert.equal(sdk.parseBytes('512kB'), 512_000);
+  assert.equal(sdk.parseBytes('12B'), 12);
+  assert.equal(sdk.parseBytes('lots'), 0);
+});
+
+test('registryImage also reads the Platform label from the image config', async (t) => {
+  stubHttpsGet(t, (url) => {
+    if (url.startsWith('https://ghcr.io/token')) return { body: { token: 'x' } };
+    if (url.endsWith('/manifests/v3.0.0.1')) return { body: { config: { digest: 'sha256:cfg' }, layers: [{ digest: LAYER_A, size: 5 }] } };
+    if (url.endsWith('/blobs/sha256:cfg')) return { body: { config: { Labels: { 'com.sima.sdk.platform.version': '3.0.0' } } } };
+    throw new Error(`unexpected ${url}`);
+  });
+  const info = await sdk.registryImage('ghcr.io/sima-neat/sdk:v3.0.0.1');
+  assert.equal(info.platform, '3.0.0');
+  assert.deepEqual([...info.layers], [['aaaaaaaaaaaa', 5]]);
+});
+
+test('registryImage keeps the sizes when the config cannot be read', async (t) => {
+  stubHttpsGet(t, (url) => {
+    if (url.startsWith('https://ghcr.io/token')) return { body: { token: 'x' } };
+    if (url.includes('/manifests/')) return { body: { config: { digest: 'sha256:cfg' }, layers: [{ digest: LAYER_A, size: 5 }] } };
+    return { status: 500 };
+  });
+  const info = await sdk.registryImage('ghcr.io/sima-neat/sdk:v1');
+  assert.equal(info.platform, '');
+  assert.equal(info.layers.size, 1);
+});
+
+test('createPull reports speed and time left from the bytes of the last seconds', async (t) => {
+  const bin = fakeBin(t, { docker: 'echo "sha256:0123456789ab|2026-11-18T00:00:00Z|10100000000"' });
+  const simaCli = path.join(bin, 'sima-cli');
+  // 1.1 s apart: 100 MB, then 300 MB, … of a 1 GB layer.
+  fs.writeFileSync(simaCli, `#!/bin/sh
+for n in 100 300 500 700; do echo "aaaaaaaaaaaa: Downloading  [==>  ]  \${n}MB/1GB"; sleep 1.1; done
+echo "aaaaaaaaaaaa: Pull complete"
+`, { mode: 0o755 });
+  const snapshots = await new Promise((resolve) => {
+    const seen = [];
+    sdk.createPull({
+      simaCliFile: simaCli, env: process.env, resource: 'r', image: 'i', maxRetries: 0,
+      layerSizes: Promise.resolve(new Map([['aaaaaaaaaaaa', 1_000_000_000]])),
+      onUpdate: (s) => { seen.push(s); if (s.state === 'done') resolve(seen); },
+    });
+  });
+  const withSpeed = snapshots.filter((s) => s.progress.speed);
+  assert.ok(withSpeed.length > 0, 'speed appears after a few seconds');
+  const last = withSpeed.find((s) => s.statusLine.includes('700MB'));
+  assert.equal(last.progress.bytesDone, 700_000_000);
+  // ~600 MB in ~3.3 s ≈ 180 MB/s; ~300 MB left ≈ 2 s.
+  assert.ok(last.progress.speed > 120e6 && last.progress.speed < 260e6, `speed ${last.progress.speed}`);
+  assert.ok(last.progress.secondsLeft >= 1 && last.progress.secondsLeft <= 3, `left ${last.progress.secondsLeft}`);
+  const early = snapshots.find((s) => s.progress.bytesDone === 100_000_000);
+  assert.equal(early.progress.speed, 0, 'no speed in the first seconds');
+  assert.equal(snapshots.at(-1).progress.speed, 0, 'no speed once done');
 });

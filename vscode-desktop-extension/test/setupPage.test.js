@@ -86,9 +86,9 @@ test.afterEach(() => {
 
 /**
  * Opens the page in jsdom; `saved` is what vscode.getState() returns (the page's memory).
- * By default the user has already continued past Check this computer.
+ * By default the user has already continued past Check this computer and Download SDK.
  */
-function openPage(saved = { checkConfirmed: true }) {
+function openPage(saved = { checkConfirmed: true, downloadConfirmed: true }) {
   const dom = new JSDOM(HTML, { runScripts: 'outside-only' });
   const { window } = dom;
   openWindows.push(window);
@@ -145,7 +145,7 @@ function openPage(saved = { checkConfirmed: true }) {
     /** Visible buttons of the open pane plus Continue, and whether each is primary. */
     primaryButtons() {
       const pane = doc.querySelector('[data-pane]:not([hidden])');
-      return [...pane.querySelectorAll('button'), $('continue-button')]
+      return [...pane.querySelectorAll('button'), ...$('nav-buttons').querySelectorAll('button')]
         .filter((b) => page.shown(b) && !b.classList.contains('secondary') && !b.classList.contains('link') && !b.classList.contains('danger'))
         .map((b) => b.textContent.trim());
     },
@@ -278,7 +278,7 @@ test('Continue on Sign in opens Check this computer', () => {
   assert.equal(page.title(), 'Check this computer');
   assert.equal(page.lead(), 'Checking what the SDK needs…');
   assert.equal(page.openPane(), 'check');
-  assert.deepEqual(page.memory.value, { viewing: 'check', configConfirmed: false, checkConfirmed: false });
+  assert.deepEqual(page.memory.value, { viewing: 'check', configConfirmed: false, checkConfirmed: false, downloadConfirmed: false });
 });
 
 test('Check this computer · all OK (A2a): Required and Optional lists, Continue, no Check again', () => {
@@ -533,7 +533,7 @@ test('Configure: Continue confirms it and opens Start Neat Studio with Start ove
   assert.ok(page.shown(page.$('reset')));
   assert.equal(page.shown(page.$('continue-button')), false, 'nothing after the last step');
   assert.equal(page.rail()[3].summary, 'No DevKit · No AI agent');
-  assert.deepEqual(page.memory.value, { viewing: 'start', configConfirmed: true, checkConfirmed: true });
+  assert.deepEqual(page.memory.value, { viewing: 'start', configConfirmed: true, checkConfirmed: true, downloadConfirmed: true });
   assert.deepEqual(page.hostStatus().value, { active: 5, total: 5 });
 
   page.send(baseState({ ...downloaded, config: { ...baseState().config, devkitMode: 'pair', devkitIp: '192.168.1.20', codingAgents: 'install' } }));
@@ -552,7 +552,7 @@ test('Configure: Continue is disabled while a setting is invalid', () => {
 });
 
 test('the page remembers a confirmed Configure step after it is reopened', () => {
-  const page = openPage({ configConfirmed: true, checkConfirmed: true });
+  const page = openPage({ configConfirmed: true, checkConfirmed: true, downloadConfirmed: true });
   page.send(baseState({ ...SIGNED_IN, image: { status: 'present' } }));
   assert.equal(page.title(), 'Start Neat Studio');
 });
@@ -633,4 +633,191 @@ test('a link with an action asks the extension for it', () => {
   page.doc.body.appendChild(link);
   page.click(link);
   assert.deepEqual(page.actions().at(-1), { type: 'action', id: 'doctor' });
+});
+
+// ───────────── Download SDK (frames A3a–A3d) ─────────────
+
+const RELEASE_INFO = { platform: '3.0.0', downloadBytes: 10_100_000_000 };
+const withRelease = (over = {}) => ({ ...baseState().release, ...RELEASE_INFO, ...over });
+const navShown = (page) => [...page.$('nav-buttons').querySelectorAll('button')].filter(page.shown).map((b) => b.textContent);
+
+test('Download SDK · loading versions (A3a): spinner, "Loading available versions…", Download disabled', () => {
+  const page = openPage({ checkConfirmed: true });
+  page.send(baseState({ ...SIGNED_IN, versions: { status: 'loading', items: [] }, release: { status: 'idle' } }));
+  assert.equal(page.title(), 'Download the SDK');
+  assert.equal(page.doc.querySelector('.dl-label').textContent, 'SDK version');
+  assert.ok(page.shown(page.$('version-spin')));
+  assert.equal(page.$('version').selectedOptions[0].textContent, 'Loading versions…');
+  assert.equal(page.$('version').disabled, true);
+  assert.equal(page.$('image-detail').textContent, 'Loading available versions…');
+  assert.deepEqual(navShown(page), ['Download']);
+  assert.equal(page.$('pull-button').disabled, true);
+});
+
+test('Download SDK · ready: the recommended release with image, Platform, download size and disk', () => {
+  const page = openPage({ checkConfirmed: true });
+  page.send(baseState({ ...SIGNED_IN, prereqs: { status: 'ok', items: CHECKS_OK, dockerReady: true }, release: withRelease() }));
+  assert.equal(page.$('version').selectedOptions[0].textContent, 'v3.0.0.1 (recommended)');
+  assert.equal(page.shown(page.$('version-spin')), false);
+  assert.equal(page.$('image-detail').textContent, 'ghcr.io/sima-neat/sdk:v3.0.0.1 · Platform 3.0.0 · 10.1 GB download · ~20 GB on disk');
+  assert.deepEqual(navShown(page), ['Download']);
+  assert.equal(page.$('pull-button').disabled, false);
+  page.click(page.$('pull-button'));
+  assert.deepEqual(page.actions().at(-1), { type: 'action', id: 'pull' });
+  assert.equal(page.title(), 'Download the SDK', 'stays on the step after Download');
+});
+
+test('Download SDK · without the registry answer, the line has only what is known', () => {
+  const page = openPage({ checkConfirmed: true });
+  page.send(baseState({ ...SIGNED_IN }));
+  assert.equal(page.$('image-detail').textContent, 'ghcr.io/sima-neat/sdk:v3.0.0.1 · ~20 GB on disk\nFix Docker in Check this computer before downloading.');
+});
+
+test('Download SDK · downloading (A3b): progress with speed and time left, While you wait, Continue and Cancel download', () => {
+  const page = openPage({ checkConfirmed: true });
+  page.send(baseState({
+    ...SIGNED_IN,
+    release: withRelease(),
+    pull: { state: 'running', progress: { done: 3, total: 9, bytesDone: 4_242_000_000, bytesTotal: 10_100_000_000, speed: 38_000_000, secondsLeft: 154 } },
+  }));
+  assert.equal(page.title(), 'Download the SDK', 'stays on Download until Continue (A3b)');
+  assert.equal(page.lead(), 'Downloading in the background. Setup keeps going while you wait.');
+  assert.equal(page.$('version').disabled, true);
+  assert.equal(page.$('pull-label').textContent, 'Downloading… 42%');
+  assert.equal(page.$('pull-meta').textContent, '4.2 of 10.1 GB · 38 MB/s · about 3 min left');
+  assert.equal(page.$('bar-fill').style.width, '42%');
+  assert.ok(page.shown(page.$('dl-wait')));
+  assert.equal(page.$('slide-title').textContent, 'Run examples on your DevKit');
+  assert.equal(page.$('slide-text').textContent, 'One click runs a prebuilt app with its model and sample video.');
+  assert.equal(page.doc.querySelectorAll('#slide-dots span').length, 4);
+  page.click(page.$('slide-next'));
+  assert.equal(page.$('slide-title').textContent, 'Model Registry');
+  page.click(page.$('slide-prev'));
+  page.click(page.$('slide-prev'));
+  assert.equal(page.$('slide-title').textContent, 'Devices');
+  page.click(page.doc.querySelectorAll('#slide-dots span')[2]);
+  assert.equal(page.$('slide-title').textContent, 'Insight');
+  assert.deepEqual(navShown(page), ['Continue', 'Cancel download']);
+  assert.equal(page.rail()[2].bar, undefined, 'no bar under the current step');
+
+  page.click(page.$('cancel-button'));
+  assert.deepEqual(page.actions().at(-1), { type: 'action', id: 'cancelPull' });
+  page.click(page.$('continue-button'));
+  assert.equal(page.title(), 'Configure the SDK');
+  assert.equal(page.rail()[2].bar, '42%', 'the bar shows once setup moved on (A4)');
+  assert.equal(page.memory.value.downloadConfirmed, true);
+});
+
+test('Download SDK · time left under a minute, and no speed yet', () => {
+  const page = openPage({ checkConfirmed: true });
+  const pull = (speed, secondsLeft) => ({ state: 'running', progress: { done: 1, total: 2, bytesDone: 9_000_000_000, bytesTotal: 10_100_000_000, speed, secondsLeft } });
+  page.send(baseState({ ...SIGNED_IN, pull: pull(40_000_000, 28) }));
+  assert.equal(page.$('pull-meta').textContent, '9.0 of 10.1 GB · 40 MB/s · less than a minute left');
+  page.send(baseState({ ...SIGNED_IN, pull: pull(0, undefined) }));
+  assert.equal(page.$('pull-meta').textContent, '9.0 of 10.1 GB');
+});
+
+test('Download SDK · an automatic retry shows its countdown and Retry now', () => {
+  const page = openPage({ checkConfirmed: true });
+  page.send(baseState({
+    ...SIGNED_IN,
+    pull: { state: 'waiting', attempt: 1, maxAttempts: 5, retryAt: Date.now() + 12_000, error: { message: 'connection reset by peer', retryable: true }, progress: { done: 1, total: 4 } },
+  }));
+  assert.match(page.$('pull-label').textContent, /^Retrying in 1[12] s · attempt 2 of 5$/);
+  assert.equal(page.$('pull-meta').textContent, '1 of 4 layers');
+  assert.equal(page.$('pull-note-text').textContent, 'connection reset by peer');
+  assert.deepEqual(navShown(page), ['Continue', 'Cancel download', 'Retry now']);
+  page.click(page.$('retry-button'));
+  assert.deepEqual(page.actions().at(-1), { type: 'action', id: 'retryNow' });
+});
+
+test('Download SDK · failed (A3c): red label and bar, how Retry continues, Retry and the terminal', () => {
+  const page = openPage({ checkConfirmed: true });
+  page.send(baseState({
+    ...SIGNED_IN,
+    prereqs: { status: 'ok', items: CHECKS_OK, dockerReady: true },
+    release: withRelease(),
+    pull: { state: 'failed', error: { message: 'network connection lost', retryable: true }, progress: { done: 5, total: 9, bytesDone: 6_161_000_000, bytesTotal: 10_100_000_000 } },
+  }));
+  assert.equal(page.lead(), 'The SDK is a Docker image with the toolchain, Neat and examples. Configure opens as soon as the download starts.');
+  assert.equal(page.$('version').disabled, false);
+  assert.equal(page.$('pull-label').textContent, 'Download failed at 61% · network connection lost');
+  assert.equal(page.$('pull-label').className, 'failed');
+  assert.equal(page.$('pull-meta').textContent, '6.2 of 10.1 GB', 'no speed after a failure');
+  assert.ok(page.doc.querySelector('#pull-progress .dl-bar').classList.contains('failed'));
+  assert.equal(page.$('pull-note-text').textContent, 'Retry continues from 61%. Nothing downloaded so far is lost.');
+  assert.equal(page.shown(page.$('dl-wait')), false);
+  assert.deepEqual(navShown(page), ['Retry', 'Download in a terminal']);
+  assert.ok(page.$('terminal-button').classList.contains('link'));
+  assert.deepEqual(page.primaryButtons(), ['Retry']);
+  page.click(page.$('pull-button'));
+  assert.deepEqual(page.actions().at(-1), { type: 'action', id: 'pull' });
+  page.click(page.$('terminal-button'));
+  assert.deepEqual(page.actions().at(-1), { type: 'action', id: 'pullInTerminal' });
+});
+
+test('Download SDK · a failure with its own fix shows that fix', () => {
+  const page = openPage({ checkConfirmed: true });
+  page.send(baseState({
+    ...SIGNED_IN,
+    pull: { state: 'failed', error: { message: 'The disk is full.', retryable: false, hint: 'Free up space, for example with `docker system prune`, then retry.' }, progress: { done: 0, total: 0 } },
+  }));
+  assert.equal(page.$('pull-label').textContent, 'Download failed at 0% · The disk is full');
+  assert.equal(page.$('pull-note-text').querySelector('code').textContent, 'docker system prune');
+});
+
+test('Download SDK · cancelled, or stopped when VS Code closed: Resume download', () => {
+  const page = openPage({ checkConfirmed: true });
+  page.send(baseState({ ...SIGNED_IN, pull: { state: 'cancelled', progress: { done: 1, total: 2, bytesDone: 3_000_000_000, bytesTotal: 10_000_000_000 } } }));
+  assert.equal(page.$('pull-label').textContent, 'Download cancelled at 30%');
+  assert.equal(page.$('pull-note-text').textContent, 'Layers already downloaded are kept. Resume to continue from there.');
+  assert.deepEqual(navShown(page), ['Resume download']);
+  page.send(baseState({ ...SIGNED_IN, pull: { state: 'interrupted' } }));
+  assert.equal(page.$('pull-label').textContent, 'Download stopped when VS Code closed');
+});
+
+test('Download SDK · already running here (A3d): Use this SDK or Download another version', () => {
+  const page = openPage({ checkConfirmed: true });
+  page.send(baseState({
+    ...SIGNED_IN,
+    release: withRelease(),
+    image: { status: 'present' },
+    containers: [{ name: 'neat-sdk', state: 'running' }],
+  }));
+  assert.equal(page.title(), 'Download the SDK', 'stays on Download until Use this SDK');
+  assert.equal(page.lead(), 'Neat Studio found an SDK on this computer.');
+  assert.ok(page.shown(page.$('dl-found')));
+  assert.equal(page.shown(page.$('dl-version')), false);
+  assert.equal(page.$('dl-found-title').textContent, 'SDK v3.0.0.1 is already running on this computer.');
+  assert.equal(page.$('dl-found-meta').textContent, 'Container neat-sdk · Platform 3.0.0 · ghcr.io/sima-neat/sdk:v3.0.0.1');
+  assert.deepEqual(navShown(page), ['Use this SDK', 'Download another version']);
+  assert.deepEqual(page.rail()[2].summary, 'v3.0.0.1 · already running');
+  assert.equal(page.rail()[2].dot, 'done');
+
+  page.click(page.$('another-button'));
+  assert.ok(page.shown(page.$('dl-version')));
+  assert.equal(page.shown(page.$('dl-found')), false);
+  assert.deepEqual(navShown(page), ['Download']);
+
+  const again = openPage({ checkConfirmed: true });
+  again.send(baseState({ ...SIGNED_IN, release: withRelease(), image: { status: 'present' }, containers: [{ name: 'neat-sdk', state: 'running' }] }));
+  again.click(again.$('use-sdk-button'));
+  assert.equal(again.title(), 'Configure the SDK');
+  assert.equal(again.memory.value.downloadConfirmed, true);
+});
+
+test('Download SDK · downloaded but not running', () => {
+  const page = openPage({ checkConfirmed: true });
+  page.send(baseState({ ...SIGNED_IN, release: withRelease(), image: { status: 'present' } }));
+  assert.equal(page.$('dl-found-title').textContent, 'SDK v3.0.0.1 is already on this computer.');
+  assert.equal(page.$('dl-found-meta').textContent, 'Platform 3.0.0 · ghcr.io/sima-neat/sdk:v3.0.0.1');
+});
+
+test('Download SDK · just downloaded here: Continue', () => {
+  const page = openPage({ checkConfirmed: true });
+  page.send(baseState({ ...SIGNED_IN, image: { status: 'present' }, pull: { state: 'done', progress: { done: 9, total: 9 } } }));
+  assert.equal(page.shown(page.$('dl-found')), false);
+  assert.deepEqual(navShown(page), ['Continue']);
+  page.click(page.$('continue-button'));
+  assert.equal(page.title(), 'Configure the SDK');
 });
