@@ -1,0 +1,7 @@
+node_modules/
+build/
+.docusaurus/
+.generated-docs/
+.generated-i18n/
+static/img/simaai-logo.png
+static/CNAME

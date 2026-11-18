@@ -1,0 +1,30 @@
+{
+  "uk": {
+    "palette-image-builder.md": "8ea288e25b41ad4457188d7405e1109ecc1d96649597854283d7ee9bce5d5955",
+    "palette-image-builder-example.md": "1890ad06bd2ec9f27b293779426bdbbf70487b94bc1612f1a0634bab5e3aefec",
+    "palette-image-builder-reference.md": "f877fe4abcb6b971dc9cf0849af8a9f58fab5c12302d7b1fc7ec7cf8f632bfc2",
+    "sdk-architecture.md": "e9dec76bc726f2e8beccc861335c35462d5681f1abc576fe038dea3c545113ec",
+    "system-software.md": "c49dc68cefb08db13c6b741e3c936dcbc377dddf19baf840cc5772e0d1fe6659"
+  },
+  "ja": {
+    "palette-image-builder.md": "8ea288e25b41ad4457188d7405e1109ecc1d96649597854283d7ee9bce5d5955",
+    "palette-image-builder-example.md": "1890ad06bd2ec9f27b293779426bdbbf70487b94bc1612f1a0634bab5e3aefec",
+    "palette-image-builder-reference.md": "f877fe4abcb6b971dc9cf0849af8a9f58fab5c12302d7b1fc7ec7cf8f632bfc2",
+    "sdk-architecture.md": "e9dec76bc726f2e8beccc861335c35462d5681f1abc576fe038dea3c545113ec",
+    "system-software.md": "c49dc68cefb08db13c6b741e3c936dcbc377dddf19baf840cc5772e0d1fe6659"
+  },
+  "ko": {
+    "palette-image-builder.md": "8ea288e25b41ad4457188d7405e1109ecc1d96649597854283d7ee9bce5d5955",
+    "palette-image-builder-example.md": "1890ad06bd2ec9f27b293779426bdbbf70487b94bc1612f1a0634bab5e3aefec",
+    "palette-image-builder-reference.md": "f877fe4abcb6b971dc9cf0849af8a9f58fab5c12302d7b1fc7ec7cf8f632bfc2",
+    "sdk-architecture.md": "e9dec76bc726f2e8beccc861335c35462d5681f1abc576fe038dea3c545113ec",
+    "system-software.md": "c49dc68cefb08db13c6b741e3c936dcbc377dddf19baf840cc5772e0d1fe6659"
+  },
+  "zh-Hant": {
+    "palette-image-builder.md": "8ea288e25b41ad4457188d7405e1109ecc1d96649597854283d7ee9bce5d5955",
+    "palette-image-builder-example.md": "1890ad06bd2ec9f27b293779426bdbbf70487b94bc1612f1a0634bab5e3aefec",
+    "palette-image-builder-reference.md": "f877fe4abcb6b971dc9cf0849af8a9f58fab5c12302d7b1fc7ec7cf8f632bfc2",
+    "sdk-architecture.md": "e9dec76bc726f2e8beccc861335c35462d5681f1abc576fe038dea3c545113ec",
+    "system-software.md": "c49dc68cefb08db13c6b741e3c936dcbc377dddf19baf840cc5772e0d1fe6659"
+  }
+}

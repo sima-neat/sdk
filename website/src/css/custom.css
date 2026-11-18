@@ -1,0 +1,79 @@
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+
+:root {
+  --ifm-color-primary: #1f6feb;
+  --ifm-color-primary-dark: #155ed2;
+  --ifm-color-primary-darker: #1458c6;
+  --ifm-color-primary-darkest: #1049a3;
+  --ifm-color-primary-light: #397ff0;
+  --ifm-color-primary-lighter: #4888f1;
+  --ifm-color-primary-lightest: #70a1f5;
+  --ifm-font-family-base: 'IBM Plex Sans', 'Noto Sans', 'Segoe UI', sans-serif;
+  --ifm-heading-font-weight: 600;
+  --ifm-line-height-base: 1.7;
+  --ifm-background-color: #fdfefe;
+  --ifm-font-color-base: #24354a;
+  --ifm-code-font-size: 88%;
+  --ifm-navbar-shadow: none;
+  --ifm-footer-background-color: #f3f6fa;
+}
+[data-theme='dark'] {
+  --ifm-color-primary: #8fc0f0;
+  --ifm-color-primary-dark: #71afea;
+  --ifm-color-primary-darker: #62a6e7;
+  --ifm-color-primary-darkest: #348cde;
+  --ifm-color-primary-light: #add1f6;
+  --ifm-color-primary-lighter: #bcdbf9;
+  --ifm-color-primary-lightest: #e9f4fe;
+  --ifm-background-color: #142030;
+  --ifm-font-color-base: #dfebf6;
+  --ifm-footer-background-color: #18283a;
+}
+.navbar {border-bottom: 1px solid var(--ifm-color-emphasis-200);}
+.navbar__logo {height: 1.65rem; margin-right: 1rem;}
+.navbar__title {font-weight: 500; font-size: 1rem;}
+.navbar__brand {min-width: 0;}
+.navbar__title {white-space: normal; line-height: 1.25; max-width: 260px;}
+.footer {border-top: 1px solid var(--ifm-color-emphasis-200);}
+.theme-doc-markdown {max-width: 800px;}
+.sdk-home {max-width: 1220px; margin: 0 auto; padding: 0 clamp(24px, 5vw, 64px);}
+.sdk-intro {display: grid; grid-template-columns: 1.15fr 1fr; gap: clamp(32px, 6vw, 80px); align-items: center; padding: clamp(56px, 8vw, 112px) 0 64px;}
+.sdk-eyebrow {font-size: .8rem; font-weight: 600; letter-spacing: .11em; text-transform: uppercase; color: var(--ifm-color-primary); margin: 0 0 22px;}
+.sdk-intro h1 {font-size: clamp(2.3rem, 4.2vw, 3.8rem); line-height: 1.1; letter-spacing: -.035em; margin: 0 0 24px; text-wrap: balance;}
+.sdk-lead {font-size: 1.13rem; line-height: 1.75; margin: 0; max-width: 39rem;}
+.sdk-actions {display: flex; flex-wrap: wrap; align-items: center; gap: 20px; margin-top: 32px;}
+.sdk-actions .button {padding: 12px 19px; border-radius: 5px; font-weight: 500;}
+.sdk-text-link {font-weight: 500;}
+.sdk-terminal {min-width: 0; border: 1px solid var(--ifm-color-emphasis-300); background: var(--ifm-color-emphasis-100); padding: 22px; border-radius: 6px;}
+.sdk-terminal > p {font-size: .9rem; font-weight: 500; margin: 0 0 14px;}
+.sdk-terminal pre {font-size: .78rem; line-height: 1.9;}
+.sdk-terminal small {display: block; line-height: 1.5; color: var(--ifm-color-emphasis-700);}
+.sdk-paths {border-top: 1px solid var(--ifm-color-emphasis-300); padding: 38px 0 18px;}
+.sdk-home h2 {font-size: 1.65rem; letter-spacing: -.02em; margin-bottom: 28px;}
+.sdk-paths article {display: grid; grid-template-columns: 1fr 1.65fr; gap: 8px 36px; padding: 24px 0; border-top: 1px solid var(--ifm-color-emphasis-200);}
+.sdk-paths h3 {grid-row: span 2; font-size: 1.25rem; margin: 0;}
+.sdk-paths p {margin: 0;}
+.sdk-paths a {font-weight: 500; justify-self: start;}
+.sdk-workflow {padding: 38px 0 40px;}
+.sdk-workflow ol {list-style: none; counter-reset: step; display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; margin: 0; padding: 0;}
+.sdk-workflow li {counter-increment: step; border-top: 2px solid var(--ifm-color-emphasis-300); padding-top: 20px;}
+.sdk-workflow li::before {content: '0' counter(step); font-size: .83rem; color: var(--ifm-color-primary); font-weight: 600;}
+.sdk-workflow h3 {font-size: 1.1rem; margin: 9px 0;}
+.sdk-workflow p {font-size: .96rem;}
+.sdk-reference {display: flex; justify-content: space-between; gap: 16px; align-items: baseline; padding: 28px 0 44px; border-top: 1px solid var(--ifm-color-emphasis-300);}
+.sdk-reference p {margin: 0;}
+.sdk-application {padding: 24px 0 36px; border-top: 1px solid var(--ifm-color-emphasis-300);}
+.sdk-application h2 {margin-bottom: 10px;}
+.sdk-application p {max-width: 780px; margin-bottom: 12px;}
+a:focus-visible, button:focus-visible {outline: 3px solid var(--ifm-color-primary); outline-offset: 4px;}
+@media (max-width: 900px) {
+  .sdk-intro {grid-template-columns: 1fr; padding-top: 48px; gap: 32px;}
+  .sdk-intro h1 {max-width: 700px;}
+  .sdk-terminal {max-width: 700px;}
+  .sdk-workflow ol {grid-template-columns: 1fr; gap: 12px;}
+  .sdk-paths article {grid-template-columns: 1fr;}
+  .sdk-paths h3 {grid-row: auto; margin-bottom: 7px;}
+  .sdk-reference {flex-direction: column;}
+}

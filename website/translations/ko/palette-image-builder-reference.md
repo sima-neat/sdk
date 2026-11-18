@@ -1,0 +1,164 @@
+# Palette Image Builder 참조
+
+먼저 [사용자 지정 Modalix 이미지 만들기](palette-image-builder.md)를 읽으세요. 이 페이지는 선택 기능과 보드 작업을 설명합니다. 컨테이너 유지 관리는 [빌더 README](../palette-image-builder/README.md)를 확인하세요.
+
+## 설치
+
+표준 설치 명령은 `sima-cli neat install sdk/pib`입니다. 선택한 SDK 배포의 `pib/` 메타데이터를 읽어 검증된 멀티플랫폼 이미지를 가져오고 이식 가능한 호스트 런처를 설치합니다. Python은 sima-cli 환경을 사용하고 빌드 도구는 컨테이너에 남습니다. 기본 대상은 main이며 `sdk/pib@develop`과 `sdk/pib@<release>`로 다른 배포를 선택합니다.
+
+Windows에서는 Docker Desktop의 Linux 컨테이너 모드와 PowerShell을 사용하세요. 설치 프로그램은 `pib.cmd` 진입점을 만들고 사용자 PATH를 갱신합니다. Linux/macOS에서는 `~/.local/bin`에 설치하고 필요하면 셸 프로필을 갱신합니다. amd64/arm64 이미지는 자동 선택됩니다. Linux Docker 호스트는 루프 장치, device-mapper, binfmt_misc 커널 기능을 지원해야 하며 데스크톱 VM도 이를 제공해야 합니다. `pib doctor`가 확인합니다. 전체 이미지 생성은 네이티브 Linux x86/ARM과 Apple Silicon/Colima에서 검증되었습니다. Windows 설치 테스트는 Windows 전체 이미지 생성 검증이 아닙니다.
+
+sima-cli 없이 Docker를 수동 사용하려면 공개 이미지를 가져와 런처를 추출하세요. Python 3이 PATH에 있어야 합니다.
+
+```bash
+export PIB_IMAGE=ghcr.io/sima-neat/palette-image-builder-develop:latest
+docker pull "$PIB_IMAGE"
+mkdir -p "$HOME/.local/bin"
+docker run --rm --entrypoint cat "$PIB_IMAGE" \
+  /usr/local/share/pib/host/pib > "$HOME/.local/bin/pib"
+chmod +x "$HOME/.local/bin/pib"
+export PATH="$HOME/.local/bin:$PATH"
+pib doctor
+```
+
+
+x86 이미지에는 에뮬레이터가 포함됩니다. 특권 PIB 시작 시 정상 ARM64 핸들러가 없으면 Docker 호스트의 Linux 커널에 등록합니다. 기존 정상 핸들러는 유지하고 네이티브 ARM64에서는 등록하지 않습니다. Docker 호스트 재부팅 뒤에도 자동 재설정됩니다. 호스트에 패키지를 설치하지 않습니다.
+
+## 명령
+
+이미지는 빌더에서 사용 가능한 CPU 코어를 활용하는 pigz로 압축됩니다. 출력은 gzip 호환이며 서명과 검증은 실제 압축 페이로드를 대상으로 합니다.
+
+빌드 간 Debian 다운로드를 재사용하려면 호스트 캐시 디렉터리를 지정하세요.
+
+```bash
+export PIB_DEB_CACHE="$HOME/.cache/sima/pib-debs"
+pib build --sign
+```
+
+
+패키지 바이트만 캐시합니다. 각 bootstrap은 현재 저장소 메타데이터를 다운로드하고 인증한 뒤 SHA256과 크기로 캐시를 확인합니다. 손상된 파일은 버리고 다시 다운로드합니다. 루트 파일시스템, 패키지 설치, 사용자 지정 훅, 서명, 검증은 매번 수행합니다. 캐시에는 사용자 지정 패키지도 포함될 수 있으므로 개인 사용자 디렉터리에 보관하세요.
+
+| 명령 | 용도 |
+|---|---|
+| `pib doctor` | 도구, 공간, 루프 장치, device-mapper, 에뮬레이션 확인 |
+| `pib init DIR --flavor minimal` | 프로젝트 생성. minimal, palette, securepalette 지원 |
+| `pib init DIR --example custom-image` | 완전한 샘플 명세와 입력 복사 |
+| `pib shell` | 현재 프로젝트를 마운트한 컨테이너 셸 열기 |
+| `pib keys init --cn NAME` | CA, SWU 리프 인증서, Debian 서명 정보 생성 |
+| `pib keys renew --cn NAME` | 같은 CA로 리프 인증서 갱신 |
+| `pib sign-debs` / `pib verify-debs` | 사용자 지정 Debian 패키지 서명/검사 |
+| `pib build [--sign] [--supplier NAME]` | 빌드하고 선택적으로 서명 및 검증 |
+| `pib sign [FILE]` | 번들 서명. 기본값은 현재 프로젝트 버전 |
+| `pib verify [FILE] [--ca CRT] [--manifest JSON]` | 서명 및 페이로드 검증. 프로젝트 기본값과 인접 매니페스트 자동 선택 |
+| `pib diff --against MANIFEST` | 이전 빌드와 패키지 차이 확인 |
+| `pib clean [--yes]` | 남은 빌드 루프 장치와 볼륨 그룹 검사/제거 |
+
+모든 명령은 컨테이너 안에서 실행됩니다. 호스트 런처는 Docker, 작업 공간 마운트, 명시적으로 선택한 외부 파일만 처리합니다. `build`, `doctor`, `clean`, 대화형 셸은 특권 장치 접근을 사용합니다. 서명, 검증, 키 생성, 프로젝트 생성에는 필요하지 않습니다.
+
+## 사용자 지정
+
+`image.yaml`을 편집하세요. 보드 지원을 개발하는 경우가 아니면 `configs/`의 릴리스 기본값을 유지합니다.
+
+```yaml
+base: minimal
+release: 3.0.0
+version: 3.0.0.2
+packages:
+  add: [my-app]
+  remove: []
+overlay: overlay/
+hooks: [hooks/enable-my-app.sh]
+vendor: My Company
+```
+
+
+애플리케이션 서비스를 활성화하는 설치 후 훅을 만드세요.
+
+```sh
+#!/bin/sh
+set -eu
+systemctl --root="$1" enable my-app.service
+```
+
+
+훅은 SiMa 훅과 패키지 설치 후 지정한 순서로 `sh`를 통해 실행됩니다. `$1`은 rootfs 디렉터리입니다. 그 아래에 쓰거나 `systemctl --root="$1"`을 사용하세요. `chroot "$1"`은 이미지의 ARM64 프로그램을 실행합니다. 훅에는 영숫자와 `_ . / + -`만 포함하는 작업 공간 상대 경로를 사용하세요.
+
+다른 패키지의 필수 의존성을 제거하면 APT 해결이 실패합니다. `swupdate`나 palette의 `kea`처럼 보드 훅에 필요한 패키지는 유지하세요. `palette`에서 `minimal`로 변경하면 이미지 크기와 기본 패키지 구성도 바뀝니다.
+
+사용자 지정 Debian 패키지는 `image.yaml`의 `debs.key`로 검증할 수 있는 분리 서명이 필요합니다. `pib sign-debs`는 생성한 Debian 서명 키를 사용합니다. 기존 GPG 서명 정보를 쓰려면 공개 키를 `keys/debs-signing.asc`로 내보내고 외부에서 패키지를 서명한 뒤 빌드 전에 `pib verify-debs`를 실행하세요.
+
+커널 패키지는 특별 취급됩니다. `configs/images/image-params.yaml`에 있는 릴리스 커널 패키지 이름을 유지하세요. PIB가 자동 선택하며 설치된 커널은 하나여야 합니다. 로컬 tRoot, ATF, U-Boot 교체 패키지는 거부합니다. 패키지 U-Boot는 `fip.bin` 내부 U-Boot와 일치해야 합니다.
+
+`swu.description`과 `swu.script`는 업데이트 절차를 바꿀 수 있습니다. 먼저 `configs/images/files/`의 릴리스 기본값을 복사하세요. 버전/하드웨어 호환성 자리표시자, 해시, 필수 부팅/SBOM 항목을 유지합니다. 이 스크립트는 설치할 때 보드에서 실행되므로 복구 가능한 보드에서 변경 사항을 테스트하세요.
+
+`securepalette`는 추가 커널 FIT 서명 검사를 적용하며 출하용 이미지에는 프로덕션 서명된 부팅 패키지가 필요합니다. 이 포팅의 minimal 이미지 스모크 테스트로는 검증하지 않았습니다. `--dev` 빌드는 임시 서명 정보를 사용하며 일반 배포용 `--sign`과 함께 사용할 수 없습니다. 개발용 고객 CA/리프 키와 `--dev` 모드는 별개입니다.
+
+## 서명
+
+이미지는 `signing.ca`를 업데이트 신뢰 루트로 포함합니다. 기존 보드 이미지를 갱신할 때도 CA를 유지하세요. 작업 공간 외부의 키를 사용하려면 다음과 같이 합니다.
+
+```bash
+cp /path/to/public-ca.crt keys/ca.crt
+SWU_SIGNING_KEY=/path/to/private-signing.key \
+SWU_SIGNING_CERT=/path/to/public-signing.crt pib sign
+pib verify
+```
+
+
+런처는 전체 디렉터리 대신 선택한 각 파일만 읽기 전용으로 마운트합니다. `pib build --sign`도 같은 변수를 지원합니다. 더 강한 분리가 필요하면 개인 키를 별도 서명 컴퓨터에 보관하고 빌드와 서명을 따로 실행하세요. CA 개인 키는 리프 인증서 발급/갱신에만 필요하므로 일상 빌드 프로젝트가 아닌 오프라인에 보관합니다.
+
+생성한 리프 인증서를 갱신하려면 `ca.key`를 일시적으로 `keys/`에 복원하고 초기 설정과 같은 알고리즘으로 `pib keys renew --cn 'My Company Development'`를 실행한 뒤 CA 키를 다시 오프라인으로 옮깁니다. 리프 인증서 유효 기간은 825일입니다.
+
+PKCS#11에는 `pib sign --pkcs11 'pkcs11:...' --cert keys/swu-signing.crt`를 사용합니다. Docker 호스트에 pcscd와 리더 드라이버가 필요합니다. 런처는 서명 시 사용할 수 있는 pcscd 소켓을 마운트하며 `PIB_PCSCD_DIR`로 위치를 바꿀 수 있습니다. 실제 카드/토큰은 이 포팅에서 테스트하지 않았습니다. macOS 호스트 소켓이 Linux Docker VM에서도 제공된다는 보장은 없습니다.
+
+암호화된 페이로드는 `pib keys payload`를 실행하고 빌드 전에 `encryption: {key: keys/payload.key}`를 설정한 다음 `pib sign --encrypt`를 사용합니다. 생성된 이미지에 복호화 키가 포함되므로 이미지를 추출할 수 있는 공격자로부터 보호하지는 않습니다. 암호화에는 별도 빌드/서명 단계를 사용하세요. `build --sign`은 일반 비암호화 서명 경로를 사용합니다.
+
+## 보드 접근
+
+새 이미지를 플래시하기 전에 인증 정보나 허용된 SSH 키를 구성하세요. root와 sima 비밀번호 해시를 제공하려면 프로젝트 밖에 보호된 파일을 만들고 `PIB_CREDENTIALS`로 지정합니다.
+
+```bash
+mkdir -p ../secure
+chmod 700 ../secure
+(umask 077; printf 'root:%s\nsima:%s\n' \
+  "$(openssl passwd -6)" "$(openssl passwd -6)" > ../secure/credentials)
+PIB_CREDENTIALS="$(cd ../secure && pwd)/credentials" pib build --sign
+```
+
+
+이 선택 방식은 호스트에 OpenSSL이 필요합니다. 비밀번호를 입력받고 해시만 저장합니다. root SSH 접근은 키 전용입니다. 또는 승인된 공개 키를 `overlay/root/.ssh/authorized_keys`에 배치하세요. 디렉터리는 700, 파일은 600으로 설정합니다. 보드마다 첫 부팅 시 고유 SSH 호스트 키를 생성합니다.
+
+## SWU 설치
+
+아래 명령은 보드를 변경합니다. **서명된** `.swu`와 의도한 보드를 명시적으로 선택하세요. 보드는 호환되는 SiMa/PIB eLxr 이미지를 실행하며 `sima` 계정의 SSH와 sudo 접근을 제공해야 합니다.
+
+첫 설치에서는 승인된 프로비저닝 절차로 CA 신뢰를 설정합니다. 가이드의 개발 보드 초기 설정은 다음과 같습니다.
+
+```bash
+BOARD=192.0.2.10
+SWU=out/your-image.swu
+scp "$SWU" keys/ca.crt "sima@$BOARD:/tmp/"
+ssh -t "sima@$BOARD" sudo swupdate -i "/tmp/$(basename "$SWU")" \
+  -k /tmp/ca.crt -e update,full
+ssh -t "sima@$BOARD" sudo reboot
+```
+
+
+후속 업데이트는 보드에 설치된 CA와 버전 정책을 사용합니다.
+
+```bash
+scp "$SWU" "sima@$BOARD:/tmp/"
+ssh -t "sima@$BOARD" sudo simaai-update "/tmp/$(basename "$SWU")" -e update,full
+ssh -t "sima@$BOARD" sudo reboot
+```
+
+
+업데이트 대상은 비활성 슬롯입니다. 부팅 선택과 watchdog 롤백은 플랫폼 부팅/업데이트 구현에 의존하므로 실제 이미지로 하드웨어 검증이 필요합니다. 기본 업데이트는 보드의 쓰기 가능한 오버레이를 유지합니다. 오버레이 초기화 업데이트는 로컬 인증 정보/설정을 지울 수 있습니다. 초기 eMMC 플래시는 플랫폼 복구 가이드를 따르세요. SWU는 raw 디스크 이미지가 아닙니다.
+
+현재 레이아웃은 GPT `boot.A`, `boot.B`와 rootfs A/B 및 데이터를 포함하는 LVM 파티션을 사용합니다. 이전 raw 파티션용 U-Boot 플래시 명령을 이 레이아웃에 적용하지 마세요. 정확한 크기와 구조는 릴리스 보드 템플릿에 정의됩니다.
+
+## 새 플랫폼 릴리스
+
+적절한 빌더 이미지를 가져와 런처를 추출한 다음 `pib init`으로 새 프로젝트를 만듭니다. 기존 CA와 서명 정보를 유지하세요. 오버레이/훅을 옮기고 새 `release`와 `version`을 유지하면서 고객 설정을 새 `image.yaml`에 병합합니다.
+
+새 플랫폼과 호환되는 Debian 패키지만 복사하세요. 사용자 지정 업데이트 스크립트/정의는 해당 릴리스 기본값에 맞춰 갱신합니다. 이전 `configs/` 전체를 덮어쓰지 마세요. 이전 릴리스를 유지 관리할 때는 기존 프로젝트와 고정된 런처/이미지 참조를 보관합니다.

@@ -1,0 +1,13 @@
+{
+  "hostname": "sdk.neat.sima.ai",
+  "installTarget": "sdk/pib@codex/palette-image-builder",
+  "sourceRef": "codex/palette-image-builder",
+  "locales": ["en", "uk", "ja", "ko", "zh-Hant"],
+  "documents": [
+    {"source": "palette-image-builder.md", "id": "pib", "position": 1},
+    {"source": "palette-image-builder-example.md", "id": "pib-example", "position": 2},
+    {"source": "palette-image-builder-reference.md", "id": "pib-reference", "position": 3},
+    {"source": "sdk-architecture.md", "id": "sdk-architecture", "position": 4},
+    {"source": "system-software.md", "id": "system-software", "position": 5}
+  ]
+}

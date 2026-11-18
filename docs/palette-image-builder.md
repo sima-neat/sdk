@@ -1,7 +1,7 @@
 # Create a custom Modalix image
 
 Palette Image Builder (PIB) creates a custom eLxr image for Modalix. It is provided
-as a separate Docker container maintained in the Neat SDK repository. Install it
+as a separate Docker container maintained in the Palette SDK repository. Install it
 with sima-cli; the main SDK container is not required.
 
 One project produces two deployment formats:
@@ -62,7 +62,7 @@ to return to the host.
 
 For a runnable example with a sample application package, configuration overlay,
 and service-enablement hook, use `pib init my-image --example custom-image` instead.
-The [example recipe](../palette-image-builder/examples/custom-image/README.md)
+The [example walkthrough](palette-image-builder-example.md)
 shows the complete sequence; CI builds that same checked-in `image.yaml` on both
 architectures. The example is included in the container, so no checkout is needed.
 
