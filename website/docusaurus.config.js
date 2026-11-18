@@ -47,7 +47,6 @@ module.exports = {
       title: "Systems Builder Guide",
       logo: {alt: 'SiMa.ai', src: 'img/simaai-logo.png'},
       items: [
-        {type: 'docSidebar', sidebarId: 'guides', label: 'Guides', position: 'left'},
         {href: 'https://developer.sima.ai/software', label: 'Application development', position: 'right'},
         {href: 'https://github.com/sima-neat/sdk', label: 'GitHub', position: 'right'},
       ],
