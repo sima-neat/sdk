@@ -359,3 +359,58 @@ test('a finished download says "SiMa SDK v3.0.0.1 downloaded."', async () => {
   await settle();
   assert.deepEqual(fake.calls.info.at(-1), ['SiMa SDK v3.0.0.1 downloaded.']);
 });
+
+
+test('withAgent puts the chosen AI agent into the container extensions and keeps the others', () => {
+  const { setupPanel } = openPage();
+  assert.deepEqual(setupPanel.withAgent(['anthropic.claude-code', 'ms-python.python'], 'codex'), ['openai.chatgpt', 'ms-python.python']);
+  assert.deepEqual(setupPanel.withAgent(['openai.chatgpt'], 'claude'), ['anthropic.claude-code']);
+  assert.deepEqual(setupPanel.withAgent(['Anthropic.Claude-Code', 'ms-python.python'], 'none'), ['ms-python.python']);
+  assert.deepEqual(setupPanel.withAgent(undefined, 'claude'), ['anthropic.claude-code']);
+});
+
+test('choosing the AI agent saves it and updates the container extensions', async () => {
+  const { webview, fake } = openPage();
+  fake.settings['simaNeat.sdk.containerExtensions'] = ['anthropic.claude-code', 'ms-python.python'];
+  webview.send({ type: 'config', key: 'aiAgent', value: 'codex' });
+  await settle();
+  assert.equal(fake.settings['simaNeat.sdk.aiAgent'], 'codex');
+  assert.deepEqual(fake.settings['simaNeat.sdk.containerExtensions'], ['openai.chatgpt', 'ms-python.python']);
+});
+
+test('after the check, DevKits on the network are looked up once and the first one fills the IP', async () => {
+  const { webview, sdk, api, fake, lastState } = openPage();
+  const calls = [];
+  sdk.checkPrerequisites = async () => ({ status: 'ok', items: [{ id: 'ethtool', label: 'ethtool', status: 'ok' }] });
+  sdk.discoverDevkits = async (file) => { calls.push(file); return [{ ip: '10.10.0.11', model: 'Modalix DVT' }]; };
+  webview.send({ type: 'ready' });
+  await flush();
+  await flush();
+  assert.deepEqual(calls, [api.simaCli.file]);
+  assert.deepEqual(lastState().devkits, { status: 'done', items: [{ ip: '10.10.0.11', model: 'Modalix DVT' }] });
+  assert.equal(fake.settings['simaNeat.sdk.devkitIp'], '10.10.0.11');
+
+  webview.send({ type: 'action', id: 'recheck' });
+  await flush();
+  assert.equal(calls.length, 1, 'not again after Check again');
+});
+
+test('DevKit lookup keeps an IP the user typed, and is skipped without ethtool', async () => {
+  const typed = openPage();
+  typed.fake.settings['simaNeat.sdk.devkitIp'] = '192.168.1.50';
+  typed.sdk.checkPrerequisites = async () => ({ status: 'ok', items: [{ id: 'ethtool', status: 'ok' }] });
+  typed.sdk.discoverDevkits = async () => [{ ip: '10.10.0.11', model: 'Modalix DVT' }];
+  typed.webview.send({ type: 'ready' });
+  await flush();
+  await flush();
+  assert.equal(typed.fake.settings['simaNeat.sdk.devkitIp'], '192.168.1.50');
+
+  const noEthtool = openPage();
+  let asked = false;
+  noEthtool.sdk.checkPrerequisites = async () => ({ status: 'warn', items: [{ id: 'ethtool', status: 'warn' }] });
+  noEthtool.sdk.discoverDevkits = async () => { asked = true; return []; };
+  noEthtool.webview.send({ type: 'ready' });
+  await flush();
+  assert.equal(asked, false);
+  assert.equal(noEthtool.lastState().devkits.status, 'idle');
+});

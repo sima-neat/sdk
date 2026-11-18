@@ -208,6 +208,21 @@
           "default": "skip",
           "description": "Coding agent extensions for the SDK's browser IDE. Setup runs without questions, so choose here. (Desktop VS Code installs Claude Code through simaNeat.sdk.containerExtensions.)"
         },
+        "simaNeat.sdk.aiAgent": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex",
+            "none"
+          ],
+          "enumDescriptions": [
+            "Install Claude Code in VS Code inside the SDK container.",
+            "Install Codex in VS Code inside the SDK container.",
+            "No AI agent."
+          ],
+          "default": "claude",
+          "description": "AI agent installed in VS Code inside the SDK container (Set up SDK → Configure). Choosing it here updates simaNeat.sdk.containerExtensions."
+        },
         "simaNeat.sdk.edgematicStudio": {
           "type": "boolean",
           "default": false,

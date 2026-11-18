@@ -322,6 +322,63 @@ function ethtoolItem() {
     };
 }
 
+// ──────────────────────── DevKits on the network ───────────────────────
+
+/**
+ * DevKits in `sima-cli device discover` output: the rows of its table that have an IPv4
+ * address, with the "DevKit Model" (or "Board Type") column. Rich draws the table with │.
+ */
+function parseDiscoveredDevkits(output) {
+  // eslint-disable-next-line no-control-regex
+  const lines = String(output || '').replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/);
+  const header = lines.find((l) => l.includes('│') && /\bIP\b/.test(l) && /MAC/.test(l));
+  const columns = header ? header.split('│').map((c) => c.trim()) : [];
+  const modelAt = columns.indexOf('DevKit Model');
+  const boardAt = columns.indexOf('Board Type');
+  const found = [];
+  for (const line of lines) {
+    if (!line.includes('│') || line === header) {
+      continue;
+    }
+    const cells = line.split('│').map((c) => c.trim());
+    const ip = cells.find((c) => /^\d{1,3}(\.\d{1,3}){3}$/.test(c));
+    if (!ip || found.some((d) => d.ip === ip)) {
+      continue;
+    }
+    const pick = (i) => (i >= 0 && cells[i] && !/^[-—]$/.test(cells[i]) ? cells[i] : '');
+    found.push({ ip, model: pick(modelAt) || pick(boardAt) || 'DevKit' });
+  }
+  return found;
+}
+
+/**
+ * Looks for DevKits on the local network with `sima-cli device discover` (ARP cache plus
+ * a probe of each device). Every question it asks (link-local setup, multicast scan) is
+ * answered "no", so it never changes this computer's network settings.
+ */
+function discoverDevkits(simaCliFile, env, timeout = 45000) {
+  return new Promise((resolve) => {
+    let output = '';
+    let child;
+    try {
+      child = spawn(simaCliFile, ['device', 'discover'], {
+        env: { ...env, NO_COLOR: '1', COLUMNS: '220', PYTHONUNBUFFERED: '1' },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch {
+      resolve([]);
+      return;
+    }
+    const timer = setTimeout(() => child.kill(), timeout);
+    child.stdout.on('data', (d) => { output += d; });
+    child.stderr.on('data', (d) => { output += d; });
+    child.stdin.on('error', () => {});
+    child.stdin.end('n\nn\nn\nn\n');
+    child.on('error', () => { clearTimeout(timer); resolve([]); });
+    child.on('close', () => { clearTimeout(timer); resolve(parseDiscoveredDevkits(output)); });
+  });
+}
+
 /** Host checks before downloading and starting the SDK. dockerReady gates the download. */
 async function checkPrerequisites(requiredGb = DEFAULT_REQUIRED_GB) {
   const items = [await hostOsItem()];
@@ -746,6 +803,8 @@ module.exports = {
   imageLayerSizes,
   registryImage,
   parseBytes,
+  discoverDevkits,
+  parseDiscoveredDevkits,
   platformVersion,
   readCodeUi,
   createPull,

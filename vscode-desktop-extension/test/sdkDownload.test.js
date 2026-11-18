@@ -284,3 +284,46 @@ echo "aaaaaaaaaaaa: Pull complete"
   assert.equal(early.progress.speed, 0, 'no speed in the first seconds');
   assert.equal(snapshots.at(-1).progress.speed, 0, 'no speed once done');
 });
+
+
+test('parseDiscoveredDevkits reads IP and model from the sima-cli table', () => {
+  const output = [
+    '🔍 Running device discovery...',
+    '                    Discovered SiMa Devices',
+    '┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓',
+    '│ Connection │ IP         │ MAC               │ Board Type │ DevKit Model │',
+    '│ local      │ 10.10.0.11 │ aa:bb:cc:dd:ee:ff │ modalix    │ Modalix DVT  │',
+    '│ local      │ 10.10.0.12 │ aa:bb:cc:dd:ee:00 │ modalix    │ -            │',
+    '│ local      │ 10.10.0.11 │ aa:bb:cc:dd:ee:ff │ modalix    │ Modalix DVT  │',
+    '└────────────┴────────────┴───────────────────┴────────────┴──────────────┘',
+  ].join('\n');
+  assert.deepEqual(sdk.parseDiscoveredDevkits(output), [
+    { ip: '10.10.0.11', model: 'Modalix DVT' },
+    { ip: '10.10.0.12', model: 'modalix' },
+  ]);
+  assert.deepEqual(sdk.parseDiscoveredDevkits('⚠️  No multicast responses received from DevKits, unable to discover devices.'), []);
+});
+
+test('discoverDevkits answers "no" to every question and returns what was found', async (t) => {
+  const dir = tempDir(t);
+  const simaCli = path.join(dir, 'sima-cli');
+  const answers = path.join(dir, 'answers');
+  fs.writeFileSync(simaCli, `#!/bin/sh
+[ "$1 $2" = "device discover" ] || exit 2
+read a; read b; echo "$a $b" > '${answers}'
+echo "│ IP │ MAC │ DevKit Model │"
+echo "│ 10.0.0.7 │ aa:bb:cc:dd:ee:ff │ Modalix DVT │"
+`, { mode: 0o755 });
+  assert.deepEqual(await sdk.discoverDevkits(simaCli, process.env), [{ ip: '10.0.0.7', model: 'Modalix DVT' }]);
+  assert.equal(fs.readFileSync(answers, 'utf8').trim(), 'n n');
+});
+
+test('discoverDevkits gives up after the timeout or when sima-cli is missing', async (t) => {
+  const dir = tempDir(t);
+  const slow = path.join(dir, 'sima-cli');
+  fs.writeFileSync(slow, '#!/bin/sh\nexec sleep 30\n', { mode: 0o755 });
+  const started = Date.now();
+  assert.deepEqual(await sdk.discoverDevkits(slow, process.env, 300), []);
+  assert.ok(Date.now() - started < 5000);
+  assert.deepEqual(await sdk.discoverDevkits(path.join(dir, 'missing'), process.env), []);
+});

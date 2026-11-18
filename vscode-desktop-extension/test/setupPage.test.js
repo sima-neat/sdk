@@ -64,7 +64,8 @@ function baseState(over = {}) {
     image: { status: 'missing' },
     containers: [],
     pull: { state: 'idle' },
-    config: { devkitMode: 'none', devkitIp: '', modelCompiler: 'skip', codingAgents: 'skip', edgematicStudio: false, workspace: '~/workspace' },
+    config: { devkitMode: 'none', devkitIp: '', modelCompiler: 'skip', codingAgents: 'skip', aiAgent: 'claude', edgematicStudio: false, workspace: '~/workspace' },
+    devkits: { status: 'idle', items: [] },
     configErrors: {},
     command: 'sima-cli sdk setup',
     setup: { state: 'idle' },
@@ -532,12 +533,14 @@ test('Configure: Continue confirms it and opens Start Neat Studio with Start ove
   assert.equal(page.lead(), 'Neat Studio starts the SDK container with your choices, then reopens VS Code inside it.');
   assert.ok(page.shown(page.$('reset')));
   assert.equal(page.shown(page.$('continue-button')), false, 'nothing after the last step');
-  assert.equal(page.rail()[3].summary, 'No DevKit · No AI agent');
+  assert.equal(page.rail()[3].summary, 'No DevKit · Claude Code');
   assert.deepEqual(page.memory.value, { viewing: 'start', configConfirmed: true, checkConfirmed: true, downloadConfirmed: true });
   assert.deepEqual(page.hostStatus().value, { active: 5, total: 5 });
 
-  page.send(baseState({ ...downloaded, config: { ...baseState().config, devkitMode: 'pair', devkitIp: '192.168.1.20', codingAgents: 'install' } }));
-  assert.equal(page.rail()[3].summary, '192.168.1.20 · Claude Code and Codex');
+  page.send(baseState({ ...downloaded, config: { ...baseState().config, devkitMode: 'pair', devkitIp: '192.168.1.20', aiAgent: 'codex' } }));
+  assert.equal(page.rail()[3].summary, '192.168.1.20 · Codex');
+  page.send(baseState({ ...downloaded, config: { ...baseState().config, aiAgent: 'none' } }));
+  assert.equal(page.rail()[3].summary, 'No DevKit · No AI agent');
 
   page.send(baseState({ ...downloaded, containers: [{ name: 'neat-sdk', state: 'running' }] }));
   assert.equal(page.lead(), 'Your SDK is already running. Open Neat Studio inside it.');
@@ -820,4 +823,82 @@ test('Download SDK · just downloaded here: Continue', () => {
   assert.deepEqual(navShown(page), ['Continue']);
   page.click(page.$('continue-button'));
   assert.equal(page.title(), 'Configure the SDK');
+});
+
+
+// ───────────── Configure (frame A4) ─────────────
+
+const CONFIGURE = { ...SIGNED_IN, image: { status: 'present' }, pull: { state: 'done', progress: { done: 9, total: 9 } } };
+const choices = (page, name) => [...page.doc.querySelectorAll(`input[name="${name}"]`)].map((r) => [r.parentElement.textContent.trim(), r.checked]);
+const hints = (page) => [...page.doc.querySelectorAll('[data-pane="configure"] .cf-hint')].filter(page.shown).map((h) => h.textContent);
+
+test('Configure (A4): DevKit, Model Compiler, AI agent and Workspace folder, saved as you type', () => {
+  const page = openPage({ checkConfirmed: true, downloadConfirmed: true });
+  page.send(baseState(CONFIGURE));
+  assert.equal(page.title(), 'Configure the SDK');
+  assert.equal(page.lead(), 'Choose what goes into your SDK. You can change any of this later.');
+  assert.deepEqual([...page.doc.querySelectorAll('[data-pane="configure"] .cf-title')].map((t) => t.textContent),
+    ['DevKit', 'Model Compiler', 'AI agent in the SDK', 'Workspace folder']);
+  assert.deepEqual(choices(page, 'devkitMode'), [['Pair with a Modalix DevKit', false], ['No DevKit for now', true]]);
+  assert.deepEqual(choices(page, 'modelCompiler'), [['Skip', true], ['Install', false]]);
+  assert.deepEqual(choices(page, 'aiAgent'), [['Claude Code', true], ['Codex', false], ['None', false]]);
+  assert.equal(page.shown(page.$('devkit-ip-box')), false, 'no IP field without a DevKit');
+  assert.equal(page.$('workspace').value, '~/workspace');
+  assert.deepEqual(hints(page), [
+    'You can pair a DevKit later from the Devices view.',
+    'Compiles your own models for Modalix. About 6 GB more; you can add it later from Neat Studio.',
+    'Opens automatically in the right panel. You can add another agent later from Extensions.',
+    'Opens as /workspace inside the SDK. Your files stay on this computer.',
+  ]);
+  assert.equal(page.doc.querySelector('.cf-saved').textContent, 'Saved as you type.');
+  assert.equal(page.doc.querySelector('[data-pane="configure"] input[type="checkbox"]'), null, 'Install Edgematic Studio is gone');
+  assert.equal(page.$('edgematicStudio'), null);
+  assert.deepEqual(navShown(page), ['Continue']);
+});
+
+test('Configure: choosing an option saves it right away', () => {
+  const page = openPage({ checkConfirmed: true, downloadConfirmed: true });
+  page.send(baseState(CONFIGURE));
+  const pick = (name, value) => {
+    const radio = page.doc.querySelector(`input[name="${name}"][value="${value}"]`);
+    radio.checked = true;
+    radio.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+  };
+  pick('aiAgent', 'codex');
+  pick('modelCompiler', 'install');
+  pick('devkitMode', 'pair');
+  const configs = page.posted.filter((m) => m.type === 'config');
+  assert.deepEqual(configs, [
+    { type: 'config', key: 'aiAgent', value: 'codex' },
+    { type: 'config', key: 'modelCompiler', value: 'install' },
+    { type: 'config', key: 'devkitMode', value: 'pair' },
+  ]);
+  page.click(page.doc.querySelector('[data-action="browseWorkspace"]'));
+  assert.deepEqual(page.actions().at(-1), { type: 'action', id: 'browseWorkspace' });
+});
+
+test('Configure: a DevKit found on the network, or how to find its IP', () => {
+  const page = openPage({ checkConfirmed: true, downloadConfirmed: true });
+  const pair = { ...baseState().config, devkitMode: 'pair', devkitIp: '10.10.0.11' };
+  page.send(baseState({ ...CONFIGURE, config: pair, devkits: { status: 'done', items: [{ ip: '10.10.0.11', model: 'Modalix DVT' }] } }));
+  assert.ok(page.shown(page.$('devkit-ip-box')));
+  assert.equal(page.$('devkitIp').value, '10.10.0.11');
+  assert.equal(page.$('devkit-hint').textContent, 'Found on your network: Modalix DVT · 10.10.0.11');
+
+  page.send(baseState({ ...CONFIGURE, config: pair, devkits: { status: 'done', items: [] } }));
+  assert.equal(page.$('devkit-hint').textContent, 'Enter the IP address shown on the DevKit display.');
+  page.send(baseState({ ...CONFIGURE, config: pair, devkits: { status: 'searching', items: [] } }));
+  assert.equal(page.$('devkit-hint').textContent, 'Enter the IP address shown on the DevKit display.');
+});
+
+test('Configure: an invalid field shows why and keeps Continue disabled', () => {
+  const page = openPage({ checkConfirmed: true, downloadConfirmed: true });
+  page.send(baseState({
+    ...CONFIGURE,
+    config: { ...baseState().config, devkitMode: 'pair', devkitIp: '' },
+    configErrors: { devkitIp: 'Enter the DevKit IP address, or choose "No DevKit".' },
+  }));
+  assert.equal(page.$('devkitIp-error').textContent, 'Enter the DevKit IP address, or choose "No DevKit".');
+  assert.ok(page.$('devkitIp').classList.contains('invalid'));
+  assert.equal(page.$('continue-button').disabled, true);
 });

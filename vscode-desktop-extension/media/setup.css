@@ -179,6 +179,30 @@ button:disabled { opacity: 0.45; cursor: default; }
 .ck-fix-link:hover { text-decoration: underline; }
 .ck-fix-link .codicon { font-size: 12px; }
 
+/* ───────────── Configure ───────────── */
+
+.cf { gap: 18px; max-width: 620px; line-height: normal; }
+.cf-group { display: flex; flex-direction: column; gap: 7px; }
+.cf-title { font-weight: 600; }
+.cf-row { display: flex; gap: 18px; flex-wrap: wrap; }
+.cf-choice { display: flex; align-items: center; gap: 8px; width: max-content; cursor: pointer; }
+.cf-choice input { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; margin: 0; flex: none; border-radius: 50%; border: 1px solid var(--muted); box-sizing: border-box; cursor: pointer; }
+.cf-choice input:checked { border: 0; background: radial-gradient(circle, var(--vscode-focusBorder) 0 4.5px, transparent 5px); }
+.cf-choice input:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+.cf-indent { padding-left: 22px; display: flex; flex-direction: column; gap: 4px; }
+.cf .cf-input { height: 26px; box-sizing: border-box; padding: 0 8px; background: var(--vscode-input-background); color: var(--vscode-input-foreground, var(--vscode-foreground)); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; font-family: var(--vscode-editor-font-family); font-size: 12px; outline: none; }
+.cf .cf-input:focus { border-color: var(--vscode-focusBorder); outline: none; }
+.cf .cf-input.invalid { border-color: var(--error); }
+.cf-ip { width: 240px; }
+.cf-folder { display: flex; gap: 6px; }
+.cf-folder .cf-input { flex: 1; max-width: 360px; min-width: 0; }
+.cf-browse { height: 26px; padding: 0 10px; font-size: 12px; }
+.cf-hint { font-size: 12px; color: var(--muted); }
+.cf-hint:empty, .cf .field-error:empty { display: none; }
+.cf .field-error { font-size: 12px; color: var(--error); margin: 0; }
+.cf-saved { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.cf-saved .codicon { font-size: 13px; }
+
 /* ───────────── Download SDK ───────────── */
 
 .dl { gap: 16px; }

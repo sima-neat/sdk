@@ -123,46 +123,45 @@
 
     <!-- 4. Configure -->
     <section class="pane" data-pane="configure" hidden>
-      <div class="block" id="step-config">
-        <p class="detail">Saved as you type. You can change these later in Settings under "SiMa Neat".</p>
-
-        <fieldset>
-          <legend>DevKit</legend>
-          <label class="choice"><input type="radio" name="devkitMode" value="pair" data-config="devkitMode"> Pair with a Modalix DevKit</label>
-          <label class="field indent">
-            <span>DevKit IP address</span>
-            <input type="text" id="devkitIp" data-config="devkitIp" placeholder="192.168.1.20" spellcheck="false">
-          </label>
-          <p class="field-error" id="devkitIp-error"></p>
-          <label class="choice"><input type="radio" name="devkitMode" value="none" data-config="devkitMode"> No DevKit for now</label>
-        </fieldset>
-
-        <label class="field">
-          <span>Model Compiler</span>
-          <select id="modelCompiler" data-config="modelCompiler">
-            <option value="skip">Skip (you can add it later)</option>
-            <option value="install">Install (large download; online install needs you to be logged in)</option>
-          </select>
-        </label>
-
-        <label class="field">
-          <span>Coding agents in the SDK IDE</span>
-          <select id="codingAgents" data-config="codingAgents">
-            <option value="skip">Skip</option>
-            <option value="install">Install Claude Code and Codex extensions</option>
-          </select>
-        </label>
-
-        <label class="choice"><input type="checkbox" id="edgematicStudio" data-config="edgematicStudio"> Install Edgematic Studio</label>
-
-        <label class="field">
-          <span>Workspace folder (shared with the SDK as /workspace)</span>
-          <span class="row">
-            <input type="text" id="workspace" data-config="workspace" spellcheck="false">
-            <button data-action="browseWorkspace" class="secondary">Browse…</button>
-          </span>
-        </label>
-        <p class="field-error" id="workspace-error"></p>
+      <div class="block cf" id="step-config">
+        <div class="cf-group">
+          <span class="cf-title">DevKit</span>
+          <label class="cf-choice"><input type="radio" name="devkitMode" value="pair" data-config="devkitMode">Pair with a Modalix DevKit</label>
+          <div class="cf-indent" id="devkit-ip-box">
+            <input type="text" class="cf-input cf-ip" id="devkitIp" data-config="devkitIp" placeholder="192.168.1.20" spellcheck="false" aria-label="DevKit IP address">
+            <span class="field-error" id="devkitIp-error"></span>
+            <span class="cf-hint" id="devkit-hint"></span>
+          </div>
+          <label class="cf-choice"><input type="radio" name="devkitMode" value="none" data-config="devkitMode">No DevKit for now</label>
+          <span class="cf-hint">You can pair a DevKit later from the Devices view.</span>
+        </div>
+        <div class="cf-group">
+          <span class="cf-title">Model Compiler</span>
+          <div class="cf-row">
+            <label class="cf-choice"><input type="radio" name="modelCompiler" value="skip" data-config="modelCompiler">Skip</label>
+            <label class="cf-choice"><input type="radio" name="modelCompiler" value="install" data-config="modelCompiler">Install</label>
+          </div>
+          <span class="cf-hint">Compiles your own models for Modalix. About 6 GB more; you can add it later from Neat Studio.</span>
+        </div>
+        <div class="cf-group">
+          <span class="cf-title">AI agent in the SDK</span>
+          <div class="cf-row">
+            <label class="cf-choice"><input type="radio" name="aiAgent" value="claude" data-config="aiAgent">Claude Code</label>
+            <label class="cf-choice"><input type="radio" name="aiAgent" value="codex" data-config="aiAgent">Codex</label>
+            <label class="cf-choice"><input type="radio" name="aiAgent" value="none" data-config="aiAgent">None</label>
+          </div>
+          <span class="cf-hint">Opens automatically in the right panel. You can add another agent later from Extensions.</span>
+        </div>
+        <div class="cf-group">
+          <span class="cf-title">Workspace folder</span>
+          <div class="cf-folder">
+            <input type="text" class="cf-input" id="workspace" data-config="workspace" spellcheck="false" aria-label="Workspace folder">
+            <button data-action="browseWorkspace" class="secondary cf-browse">Browse…</button>
+          </div>
+          <span class="field-error" id="workspace-error"></span>
+          <span class="cf-hint">Opens as /workspace inside the SDK. Your files stay on this computer.</span>
+        </div>
+        <span class="cf-saved"><i class="codicon codicon-check"></i>Saved as you type.</span>
       </div>
     </section>
 

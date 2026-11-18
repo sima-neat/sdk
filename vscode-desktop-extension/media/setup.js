@@ -437,18 +437,22 @@
   }
 
   function renderConfig() {
-    const { config, configErrors } = state;
-    for (const radio of document.querySelectorAll('input[name="devkitMode"]')) {
-      radio.checked = radio.value === config.devkitMode;
+    const { config, configErrors, devkits } = state;
+    for (const radio of document.querySelectorAll('input[type="radio"][data-config]')) {
+      radio.checked = radio.value === config[radio.dataset.config];
     }
-    for (const key of ['devkitIp', 'workspace', 'modelCompiler', 'codingAgents']) {
+    for (const key of ['devkitIp', 'workspace']) {
       const el = $(key);
       if (document.activeElement !== el && !inputTimers[key]) {
         el.value = config[key] || '';
       }
     }
-    $('edgematicStudio').checked = Boolean(config.edgematicStudio);
-    $('devkitIp').disabled = config.devkitMode !== 'pair';
+    // The IP field shows only for "Pair with a Modalix DevKit" (frame A4).
+    $('devkit-ip-box').hidden = config.devkitMode !== 'pair';
+    const found = devkits && devkits.items && devkits.items[0];
+    $('devkit-hint').textContent = found
+      ? `Found on your network: ${found.model} · ${found.ip}`
+      : 'Enter the IP address shown on the DevKit display.';
     for (const key of ['devkitIp', 'workspace']) {
       $(`${key}-error`).textContent = configErrors[key] || '';
       $(key).classList.toggle('invalid', Boolean(configErrors[key]));
@@ -696,7 +700,7 @@
       },
       configure: {
         done: configConfirmed && !Object.keys(state.configErrors).length,
-        summary: `${config.devkitMode === 'pair' ? (config.devkitIp || 'DevKit') : 'No DevKit'} · ${config.codingAgents === 'install' ? 'Claude Code and Codex' : 'No AI agent'}`,
+        summary: `${config.devkitMode === 'pair' ? (config.devkitIp || 'DevKit') : 'No DevKit'} · ${({ claude: 'Claude Code', codex: 'Codex' })[config.aiAgent] || 'No AI agent'}`,
       },
       start: { done: false, summary: '' },
     };

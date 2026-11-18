@@ -60,13 +60,24 @@ function readConfig() {
     devkitIp: settings.get('devkitIp', ''),
     modelCompiler: settings.get('modelCompiler', 'skip'),
     codingAgents: settings.get('codingAgents', 'skip'),
+    aiAgent: settings.get('aiAgent', 'claude'),
     edgematicStudio: settings.get('edgematicStudio', false),
     workspace: settings.get('workspace', '~/workspace'),
   };
 }
 
 const RESET_PARTS = ['containers', 'images', 'extensionState', 'logout', 'simaCli'];
-const CONFIG_KEYS = new Set(['devkitMode', 'devkitIp', 'modelCompiler', 'codingAgents', 'edgematicStudio', 'workspace']);
+const CONFIG_KEYS = new Set(['devkitMode', 'devkitIp', 'modelCompiler', 'codingAgents', 'aiAgent', 'edgematicStudio', 'workspace']);
+
+// The AI agent of Configure, as a Marketplace extension installed in the SDK container.
+const AGENT_EXTENSIONS = { claude: 'anthropic.claude-code', codex: 'openai.chatgpt' };
+
+/** containerExtensions with the chosen agent instead of the other one; other extensions are kept. */
+function withAgent(extensions, agent) {
+  const agentIds = Object.values(AGENT_EXTENSIONS);
+  const rest = (extensions || []).filter((id) => !agentIds.includes(String(id).toLowerCase()));
+  return AGENT_EXTENSIONS[agent] ? [AGENT_EXTENSIONS[agent], ...rest] : rest;
+}
 
 class SetupPanel {
   constructor() {
@@ -78,6 +89,8 @@ class SetupPanel {
       // Sign in to SiMa: idle | installing | pending | error, with the reason for an error.
       signin: { phase: 'idle' },
       cliLatest: '',
+      // DevKits found on the network for Configure: idle | searching | done.
+      devkits: { status: 'idle', items: [] },
       prereqs: { status: 'checking', items: [] },
       versions: { status: 'loading', items: [] },
       selectedRef: undefined,
@@ -217,6 +230,24 @@ class SetupPanel {
     this.state.prereqs = { ...this.state.prereqs, status: 'checking' };
     this.post();
     this.state.prereqs = await sdk.checkPrerequisites(this.state.release.requiredGb);
+    this.post();
+    this.findDevkits();
+  }
+
+  /** Looks once for DevKits on the network (needs sima-cli and ethtool), for Configure (frame A4). */
+  async findDevkits() {
+    const ethtool = (this.state.prereqs.items || []).find((i) => i.id === 'ethtool');
+    const cli = api.getSimaCli();
+    if (this.state.devkits.status !== 'idle' || !cli || !ethtool || ethtool.status !== 'ok') {
+      return;
+    }
+    this.state.devkits = { status: 'searching', items: [] };
+    this.post();
+    const items = await sdk.discoverDevkits(cli.file, api.cliEnv);
+    this.state.devkits = { status: 'done', items };
+    if (items.length && !String(sdkSettings().get('devkitIp', '')).trim()) {
+      await sdkSettings().update('devkitIp', items[0].ip, vscode.ConfigurationTarget.Global);
+    }
     this.post();
   }
 
@@ -534,6 +565,10 @@ class SetupPanel {
     }
     if (message.type === 'config' && CONFIG_KEYS.has(message.key)) {
       await sdkSettings().update(message.key, message.value, vscode.ConfigurationTarget.Global);
+      if (message.key === 'aiAgent') {
+        const extensions = withAgent(sdkSettings().get('containerExtensions', [AGENT_EXTENSIONS.claude]), message.value);
+        await sdkSettings().update('containerExtensions', extensions, vscode.ConfigurationTarget.Global);
+      }
       return;
     }
     if (message.type !== 'action') {
@@ -695,4 +730,4 @@ function dispose() {
   }
 }
 
-module.exports = { init, show, dispose };
+module.exports = { init, show, dispose, withAgent };
