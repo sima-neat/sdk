@@ -119,8 +119,11 @@ jobs:
           docker tag palette-image-builder:ci "$ref"
           docker push "$ref"
           mkdir -p "${RUNNER_TEMP}/pib-digests"
-          digest="$(docker image inspect "$ref" --format '{{index .RepoDigests 0}}')"
-          printf '%s\n' "$digest" > "${RUNNER_TEMP}/pib-digests/${ARCH}.txt"
+          # The Vulcan containerd store can report a local RepoDigest name.
+          # Resolve the pushed registry reference instead of trusting that name.
+          digest="$(docker buildx imagetools inspect "$ref" | awk '$1 == "Digest:" { print $2 }')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf '%s@%s\n' "$IMAGE" "$digest" > "${RUNNER_TEMP}/pib-digests/${ARCH}.txt"
       - name: Upload immutable image reference
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
