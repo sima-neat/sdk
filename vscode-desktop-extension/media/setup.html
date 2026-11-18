@@ -75,10 +75,11 @@
     <!-- 2. Check this computer -->
     <section class="pane" data-pane="check" hidden>
       <div class="block" id="step-prereqs">
-        <ul class="checks" id="prereq-list"></ul>
-        <div class="actions">
-          <button data-action="recheck" class="secondary" id="prereq-recheck">Check again</button>
-        </div>
+        <div class="ck-groups" id="prereq-groups"></div>
+      </div>
+      <div class="ck-fix" id="prereq-fix" hidden>
+        <div class="ck-fix-row"><i class="codicon" id="prereq-fix-icon"></i><span id="prereq-fix-text"></span></div>
+        <a href="#" class="ck-fix-link" id="prereq-fix-link" data-link-action="openLink"><span id="prereq-fix-link-label"></span><i class="codicon codicon-link-external"></i></a>
       </div>
     </section>
 
@@ -188,8 +189,12 @@
       </div>
     </section>
 
-    <div class="buttons" id="nav-buttons">
-      <button id="continue-button" hidden>Continue</button>
+    <div class="nav">
+      <div class="buttons" id="nav-buttons">
+        <button id="continue-button" hidden>Continue</button>
+        <button data-action="recheck" class="secondary" id="prereq-recheck" data-keep-step hidden>Check again</button>
+      </div>
+      <span class="nav-reason" id="nav-reason" hidden><i class="codicon codicon-lock"></i><span id="nav-reason-text"></span></span>
     </div>
 
     <section class="start-over" id="reset" hidden>

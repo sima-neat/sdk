@@ -112,38 +112,99 @@
     ethtool: 'Used to find DevKits on your network automatically. Without it you can still enter the DevKit IP yourself.',
   };
 
+  const CHECK_ROWS = [
+    { id: 'os', label: 'Host OS', group: 'required' },
+    { id: 'docker', label: 'Docker', group: 'required' },
+    { id: 'daemon', label: 'Docker daemon', group: 'required' },
+    { id: 'disk', label: 'Disk space', group: 'required' },
+    { id: 'ethtool', label: 'ethtool', group: 'optional' },
+  ];
+  const CHECK_GROUPS = [
+    { id: 'required', title: 'Required', sub: 'Setup can’t continue without these' },
+    { id: 'optional', title: 'Optional', sub: 'Setup continues without it' },
+  ];
+  const CHECK_ICONS = { ok: 'pass', error: 'error', warn: 'warning', skip: 'circle-large-outline', busy: 'loading' };
+
+  /** The rows to show: while checking, the host and Docker keep their last result and the rest spin. */
+  function checkRows() {
+    const { prereqs } = state;
+    const items = prereqs.items || [];
+    const byId = new Map(items.map((i) => [i.id, i]));
+    const known = CHECK_ROWS.map((row) => byId.get(row.id) || row);
+    const extra = items.filter((i) => !CHECK_ROWS.some((row) => row.id === i.id));
+    const rows = [...known, ...extra];
+    if (prereqs.status !== 'checking') {
+      return rows.filter((r) => r.status);
+    }
+    return rows.map((r) => ((r.id === 'os' || r.id === 'docker') && r.status && r.status !== 'skip'
+      ? r
+      : { ...r, status: 'busy', detail: 'Checking…', fix: undefined }));
+  }
+
+  /** One problem at a time: the first required error, otherwise the first warning. */
+  function checkFix(rows) {
+    return rows.find((r) => r.status === 'error' && r.fix) || rows.find((r) => r.status === 'warn' && r.fix);
+  }
+
   function renderPrereqs() {
     const { prereqs } = state;
     setBadge('step-prereqs', prereqs.status === 'checking' ? 'running' : prereqs.status);
-    const list = $('prereq-list');
-    list.textContent = '';
-    if (prereqs.status === 'checking' && !prereqs.items.length) {
-      const li = document.createElement('li');
-      li.textContent = 'Checking…';
-      list.appendChild(li);
-    }
-    for (const item of prereqs.items) {
-      const li = document.createElement('li');
-      const mark = document.createElement('span');
-      mark.className = `mark ${item.status}`;
-      mark.textContent = item.status === 'ok' ? '✓' : item.status === 'warn' ? '!' : '✕';
-      if (CHECK_TIPS[item.id]) {
-        mark.title = CHECK_TIPS[item.id];
+    const rows = checkRows();
+    const groups = $('prereq-groups');
+    groups.textContent = '';
+    for (const group of CHECK_GROUPS) {
+      const groupRows = rows.filter((r) => (r.group || 'required') === group.id);
+      if (!groupRows.length) {
+        continue;
       }
-      const label = document.createElement('strong');
-      label.textContent = item.label;
-      const detail = document.createElement('span');
-      detail.textContent = item.detail || '';
-      li.append(mark, label, detail);
-      if (item.hint) {
-        const hint = document.createElement('span');
-        hint.className = 'hint';
-        setRichText(hint, item.hint);
-        li.appendChild(hint);
+      const box = document.createElement('div');
+      box.className = 'ck-group';
+      const head = document.createElement('div');
+      head.className = 'ck-group-head';
+      const title = document.createElement('span');
+      title.className = 'ck-group-title';
+      title.textContent = group.title;
+      const sub = document.createElement('span');
+      sub.className = 'ck-group-sub';
+      sub.textContent = group.sub;
+      head.append(title, sub);
+      const list = document.createElement('div');
+      list.className = 'ck-list';
+      for (const row of groupRows) {
+        const line = document.createElement('div');
+        line.className = 'ck-row';
+        line.dataset.check = row.id;
+        const mark = document.createElement('span');
+        mark.className = `ck-mark ${row.status}`;
+        if (CHECK_TIPS[row.id]) {
+          mark.title = CHECK_TIPS[row.id];
+        }
+        mark.appendChild(icon(CHECK_ICONS[row.status] || 'circle-large-outline', row.status === 'busy'));
+        const label = document.createElement('span');
+        label.className = 'ck-label';
+        label.textContent = row.label;
+        const value = document.createElement('span');
+        value.className = `ck-value${row.status === 'error' || row.status === 'warn' ? ` ${row.status}` : ''}`;
+        value.textContent = row.detail || '';
+        line.append(mark, label, value);
+        list.appendChild(line);
       }
-      list.appendChild(li);
+      box.append(head, list);
+      groups.appendChild(box);
     }
-    $('prereq-recheck').disabled = prereqs.status === 'checking';
+
+    const fix = prereqs.status === 'checking' ? undefined : checkFix(rows);
+    $('prereq-fix').hidden = !fix;
+    if (fix) {
+      $('prereq-fix-icon').className = `codicon codicon-${fix.status === 'error' ? 'error' : 'warning'}`;
+      setRichText($('prereq-fix-text'), fix.fix.text);
+      const link = $('prereq-fix-link');
+      link.hidden = !fix.fix.link;
+      if (fix.fix.link) {
+        $('prereq-fix-link-label').textContent = fix.fix.link.label;
+        link.dataset.value = fix.fix.link.url;
+      }
+    }
   }
 
   function renderVersionSelect() {
@@ -484,9 +545,11 @@
   let shownStep;
   // Configure has no natural "done": it counts once the user continues past it.
   let configConfirmed = Boolean(saved.configConfirmed);
+  // Check this computer counts as done once its checks pass and the user continues past it (frame A2a).
+  let checkConfirmed = Boolean(saved.checkConfirmed);
 
   function saveView() {
-    vscode.setState({ viewing, configConfirmed });
+    vscode.setState({ viewing, configConfirmed, checkConfirmed });
   }
 
   function pullPercent(pull) {
@@ -522,6 +585,9 @@
     const pullBusy = pull.state === 'running' || pull.state === 'waiting';
     const pullFailed = pull.state === 'failed';
     const warnItem = items.find((i) => i.status === 'warn');
+    const warnSummary = warnItem && (warnItem.group === 'optional'
+      ? `Ready · ${warnItem.label} missing (optional)`
+      : `Ready · ${warnItem.label}: ${warnItem.detail}`);
     const running = containers.some((c) => c.state === 'running');
     const status = {
       signin: {
@@ -529,8 +595,9 @@
         summary: login.loggedIn ? `Signed in${login.name || login.user ? ` as ${login.name || login.user}` : ''}` : '',
       },
       check: {
-        done: prereqs.status !== 'checking' && items.length > 0 && !items.some((i) => i.status === 'error'),
-        summary: warnItem ? `Ready · ${warnItem.label} missing (optional)` : 'All required checks passed',
+        passed: prereqs.status !== 'checking' && items.length > 0 && !items.some((i) => i.status === 'error'),
+        done: checkConfirmed && prereqs.status !== 'checking' && items.length > 0 && !items.some((i) => i.status === 'error'),
+        summary: warnSummary || 'All required checks passed',
       },
       download: {
         done: image.status === 'present',
@@ -569,6 +636,7 @@
       const items = prereqs.items || [];
       if (prereqs.status === 'checking') return 'Checking what the SDK needs…';
       if (items.some((i) => i.status === 'error')) return 'A required item needs your attention before setup can continue.';
+      if (items.some((i) => i.status === 'warn' && i.group !== 'optional')) return 'Ready to continue. One item needs your attention.';
       if (items.some((i) => i.status === 'warn')) return 'Ready to continue. One optional item is missing.';
       return 'Everything the SDK needs is here. Hover a status icon to see why each item matters.';
     }
@@ -681,11 +749,21 @@
     const s = status[view];
     const next = STEPS[viewIndex + 1];
     // Sign in has its own button row (Continue · Sign out), as in the design.
-    const canContinue = view !== 'signin' && Boolean(next) && (s.done || s.busy || view === 'configure');
+    // Check this computer always shows Continue, disabled until the required items pass (as in the design).
+    const canContinue = view !== 'signin' && Boolean(next) && (s.done || s.busy || view === 'configure' || view === 'check');
     const continueButton = $('continue-button');
     continueButton.hidden = !canContinue;
 
-    continueButton.disabled = view === 'configure' && Object.keys(state.configErrors).length > 0;
+    continueButton.disabled = (view === 'configure' && Object.keys(state.configErrors).length > 0)
+      || (view === 'check' && !s.passed);
+
+    // Check again: on Check this computer once a check found something; not while checking or when all is fine.
+    const { prereqs } = state;
+    const checkProblem = prereqs.status !== 'checking' && (prereqs.items || []).some((i) => i.status === 'error' || i.status === 'warn');
+    $('prereq-recheck').hidden = !(view === 'check' && checkProblem);
+    const requiredFails = (prereqs.items || []).some((i) => i.status === 'error');
+    $('nav-reason').hidden = !(view === 'check' && prereqs.status !== 'checking' && requiredFails);
+    $('nav-reason-text').textContent = 'Fix the required item above, then Check again.';
     $('si-continue').onclick = () => {
       viewing = 'check';
       saveView();
@@ -694,6 +772,9 @@
     continueButton.onclick = () => {
       if (view === 'configure') {
         configConfirmed = true;
+      }
+      if (view === 'check') {
+        checkConfirmed = true;
       }
       viewing = next.id;
       saveView();
@@ -760,12 +841,14 @@
     const link = /** @type {HTMLElement} */ (event.target).closest('[data-link-action]');
     if (link) {
       event.preventDefault();
-      post({ type: 'action', id: link.dataset.linkAction });
+      post(link.dataset.value === undefined
+        ? { type: 'action', id: link.dataset.linkAction }
+        : { type: 'action', id: link.dataset.linkAction, value: link.dataset.value });
       return;
     }
     const button = /** @type {HTMLElement} */ (event.target).closest('button[data-action]');
     if (button && !(/** @type {HTMLButtonElement} */ (button)).disabled) {
-      if (button.closest('[data-pane]') && shownStep && viewing !== shownStep) {
+      if ((button.closest('[data-pane]') || button.hasAttribute('data-keep-step')) && shownStep && viewing !== shownStep) {
         viewing = shownStep;
         saveView();
       }

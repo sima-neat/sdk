@@ -172,12 +172,29 @@ function findOnPath(name, extraDirs = []) {
   });
 }
 
-function hostOsItem() {
+// What "Check this computer" shows. Each item: { id, label, group: 'required' | 'optional',
+// status: 'ok' | 'warn' | 'error' | 'skip', detail (the short value in the row),
+// fix (when not ok): { text, link?: { label, url } } }. Texts follow the design (frames A2a–A2e).
+
+const DOCKER_DESKTOP_URL = 'https://docs.docker.com/desktop/';
+const ETHTOOL_URL = 'https://packages.ubuntu.com/search?keywords=ethtool';
+const IS_LINUX = process.platform === 'linux';
+
+function cpuLabel() {
   if (process.platform === 'darwin') {
-    return { id: 'os', label: 'Host OS', status: 'ok', detail: `macOS ${os.release()}` };
+    return process.arch === 'arm64' ? 'Apple silicon' : 'Intel';
+  }
+  return typeof os.machine === 'function' ? os.machine() : process.arch;
+}
+
+async function hostOsItem() {
+  const item = { id: 'os', label: 'Host OS', group: 'required', status: 'ok' };
+  if (process.platform === 'darwin') {
+    const version = await run('sw_vers', ['-productVersion']);
+    return { ...item, detail: `macOS ${version.code === 0 ? version.stdout.trim() : os.release()} · ${cpuLabel()}` };
   }
   if (IS_WINDOWS) {
-    return { id: 'os', label: 'Host OS', status: 'ok', detail: `Windows ${os.release()}` };
+    return { ...item, detail: `Windows ${os.release()} · ${cpuLabel()}` };
   }
   let fields = {};
   try {
@@ -190,104 +207,131 @@ function hostOsItem() {
   }
   const supported = fields.ID === 'ubuntu' && ['22.04', '24.04'].includes(fields.VERSION_ID);
   return {
-    id: 'os',
-    label: 'Host OS',
+    ...item,
     status: supported ? 'ok' : 'warn',
-    detail: fields.PRETTY_NAME || 'Linux',
-    hint: supported ? undefined : 'The SDK is tested on Ubuntu 22.04 and 24.04. Other hosts may work.',
+    detail: `${fields.PRETTY_NAME || 'Linux'} · ${cpuLabel()}`,
+    fix: supported ? undefined : { text: 'The SDK is tested on Ubuntu 22.04 and 24.04. Other hosts may work.' },
   };
 }
 
-function dockerDaemonItem(output) {
-  const text = output.toLowerCase();
-  if (text.includes('permission denied')) {
+/** "27.3.1" → "27.3". */
+const majorMinor = (version) => String(version || '').split('.').slice(0, 2).join('.');
+
+/** "Docker Desktop 4.36.0 · Engine 27.3", or "Docker Engine 29.9.3" without Docker Desktop. */
+function dockerLabel(platformName, serverVersion) {
+  const desktop = /Docker Desktop\s+([\d.]+)/i.exec(platformName || '');
+  return desktop ? `Docker Desktop ${desktop[1]} · Engine ${majorMinor(serverVersion)}` : `Docker Engine ${serverVersion}`;
+}
+
+function daemonItem(output) {
+  const item = { id: 'daemon', label: 'Docker daemon', group: 'required', status: 'error' };
+  if (output.toLowerCase().includes('permission denied')) {
     return {
-      id: 'daemon',
-      label: 'Docker daemon',
-      status: 'error',
-      detail: "Your user isn't allowed to use Docker.",
-      hint: 'Run `sudo usermod -aG docker $USER`, then log out and back in.',
+      ...item,
+      detail: 'Not allowed for your user',
+      fix: { text: 'Your user isn’t allowed to use Docker. Run `sudo usermod -aG docker $USER`, then log out and back in.' },
     };
   }
   return {
-    id: 'daemon',
-    label: 'Docker daemon',
-    status: 'error',
-    detail: 'Docker is installed but not running.',
-    hint: process.platform === 'linux' ? 'Start it with `sudo systemctl start docker`.' : 'Start Docker Desktop.',
+    ...item,
+    detail: 'Not running',
+    fix: {
+      text: IS_LINUX
+        ? 'Docker is installed but not running. Start it with `sudo systemctl start docker`, then Check again.'
+        : 'Docker is installed but not running. Open Docker Desktop and wait until it shows “Engine running”, then Check again.',
+    },
   };
 }
 
+/** Free space where Docker keeps its data, or in the home folder when Docker can't say. */
 async function diskItem(dockerRootDir, requiredGb) {
-  if (process.platform !== 'linux') {
-    return { id: 'disk', label: 'Disk space', status: 'ok', detail: 'Managed by Docker Desktop; check its disk limit if the download fails.' };
-  }
+  const item = { id: 'disk', label: 'Disk space', group: 'required' };
+  const unknown = { ...item, status: 'warn', detail: 'Couldn’t check free space' };
   if (typeof fs.promises.statfs !== 'function') {
-    return { id: 'disk', label: 'Disk space', status: 'warn', detail: "Couldn't check free space." };
+    return unknown;
   }
   // Docker's data folder is usually root-only, so fall back to its parents.
-  for (let dir = dockerRootDir || '/'; ; dir = path.dirname(dir)) {
+  for (let dir = dockerRootDir || os.homedir(); ; dir = path.dirname(dir)) {
     try {
       const stats = await fs.promises.statfs(dir);
       const freeGb = Math.round((stats.bavail * stats.bsize) / 1e9);
-      const status = freeGb >= requiredGb ? 'ok' : freeGb >= 10 ? 'warn' : 'error';
+      const enough = freeGb >= requiredGb;
+      const more = Math.max(1, requiredGb - freeGb);
       return {
-        id: 'disk',
-        label: 'Disk space',
-        status,
-        detail: `${freeGb} GB free for Docker (${dir}); about ${requiredGb} GB recommended.`,
-        hint: status === 'ok' ? undefined : 'Free up space, for example with `docker system prune` to remove unused images and containers.',
+        ...item,
+        status: enough ? 'ok' : 'error',
+        detail: `${freeGb} GB free · needs ~${requiredGb} GB`,
+        fix: enough ? undefined : {
+          text: IS_LINUX
+            ? `Free up about ${more} GB, then Check again.`
+            : `Free up about ${more} GB, or move Docker’s disk image to a larger drive in Docker Desktop settings, then Check again.`,
+        },
       };
     } catch {
       if (dir === path.dirname(dir)) {
-        return { id: 'disk', label: 'Disk space', status: 'warn', detail: "Couldn't check free space." };
+        return unknown;
       }
     }
   }
 }
 
 function ethtoolItem() {
-  const found = findOnPath('ethtool', ['/usr/sbin', '/sbin']);
-  return found
-    ? { id: 'ethtool', label: 'ethtool', status: 'ok', detail: found }
+  const item = { id: 'ethtool', label: 'ethtool', group: 'optional' };
+  if (!IS_LINUX) {
+    return { ...item, status: 'ok', detail: 'Built in' };
+  }
+  return findOnPath('ethtool', ['/usr/sbin', '/sbin'])
+    ? { ...item, status: 'ok', detail: 'Installed' }
     : {
-      id: 'ethtool',
-      label: 'ethtool',
+      ...item,
       status: 'warn',
-      detail: 'Not installed. sima-cli needs it to discover DevKits on your network.',
-      hint: 'Install it with `sudo apt install ethtool`.',
+      detail: 'Missing',
+      fix: {
+        text: 'ethtool is optional. Without it, Neat Studio can’t find DevKits on your network automatically — you can still enter the DevKit IP yourself in Configure.',
+        link: { label: 'How to install ethtool', url: ETHTOOL_URL },
+      },
     };
 }
 
 /** Host checks before downloading and starting the SDK. dockerReady gates the download. */
 async function checkPrerequisites(requiredGb = DEFAULT_REQUIRED_GB) {
-  const items = [hostOsItem()];
+  const items = [await hostOsItem()];
   let dockerReady = false;
+  let rootDir;
 
   const version = await run('docker', ['--version']);
   if (version.code !== 0) {
     items.push({
       id: 'docker',
       label: 'Docker',
+      group: 'required',
       status: 'error',
-      detail: 'Docker is not installed, or not on PATH.',
-      hint: 'Install Docker Engine: https://docs.docker.com/engine/install/',
+      detail: 'Not installed',
+      fix: {
+        text: 'Docker runs the SDK container on this computer. Install Docker Desktop, start it once, then Check again.',
+        link: { label: 'Install Docker Desktop', url: DOCKER_DESKTOP_URL },
+      },
     });
+    items.push({ id: 'daemon', label: 'Docker daemon', group: 'required', status: 'skip', detail: 'Checked after Docker is installed' });
   } else {
-    items.push({ id: 'docker', label: 'Docker', status: 'ok', detail: version.stdout.trim() });
-    const info = await run('docker', ['info', '--format', '{{.ServerVersion}}|{{.DockerRootDir}}']);
+    const info = await run('docker', ['info', '--format', '{{.ServerVersion}}|{{.DockerRootDir}}|{{.OperatingSystem}}']);
     if (info.code !== 0) {
-      items.push(dockerDaemonItem(info.stderr + info.stdout));
+      const client = /version\s+([\d.]+)/i.exec(version.stdout);
+      items.push({ id: 'docker', label: 'Docker', group: 'required', status: 'ok', detail: `Docker ${client ? client[1] : ''}`.trim() });
+      items.push(daemonItem(info.stderr + info.stdout));
     } else {
-      const [serverVersion, rootDir] = info.stdout.trim().split('|');
+      const [serverVersion, dockerRoot, operatingSystem] = info.stdout.trim().split('|');
+      const platform = await run('docker', ['version', '--format', '{{.Server.Platform.Name}}']);
+      const platformName = platform.code === 0 && platform.stdout.trim() ? platform.stdout.trim() : operatingSystem;
+      items.push({ id: 'docker', label: 'Docker', group: 'required', status: 'ok', detail: dockerLabel(platformName, serverVersion) });
+      items.push({ id: 'daemon', label: 'Docker daemon', group: 'required', status: 'ok', detail: 'Running' });
       dockerReady = true;
-      items.push({ id: 'daemon', label: 'Docker daemon', status: 'ok', detail: `Running (server ${serverVersion}).` });
-      items.push(await diskItem(rootDir, requiredGb));
+      // Docker Desktop keeps its data in a VM; its root folder is not on this computer.
+      rootDir = IS_LINUX && !/Docker Desktop/i.test(platformName || '') ? dockerRoot : undefined;
     }
   }
-  if (process.platform === 'linux') {
-    items.push(ethtoolItem());
-  }
+  items.push(await diskItem(rootDir, requiredGb));
+  items.push(ethtoolItem());
 
   const status = items.some((i) => i.status === 'error') ? 'error' : items.some((i) => i.status === 'warn') ? 'warn' : 'ok';
   return { status, dockerReady, items };

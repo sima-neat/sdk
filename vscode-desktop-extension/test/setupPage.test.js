@@ -18,12 +18,37 @@ const HTML = fs.readFileSync(path.join(ROOT, 'media', 'setup.html'), 'utf8')
 const SCRIPT = fs.readFileSync(path.join(ROOT, 'media', 'setup.js'), 'utf8');
 
 const CHECKS_OK = [
-  { id: 'os', label: 'Ubuntu 24.04', status: 'ok', detail: '' },
-  { id: 'docker', label: 'Docker 27.1', status: 'ok', detail: '' },
-  { id: 'daemon', label: 'Docker is running', status: 'ok', detail: '' },
-  { id: 'disk', label: '120 GB free', status: 'ok', detail: '' },
-  { id: 'ethtool', label: 'ethtool', status: 'ok', detail: '' },
+  { id: 'os', label: 'Host OS', group: 'required', status: 'ok', detail: 'Ubuntu 24.04.5 LTS · x86_64' },
+  { id: 'docker', label: 'Docker', group: 'required', status: 'ok', detail: 'Docker Engine 29.9.3' },
+  { id: 'daemon', label: 'Docker daemon', group: 'required', status: 'ok', detail: 'Running' },
+  { id: 'disk', label: 'Disk space', group: 'required', status: 'ok', detail: '180 GB free · needs ~20 GB' },
+  { id: 'ethtool', label: 'ethtool', group: 'optional', status: 'ok', detail: 'Installed' },
 ];
+
+/** CHECKS_OK with some items replaced, by id. */
+const checks = (changes) => CHECKS_OK.map((i) => (changes[i.id] ? { ...i, ...changes[i.id] } : i));
+
+const DOCKER_MISSING = {
+  docker: {
+    status: 'error',
+    detail: 'Not installed',
+    fix: {
+      text: 'Docker runs the SDK container on this computer. Install Docker Desktop, start it once, then Check again.',
+      link: { label: 'Install Docker Desktop', url: 'https://docs.docker.com/desktop/' },
+    },
+  },
+  daemon: { status: 'skip', detail: 'Checked after Docker is installed' },
+};
+const ETHTOOL_MISSING = {
+  ethtool: {
+    status: 'warn',
+    detail: 'Missing',
+    fix: {
+      text: 'ethtool is optional. Without it, Neat Studio can’t find DevKits on your network automatically — you can still enter the DevKit IP yourself in Configure.',
+      link: { label: 'How to install ethtool', url: 'https://packages.ubuntu.com/search?keywords=ethtool' },
+    },
+  },
+};
 
 /** The state the extension sends, as SetupPanel builds it; `over` replaces parts of it. */
 function baseState(over = {}) {
@@ -59,8 +84,11 @@ test.afterEach(() => {
   }
 });
 
-/** Opens the page in jsdom; `saved` is what vscode.getState() returns (the page's memory). */
-function openPage(saved) {
+/**
+ * Opens the page in jsdom; `saved` is what vscode.getState() returns (the page's memory).
+ * By default the user has already continued past Check this computer.
+ */
+function openPage(saved = { checkConfirmed: true }) {
   const dom = new JSDOM(HTML, { runScripts: 'outside-only' });
   const { window } = dom;
   openWindows.push(window);
@@ -99,6 +127,18 @@ function openPage(saved) {
       viewing: item.classList.contains('viewing'),
       clickable: item.classList.contains('clickable'),
     })),
+    /** The check rows: [label, icon, value, value class]. */
+    checkRows: () => [...doc.querySelectorAll('#prereq-groups .ck-row')].map((row) => [
+      row.querySelector('.ck-label').textContent,
+      row.querySelector('.ck-mark i').className,
+      row.querySelector('.ck-value').textContent,
+      row.querySelector('.ck-value').className,
+    ]),
+    checkGroups: () => [...doc.querySelectorAll('#prereq-groups .ck-group')].map((g) => [
+      g.querySelector('.ck-group-title').textContent,
+      g.querySelector('.ck-group-sub').textContent,
+      g.querySelectorAll('.ck-row').length,
+    ]),
     railItem: (name) => [...doc.querySelectorAll('#rail-items .rail-item')].find((i) => i.querySelector('.rail-name').textContent === name),
     actions: () => posted.filter((m) => m.type === 'action'),
     hostStatus: () => posted.filter((m) => m.type === 'hostStatus').at(-1),
@@ -228,7 +268,7 @@ test('Sign in: who and sima-cli version for each kind of account and version', (
 });
 
 test('Continue on Sign in opens Check this computer', () => {
-  const page = openPage();
+  const page = openPage({});
   page.send(baseState({ ...SIGNED_IN, prereqs: { status: 'checking', items: [] } }));
   assert.equal(page.stepCount(), 'Step 2 of 5', 'once signed in, the page moves on by itself');
   page.click(page.railItem('Sign in'));
@@ -238,21 +278,30 @@ test('Continue on Sign in opens Check this computer', () => {
   assert.equal(page.title(), 'Check this computer');
   assert.equal(page.lead(), 'Checking what the SDK needs…');
   assert.equal(page.openPane(), 'check');
-  assert.deepEqual(page.memory.value, { viewing: 'check', configConfirmed: false });
+  assert.deepEqual(page.memory.value, { viewing: 'check', configConfirmed: false, checkConfirmed: false });
 });
 
-test('Check this computer: lead text for each result, and a tip on each status icon', () => {
-  const page = openPage();
-  const errorItems = CHECKS_OK.map((i) => (i.id === 'daemon' ? { ...i, label: 'Docker is not running', status: 'error' } : i));
-  page.send(baseState({ ...SIGNED_IN, prereqs: { status: 'error', items: errorItems } }));
-  assert.equal(page.stepCount(), 'Step 2 of 5');
-  assert.equal(page.lead(), 'A required item needs your attention before setup can continue.');
-  assert.equal(page.shown(page.$('continue-button')), false, 'no Continue while a required item fails');
-  assert.deepEqual(page.rail()[0], {
-    name: 'Sign in', dot: 'done', mark: 'codicon codicon-check', summary: 'Signed in as Ana Dev', bar: undefined, viewing: false, clickable: true,
+test('Check this computer · all OK (A2a): Required and Optional lists, Continue, no Check again', () => {
+  const page = openPage({});
+  page.send(baseState(SIGNED_IN));
+  assert.equal(page.stepCount(), 'Step 2 of 5', 'stays on the step until the user continues');
+  assert.equal(page.title(), 'Check this computer');
+  assert.equal(page.lead(), 'Everything the SDK needs is here. Hover a status icon to see why each item matters.');
+  assert.deepEqual(page.rail()[1], {
+    name: 'Check this computer', dot: 'active', mark: '2', summary: undefined, bar: undefined, viewing: true, clickable: false,
   });
-
-  const tips = [...page.doc.querySelectorAll('#prereq-list .mark')].map((m) => m.title);
+  assert.deepEqual(page.checkGroups(), [
+    ['Required', 'Setup can’t continue without these', 4],
+    ['Optional', 'Setup continues without it', 1],
+  ]);
+  assert.deepEqual(page.checkRows(), [
+    ['Host OS', 'codicon codicon-pass', 'Ubuntu 24.04.5 LTS · x86_64', 'ck-value'],
+    ['Docker', 'codicon codicon-pass', 'Docker Engine 29.9.3', 'ck-value'],
+    ['Docker daemon', 'codicon codicon-pass', 'Running', 'ck-value'],
+    ['Disk space', 'codicon codicon-pass', '180 GB free · needs ~20 GB', 'ck-value'],
+    ['ethtool', 'codicon codicon-pass', 'Installed', 'ck-value'],
+  ]);
+  const tips = [...page.doc.querySelectorAll('#prereq-groups .ck-mark')].map((m) => m.title);
   assert.deepEqual(tips, [
     'Supported: Ubuntu 22.04+, macOS 14+ (Apple silicon), Windows 11 with WSL 2.',
     'The SDK runs as a Docker container. Needs Docker 24 or later.',
@@ -260,17 +309,144 @@ test('Check this computer: lead text for each result, and a tip on each status i
     'The SDK image and its data need about 20 GB.',
     'Used to find DevKits on your network automatically. Without it you can still enter the DevKit IP yourself.',
   ]);
-
-  // Opened from the list, a passed check says why each item matters.
-  page.send(baseState({ ...SIGNED_IN }));
-  page.click(page.railItem('Check this computer'));
-  assert.equal(page.lead(), 'Everything the SDK needs is here. Hover a status icon to see why each item matters.');
+  assert.equal(page.shown(page.$('prereq-fix')), false);
   assert.ok(page.shown(page.$('continue-button')));
+  assert.equal(page.$('continue-button').disabled, false);
+  assert.equal(page.shown(page.$('prereq-recheck')), false, 'no Check again when everything passed');
+  assert.equal(page.shown(page.$('nav-reason')), false);
+  assert.deepEqual(page.hostStatus().value, { active: 2, total: 5 });
 
-  const warnItems = CHECKS_OK.map((i) => (i.id === 'ethtool' ? { ...i, status: 'warn' } : i));
-  page.send(baseState({ ...SIGNED_IN, prereqs: { status: 'warn', items: warnItems } }));
+  page.click(page.$('continue-button'));
+  assert.equal(page.title(), 'Download the SDK');
+  assert.equal(page.rail()[1].summary, 'All required checks passed');
+  assert.equal(page.memory.value.checkConfirmed, true);
+});
+
+test('Check · Docker not installed (A2b): the fix with its link, Continue disabled, Check again, lock line', () => {
+  const page = openPage({});
+  page.send(baseState({ ...SIGNED_IN, prereqs: { status: 'error', items: checks(DOCKER_MISSING) } }));
+  assert.equal(page.lead(), 'A required item needs your attention before setup can continue.');
+  assert.deepEqual(page.checkRows().slice(1, 3), [
+    ['Docker', 'codicon codicon-error', 'Not installed', 'ck-value error'],
+    ['Docker daemon', 'codicon codicon-circle-large-outline', 'Checked after Docker is installed', 'ck-value'],
+  ]);
+  assert.ok(page.shown(page.$('prereq-fix')));
+  assert.equal(page.$('prereq-fix-icon').className, 'codicon codicon-error');
+  assert.equal(page.$('prereq-fix-text').textContent, 'Docker runs the SDK container on this computer. Install Docker Desktop, start it once, then Check again.');
+  assert.ok(page.shown(page.$('prereq-fix-link')));
+  assert.equal(page.$('prereq-fix-link-label').textContent, 'Install Docker Desktop');
+  page.click(page.$('prereq-fix-link'));
+  assert.deepEqual(page.actions().at(-1), { type: 'action', id: 'openLink', value: 'https://docs.docker.com/desktop/' });
+
+  assert.ok(page.shown(page.$('continue-button')), 'Continue is shown, as in the design');
+  assert.equal(page.$('continue-button').disabled, true);
+  assert.ok(page.shown(page.$('prereq-recheck')));
+  assert.equal(page.$('prereq-recheck').classList.contains('secondary'), true);
+  assert.ok(page.shown(page.$('nav-reason')));
+  assert.equal(page.$('nav-reason').textContent, 'Fix the required item above, then Check again.');
+  assert.deepEqual(page.primaryButtons(), ['Continue']);
+  const order = [...page.$('nav-buttons').querySelectorAll('button')].filter(page.shown).map((b) => b.textContent);
+  assert.deepEqual(order, ['Continue', 'Check again']);
+});
+
+test('Check · Docker daemon not running (A2c): the fix shows its command as code, no link', () => {
+  const page = openPage({});
+  page.send(baseState({
+    ...SIGNED_IN,
+    prereqs: {
+      status: 'error',
+      items: checks({ daemon: { status: 'error', detail: 'Not running', fix: { text: 'Docker is installed but not running. Start it with `sudo systemctl start docker`, then Check again.' } } }),
+    },
+  }));
+  assert.deepEqual(page.checkRows()[2], ['Docker daemon', 'codicon codicon-error', 'Not running', 'ck-value error']);
+  assert.equal(page.$('prereq-fix-text').textContent, 'Docker is installed but not running. Start it with sudo systemctl start docker, then Check again.');
+  assert.equal(page.$('prereq-fix-text').querySelector('code').textContent, 'sudo systemctl start docker');
+  assert.equal(page.shown(page.$('prereq-fix-link')), false);
+});
+
+test('Check · not enough disk space (A2d)', () => {
+  const page = openPage({});
+  page.send(baseState({
+    ...SIGNED_IN,
+    prereqs: { status: 'error', items: checks({ disk: { status: 'error', detail: '14 GB free · needs ~20 GB', fix: { text: 'Free up about 6 GB, then Check again.' } } }) },
+  }));
+  assert.deepEqual(page.checkRows()[3], ['Disk space', 'codicon codicon-error', '14 GB free · needs ~20 GB', 'ck-value error']);
+  assert.equal(page.$('prereq-fix-text').textContent, 'Free up about 6 GB, then Check again.');
+  assert.equal(page.$('continue-button').disabled, true);
+});
+
+test('Check · ethtool missing (A2e): a warning, Continue still works, no lock line', () => {
+  const page = openPage({});
+  page.send(baseState({ ...SIGNED_IN, prereqs: { status: 'warn', items: checks(ETHTOOL_MISSING) } }));
+  assert.equal(page.title(), 'Check this computer');
   assert.equal(page.lead(), 'Ready to continue. One optional item is missing.');
+  assert.deepEqual(page.checkRows()[4], ['ethtool', 'codicon codicon-warning', 'Missing', 'ck-value warn']);
+  assert.equal(page.$('prereq-fix-icon').className, 'codicon codicon-warning');
+  assert.equal(page.$('prereq-fix-link-label').textContent, 'How to install ethtool');
+  page.click(page.$('prereq-fix-link'));
+  assert.deepEqual(page.actions().at(-1), { type: 'action', id: 'openLink', value: 'https://packages.ubuntu.com/search?keywords=ethtool' });
+  assert.equal(page.$('continue-button').disabled, false);
+  assert.ok(page.shown(page.$('prereq-recheck')));
+  assert.equal(page.shown(page.$('nav-reason')), false);
+
+  page.click(page.$('continue-button'));
+  assert.equal(page.title(), 'Download the SDK');
   assert.equal(page.rail()[1].summary, 'Ready · ethtool missing (optional)');
+});
+
+test('Check · checking: every row spins the first time; later the host and Docker keep their result', () => {
+  const page = openPage({});
+  page.send(baseState({ ...SIGNED_IN, prereqs: { status: 'checking', items: [] } }));
+  assert.equal(page.lead(), 'Checking what the SDK needs…');
+  assert.deepEqual(page.checkRows().map((r) => [r[0], r[1], r[2]]), [
+    ['Host OS', 'codicon codicon-loading codicon-modifier-spin', 'Checking…'],
+    ['Docker', 'codicon codicon-loading codicon-modifier-spin', 'Checking…'],
+    ['Docker daemon', 'codicon codicon-loading codicon-modifier-spin', 'Checking…'],
+    ['Disk space', 'codicon codicon-loading codicon-modifier-spin', 'Checking…'],
+    ['ethtool', 'codicon codicon-loading codicon-modifier-spin', 'Checking…'],
+  ]);
+  assert.equal(page.$('continue-button').disabled, true);
+  assert.equal(page.shown(page.$('prereq-recheck')), false);
+  assert.equal(page.shown(page.$('prereq-fix')), false);
+  assert.equal(page.shown(page.$('nav-reason')), false);
+
+  page.send(baseState({ ...SIGNED_IN, prereqs: { status: 'checking', items: checks(DOCKER_MISSING) } }));
+  assert.deepEqual(page.checkRows().map((r) => r[2]), ['Ubuntu 24.04.5 LTS · x86_64', 'Not installed', 'Checking…', 'Checking…', 'Checking…']);
+  assert.equal(page.shown(page.$('prereq-fix')), false, 'no fix while checking again');
+});
+
+test('Check · several problems: all are marked, the fix is for the first one', () => {
+  const page = openPage({});
+  const items = checks({
+    ...ETHTOOL_MISSING,
+    disk: { status: 'error', detail: '3 GB free · needs ~20 GB', fix: { text: 'Free up about 17 GB, then Check again.' } },
+    daemon: { status: 'error', detail: 'Not running', fix: { text: 'Start Docker.' } },
+  });
+  page.send(baseState({ ...SIGNED_IN, prereqs: { status: 'error', items } }));
+  assert.deepEqual(page.checkRows().map((r) => r[3]), ['ck-value', 'ck-value', 'ck-value error', 'ck-value error', 'ck-value warn']);
+  assert.equal(page.$('prereq-fix-text').textContent, 'Start Docker.');
+});
+
+test('Check · a required warning (unsupported OS) still lets setup continue', () => {
+  const page = openPage({});
+  const items = checks({ os: { status: 'warn', detail: 'Fedora Linux 40 · x86_64', fix: { text: 'The SDK is tested on Ubuntu 22.04 and 24.04. Other hosts may work.' } } });
+  page.send(baseState({ ...SIGNED_IN, prereqs: { status: 'warn', items } }));
+  assert.equal(page.lead(), 'Ready to continue. One item needs your attention.');
+  assert.equal(page.$('prereq-fix-text').textContent, 'The SDK is tested on Ubuntu 22.04 and 24.04. Other hosts may work.');
+  assert.equal(page.shown(page.$('prereq-fix-link')), false);
+  page.click(page.$('continue-button'));
+  assert.equal(page.rail()[1].summary, 'Ready · Host OS: Fedora Linux 40 · x86_64');
+});
+
+test('Check this computer opened again from the step list: Continue goes back on', () => {
+  const page = openPage();
+  page.send(baseState(SIGNED_IN));
+  assert.equal(page.title(), 'Download the SDK');
+  page.click(page.railItem('Check this computer'));
+  assert.equal(page.title(), 'Check this computer');
+  assert.ok(page.shown(page.$('continue-button')));
+  page.click(page.$('continue-button'));
+  assert.equal(page.title(), 'Download the SDK');
 });
 
 test('the page follows the current step: signed in and checked opens Download SDK', () => {
@@ -357,7 +533,7 @@ test('Configure: Continue confirms it and opens Start Neat Studio with Start ove
   assert.ok(page.shown(page.$('reset')));
   assert.equal(page.shown(page.$('continue-button')), false, 'nothing after the last step');
   assert.equal(page.rail()[3].summary, 'No DevKit · No AI agent');
-  assert.deepEqual(page.memory.value, { viewing: 'start', configConfirmed: true });
+  assert.deepEqual(page.memory.value, { viewing: 'start', configConfirmed: true, checkConfirmed: true });
   assert.deepEqual(page.hostStatus().value, { active: 5, total: 5 });
 
   page.send(baseState({ ...downloaded, config: { ...baseState().config, devkitMode: 'pair', devkitIp: '192.168.1.20', codingAgents: 'install' } }));
@@ -376,7 +552,7 @@ test('Configure: Continue is disabled while a setting is invalid', () => {
 });
 
 test('the page remembers a confirmed Configure step after it is reopened', () => {
-  const page = openPage({ configConfirmed: true });
+  const page = openPage({ configConfirmed: true, checkConfirmed: true });
   page.send(baseState({ ...SIGNED_IN, image: { status: 'present' } }));
   assert.equal(page.title(), 'Start Neat Studio');
 });
