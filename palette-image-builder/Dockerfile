@@ -138,6 +138,9 @@ RUN --mount=type=bind,source=pib,target=/tmp/pib,rw \
 # The image configs and the files they need ship in the image; pib init copies
 # them into a workspace (PIB_CONFIGS or --configs picks another set).
 COPY examples/ /usr/share/pib/examples/
+# Git checkouts inherit the runner's umask (Vulcan uses a group-writable checkout).
+# Ship examples with consistent permissions, preserving executable bits.
+RUN chmod -R go-w /usr/share/pib/examples
 COPY --chmod=755 entrypoint.sh /usr/local/bin/pib-entrypoint
 
 # SiMa.ai's repo for pib build, which makes the MIRROR_1 apt line of
