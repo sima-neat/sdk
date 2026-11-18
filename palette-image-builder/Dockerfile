@@ -14,9 +14,9 @@ LABEL org.opencontainers.image.title="Palette Image Builder" \
 
 # SiMa.ai's public apt repo; CODENAME names its suite for this release.
 ARG SIMAAI_APT_URL=https://repo.sima.ai/elxr/deb/release
-# Fingerprint of simaai-public.asc, the key SiMa.ai's public repo is
-# signed with. The build refuses a key file that does not match it.
-ARG SIMAAI_KEY_FPR=1E527426828B89232E080FD44F87A7B80CFC8F4B
+# Public fingerprint of simaai-public.asc, the key SiMa.ai's public repo is
+# signed with. This is not a secret. The build refuses a key file that does not match it.
+ARG SIMAAI_APT_FINGERPRINT=1E527426828B89232E080FD44F87A7B80CFC8F4B
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
@@ -110,8 +110,8 @@ RUN cp /usr/share/pib/configs/images/files/simaai-public.asc /tmp/simaai-public.
     export GNUPGHOME="$(mktemp -d)" && \
     keys="$(gpg --show-keys --with-colons /tmp/simaai-public.asc | \
            awk -F: '$1 == "pub" { n++ } $1 == "fpr" && !f { f = $10 } END { print n, f }')" && \
-    if [ "$keys" != "1 $SIMAAI_KEY_FPR" ]; then \
-        echo "simaai-public.asc: keys and fingerprint '$keys', expected '1 $SIMAAI_KEY_FPR'" >&2; \
+    if [ "$keys" != "1 $SIMAAI_APT_FINGERPRINT" ]; then \
+        echo "simaai-public.asc: keys and fingerprint '$keys', expected '1 $SIMAAI_APT_FINGERPRINT'" >&2; \
         exit 1; \
     fi && \
     gpg --dearmor < /tmp/simaai-public.asc > /usr/share/keyrings/simaai-public.gpg && \
