@@ -11,7 +11,10 @@
   // ───────────────────────── helpers ─────────────────────────
 
   function setBadge(stepId, status) {
-    document.querySelector(`#${stepId} .badge`).className = `badge ${status || ''}`;
+    const badge = document.querySelector(`#${stepId} .badge`);
+    if (badge) {
+      badge.className = `badge ${status || ''}`;
+    }
   }
 
   function setDisabledStep(stepId, disabled) {
@@ -63,6 +66,15 @@
     $('login-button').disabled = !cli.found;
   }
 
+  // Why each check matters: shown when hovering its status icon (texts from the design).
+  const CHECK_TIPS = {
+    os: 'Supported: Ubuntu 22.04+, macOS 14+ (Apple silicon), Windows 11 with WSL 2.',
+    docker: 'The SDK runs as a Docker container. Needs Docker 24 or later.',
+    daemon: 'Docker must be running to download and start the SDK.',
+    disk: 'The SDK image and its data need about 20 GB.',
+    ethtool: 'Used to find DevKits on your network automatically. Without it you can still enter the DevKit IP yourself.',
+  };
+
   function renderPrereqs() {
     const { prereqs } = state;
     setBadge('step-prereqs', prereqs.status === 'checking' ? 'running' : prereqs.status);
@@ -78,6 +90,9 @@
       const mark = document.createElement('span');
       mark.className = `mark ${item.status}`;
       mark.textContent = item.status === 'ok' ? '✓' : item.status === 'warn' ? '!' : '✕';
+      if (CHECK_TIPS[item.id]) {
+        mark.title = CHECK_TIPS[item.id];
+      }
       const label = document.createElement('strong');
       label.textContent = item.label;
       const detail = document.createElement('span');
@@ -416,7 +431,223 @@
     }
   }
 
+  // ───────────────────────── step list and page frame ─────────────────────────
+
+  const STEPS = [
+    { id: 'signin', name: 'Sign in', title: 'Sign in to SiMa' },
+    { id: 'check', name: 'Check this computer', title: 'Check this computer' },
+    { id: 'download', name: 'Download SDK', title: 'Download the SDK' },
+    { id: 'configure', name: 'Configure', title: 'Configure the SDK' },
+    { id: 'start', name: 'Start Neat Studio', title: 'Start Neat Studio' },
+  ];
+  const saved = vscode.getState() || {};
+  // The step the user opened from the list; undefined means "the current step".
+  let viewing = saved.viewing;
+  // Configure has no natural "done": it counts once the user continues past it.
+  let configConfirmed = Boolean(saved.configConfirmed);
+
+  function saveView() {
+    vscode.setState({ viewing, configConfirmed });
+  }
+
+  function pullPercent(pull) {
+    const { done, total, bytesDone, bytesTotal } = (pull && pull.progress) || {};
+    if (bytesTotal) {
+      return Math.round((bytesDone / bytesTotal) * 100);
+    }
+    return total ? Math.round((done / total) * 100) : 0;
+  }
+
+  /** "4.2 of 10.1 GB", or '' while the layer sizes are unknown. */
+  function pullGb(pull) {
+    const { bytesDone, bytesTotal } = (pull && pull.progress) || {};
+    if (!bytesTotal) {
+      return '';
+    }
+    const gb = (n) => (n / 1e9).toFixed(1);
+    return `${gb(bytesDone)} of ${gb(bytesTotal)} GB`;
+  }
+
+  function versionLabel() {
+    const { release, selectedRef } = state;
+    if (release && release.version) {
+      return `v${String(release.version).replace(/^v/, '')}`;
+    }
+    return (release && release.ref) || selectedRef || '';
+  }
+
+  /** What each step looks like now: done, busy (downloading), failed, and its one-line summary. */
+  function stepStatus() {
+    const { cli, login, prereqs, image, pull, config, containers } = state;
+    const items = prereqs.items || [];
+    const pullBusy = pull.state === 'running' || pull.state === 'waiting';
+    const pullFailed = pull.state === 'failed';
+    const warnItem = items.find((i) => i.status === 'warn');
+    const running = containers.some((c) => c.state === 'running');
+    const status = {
+      signin: {
+        done: cli.found && login.loggedIn,
+        summary: login.loggedIn ? `Signed in${login.user ? ` as ${login.user}` : ''}` : '',
+      },
+      check: {
+        done: prereqs.status !== 'checking' && items.length > 0 && !items.some((i) => i.status === 'error'),
+        summary: warnItem ? `Ready · ${warnItem.label} missing (optional)` : 'All required checks passed',
+      },
+      download: {
+        done: image.status === 'present',
+        busy: pullBusy,
+        failed: pullFailed,
+        pct: pullPercent(pull),
+        summary: image.status === 'present'
+          ? `${versionLabel()} · ${running ? 'already running' : 'downloaded'}`
+          : pullBusy ? [versionLabel(), `${pullPercent(pull)}%`, pullGb(pull)].filter(Boolean).join(' · ')
+            : pullFailed ? `Download failed at ${pullPercent(pull)}%` : '',
+      },
+      configure: {
+        done: configConfirmed && !Object.keys(state.configErrors).length,
+        summary: `${config.devkitMode === 'pair' ? (config.devkitIp || 'DevKit') : 'No DevKit'} · ${config.codingAgents === 'install' ? 'Claude Code and Codex' : 'No AI agent'}`,
+      },
+      start: { done: false, summary: '' },
+    };
+    return status;
+  }
+
+  /** The step setup is on: the first one not done. A running download counts as passed. */
+  function activeStep(status) {
+    if (!status.signin.done) return 'signin';
+    if (!status.check.done) return 'check';
+    if (!status.download.done && !status.download.busy) return 'download';
+    if (!status.configure.done) return 'configure';
+    return 'start';
+  }
+
+  function headingLead(id) {
+    const { prereqs, image, pull, containers } = state;
+    if (id === 'signin') {
+      return 'One browser sign-in to the SiMa Developer Portal. It covers the SDK download, the Model Registry and Insight. The SiMa command-line tools are installed for you.';
+    }
+    if (id === 'check') {
+      const items = prereqs.items || [];
+      if (prereqs.status === 'checking') return 'Checking what the SDK needs…';
+      if (items.some((i) => i.status === 'error')) return 'A required item needs your attention before setup can continue.';
+      if (items.some((i) => i.status === 'warn')) return 'Ready to continue. One optional item is missing.';
+      return 'Everything the SDK needs is here. Hover a status icon to see why each item matters.';
+    }
+    if (id === 'download') {
+      if (containers.some((c) => c.state === 'running')) return 'Neat Studio found an SDK on this computer.';
+      if (pull.state === 'running' || pull.state === 'waiting') return 'Downloading in the background. Setup keeps going while you wait.';
+      if (image.status === 'present') return 'Neat Studio found an SDK on this computer.';
+      return 'The SDK is a Docker image with the toolchain, Neat and examples. Configure opens as soon as the download starts.';
+    }
+    if (id === 'configure') {
+      return 'Choose what goes into your SDK. You can change any of this later.';
+    }
+    return containers.some((c) => c.state === 'running')
+      ? 'Your SDK is already running. Open Neat Studio inside it.'
+      : 'Neat Studio starts the SDK container with your choices, then reopens VS Code inside it.';
+  }
+
+  function icon(name, spin) {
+    const i = document.createElement('i');
+    i.className = `codicon codicon-${name}${spin ? ' codicon-modifier-spin' : ''}`;
+    return i;
+  }
+
+  function renderFrame() {
+    const status = stepStatus();
+    const active = activeStep(status);
+    const activeIndex = STEPS.findIndex((s) => s.id === active);
+    if (viewing === active) {
+      viewing = undefined;
+    }
+    const view = viewing || active;
+    const viewIndex = STEPS.findIndex((s) => s.id === view);
+
+    const list = $('rail-items');
+    list.textContent = '';
+    STEPS.forEach((step, i) => {
+      const s = status[step.id];
+      const isView = step.id === view;
+      const isActive = i === activeIndex && !s.done;
+      const clickable = !isView && (s.done || s.busy || s.failed || i <= activeIndex);
+
+      const item = document.createElement('div');
+      item.className = `rail-item${clickable ? ' clickable' : ''}${isView ? ' viewing' : ''}`;
+      if (clickable) {
+        item.title = 'Open this step';
+        item.addEventListener('click', () => {
+          viewing = step.id === active ? undefined : step.id;
+          saveView();
+          render();
+        });
+      }
+
+      const row = document.createElement('div');
+      row.className = 'rail-row';
+      const dot = document.createElement('span');
+      dot.className = `rail-dot${s.done ? ' done' : isActive ? ' active' : s.failed ? ' failed' : s.busy ? ' busy' : ''}`;
+      if (s.done) {
+        dot.appendChild(icon('check'));
+      } else if (s.busy) {
+        dot.appendChild(icon('loading', true));
+      } else if (s.failed) {
+        dot.appendChild(icon('warning'));
+      } else {
+        dot.textContent = String(i + 1);
+      }
+      const name = document.createElement('span');
+      name.className = 'rail-name';
+      name.textContent = step.name;
+      row.append(dot, name);
+      item.appendChild(row);
+
+      if ((s.done || s.busy || s.failed) && s.summary) {
+        const summary = document.createElement('span');
+        summary.className = `rail-summary${s.failed ? ' failed' : ''}`;
+        summary.textContent = s.summary;
+        item.appendChild(summary);
+      }
+      if (s.busy) {
+        const bar = document.createElement('div');
+        bar.className = 'rail-bar';
+        const fill = document.createElement('div');
+        fill.style.width = `${s.pct}%`;
+        bar.appendChild(fill);
+        item.appendChild(bar);
+      }
+      list.appendChild(item);
+    });
+
+    $('step-count').textContent = `Step ${viewIndex + 1} of ${STEPS.length}`;
+    $('heading-title').textContent = STEPS[viewIndex].title;
+    $('heading-lead').textContent = headingLead(view);
+    for (const pane of document.querySelectorAll('[data-pane]')) {
+      pane.hidden = pane.dataset.pane !== view;
+    }
+
+    // Continue moves on once this step is done (or the download is running).
+    const s = status[view];
+    const next = STEPS[viewIndex + 1];
+    const canContinue = Boolean(next) && (s.done || s.busy || view === 'configure');
+    const continueButton = $('continue-button');
+    continueButton.hidden = !canContinue;
+
+    continueButton.disabled = view === 'configure' && Object.keys(state.configErrors).length > 0;
+    continueButton.onclick = () => {
+      if (view === 'configure') {
+        configConfirmed = true;
+      }
+      viewing = next.id;
+      saveView();
+      render();
+    };
+
+    $('reset').hidden = view !== 'start';
+    post({ type: 'hostStatus', value: { active: activeIndex + 1, total: STEPS.length } });
+  }
+
   function render() {
+    renderFrame();
     renderCli();
     renderLogin();
     renderPrereqs();
@@ -425,6 +656,30 @@
     renderSetup();
     renderReady();
     renderReset();
+    keepOnePrimary();
+  }
+
+  /** One primary button per step: Continue when shown, otherwise the step's first primary button. */
+  function keepOnePrimary() {
+    const pane = document.querySelector('[data-pane]:not([hidden])');
+    if (!pane) {
+      return;
+    }
+    const shown = (b) => !b.hidden && !b.closest('[hidden]');
+    const continueShown = shown($('continue-button'));
+    let primaryLeft = !continueShown;
+    for (const button of pane.querySelectorAll('button')) {
+      const wasPrimary = !button.classList.contains('secondary') || button.dataset.demoted === '1';
+      if (!wasPrimary || button.classList.contains('danger')) {
+        continue;
+      }
+      const keep = primaryLeft && shown(button);
+      if (keep) {
+        primaryLeft = false;
+      }
+      button.classList.toggle('secondary', !keep);
+      button.dataset.demoted = keep ? '' : '1';
+    }
   }
 
   // ───────────────────────── events ─────────────────────────
@@ -437,6 +692,12 @@
   });
 
   document.addEventListener('click', (event) => {
+    const link = /** @type {HTMLElement} */ (event.target).closest('[data-link-action]');
+    if (link) {
+      event.preventDefault();
+      post({ type: 'action', id: link.dataset.linkAction });
+      return;
+    }
     const button = /** @type {HTMLElement} */ (event.target).closest('button[data-action]');
     if (button && !(/** @type {HTMLButtonElement} */ (button)).disabled) {
       post({ type: 'action', id: button.dataset.action, value: button.dataset.value });

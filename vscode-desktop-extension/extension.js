@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const { execFile } = require('child_process');
 const setupPanel = require('./setupPanel');
+const hostStatus = require('./hostStatus');
 const devcontainer = require('./devcontainer');
 const container = require('./container');
 const neatPages = require('./neat');
@@ -132,6 +133,11 @@ function showInternalLogin(login) {
 
 function updateStatusBar() {
   stateChanged.fire();
+  // On this computer the status bar shows only the SDK setup status (hostStatus.js).
+  if (!vscode.env.remoteName) {
+    statusItem.hide();
+    return;
+  }
   if (!simaCli) {
     statusItem.text = '$(cloud-download) Install sima-cli';
     statusItem.tooltip = 'sima-cli was not found. Click to open SiMa Neat Setup.';
@@ -461,6 +467,7 @@ async function activate(context) {
   devcontainer.init(context, { showSetup: () => setupPanel.show() });
   const pages = neatPages.register(context, { getSimaCli: () => simaCli, readLoginState, onDidChange: stateChanged.event });
   agents.init(context, { openInsight: pages.openInsight }).catch((error) => console.error('SiMa Neat agents:', error));
+  hostStatus.register(context);
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   context.subscriptions.push(
     statusItem,

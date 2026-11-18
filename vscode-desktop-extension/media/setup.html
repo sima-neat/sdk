@@ -2,164 +2,187 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src {{cspSource}}; script-src 'nonce-{{nonce}}';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src {{cspSource}}; font-src {{cspSource}}; script-src 'nonce-{{nonce}}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="{{codiconUri}}">
   <link rel="stylesheet" href="{{cssUri}}">
-  <title>SiMa Neat Setup</title>
+  <title>Studio: Set up SDK</title>
 </head>
 <body>
-  <header>
-    <h1>SiMa Neat Setup</h1>
-    <p class="lead">Install the Neat SDK on this computer, step by step. The SDK image is about 10 GB: start the download in step 4, and fill in step 5 while it runs.</p>
-  </header>
+  <nav class="rail">
+    <div class="rail-head">
+      <span class="rail-title">Set up the Neat SDK</span>
+      <span class="rail-sub">On this computer. Then Neat Studio opens inside the SDK.</span>
+    </div>
+    <div id="rail-items"></div>
+  </nav>
 
-  <ol class="steps">
-    <li class="step" id="step-cli">
-      <div class="step-head"><span class="badge"></span><h2>sima-cli</h2></div>
-      <p class="detail" id="cli-detail"></p>
-      <div class="actions">
-        <button data-action="installCli" id="cli-install">Install sima-cli</button>
-      </div>
-    </li>
+  <main class="main">
+    <span class="step-count" id="step-count"></span>
+    <div class="heading">
+      <span class="heading-title" id="heading-title"></span>
+      <span class="heading-lead" id="heading-lead"></span>
+    </div>
 
-    <li class="step" id="step-login">
-      <div class="step-head"><span class="badge"></span><h2>Log in to the Developer Portal</h2></div>
-      <p class="detail" id="login-detail"></p>
-      <div class="actions">
-        <button data-action="login" id="login-button">Log in</button>
-        <button data-action="logout" id="logout-button" class="secondary">Log out</button>
+    <!-- 1. Sign in -->
+    <section class="pane" data-pane="signin" hidden>
+      <div class="block" id="step-cli">
+        <div class="step-head"><span class="badge"></span><h2>sima-cli</h2></div>
+        <p class="detail" id="cli-detail"></p>
+        <div class="actions">
+          <button data-action="installCli" id="cli-install">Install sima-cli</button>
+        </div>
       </div>
-    </li>
 
-    <li class="step" id="step-prereqs">
-      <div class="step-head"><span class="badge"></span><h2>Check this computer</h2></div>
-      <ul class="checks" id="prereq-list"></ul>
-      <div class="actions">
-        <button data-action="recheck" class="secondary" id="prereq-recheck">Check again</button>
+      <div class="block" id="step-login">
+        <div class="step-head"><span class="badge"></span><h2>Log in to the Developer Portal</h2></div>
+        <p class="detail" id="login-detail"></p>
+        <div class="actions">
+          <button data-action="login" id="login-button">Log in</button>
+          <button data-action="logout" id="logout-button" class="secondary">Log out</button>
+        </div>
       </div>
-    </li>
+    </section>
 
-    <li class="step" id="step-image">
-      <div class="step-head"><span class="badge"></span><h2>Download the SDK image</h2></div>
-      <label class="field">
-        <span>Version</span>
-        <select id="version"></select>
-      </label>
-      <p class="detail" id="image-detail"></p>
-      <div class="progress" id="pull-progress" hidden>
-        <div class="bar"><div class="bar-fill" id="bar-fill"></div></div>
-        <p class="detail" id="pull-status"></p>
+    <!-- 2. Check this computer -->
+    <section class="pane" data-pane="check" hidden>
+      <div class="block" id="step-prereqs">
+        <ul class="checks" id="prereq-list"></ul>
+        <div class="actions">
+          <button data-action="recheck" class="secondary" id="prereq-recheck">Check again</button>
+        </div>
       </div>
-      <div class="callout error" id="pull-error" hidden>
-        <strong id="pull-error-message"></strong>
-        <p id="pull-error-hint"></p>
-      </div>
-      <div class="actions">
-        <button data-action="pull" id="pull-button">Download</button>
-        <button data-action="retryNow" id="retry-button">Retry now</button>
-        <button data-action="cancelPull" id="cancel-button" class="secondary">Cancel</button>
-        <button data-action="pullInTerminal" id="terminal-button" class="secondary">Download in a terminal</button>
-      </div>
-      <details id="pull-log-box" hidden>
-        <summary>Download log</summary>
-        <pre id="pull-log"></pre>
-      </details>
-    </li>
+    </section>
 
-    <li class="step" id="step-config">
-      <div class="step-head"><span class="badge"></span><h2>Configure</h2></div>
-      <p class="detail">Saved as you type. You can change these later in Settings under "SiMa Neat".</p>
-
-      <fieldset>
-        <legend>DevKit</legend>
-        <label class="choice"><input type="radio" name="devkitMode" value="pair" data-config="devkitMode"> Pair with a Modalix DevKit</label>
-        <label class="field indent">
-          <span>DevKit IP address</span>
-          <input type="text" id="devkitIp" data-config="devkitIp" placeholder="192.168.1.20" spellcheck="false">
+    <!-- 3. Download SDK -->
+    <section class="pane" data-pane="download" hidden>
+      <div class="block" id="step-image">
+        <label class="field">
+          <span>Version</span>
+          <select id="version"></select>
         </label>
-        <p class="field-error" id="devkitIp-error"></p>
-        <label class="choice"><input type="radio" name="devkitMode" value="none" data-config="devkitMode"> No DevKit for now</label>
-      </fieldset>
-
-      <label class="field">
-        <span>Model Compiler</span>
-        <select id="modelCompiler" data-config="modelCompiler">
-          <option value="skip">Skip (you can add it later)</option>
-          <option value="install">Install (large download; online install needs you to be logged in)</option>
-        </select>
-      </label>
-
-      <label class="field">
-        <span>Coding agents in the SDK IDE</span>
-        <select id="codingAgents" data-config="codingAgents">
-          <option value="skip">Skip</option>
-          <option value="install">Install Claude Code and Codex extensions</option>
-        </select>
-      </label>
-
-      <label class="choice"><input type="checkbox" id="edgematicStudio" data-config="edgematicStudio"> Install Edgematic Studio</label>
-
-      <label class="field">
-        <span>Workspace folder (shared with the SDK as /workspace)</span>
-        <span class="row">
-          <input type="text" id="workspace" data-config="workspace" spellcheck="false">
-          <button data-action="browseWorkspace" class="secondary">Browse…</button>
-        </span>
-      </label>
-      <p class="field-error" id="workspace-error"></p>
-    </li>
-
-    <li class="step" id="step-setup">
-      <div class="step-head"><span class="badge"></span><h2>Start the SDK</h2></div>
-      <p class="detail" id="setup-detail"></p>
-      <pre class="command" id="setup-command"></pre>
-      <div class="callout warn" id="setup-warning" hidden></div>
-      <p class="detail setup-status" id="setup-status" hidden></p>
-      <div class="actions">
-        <button data-action="runSetup" id="setup-button">Run setup</button>
-        <button data-action="cancelSetup" id="setup-cancel" class="secondary" hidden>Stop</button>
-        <button data-action="copyCommand" id="copy-button" class="secondary">Copy command</button>
-        <button data-action="setupInTerminal" id="setup-terminal" class="secondary">Run in a terminal instead</button>
+        <p class="detail" id="image-detail"></p>
+        <div class="progress" id="pull-progress" hidden>
+          <div class="bar"><div class="bar-fill" id="bar-fill"></div></div>
+          <p class="detail" id="pull-status"></p>
+        </div>
+        <div class="callout error" id="pull-error" hidden>
+          <strong id="pull-error-message"></strong>
+          <p id="pull-error-hint"></p>
+        </div>
+        <div class="actions">
+          <button data-action="pull" id="pull-button">Download</button>
+          <button data-action="retryNow" id="retry-button">Retry now</button>
+          <button data-action="cancelPull" id="cancel-button" class="secondary">Cancel</button>
+          <button data-action="pullInTerminal" id="terminal-button" class="secondary">Download in a terminal</button>
+        </div>
+        <details id="pull-log-box" hidden>
+          <summary>Download log</summary>
+          <pre id="pull-log"></pre>
+        </details>
       </div>
-      <details id="setup-log-box" hidden>
-        <summary>Setup log (time since start)</summary>
-        <pre id="setup-log"></pre>
-      </details>
-    </li>
+    </section>
 
-    <li class="step" id="step-ready">
-      <div class="step-head"><span class="badge"></span><h2>Ready</h2></div>
-      <p class="detail" id="ready-detail"></p>
-      <div class="actions">
-        <button data-action="openVsCode" id="vscode-button">Open in VS Code</button>
-        <button data-action="openIde" id="ide-button" class="secondary">Open browser IDE</button>
-        <button data-action="openShell" id="shell-button" class="secondary">Open SDK shell</button>
-        <button data-action="doctor" id="doctor-button" class="secondary">Run diagnostics</button>
+    <!-- 4. Configure -->
+    <section class="pane" data-pane="configure" hidden>
+      <div class="block" id="step-config">
+        <p class="detail">Saved as you type. You can change these later in Settings under "SiMa Neat".</p>
+
+        <fieldset>
+          <legend>DevKit</legend>
+          <label class="choice"><input type="radio" name="devkitMode" value="pair" data-config="devkitMode"> Pair with a Modalix DevKit</label>
+          <label class="field indent">
+            <span>DevKit IP address</span>
+            <input type="text" id="devkitIp" data-config="devkitIp" placeholder="192.168.1.20" spellcheck="false">
+          </label>
+          <p class="field-error" id="devkitIp-error"></p>
+          <label class="choice"><input type="radio" name="devkitMode" value="none" data-config="devkitMode"> No DevKit for now</label>
+        </fieldset>
+
+        <label class="field">
+          <span>Model Compiler</span>
+          <select id="modelCompiler" data-config="modelCompiler">
+            <option value="skip">Skip (you can add it later)</option>
+            <option value="install">Install (large download; online install needs you to be logged in)</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Coding agents in the SDK IDE</span>
+          <select id="codingAgents" data-config="codingAgents">
+            <option value="skip">Skip</option>
+            <option value="install">Install Claude Code and Codex extensions</option>
+          </select>
+        </label>
+
+        <label class="choice"><input type="checkbox" id="edgematicStudio" data-config="edgematicStudio"> Install Edgematic Studio</label>
+
+        <label class="field">
+          <span>Workspace folder (shared with the SDK as /workspace)</span>
+          <span class="row">
+            <input type="text" id="workspace" data-config="workspace" spellcheck="false">
+            <button data-action="browseWorkspace" class="secondary">Browse…</button>
+          </span>
+        </label>
+        <p class="field-error" id="workspace-error"></p>
       </div>
-    </li>
-  </ol>
+    </section>
 
-  <section class="reset" id="reset">
-    <h2>Start over</h2>
-    <p class="detail">Remove what setup installed on this computer and go through the steps again. Your workspace folder and its files are always kept.</p>
-    <div class="actions" id="reset-start">
-      <button data-action="resetLoad" class="secondary">Start over…</button>
+    <!-- 5. Start Neat Studio -->
+    <section class="pane" data-pane="start" hidden>
+      <div class="block" id="step-setup">
+        <div class="step-head"><span class="badge"></span><h2>Start the SDK</h2></div>
+        <p class="detail" id="setup-detail"></p>
+        <pre class="command" id="setup-command"></pre>
+        <div class="callout warn" id="setup-warning" hidden></div>
+        <p class="detail setup-status" id="setup-status" hidden></p>
+        <div class="actions">
+          <button data-action="runSetup" id="setup-button">Run setup</button>
+          <button data-action="cancelSetup" id="setup-cancel" class="secondary" hidden>Stop</button>
+          <button data-action="copyCommand" id="copy-button" class="secondary">Copy command</button>
+          <button data-action="setupInTerminal" id="setup-terminal" class="secondary">Run in a terminal instead</button>
+        </div>
+        <details id="setup-log-box" hidden>
+          <summary>Setup log (time since start)</summary>
+          <pre id="setup-log"></pre>
+        </details>
+      </div>
+
+      <div class="block" id="step-ready">
+        <div class="step-head"><span class="badge"></span><h2>Ready</h2></div>
+        <p class="detail" id="ready-detail"></p>
+        <div class="actions">
+          <button data-action="openVsCode" id="vscode-button">Open in VS Code</button>
+          <button data-action="openIde" id="ide-button" class="secondary">Open browser IDE</button>
+          <button data-action="openShell" id="shell-button" class="secondary">Open SDK shell</button>
+          <button data-action="doctor" id="doctor-button" class="secondary">Run diagnostics</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="buttons" id="nav-buttons">
+      <button id="continue-button" hidden>Continue</button>
     </div>
-    <p class="detail" id="reset-loading" hidden>Checking what is installed…</p>
-    <div id="reset-options" hidden>
-      <label class="choice"><input type="checkbox" data-reset="containers"> <span id="reset-containers-label"></span></label>
-      <label class="choice"><input type="checkbox" data-reset="images"> <span id="reset-images-label"></span></label>
-      <label class="choice"><input type="checkbox" data-reset="extensionState"> This extension's settings and setup progress, and Dev Containers' settings for SDK containers</label>
-      <label class="choice"><input type="checkbox" data-reset="logout"> Log out of sima-cli</label>
-      <label class="choice"><input type="checkbox" data-reset="simaCli"> <span id="reset-simaCli-label"></span></label>
-      <p class="callout warn" id="reset-attached" hidden></p>
-      <div class="actions">
-        <button id="reset-run" class="danger">Reset…</button>
-        <button data-action="resetCancel" class="secondary">Cancel</button>
+
+    <section class="start-over" id="reset" hidden>
+      <span class="start-over-link" id="reset-start"><i class="codicon codicon-trash"></i><a href="#" data-link-action="resetLoad">Start over…</a></span>
+      <span class="start-over-note">Removes the SDK container and your setup choices. Your workspace folder is kept. You’ll be asked to confirm.</span>
+      <p class="detail" id="reset-loading" hidden>Checking what is installed…</p>
+      <div id="reset-options" hidden>
+        <label class="choice"><input type="checkbox" data-reset="containers"> <span id="reset-containers-label"></span></label>
+        <label class="choice"><input type="checkbox" data-reset="images"> <span id="reset-images-label"></span></label>
+        <label class="choice"><input type="checkbox" data-reset="extensionState"> This extension's settings and setup progress, and Dev Containers' settings for SDK containers</label>
+        <label class="choice"><input type="checkbox" data-reset="logout"> Log out of sima-cli</label>
+        <label class="choice"><input type="checkbox" data-reset="simaCli"> <span id="reset-simaCli-label"></span></label>
+        <p class="callout warn" id="reset-attached" hidden></p>
+        <div class="actions">
+          <button id="reset-run" class="danger">Reset…</button>
+          <button data-action="resetCancel" class="secondary">Cancel</button>
+        </div>
       </div>
-    </div>
-    <ul class="reset-result" id="reset-result"></ul>
-  </section>
+      <ul class="reset-result" id="reset-result"></ul>
+    </section>
+  </main>
 
   <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
 </body>

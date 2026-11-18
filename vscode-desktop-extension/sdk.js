@@ -18,12 +18,12 @@ const MAX_LOG_LINES = 500;
 
 // ───────────────────────────── HTTP ─────────────────────────────
 
-function httpGet(url, redirects = 3) {
+function httpGet(url, redirects = 3, headers = {}) {
   return new Promise((resolve, reject) => {
-    const request = https.get(url, { headers: { 'User-Agent': 'sima-neat-desktop' }, timeout: 15000 }, (res) => {
+    const request = https.get(url, { headers: { 'User-Agent': 'sima-neat-desktop', ...headers }, timeout: 15000 }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
         res.resume();
-        resolve(httpGet(new URL(res.headers.location, url).toString(), redirects - 1));
+        resolve(httpGet(new URL(res.headers.location, url).toString(), redirects - 1, headers));
         return;
       }
       if (res.statusCode !== 200) {
@@ -112,6 +112,42 @@ async function resolveSdkRef(ref) {
     image: `ghcr.io/${resource.slice('ghcr:'.length)}`,
     requiredGb: (parseSizeGb(size.download) + parseSizeGb(size.install)) || DEFAULT_REQUIRED_GB,
   };
+}
+
+const MANIFEST_TYPES = [
+  'application/vnd.oci.image.index.v1+json',
+  'application/vnd.docker.distribution.manifest.list.v2+json',
+  'application/vnd.oci.image.manifest.v1+json',
+  'application/vnd.docker.distribution.manifest.v2+json',
+].join(',');
+
+/**
+ * Compressed layer sizes of a public ghcr.io image for this computer's architecture,
+ * keyed by the 12-character id `docker pull` prints. Lets the page show "4.2 of 10.1 GB".
+ */
+async function imageLayerSizes(image) {
+  const match = /^ghcr\.io\/([^:@]+)[:@](.+)$/.exec(image || '');
+  if (!match) {
+    return new Map();
+  }
+  const [, repo, ref] = match;
+  const { token } = await getJson(`https://ghcr.io/token?scope=repository:${repo}:pull`);
+  const headers = { Authorization: `Bearer ${token}`, Accept: MANIFEST_TYPES };
+  let manifest = JSON.parse(await httpGet(`https://ghcr.io/v2/${repo}/manifests/${ref}`, 3, headers));
+  if (Array.isArray(manifest.manifests)) {
+    const arch = process.arch === 'arm64' ? 'arm64' : 'amd64';
+    const entry = manifest.manifests.find((m) => m.platform && m.platform.os === 'linux' && m.platform.architecture === arch)
+      || manifest.manifests[0];
+    manifest = JSON.parse(await httpGet(`https://ghcr.io/v2/${repo}/manifests/${entry.digest}`, 3, headers));
+  }
+  return new Map((manifest.layers || []).map((l) => [String(l.digest).replace(/^sha256:/, '').slice(0, 12), Number(l.size) || 0]));
+}
+
+/** The Platform version an SDK container or image was built for, e.g. "3.0.0". */
+async function platformVersion(nameOrImage) {
+  const result = await run('docker', ['inspect', '--format', '{{index .Config.Labels "com.sima.sdk.platform.version"}}', nameOrImage]);
+  const value = result.code === 0 ? result.stdout.trim() : '';
+  return value && value !== '<no value>' ? value : '';
 }
 
 // ──────────────────────── Prerequisites ─────────────────────────
@@ -372,8 +408,9 @@ function classifyPullError(output, spawnError) {
  * because sima-cli can exit 0 without pulling (e.g. when Docker is down).
  * onUpdate receives a plain snapshot on every change.
  */
-function createPull({ simaCliFile, env, resource, image, maxRetries, onUpdate }) {
+function createPull({ simaCliFile, env, resource, image, maxRetries, onUpdate, layerSizes }) {
   const layers = new Map();
+  let sizes = new Map();
   const log = [];
   let state = 'running';
   let attempt = 0;
@@ -387,14 +424,31 @@ function createPull({ simaCliFile, env, resource, image, maxRetries, onUpdate })
   let partial = '';
 
   const snapshot = () => {
+    const finished = (s) => /^(download complete|verifying checksum|extracting|pull complete|already exists)/i.test(s);
     const done = [...layers.values()].filter((s) => /^(pull complete|already exists)$/i.test(s)).length;
+    let bytesTotal = 0;
+    let bytesDone = 0;
+    for (const size of sizes.values()) {
+      bytesTotal += size;
+    }
+    for (const [id, s] of layers) {
+      if (finished(s)) {
+        bytesDone += sizes.get(id) || 0;
+      }
+    }
     return {
       state, attempt, maxAttempts: maxRetries + 1, statusLine, error, retryAt,
-      progress: { done, total: layers.size },
+      progress: { done, total: layers.size, bytesDone, bytesTotal },
       log: log.slice(-200),
     };
   };
   const emit = () => onUpdate(snapshot());
+  if (layerSizes) {
+    Promise.resolve(layerSizes).then((value) => {
+      sizes = value instanceof Map ? value : new Map();
+      emit();
+    }, () => {});
+  }
 
   const onLine = (line) => {
     const text = line.trim();
@@ -582,6 +636,8 @@ module.exports = {
   inspectImage,
   listSdkContainers,
   listAllSdkContainers,
+  imageLayerSizes,
+  platformVersion,
   readCodeUi,
   createPull,
   classifyPullError,

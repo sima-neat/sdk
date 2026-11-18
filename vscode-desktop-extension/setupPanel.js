@@ -6,6 +6,7 @@ const fs = require('fs');
 const sdk = require('./sdk');
 const reset = require('./reset');
 const { createSetupRun } = require('./setupRun');
+const hostStatus = require('./hostStatus');
 
 // Remembers an unfinished download so the page can offer to resume it after a restart.
 const PULL_MARKER_KEY = 'simaNeat.pullInProgress';
@@ -18,6 +19,35 @@ let activePull;
 // Setup runs in the background too; the page shows its progress.
 let activeSetup;
 let pullSnapshot = { state: 'idle' };
+// What the side bar and status bar show while the page is closed: last known step, version and containers.
+let lastHost = { step: 1, total: 5, version: '', image: '', containers: [] };
+
+function pullPercent(snapshot) {
+  const { done, total, bytesDone, bytesTotal } = (snapshot && snapshot.progress) || {};
+  if (bytesTotal) {
+    return Math.round((bytesDone / bytesTotal) * 100);
+  }
+  return total ? Math.round((done / total) * 100) : 0;
+}
+
+/** Updates the "Neat SDK" side bar view and the "SiMa SDK" status bar item. */
+function publishHostStatus() {
+  const running = lastHost.containers.find((c) => c.state === 'running');
+  if (running) {
+    hostStatus.set({ kind: 'running', version: lastHost.version || hostStatus.versionFromImage(lastHost.image), container: running.name });
+    return;
+  }
+  const progress = { kind: 'progress', step: lastHost.step, total: lastHost.total, version: lastHost.version, pct: pullPercent(pullSnapshot) };
+  if (pullSnapshot.state === 'running' || pullSnapshot.state === 'waiting') {
+    hostStatus.set({ ...progress, downloading: true });
+  } else if (pullSnapshot.state === 'failed') {
+    hostStatus.set({ ...progress, failed: true });
+  } else if (lastHost.step > 1) {
+    hostStatus.set(progress);
+  } else if (hostStatus.get().kind !== 'running') {
+    hostStatus.set({ kind: 'none' });
+  }
+}
 
 function sdkSettings() {
   return vscode.workspace.getConfiguration('simaNeat.sdk');
@@ -62,16 +92,17 @@ class SetupPanel {
     };
 
     const mediaRoot = vscode.Uri.joinPath(extensionContext.extensionUri, 'media');
-    this.panel = vscode.window.createWebviewPanel('simaNeatSetup', 'SiMa Neat Setup', vscode.ViewColumn.Active, {
+    this.panel = vscode.window.createWebviewPanel('simaNeatSetup', 'Studio: Set up SDK', vscode.ViewColumn.Active, {
       enableScripts: true,
       retainContextWhenHidden: true,
       localResourceRoots: [mediaRoot],
     });
+    this.panel.iconPath = vscode.Uri.joinPath(mediaRoot, 'studio', 'circuit-board.svg');
     this.panel.webview.html = this.html(mediaRoot);
 
     this.disposables.push(
       this.panel.webview.onDidReceiveMessage((message) => this.onMessage(message).catch((err) => {
-        vscode.window.showErrorMessage(`SiMa Neat Setup: ${err.message}`);
+        vscode.window.showErrorMessage(`Studio: Set up SDK: ${err.message}`);
       })),
       this.panel.onDidDispose(() => this.dispose()),
       api.onDidChange(() => this.refreshCliAndLogin()),
@@ -94,15 +125,25 @@ class SetupPanel {
     const nonce = crypto.randomBytes(16).toString('base64');
     const css = webview.asWebviewUri(vscode.Uri.joinPath(mediaRoot, 'setup.css'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(mediaRoot, 'setup.js'));
+    const codicons = webview.asWebviewUri(vscode.Uri.joinPath(mediaRoot, 'codicons', 'codicon.css'));
     const template = fs.readFileSync(vscode.Uri.joinPath(mediaRoot, 'setup.html').fsPath, 'utf8');
     return template
       .replace(/\{\{cspSource\}\}/g, webview.cspSource)
       .replace(/\{\{nonce\}\}/g, nonce)
+      .replace('{{codiconUri}}', codicons.toString())
       .replace('{{cssUri}}', css.toString())
       .replace('{{scriptUri}}', script.toString());
   }
 
   post(now = false) {
+    const { release, containers } = this.state;
+    lastHost = {
+      ...lastHost,
+      version: release.status === 'ok' && release.version ? `v${String(release.version).replace(/^v/, '')}` : lastHost.version,
+      image: release.status === 'ok' ? release.image : lastHost.image,
+      containers,
+    };
+    publishHostStatus();
     const send = () => {
       this.postTimer = undefined;
       this.panel.webview.postMessage({ type: 'state', state: this.state });
@@ -233,6 +274,7 @@ class SetupPanel {
       ...target,
       maxRetries: vscode.workspace.getConfiguration('simaNeat.sdk').get('pullRetries', 4),
       onUpdate: (snapshot) => onPullUpdate(snapshot, target),
+      layerSizes: sdk.imageLayerSizes(target.image),
     });
   }
 
@@ -430,6 +472,14 @@ class SetupPanel {
       }
       return;
     }
+    if (message.type === 'hostStatus' && message.value) {
+      const { active, total } = message.value;
+      if (active !== lastHost.step || total !== lastHost.total) {
+        lastHost = { ...lastHost, step: active, total };
+        publishHostStatus();
+      }
+      return;
+    }
     if (message.type === 'config' && CONFIG_KEYS.has(message.key)) {
       await sdkSettings().update(message.key, message.value, vscode.ConfigurationTarget.Global);
       return;
@@ -498,6 +548,7 @@ class SetupPanel {
 
 function setPullSnapshot(snapshot) {
   pullSnapshot = snapshot;
+  publishHostStatus();
   if (currentPanel) {
     currentPanel.state.pull = snapshot;
     currentPanel.post();
