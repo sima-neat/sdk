@@ -42,6 +42,13 @@ module.exports = {
     theme: {customCss: './src/css/custom.css'},
   }]],
   themeConfig: {
+    announcementBar: {
+      id: 'content-verification-in-progress',
+      content: '<strong>Under construction</strong> — this content is still being verified. This banner will be removed once verification is complete. Please check back later.',
+      backgroundColor: '#fff3cd',
+      textColor: '#664d03',
+      isCloseable: false,
+    },
     colorMode: {defaultMode: 'light', respectPrefersColorScheme: true},
     navbar: {
       title: "Systems Builder Guide",
