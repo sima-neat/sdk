@@ -30,7 +30,7 @@ function pullPercent(snapshot) {
   return total ? Math.round((done / total) * 100) : 0;
 }
 
-/** Updates the "Neat SDK" side bar view and the "SiMa SDK" status bar item. */
+/** Updates the "Neat SDK" side bar view and the "SDK" status bar item. */
 function publishHostStatus() {
   const running = lastHost.containers.find((c) => c.state === 'running');
   if (running) {
@@ -108,17 +108,17 @@ class SetupPanel {
     };
 
     const mediaRoot = vscode.Uri.joinPath(extensionContext.extensionUri, 'media');
-    this.panel = vscode.window.createWebviewPanel('simaNeatSetup', 'Studio: Set up SDK', vscode.ViewColumn.Active, {
+    this.panel = vscode.window.createWebviewPanel('simaNeatSetup', 'SiMa Neat Studio: Set up SDK', vscode.ViewColumn.Active, {
       enableScripts: true,
       retainContextWhenHidden: true,
       localResourceRoots: [mediaRoot],
     });
-    this.panel.iconPath = vscode.Uri.joinPath(mediaRoot, 'studio', 'circuit-board.svg');
+    this.panel.iconPath = vscode.Uri.joinPath(mediaRoot, 'studio', 'logo.svg');
     this.panel.webview.html = this.html(mediaRoot);
 
     this.disposables.push(
       this.panel.webview.onDidReceiveMessage((message) => this.onMessage(message).catch((err) => {
-        vscode.window.showErrorMessage(`Studio: Set up SDK: ${err.message}`);
+        vscode.window.showErrorMessage(`SiMa Neat Studio: Set up SDK: ${err.message}`);
       })),
       this.panel.onDidDispose(() => this.dispose()),
       api.onDidChange(() => this.refreshCliAndLogin()),
@@ -322,6 +322,11 @@ class SetupPanel {
       this.state.setup = { state: 'done' };
     }
     this.post();
+    if (this.repairPending && this.state.setup.state !== 'running') {
+      this.repairPending = false;
+      this.panel.webview.postMessage({ type: 'view', step: 'start' });
+      await this.runSetup(false, { confirmed: true });
+    }
   }
 
   /** Platform version and download size from ghcr.io, for "Platform 3.0.0 · 10.1 GB download". */
@@ -375,7 +380,7 @@ class SetupPanel {
     });
   }
 
-  async runSetup(inTerminal = false) {
+  async runSetup(inTerminal = false, { confirmed = false } = {}) {
     const { cli, release, config, containers } = this.state;
     if (!cli.found || release.status !== 'ok') {
       return;
@@ -385,7 +390,7 @@ class SetupPanel {
       vscode.window.showWarningMessage('Finish the Configure step first.');
       return;
     }
-    if (containers.length) {
+    if (containers.length && !confirmed) {
       const choice = await vscode.window.showWarningMessage(
         `Setup recreates the SDK container "${containers[0].name}".`,
         {
@@ -713,6 +718,45 @@ function show() {
   currentPanel = new SetupPanel();
 }
 
+const REPAIR_DETAIL = 'Reinstalls sima-cli and recreates the SDK container. Your workspace folder is kept.';
+
+/**
+ * Repair SiMa Neat Studio… (frame A9): after the confirmation, reinstalls sima-cli quietly; when
+ * an SDK container exists, opens Set up SDK on Start and runs setup again with the saved
+ * Configure answers, which recreates the container. The workspace folder is kept.
+ */
+async function repair() {
+  const choice = await vscode.window.showWarningMessage('Repair SiMa Neat Studio?', { modal: true, detail: REPAIR_DETAIL }, 'Repair');
+  if (choice !== 'Repair') {
+    return;
+  }
+  const result = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: 'Reinstalling sima-cli…' },
+    () => api.installSimaCliQuietly().done,
+  );
+  if (!result.ok) {
+    if (!result.cancelled) {
+      const terminal = result.needsTerminal ? 'Install in a terminal' : undefined;
+      const picked = await vscode.window.showErrorMessage(`Repair stopped: ${result.reason}`, ...(terminal ? [terminal] : []));
+      if (picked === terminal) {
+        api.installSimaCli();
+      }
+    }
+    return;
+  }
+  await api.refresh();
+  const containers = await sdk.listAllSdkContainers().catch(() => []);
+  if (!containers.length) {
+    vscode.window.showInformationMessage('sima-cli reinstalled.');
+    return;
+  }
+  show();
+  currentPanel.repairPending = true;
+  if (currentPanel.state.release.status === 'ok' && currentPanel.started) {
+    await currentPanel.refreshImage();
+  }
+}
+
 function init(context, extensionApi) {
   extensionContext = context;
   api = extensionApi;
@@ -730,4 +774,4 @@ function dispose() {
   }
 }
 
-module.exports = { init, show, dispose, withAgent };
+module.exports = { init, show, dispose, repair, withAgent };

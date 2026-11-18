@@ -316,7 +316,7 @@ function ethtoolItem() {
       status: 'warn',
       detail: 'Missing',
       fix: {
-        text: 'ethtool is optional. Without it, Neat Studio can’t find DevKits on your network automatically — you can still enter the DevKit IP yourself in Configure.',
+        text: 'ethtool is optional. Without it, SiMa Neat Studio can’t find DevKits on your network automatically — you can still enter the DevKit IP yourself in Configure.',
         link: { label: 'How to install ethtool', url: ETHTOOL_URL },
       },
     };

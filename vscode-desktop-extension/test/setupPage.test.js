@@ -44,7 +44,7 @@ const ETHTOOL_MISSING = {
     status: 'warn',
     detail: 'Missing',
     fix: {
-      text: 'ethtool is optional. Without it, Neat Studio can’t find DevKits on your network automatically — you can still enter the DevKit IP yourself in Configure.',
+      text: 'ethtool is optional. Without it, SiMa Neat Studio can’t find DevKits on your network automatically — you can still enter the DevKit IP yourself in Configure.',
       link: { label: 'How to install ethtool', url: 'https://packages.ubuntu.com/search?keywords=ethtool' },
     },
   },
@@ -171,7 +171,7 @@ test('step 1: Sign in to SiMa, with five steps in the list', () => {
     ['Check this computer', '2', '', false],
     ['Download SDK', '3', '', false],
     ['Configure', '4', '', false],
-    ['Start Neat Studio', '5', '', false],
+    ['Start SiMa Neat Studio', '5', '', false],
   ]);
   assert.ok(page.shown(page.$('si-signin')));
   for (const id of ['si-done', 'si-pending', 'si-error', 'si-cancel', 'si-retry', 'si-terminal', 'si-continue', 'si-signout']) {
@@ -515,13 +515,13 @@ test('Download SDK: an image on this computer or a running SDK', () => {
   page.send(baseState({ ...SIGNED_IN, image: { status: 'present' } }));
   assert.equal(page.rail()[2].summary, 'v3.0.0.1 · downloaded');
   page.click(page.railItem('Download SDK'));
-  assert.equal(page.lead(), 'Neat Studio found an SDK on this computer.');
+  assert.equal(page.lead(), 'SiMa Neat Studio found an SDK on this computer.');
 
   page.send(baseState({ ...SIGNED_IN, image: { status: 'present' }, containers: [{ name: 'neat-sdk', state: 'running' }] }));
   assert.equal(page.rail()[2].summary, 'v3.0.0.1 · already running');
 });
 
-test('Configure: Continue confirms it and opens Start Neat Studio with Start over', () => {
+test('Configure: Continue confirms it and opens Start SiMa Neat Studio with Start over', () => {
   const page = openPage();
   const downloaded = { ...SIGNED_IN, image: { status: 'present' } };
   page.send(baseState(downloaded));
@@ -529,8 +529,8 @@ test('Configure: Continue confirms it and opens Start Neat Studio with Start ove
   assert.ok(page.shown(page.$('continue-button')));
   page.click(page.$('continue-button'));
   assert.equal(page.stepCount(), 'Step 5 of 5');
-  assert.equal(page.title(), 'Start Neat Studio');
-  assert.equal(page.lead(), 'Neat Studio starts the SDK container with your choices, then reopens VS Code inside it.');
+  assert.equal(page.title(), 'Start SiMa Neat Studio');
+  assert.equal(page.lead(), 'SiMa Neat Studio starts the SDK container with your choices, then reopens VS Code inside it.');
   assert.ok(page.shown(page.$('reset')));
   assert.equal(page.shown(page.$('continue-button')), false, 'nothing after the last step');
   assert.equal(page.rail()[3].summary, 'No DevKit · Claude Code');
@@ -543,7 +543,7 @@ test('Configure: Continue confirms it and opens Start Neat Studio with Start ove
   assert.equal(page.rail()[3].summary, 'No DevKit · No AI agent');
 
   page.send(baseState({ ...downloaded, containers: [{ name: 'neat-sdk', state: 'running' }] }));
-  assert.equal(page.lead(), 'Your SDK is already running. Open Neat Studio inside it.');
+  assert.equal(page.lead(), 'Your SDK is already running. Open SiMa Neat Studio inside it.');
 });
 
 test('Configure: Continue is disabled while a setting is invalid', () => {
@@ -557,7 +557,7 @@ test('Configure: Continue is disabled while a setting is invalid', () => {
 test('the page remembers a confirmed Configure step after it is reopened', () => {
   const page = openPage({ configConfirmed: true, checkConfirmed: true, downloadConfirmed: true });
   page.send(baseState({ ...SIGNED_IN, image: { status: 'present' } }));
-  assert.equal(page.title(), 'Start Neat Studio');
+  assert.equal(page.title(), 'Start SiMa Neat Studio');
 });
 
 test('Check again keeps the page on Check this computer to show the new result', () => {
@@ -603,7 +603,7 @@ test('after Start over the page goes back to the first step', () => {
   const page = openPage();
   page.send(baseState({ ...SIGNED_IN, image: { status: 'present' } }));
   page.click(page.$('continue-button'));
-  assert.equal(page.title(), 'Start Neat Studio');
+  assert.equal(page.title(), 'Start SiMa Neat Studio');
 
   page.send(baseState({ cli: { found: false }, image: { status: 'missing' } }));
   assert.equal(page.title(), 'Sign in to SiMa');
@@ -788,7 +788,7 @@ test('Download SDK · already running here (A3d): Use this SDK or Download anoth
     containers: [{ name: 'neat-sdk', state: 'running' }],
   }));
   assert.equal(page.title(), 'Download the SDK', 'stays on Download until Use this SDK');
-  assert.equal(page.lead(), 'Neat Studio found an SDK on this computer.');
+  assert.equal(page.lead(), 'SiMa Neat Studio found an SDK on this computer.');
   assert.ok(page.shown(page.$('dl-found')));
   assert.equal(page.shown(page.$('dl-version')), false);
   assert.equal(page.$('dl-found-title').textContent, 'SDK v3.0.0.1 is already running on this computer.');
@@ -846,7 +846,7 @@ test('Configure (A4): DevKit, Model Compiler, AI agent and Workspace folder, sav
   assert.equal(page.$('workspace').value, '~/workspace');
   assert.deepEqual(hints(page), [
     'You can pair a DevKit later from the Devices view.',
-    'Compiles your own models for Modalix. About 6 GB more; you can add it later from Neat Studio.',
+    'Compiles your own models for Modalix. About 6 GB more; you can add it later from SiMa Neat Studio.',
     'Opens automatically in the right panel. You can add another agent later from Extensions.',
     'Opens as /workspace inside the SDK. Your files stay on this computer.',
   ]);
@@ -901,4 +901,24 @@ test('Configure: an invalid field shows why and keeps Continue disabled', () => 
   assert.equal(page.$('devkitIp-error').textContent, 'Enter the DevKit IP address, or choose "No DevKit".');
   assert.ok(page.$('devkitIp').classList.contains('invalid'));
   assert.equal(page.$('continue-button').disabled, true);
+});
+
+test('the rail shows the SiMa Neat Studio logo and name above "Set up the Neat SDK"', () => {
+  const page = openPage();
+  page.send(baseState());
+  assert.equal(page.doc.querySelector('.rail-brand').textContent.trim(), 'SSiMa Neat Studio');
+  assert.ok(page.doc.querySelector('.rail-brand svg.rail-logo'));
+  assert.equal(page.doc.querySelector('.rail-title').textContent, 'Set up the Neat SDK');
+  assert.equal(page.doc.querySelector('.rail-sub').textContent, 'On this computer. Then SiMa Neat Studio opens inside the SDK.');
+});
+
+test('the extension can open a step, as Repair opens Start', () => {
+  const page = openPage({ checkConfirmed: true, downloadConfirmed: true, configConfirmed: true });
+  page.send(baseState({ ...SIGNED_IN, image: { status: 'present' } }));
+  page.click(page.railItem('Sign in'));
+  assert.equal(page.title(), 'Sign in to SiMa');
+  page.window.dispatchEvent(new page.window.MessageEvent('message', { data: { type: 'view', step: 'start' } }));
+  assert.equal(page.title(), 'Start SiMa Neat Studio');
+  page.window.dispatchEvent(new page.window.MessageEvent('message', { data: { type: 'view', step: 'nowhere' } }));
+  assert.equal(page.title(), 'Start SiMa Neat Studio');
 });

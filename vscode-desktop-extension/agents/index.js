@@ -33,7 +33,7 @@ const WINDOW_ENV = 'SIMA_NEAT_VSCODE_WINDOW';
 // Version 0.0.19 served containers from this folder in the shared workspace.
 const OLD_WORKSPACE_FOLDER = '.sima-neat-vscode';
 const OLD_WORKSPACE_MARKER = '# Written by SiMa Neat Tools';
-const INSTRUCTIONS = "Tools that act in the user's VS Code window, where SiMa Neat Tools manages the Neat SDK. "
+const INSTRUCTIONS = "Tools that act in the user's VS Code window, where SiMa Neat Studio manages the Neat SDK. "
   + 'Use them to show SiMa pages to the user instead of telling them how to open those pages.';
 
 let output;

@@ -1,7 +1,7 @@
 'use strict';
 
 // sima-neat-vscode: the MCP server agents start (stdio), which passes tool
-// calls to a VS Code window. Each VS Code window with SiMa Neat Tools runs a
+// calls to a VS Code window. Each VS Code window with SiMa Neat Studio runs a
 // small HTTP MCP server and writes a discovery file; this bridge picks the
 // window to use for each call:
 //   1. the one named by SIMA_NEAT_VSCODE_WINDOW (set in that window's terminals);
@@ -28,8 +28,8 @@ const TOOLS_FILE = path.join(STATE_DIR, 'tools.json');
 const CALL_TIMEOUT_MS = 120000;
 const CONTAINER = process.env.SIMA_NEAT_CONTAINER || '';
 const NO_WINDOW = CONTAINER
-  ? `No VS Code window with SiMa Neat Tools is attached to this SDK container (${CONTAINER}). Ask the user to open the SDK in VS Code, then try again.`
-  : 'No VS Code window with SiMa Neat Tools is open. Ask the user to open VS Code, then try again.';
+  ? `No VS Code window with SiMa Neat Studio is attached to this SDK container (${CONTAINER}). Ask the user to open the SDK in VS Code, then try again.`
+  : 'No VS Code window with SiMa Neat Studio is open. Ask the user to open VS Code, then try again.';
 
 function log(message) {
   process.stderr.write(`[sima-neat-vscode] ${message}\n`);

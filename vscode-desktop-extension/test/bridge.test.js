@@ -27,7 +27,7 @@ test('without tools.json or a window: no tools, and calls say VS Code is not ope
   assert.equal(answers.get(1).result.protocolVersion, '2025-03-26');
   assert.deepEqual(answers.get(2).result.tools, []);
   assert.equal(answers.get(3).result.isError, true);
-  assert.match(textOf(answers.get(3)), /No VS Code window with SiMa Neat Tools is open/);
+  assert.match(textOf(answers.get(3)), /No VS Code window with SiMa Neat Studio is open/);
 });
 
 test('lists tools from tools.json and passes calls to a live window', async (t) => {

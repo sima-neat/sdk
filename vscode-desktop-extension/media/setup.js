@@ -623,7 +623,7 @@
     { id: 'check', name: 'Check this computer', title: 'Check this computer' },
     { id: 'download', name: 'Download SDK', title: 'Download the SDK' },
     { id: 'configure', name: 'Configure', title: 'Configure the SDK' },
-    { id: 'start', name: 'Start Neat Studio', title: 'Start Neat Studio' },
+    { id: 'start', name: 'Start SiMa Neat Studio', title: 'Start SiMa Neat Studio' },
   ];
   const saved = vscode.getState() || {};
   // The step the user opened from the list; undefined means "the current step".
@@ -730,17 +730,17 @@
       return 'Everything the SDK needs is here. Hover a status icon to see why each item matters.';
     }
     if (id === 'download') {
-      if (containers.some((c) => c.state === 'running')) return 'Neat Studio found an SDK on this computer.';
+      if (containers.some((c) => c.state === 'running')) return 'SiMa Neat Studio found an SDK on this computer.';
       if (pull.state === 'running' || pull.state === 'waiting') return 'Downloading in the background. Setup keeps going while you wait.';
-      if (image.status === 'present') return 'Neat Studio found an SDK on this computer.';
+      if (image.status === 'present') return 'SiMa Neat Studio found an SDK on this computer.';
       return 'The SDK is a Docker image with the toolchain, Neat and examples. Configure opens as soon as the download starts.';
     }
     if (id === 'configure') {
       return 'Choose what goes into your SDK. You can change any of this later.';
     }
     return containers.some((c) => c.state === 'running')
-      ? 'Your SDK is already running. Open Neat Studio inside it.'
-      : 'Neat Studio starts the SDK container with your choices, then reopens VS Code inside it.';
+      ? 'Your SDK is already running. Open SiMa Neat Studio inside it.'
+      : 'SiMa Neat Studio starts the SDK container with your choices, then reopens VS Code inside it.';
   }
 
   function icon(name, spin) {
@@ -937,6 +937,14 @@
     if (event.data && event.data.type === 'state') {
       state = event.data.state;
       render();
+    }
+    // The extension opens a step itself, e.g. Start for Repair SiMa Neat Studio….
+    if (event.data && event.data.type === 'view' && STEPS.some((s) => s.id === event.data.step)) {
+      viewing = event.data.step;
+      saveView();
+      if (state) {
+        render();
+      }
     }
   });
 

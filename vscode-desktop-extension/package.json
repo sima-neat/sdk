@@ -1,6 +1,6 @@
 {
   "name": "sima-neat-desktop",
-  "displayName": "Neat Studio",
+  "displayName": "SiMa Neat Studio",
   "icon": "media/marketplace/icon.png",
   "description": "DevKits, examples on DevKit, Model Registry and Insight for SiMa developers.",
   "version": "0.0.21",
@@ -42,7 +42,12 @@
       {
         "command": "simaNeat.openSetup",
         "title": "Set up SDK",
-        "category": "Studio"
+        "category": "SiMa Neat Studio"
+      },
+      {
+        "command": "simaNeat.repair",
+        "title": "Repair…",
+        "category": "SiMa Neat Studio"
       },
       {
         "command": "simaNeat.openSdkInVsCode",
@@ -129,8 +134,8 @@
       "activitybar": [
         {
           "id": "simaNeatTools",
-          "title": "Neat Studio",
-          "icon": "media/studio/circuit-board.svg"
+          "title": "SiMa Neat Studio",
+          "icon": "media/studio/catalog.svg"
         }
       ]
     },
@@ -138,7 +143,7 @@
       "simaNeatTools": [
         {
           "id": "simaNeatTools.host",
-          "name": "Neat Studio",
+          "name": "SiMa Neat Studio",
           "type": "webview",
           "when": "!remoteName"
         },

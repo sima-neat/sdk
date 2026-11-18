@@ -1,7 +1,7 @@
 'use strict';
 
 // Setup status on this computer (the host): the "Neat SDK" side bar view and the
-// "SiMa SDK" status bar item. Both show the same thing: not set up, setting up
+// "SDK" status bar item. Both show the same thing: not set up, setting up
 // (with download progress), or running.
 
 const vscode = require('vscode');
@@ -59,18 +59,18 @@ function updateStatusBar() {
   statusItem.color = undefined;
   statusItem.backgroundColor = undefined;
   if (status.kind === 'progress' && status.downloading) {
-    statusItem.text = `$(loading~spin) SiMa SDK ${status.pct}%`;
+    statusItem.text = `$(loading~spin) SDK ${status.pct}%`;
     statusItem.tooltip = `Downloading SDK ${status.version || ''} · click to open setup`.replace('  ', ' ');
     statusItem.command = 'simaNeat.openSetup';
     statusItem.show();
   } else if (status.kind === 'progress' && status.failed) {
-    statusItem.text = '$(warning) SiMa SDK download failed';
+    statusItem.text = '$(warning) SDK download failed';
     statusItem.tooltip = 'Click to open setup';
     statusItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
     statusItem.command = 'simaNeat.openSetup';
     statusItem.show();
   } else if (status.kind === 'running') {
-    statusItem.text = '$(vm) SiMa SDK: running';
+    statusItem.text = '$(vm) Neat SDK: running';
     statusItem.tooltip = `SDK ${status.version || ''} · container ${status.container || ''}${status.platform ? ` · Platform ${status.platform}` : ''}`;
     statusItem.command = 'simaNeat.openSdkInVsCode';
     statusItem.show();
@@ -94,6 +94,10 @@ class HostViewProvider {
       if (message && message.type === 'toggle') {
         collapsed = !collapsed;
         render();
+        return;
+      }
+      if (message && message.type === 'repair') {
+        vscode.commands.executeCommand('simaNeat.repair');
         return;
       }
       if (message && message.type === 'action') {
@@ -128,7 +132,7 @@ class HostViewProvider {
       dot = 'var(--vscode-testing-iconPassed)';
       title = `SDK running${status.version ? ` · ${status.version}` : ''}`;
       text = `Container ${status.container || ''}${status.platform ? ` · Platform ${status.platform}` : ''}`;
-      button = 'Open Neat Studio';
+      button = 'Open SiMa Neat Studio';
       action = 'open';
     }
     const codicons = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'codicons', 'codicon.css'));
@@ -150,6 +154,9 @@ class HostViewProvider {
   button { width: 100%; height: 26px; border: 1px solid var(--vscode-button-border, transparent); border-radius: 2px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); font-family: inherit; font-size: 13px; cursor: pointer; }
   button:hover { background: var(--vscode-button-hoverBackground); }
   .foot { font-size: 12px; color: var(--vscode-descriptionForeground); }
+  .repair { display: flex; align-items: center; gap: 6px; width: max-content; font-size: 12px; color: var(--vscode-textLink-foreground); text-decoration: none; cursor: pointer; }
+  .repair:hover { text-decoration: underline; }
+  .repair .codicon { font-size: 13px; }
 </style></head>
 <body><div class="section" id="section" role="button" aria-expanded="${!collapsed}"><i class="codicon codicon-chevron-${collapsed ? 'right' : 'down'}"></i>Neat SDK</div>
 <div class="wrap"${collapsed ? ' hidden' : ''}>
@@ -157,12 +164,14 @@ class HostViewProvider {
   <span class="text">${esc(text)}</span>
   ${bar}
   <button id="go">${esc(button)}</button>
-  <span class="foot">Devices, the Catalog and Insight are inside the SDK.</span>
+  <span class="foot">Catalog, Devices and Insight are inside the SDK.</span>
+  <a href="#" class="repair" id="repair" title="Reinstalls sima-cli and recreates the SDK container. Your workspace folder is kept."><i class="codicon codicon-tools"></i>Repair SiMa Neat Studio…</a>
 </div>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   document.getElementById('section').addEventListener('click', () => vscode.postMessage({ type: 'toggle' }));
   document.getElementById('go').addEventListener('click', () => vscode.postMessage({ type: 'action', id: '${action}' }));
+  document.getElementById('repair').addEventListener('click', (event) => { event.preventDefault(); vscode.postMessage({ type: 'repair' }); });
 </script>
 </body></html>`;
   }
@@ -188,7 +197,7 @@ function register(context) {
   }
   extensionUri = context.extensionUri;
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, -100);
-  statusItem.name = 'SiMa SDK';
+  statusItem.name = 'Neat SDK';
   context.subscriptions.push(
     statusItem,
     changed,

@@ -599,6 +599,7 @@ async function activate(context) {
     statusItem,
     stateChanged,
     vscode.commands.registerCommand('simaNeat.openSetup', () => setupPanel.show()),
+    vscode.commands.registerCommand('simaNeat.repair', () => setupPanel.repair()),
     vscode.commands.registerCommand('simaNeat.openSdkInVsCode', () => devcontainer.openSdkInVsCode()),
     vscode.commands.registerCommand('simaNeat.showMenu', () => showMenu(context)),
     vscode.commands.registerCommand('simaNeat.installSimaCli', () => installSimaCli(context)),

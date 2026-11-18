@@ -1,6 +1,6 @@
 'use strict';
 
-// The "Neat SDK" side bar view and the "SiMa SDK" status bar item on this computer
+// The "Neat SDK" side bar view and the "SDK" status bar item on this computer
 // (hostStatus.js): not set up, setting up (step / download progress / failed), running.
 
 const test = require('node:test');
@@ -60,7 +60,7 @@ test('registers the side bar view and a hidden status bar item', async () => {
   assert.equal(hostStatus.VIEW_ID, 'simaNeatTools.host');
   assert.equal(fake.statusItems.length, 1);
   const [item] = fake.statusItems;
-  assert.equal(item.name, 'SiMa SDK');
+  assert.equal(item.name, 'Neat SDK');
   assert.equal(item.visible, false, 'nothing to show before setup starts');
   assert.deepEqual(hostStatus.get(), { kind: 'none' });
   assert.equal(hostStatus.isVisible(), false);
@@ -72,7 +72,7 @@ test('status bar shows the download percentage and opens setup', () => {
   hostStatus.set({ kind: 'progress', step: 3, total: 5, downloading: true, pct: 42, version: 'v3.0.0.1' });
   const [item] = fake.statusItems;
   assert.equal(item.visible, true);
-  assert.equal(item.text, '$(loading~spin) SiMa SDK 42%');
+  assert.equal(item.text, '$(loading~spin) SDK 42%');
   assert.equal(item.tooltip, 'Downloading SDK v3.0.0.1 · click to open setup');
   assert.equal(item.command, 'simaNeat.openSetup');
   assert.equal(item.color, undefined);
@@ -91,7 +91,7 @@ test('status bar warns when the download failed', () => {
   hostStatus.set({ kind: 'progress', failed: true, pct: 17 });
   const [item] = fake.statusItems;
   assert.equal(item.visible, true);
-  assert.equal(item.text, '$(warning) SiMa SDK download failed');
+  assert.equal(item.text, '$(warning) SDK download failed');
   assert.equal(item.tooltip, 'Click to open setup');
   assert.equal(item.command, 'simaNeat.openSetup');
   assert.equal(item.backgroundColor.id, 'statusBarItem.warningBackground', 'a warning item, as in frame A3c');
@@ -110,7 +110,7 @@ test('status bar shows a running SDK with its Platform version from the containe
   hostStatus.register(context);
   hostStatus.set({ kind: 'running', version: 'v3.0.0.1', container: 'neat-sdk' });
   const [item] = fake.statusItems;
-  assert.equal(item.text, '$(vm) SiMa SDK: running');
+  assert.equal(item.text, '$(vm) Neat SDK: running');
   assert.equal(item.command, 'simaNeat.openSdkInVsCode');
   assert.equal(item.tooltip, 'SDK v3.0.0.1 · container neat-sdk', 'Platform is not known yet');
   await settle();
@@ -146,7 +146,7 @@ test('on start, finds an SDK container that is already running', async () => {
   assert.equal(hostStatus.get().kind, 'running');
   assert.equal(hostStatus.get().version, 'v3.0.0.1');
   assert.equal(hostStatus.get().container, 'neat-sdk');
-  assert.equal(fake.statusItems[0].text, '$(vm) SiMa SDK: running');
+  assert.equal(fake.statusItems[0].text, '$(vm) Neat SDK: running');
 });
 
 test('on start, keeps "not set up" when no SDK container runs or Docker fails', async () => {
@@ -168,7 +168,7 @@ test('side bar view: not set up', () => {
   const view = fake.resolveView(hostStatus.VIEW_ID);
   assert.equal(hostStatus.isVisible(), true);
   const text = bodyText(view.webview.html);
-  assert.equal(text, 'Neat SDK SDK not set up Sign in, check this computer and download the SDK. About 15 minutes, mostly download. Set up SDK Devices, the Catalog and Insight are inside the SDK.');
+  assert.equal(text, 'Neat SDK SDK not set up Sign in, check this computer and download the SDK. About 15 minutes, mostly download. Set up SDK Catalog, Devices and Insight are inside the SDK. Repair SiMa Neat Studio…');
   assert.match(view.webview.html, /class="dot" style="background:var\(--vscode-descriptionForeground\)"/);
   assert.match(view.webview.html, /codicon-chevron-down/);
   assert.match(view.webview.html, /id: 'setup'/);
@@ -197,14 +197,14 @@ test('side bar view: a setup step, a download with its bar, a failed download', 
   assert.doesNotMatch(view.webview.html, /class="bar"/);
 });
 
-test('side bar view: running SDK opens Neat Studio', async () => {
+test('side bar view: running SDK opens SiMa Neat Studio', async () => {
   const { fake, hostStatus, context } = load({ platform: '3.0.0' });
   hostStatus.register(context);
   const view = fake.resolveView(hostStatus.VIEW_ID);
   hostStatus.set({ kind: 'running', version: 'v3.0.0.1', container: 'neat-sdk' });
   await settle();
   const text = bodyText(view.webview.html);
-  assert.match(text, /^Neat SDK SDK running · v3\.0\.0\.1 Container neat-sdk · Platform 3\.0\.0 Open Neat Studio /);
+  assert.match(text, /^Neat SDK SDK running · v3\.0\.0\.1 Container neat-sdk · Platform 3\.0\.0 Open SiMa Neat Studio /);
   assert.match(view.webview.html, /var\(--vscode-testing-iconPassed\)/);
   assert.match(view.webview.html, /id: 'open'/);
 });
@@ -253,4 +253,14 @@ test('side bar view stops updating once VS Code closes it', () => {
   assert.equal(hostStatus.isVisible(), false);
   hostStatus.set({ kind: 'progress', step: 4, total: 5 });
   assert.equal(view.webview.html, before);
+});
+
+test('side bar view: Repair SiMa Neat Studio… runs the repair command', async () => {
+  const { fake, hostStatus, context } = load();
+  hostStatus.register(context);
+  const view = fake.resolveView(hostStatus.VIEW_ID);
+  assert.match(view.webview.html, /<a href="#" class="repair" id="repair" title="Reinstalls sima-cli and recreates the SDK container\. Your workspace folder is kept\."><i class="codicon codicon-tools"><\/i>Repair SiMa Neat Studio…<\/a>/);
+  view.webview.send({ type: 'repair' });
+  await settle();
+  assert.deepEqual(fake.calls.commands, [['simaNeat.repair']]);
 });

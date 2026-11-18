@@ -1,6 +1,6 @@
 ## Develop for SiMa DevKits in VS Code
 
-Keep your editor, terminal, Git and the extensions you already use, including your AI agent. Neat Studio adds:
+Keep your editor, terminal, Git and the extensions you already use, including your AI agent. SiMa Neat Studio adds:
 
 <img src="media/marketplace/readme-devices.png" width="16" height="16" align="absmiddle" alt="">&nbsp;&nbsp;**Devices** — pair several DevKits, switch the active one, open a shell, check health, reboot.
 

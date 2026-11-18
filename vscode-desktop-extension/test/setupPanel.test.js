@@ -6,6 +6,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { ROOT, requireWithVscode } = require('./helpers');
 const { createFakeVscode, fakeContext, settle, EventEmitter } = require('./fakeVscode');
@@ -92,11 +94,11 @@ function openPage({ cli = { file: '/home/me/.sima-cli/.venv/bin/sima-cli', versi
 /** Waits for the page's debounced state message. */
 const flush = () => settle(150);
 
-test('the page opens as "Studio: Set up SDK" with the Neat Studio icon', () => {
+test('the page opens as "SiMa Neat Studio: Set up SDK" with the S logo', () => {
   const { panel, fake, setupPanel } = openPage();
   assert.equal(panel.viewType, 'simaNeatSetup');
-  assert.equal(panel.title, 'Studio: Set up SDK');
-  assert.equal(panel.iconPath.fsPath, path.join(ROOT, 'media', 'studio', 'circuit-board.svg'));
+  assert.equal(panel.title, 'SiMa Neat Studio: Set up SDK');
+  assert.equal(panel.iconPath.fsPath, path.join(ROOT, 'media', 'studio', 'logo.svg'));
   assert.ok(panel.options.retainContextWhenHidden);
 
   const { html } = panel.webview;
@@ -259,7 +261,7 @@ test('the download shows its percentage by bytes in the side bar and status bar'
   onUpdate({ state: 'running', progress: { done: 1, total: 4, bytesDone: 4_200_000_000, bytesTotal: 10_100_000_000 } });
   await settle();
   assert.deepEqual(hostStatus.get(), { kind: 'progress', step: 3, total: 5, version: 'v3.0.0.1', pct: 42, downloading: true });
-  assert.equal(fake.statusItems.at(-1).text, '$(loading~spin) SiMa SDK 42%');
+  assert.equal(fake.statusItems.at(-1).text, '$(loading~spin) SDK 42%');
 
   // Before the sizes are known, the percentage counts finished layers.
   onUpdate({ state: 'waiting', progress: { done: 1, total: 4, bytesDone: 0, bytesTotal: 0 } });
@@ -270,7 +272,7 @@ test('the download shows its percentage by bytes in the side bar and status bar'
   onUpdate({ state: 'failed', error: { message: 'network' }, progress: { done: 0, total: 0 } });
   await settle();
   assert.deepEqual(hostStatus.get(), { kind: 'progress', step: 3, total: 5, version: 'v3.0.0.1', pct: 0, failed: true });
-  assert.equal(fake.statusItems.at(-1).text, '$(warning) SiMa SDK download failed');
+  assert.equal(fake.statusItems.at(-1).text, '$(warning) SDK download failed');
 });
 
 test('a running SDK container shows as running, with the version of the selected release', async () => {
@@ -293,7 +295,7 @@ test('errors from a page action are shown under the new page name', async () => 
   api.loginQuietly = () => { throw new Error('boom'); };
   webview.send({ type: 'action', id: 'signin' });
   await settle();
-  assert.deepEqual(fake.calls.errors.at(-1), ['Studio: Set up SDK: boom']);
+  assert.deepEqual(fake.calls.errors.at(-1), ['SiMa Neat Studio: Set up SDK: boom']);
 });
 
 test('the page gets the Platform version and download size of the release from ghcr.io', async () => {
@@ -413,4 +415,81 @@ test('DevKit lookup keeps an IP the user typed, and is skipped without ethtool',
   await flush();
   assert.equal(asked, false);
   assert.equal(noEthtool.lastState().devkits.status, 'idle');
+});
+
+// ───────────── Repair SiMa Neat Studio… (frame A9) ─────────────
+
+/** Answers the next modal with `choice` and records it. */
+function answerWarning(fake, choice) {
+  fake.vscode.window.showWarningMessage = async (...args) => { fake.calls.warnings.push(args); return choice; };
+}
+
+test('Repair asks first, with the text of frame A9; Cancel does nothing', async () => {
+  const { setupPanel, fake, api } = openPage();
+  answerWarning(fake, undefined);
+  await setupPanel.repair();
+  assert.deepEqual(fake.calls.warnings.at(-1), [
+    'Repair SiMa Neat Studio?',
+    { modal: true, detail: 'Reinstalls sima-cli and recreates the SDK container. Your workspace folder is kept.' },
+    'Repair',
+  ]);
+  assert.equal(api.calls.install, 0);
+});
+
+test('Repair without an SDK container only reinstalls sima-cli', async () => {
+  const { setupPanel, fake, api } = openPage();
+  answerWarning(fake, 'Repair');
+  const done = setupPanel.repair();
+  await settle();
+  assert.equal(api.calls.install, 1);
+  api.installRun.finish({ ok: true });
+  await done;
+  assert.equal(api.calls.refresh, 1);
+  assert.deepEqual(fake.calls.info.at(-1), ['sima-cli reinstalled.']);
+});
+
+test('Repair that cannot reinstall sima-cli says why and offers the terminal when a password is needed', async () => {
+  const { setupPanel, fake, api } = openPage();
+  answerWarning(fake, 'Repair');
+  let installInTerminal = 0;
+  api.installSimaCli = () => { installInTerminal += 1; };
+  fake.vscode.window.showErrorMessage = async (...args) => { fake.calls.errors.push(args); return 'Install in a terminal'; };
+  const done = setupPanel.repair();
+  await settle();
+  api.installRun.finish({ ok: false, needsTerminal: true, reason: 'Installing the SiMa command-line tools needs your password.' });
+  await done;
+  assert.deepEqual(fake.calls.errors.at(-1), ['Repair stopped: Installing the SiMa command-line tools needs your password.', 'Install in a terminal']);
+  assert.equal(installInTerminal, 1);
+});
+
+test('Repair with an SDK container opens Start and runs setup again without asking twice', async (t) => {
+  const containers = [{ name: 'neat-sdk', image: IMAGE, state: 'running' }];
+  const { setupPanel, fake, api, webview, sdk } = openPage({ imagePresent: true, containers });
+  const setups = [];
+  sdk.buildSetupCommand = () => ({ errors: {}, file: '/bin/true', args: [], env: {}, shellCommand: 'true', display: 'true' });
+  // Setup creates the workspace folder: keep it in a temporary folder.
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'sima-neat-ws-'));
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+  webview.send({ type: 'config', key: 'workspace', value: workspace });
+  await settle();
+  webview.send({ type: 'ready' });
+  await flush();
+  await flush();
+  answerWarning(fake, 'Repair');
+  const done = setupPanel.repair();
+  await settle();
+  api.installRun.finish({ ok: true });
+  // runSetup in the terminal is simplest to observe here.
+  api.runInTerminal = (key) => { setups.push(key); };
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  try {
+    await done;
+    await flush();
+  } finally {
+    Object.defineProperty(process, 'platform', platform);
+  }
+  assert.equal(fake.calls.warnings.length, 1, 'only the Repair confirmation, not "Setup recreates the SDK container"');
+  assert.deepEqual(setups, ['sdk-setup']);
+  assert.ok(webview.posted.some((m) => m.type === 'view' && m.step === 'start'), 'the page opens Start');
 });
