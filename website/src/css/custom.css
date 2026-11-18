@@ -32,7 +32,9 @@
   --ifm-footer-background-color: #18283a;
 }
 .navbar {border-bottom: 1px solid var(--ifm-color-emphasis-200);}
-.navbar__logo {height: 1.65rem; margin-right: 1rem;}
+.navbar__logo {height: 1.25rem; width: 5.4rem; margin-right: .75rem; flex-shrink: 0;}
+.navbar__logo img {width: 100%; height: 100%; object-fit: contain;}
+[data-theme='dark'] .navbar__logo img {filter: invert(1) hue-rotate(180deg); mix-blend-mode: screen;}
 .navbar__title {font-weight: 500; font-size: 1rem;}
 .navbar__brand {min-width: 0;}
 .navbar__title {white-space: normal; line-height: 1.25; max-width: 260px;}
@@ -49,7 +51,6 @@
 .sdk-terminal {min-width: 0; border: 1px solid var(--ifm-color-emphasis-300); background: var(--ifm-color-emphasis-100); padding: 22px; border-radius: 6px;}
 .sdk-terminal > p {font-size: .9rem; font-weight: 500; margin: 0 0 14px;}
 .sdk-terminal pre {font-size: .78rem; line-height: 1.9;}
-.sdk-terminal small {display: block; line-height: 1.5; color: var(--ifm-color-emphasis-700);}
 .sdk-paths {border-top: 1px solid var(--ifm-color-emphasis-300); padding: 38px 0 18px;}
 .sdk-home h2 {font-size: 1.65rem; letter-spacing: -.02em; margin-bottom: 28px;}
 .sdk-paths article {display: grid; grid-template-columns: 1fr 1.65fr; gap: 8px 36px; padding: 24px 0; border-top: 1px solid var(--ifm-color-emphasis-200);}

@@ -25,7 +25,6 @@ export default function Home() {
           <aside className="sdk-terminal">
             <p>{text.terminal}</p>
             <CodeBlock language="bash">{`sima-cli neat install ${manifest.installTarget}\npib doctor\npib init my-image --example custom-image`}</CodeBlock>
-            <small>{text.preview}</small>
           </aside>
         </section>
         <section className="sdk-paths" aria-labelledby="paths-title">

@@ -30,10 +30,9 @@ inside `docs/` fail preparation. Other repository references link to GitHub.
 Generated content, installed dependencies, and build output are excluded from Git.
 The existing repository logo is copied during preparation and used as the favicon.
 
-The manifest records the hostname, source branch, and install target. Preview
-examples currently use the published PIB feature-branch package; update the
-install target when promoting the package to a release branch. The intended
-GitHub Pages hostname is `sdk.neat.sima.ai`; building this site does not configure
+The manifest records the hostname, source branch, and install target. Examples
+use the released `sdk/pib` package and source links point to `main`. The GitHub
+Pages hostname is `sdk.neat.sima.ai`; building this site does not configure
 GitHub Pages or DNS.
 
 ## Translations
