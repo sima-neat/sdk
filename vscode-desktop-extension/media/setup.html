@@ -26,6 +26,34 @@
 
     <!-- 1. Sign in -->
     <section class="pane" data-pane="signin" hidden>
+      <div class="si-card" id="si-done" hidden>
+        <i class="codicon codicon-pass-filled si-ok"></i>
+        <span class="si-who" id="si-who"></span>
+        <a href="#" class="si-toggle" id="si-details-toggle">Show details</a>
+      </div>
+      <div class="si-details" id="si-details" hidden>
+        <span class="si-key">sima-cli</span><span id="si-cli"></span>
+        <span class="si-key">Account</span><span>SiMa Developer Portal</span>
+      </div>
+      <div class="si-pending" id="si-pending" hidden>
+        <i class="codicon codicon-loading codicon-modifier-spin"></i><span id="si-pending-text"></span>
+      </div>
+      <div class="si-error" id="si-error" hidden>
+        <i class="codicon codicon-error"></i>
+        <div class="si-error-text">
+          <span class="si-error-title">Couldn’t sign in</span>
+          <span class="si-error-reason" id="si-error-reason"></span>
+        </div>
+      </div>
+      <div class="si-buttons">
+        <button data-action="signin" id="si-signin">Sign in to SiMa</button>
+        <button data-action="signinCancel" id="si-cancel" class="secondary">Cancel</button>
+        <button data-action="signin" id="si-retry">Try again</button>
+        <button data-action="installCli" id="si-terminal" class="secondary">Install in a terminal</button>
+        <button id="si-continue">Continue</button>
+        <button data-action="logout" id="si-signout" class="link">Sign out</button>
+      </div>
+
       <div class="block" id="step-cli">
         <div class="step-head"><span class="badge"></span><h2>sima-cli</h2></div>
         <p class="detail" id="cli-detail"></p>

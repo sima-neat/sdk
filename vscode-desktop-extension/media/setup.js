@@ -52,6 +52,43 @@
     button.classList.toggle('secondary', cli.found);
   }
 
+  // "Show details" on the signed-in card; hidden by default.
+  let signinDetails = false;
+
+  function renderSignin() {
+    const { cli, login, signin, cliLatest } = state;
+    const signedIn = cli.found && login.loggedIn;
+    const phase = signedIn && signin.phase !== 'pending' ? 'done' : signin.phase;
+    $('si-done').hidden = phase !== 'done';
+    $('si-details').hidden = phase !== 'done' || !signinDetails;
+    $('si-details-toggle').textContent = signinDetails ? 'Hide details' : 'Show details';
+    const who = $('si-who');
+    who.textContent = 'Signed in as ';
+    const strong = document.createElement('b');
+    strong.textContent = login.name || login.email || login.user || 'you';
+    who.appendChild(strong);
+    if (login.name && login.email) {
+      who.appendChild(document.createTextNode(` · ${login.email}`));
+    }
+    const newer = cliLatest && cli.version && cliLatest !== cli.version;
+    $('si-cli').textContent = !cli.found ? 'not installed'
+      : `${cli.version || 'unknown version'} · ${newer ? `update available (${cliLatest})` : cliLatest ? 'installed and up to date' : 'installed'}`;
+
+    $('si-pending').hidden = phase !== 'pending' && phase !== 'installing';
+    $('si-pending-text').textContent = phase === 'installing' ? 'Installing the SiMa command-line tools…' : 'Finish signing in in your browser…';
+    $('si-error').hidden = phase !== 'error';
+    $('si-error-reason').textContent = `Reason: ${signin.reason || 'Sign-in did not finish.'}`;
+
+    const busy = phase === 'pending' || phase === 'installing';
+    $('si-signin').hidden = !(phase === 'idle' || busy);
+    $('si-signin').disabled = busy;
+    $('si-cancel').hidden = !busy;
+    $('si-retry').hidden = phase !== 'error';
+    $('si-terminal').hidden = !(phase === 'error' && signin.needsTerminal);
+    $('si-continue').hidden = phase !== 'done';
+    $('si-signout').hidden = phase !== 'done';
+  }
+
   function renderLogin() {
     const { cli, login } = state;
     setDisabledStep('step-login', !cli.found);
@@ -489,7 +526,7 @@
     const status = {
       signin: {
         done: cli.found && login.loggedIn,
-        summary: login.loggedIn ? `Signed in${login.user ? ` as ${login.user}` : ''}` : '',
+        summary: login.loggedIn ? `Signed in${login.name || login.user ? ` as ${login.name || login.user}` : ''}` : '',
       },
       check: {
         done: prereqs.status !== 'checking' && items.length > 0 && !items.some((i) => i.status === 'error'),
@@ -566,7 +603,7 @@
     const reachable = (id) => {
       const i = STEPS.findIndex((st) => st.id === id);
       const st = status[id];
-      return i >= 0 && (i <= activeIndex || st.done || st.busy || st.failed);
+      return i >= 0 && (i <= activeIndex || (i === activeIndex + 1 && st.busy));
     };
     if (viewing && !reachable(viewing)) {
       viewing = undefined;
@@ -579,7 +616,9 @@
     const list = $('rail-items');
     list.textContent = '';
     STEPS.forEach((step, i) => {
-      const s = status[step.id];
+      // Steps after the current one show just their number, as in the design, even when
+      // their check already passed in the background.
+      const s = i > activeIndex ? { summary: '' } : status[step.id];
       const isView = step.id === view;
       const isActive = i === activeIndex && !s.done;
       const clickable = !isView && (s.done || s.busy || s.failed || i <= activeIndex);
@@ -641,11 +680,17 @@
     // Continue moves on once this step is done (or the download is running).
     const s = status[view];
     const next = STEPS[viewIndex + 1];
-    const canContinue = Boolean(next) && (s.done || s.busy || view === 'configure');
+    // Sign in has its own button row (Continue · Sign out), as in the design.
+    const canContinue = view !== 'signin' && Boolean(next) && (s.done || s.busy || view === 'configure');
     const continueButton = $('continue-button');
     continueButton.hidden = !canContinue;
 
     continueButton.disabled = view === 'configure' && Object.keys(state.configErrors).length > 0;
+    $('si-continue').onclick = () => {
+      viewing = 'check';
+      saveView();
+      render();
+    };
     continueButton.onclick = () => {
       if (view === 'configure') {
         configConfirmed = true;
@@ -661,6 +706,7 @@
 
   function render() {
     renderFrame();
+    renderSignin();
     renderCli();
     renderLogin();
     renderPrereqs();
@@ -683,7 +729,7 @@
     let primaryLeft = !continueShown;
     for (const button of pane.querySelectorAll('button')) {
       const wasPrimary = !button.classList.contains('secondary') || button.dataset.demoted === '1';
-      if (!wasPrimary || button.classList.contains('danger')) {
+      if (!wasPrimary || button.classList.contains('danger') || button.classList.contains('link')) {
         continue;
       }
       const keep = primaryLeft && shown(button);
@@ -705,6 +751,12 @@
   });
 
   document.addEventListener('click', (event) => {
+    if (/** @type {HTMLElement} */ (event.target).closest('#si-details-toggle')) {
+      event.preventDefault();
+      signinDetails = !signinDetails;
+      renderSignin();
+      return;
+    }
     const link = /** @type {HTMLElement} */ (event.target).closest('[data-link-action]');
     if (link) {
       event.preventDefault();

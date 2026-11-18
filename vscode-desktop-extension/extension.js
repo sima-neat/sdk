@@ -4,7 +4,8 @@ const vscode = require('vscode');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
+const https = require('https');
 const setupPanel = require('./setupPanel');
 const hostStatus = require('./hostStatus');
 const devcontainer = require('./devcontainer');
@@ -112,7 +113,10 @@ function readLoginState() {
   const tokens = readJson(EXTERNAL_TOKEN_FILE);
   if (tokens && (tokens.refresh_token || tokens.access_token)) {
     const claims = tokens.id_token ? jwtClaims(tokens.id_token) : {};
-    state.external = { loggedIn: true, user: claims.email || claims.name || claims.nickname };
+    const info = claims['https://auth.sima.ai/user_info'] || {};
+    const email = claims.email || info.email;
+    const name = claims.name && claims.name !== email ? claims.name : '';
+    state.external = { loggedIn: true, user: email || claims.name || claims.nickname, name, email };
   }
 
   const internal = (readJson(INTERNAL_CONFIG_FILE) || {}).internal || {};
@@ -300,6 +304,125 @@ async function installSimaCli(context) {
   });
 }
 
+// ───────────── Sign in without a terminal (Set up SDK page) ─────────────
+
+/** The last line worth showing from a command's output, without colours and emoji. */
+function lastOutputLine(output) {
+  const lines = String(output || '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .split(/\r?\n/)
+    .map((l) => l.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').trim())
+    .filter((l) => l && !/^[═─=\-*]+$/.test(l));
+  return lines.length ? lines[lines.length - 1] : '';
+}
+
+/** Runs a child process; returns { cancel, done } where done resolves { code, output, cancelled }. */
+function runQuietly(command, args, options) {
+  let output = '';
+  let cancelled = false;
+  let finish;
+  // Own process group, so Cancel also stops what the command started (e.g. a pipe or a browser opener).
+  const child = spawn(command, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'], detached: !IS_WINDOWS });
+  child.stdout.on('data', (d) => { output += d; });
+  child.stderr.on('data', (d) => { output += d; });
+  const done = new Promise((resolve) => {
+    let settled = false;
+    finish = (code) => {
+      if (!settled) {
+        settled = true;
+        resolve({ code, output, cancelled });
+      }
+    };
+    child.on('error', (err) => { output += `\n${err.message}`; finish(-1); });
+    child.on('close', (code) => finish(code));
+    // A child that keeps the pipes open must not keep the page waiting once the command exits.
+    child.on('exit', (code) => setTimeout(() => finish(code), 300));
+  });
+  const cancel = () => {
+    cancelled = true;
+    try {
+      if (IS_WINDOWS) {
+        child.kill();
+      } else {
+        process.kill(-child.pid, 'SIGTERM');
+      }
+    } catch {
+      child.kill();
+    }
+    finish(null);
+  };
+  return { cancel, done };
+}
+
+/**
+ * Installs sima-cli with the official installer in the background. When the installer needs
+ * a password (sudo for python3-venv) it can't finish here: needsTerminal tells the page to
+ * offer the terminal install instead.
+ */
+function installSimaCliQuietly(context) {
+  const url = IS_WINDOWS ? INSTALLER_URL_WINDOWS : INSTALLER_URL_UNIX;
+  const run = IS_WINDOWS
+    ? runQuietly('powershell.exe', ['-NoProfile', '-Command',
+      `$f = Join-Path $env:TEMP 'sima-cli-install.bat'; Invoke-WebRequest -UseBasicParsing '${url}' -OutFile $f; & cmd.exe /c $f`], { env: CLI_ENV })
+    : runQuietly('bash', ['-c', `set -o pipefail; if command -v curl >/dev/null 2>&1; then curl -fsSL '${url}' | bash; else wget -qO- '${url}' | bash; fi`],
+      { env: { ...CLI_ENV, DEBIAN_FRONTEND: 'noninteractive', SUDO_ASKPASS: '/bin/false' } });
+  return {
+    cancel: run.cancel,
+    done: run.done.then(async ({ code, output, cancelled }) => {
+      const found = cancelled ? undefined : await refresh(context);
+      if (found) {
+        return { ok: true };
+      }
+      const needsTerminal = /sudo|password|terminal is required/i.test(output);
+      return {
+        ok: false,
+        cancelled,
+        needsTerminal,
+        reason: needsTerminal
+          ? 'Installing the SiMa command-line tools needs your password. Install them in a terminal, then try again.'
+          : lastOutputLine(output) || `The sima-cli installer stopped (exit ${code}).`,
+      };
+    }),
+  };
+}
+
+/** Runs `sima-cli login` without a terminal: sima-cli opens the browser and waits for the sign-in. */
+function loginQuietly() {
+  const run = runQuietly(simaCli.file, ['login'], { env: CLI_ENV });
+  return {
+    cancel: run.cancel,
+    done: run.done.then(({ code, output, cancelled }) => {
+      updateStatusBar();
+      const state = readLoginState().external;
+      if (state.loggedIn && code === 0) {
+        return { ok: true };
+      }
+      return { ok: false, cancelled, reason: lastOutputLine(output) || `sima-cli login stopped (exit ${code}).` };
+    }),
+  };
+}
+
+/** Latest sima-cli on PyPI, or '' when it can't be read. */
+function latestSimaCliVersion() {
+  return new Promise((resolve) => {
+    const request = https.get('https://pypi.org/pypi/sima-cli/json', { headers: { 'User-Agent': 'sima-neat-desktop' }, timeout: 10000 }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => {
+        try {
+          resolve(res.statusCode === 200 ? String(JSON.parse(body).info.version || '') : '');
+        } catch {
+          resolve('');
+        }
+      });
+    });
+    request.on('timeout', () => request.destroy());
+    request.on('error', () => resolve(''));
+  });
+}
+
 /** Returns the detected sima-cli, offering to install it when missing. */
 async function requireSimaCli(context) {
   const found = await refresh(context);
@@ -455,6 +578,9 @@ async function activate(context) {
     installSimaCli: () => installSimaCli(context),
     login: () => login(context, false),
     logout: () => logout(context, false),
+    installSimaCliQuietly: () => installSimaCliQuietly(context),
+    loginQuietly,
+    latestSimaCliVersion,
     runInTerminal: (key, name, command, onDone) => runInTerminal(context, key, name, command, onDone),
     openHostShell,
     refresh: () => refresh(context),

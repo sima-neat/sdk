@@ -75,6 +75,9 @@ class SetupPanel {
     this.state = {
       cli: { found: false },
       login: { loggedIn: false },
+      // Sign in to SiMa: idle | installing | pending | error, with the reason for an error.
+      signin: { phase: 'idle' },
+      cliLatest: '',
       prereqs: { status: 'checking', items: [] },
       versions: { status: 'loading', items: [] },
       selectedRef: undefined,
@@ -158,6 +161,10 @@ class SetupPanel {
 
   async refreshAll() {
     this.refreshCliAndLogin();
+    api.latestSimaCliVersion().then((latest) => {
+      this.state.cliLatest = latest;
+      this.post();
+    });
     await Promise.all([this.refreshPrereqs(), this.loadVersions()]);
   }
 
@@ -165,9 +172,45 @@ class SetupPanel {
     const cli = api.getSimaCli();
     this.state.cli = cli ? { found: true, version: cli.version, file: cli.file } : { found: false };
     const login = api.readLoginState().external;
-    this.state.login = { loggedIn: login.loggedIn, user: login.user };
+    this.state.login = { loggedIn: login.loggedIn, user: login.user, name: login.name, email: login.email };
     this.updateCommand();
     this.post();
+  }
+
+  /** Sign in to SiMa: installs sima-cli quietly when it's missing, then signs in through the browser. */
+  async signIn() {
+    if (this.signinRun) {
+      return;
+    }
+    const setPhase = (signin) => {
+      this.state.signin = signin;
+      this.post(true);
+    };
+    try {
+      if (!api.getSimaCli() && !(await api.refresh())) {
+        setPhase({ phase: 'installing' });
+        this.signinRun = api.installSimaCliQuietly();
+        const installed = await this.signinRun.done;
+        this.refreshCliAndLogin();
+        if (!installed.ok) {
+          setPhase(installed.cancelled ? { phase: 'idle' } : { phase: 'error', reason: installed.reason, needsTerminal: installed.needsTerminal });
+          return;
+        }
+      }
+      setPhase({ phase: 'pending' });
+      this.signinRun = api.loginQuietly();
+      const result = await this.signinRun.done;
+      this.refreshCliAndLogin();
+      setPhase(result.ok || result.cancelled ? { phase: 'idle' } : { phase: 'error', reason: result.reason });
+    } finally {
+      this.signinRun = undefined;
+    }
+  }
+
+  cancelSignIn() {
+    if (this.signinRun) {
+      this.signinRun.cancel();
+    }
   }
 
   async refreshPrereqs() {
@@ -491,6 +534,8 @@ class SetupPanel {
       case 'installCli': return api.installSimaCli();
       case 'login': return api.login();
       case 'logout': return api.logout();
+      case 'signin': return this.signIn();
+      case 'signinCancel': return this.cancelSignIn();
       case 'recheck': return Promise.all([this.refreshPrereqs(), this.refreshImage()]);
       case 'selectVersion': return this.selectVersion(message.value, true);
       case 'pull': return this.startPull();

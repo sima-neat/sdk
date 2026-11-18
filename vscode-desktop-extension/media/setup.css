@@ -105,6 +105,27 @@ h2 { font-size: 13px; font-weight: 600; margin: 0; }
 .buttons { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .buttons:not(:has(button:not([hidden]))) { display: none; }
 
+/* ───────────── Sign in to SiMa ───────────── */
+
+.si-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 4px; max-width: 520px; box-sizing: border-box; }
+.si-ok { color: var(--ok); font-size: 16px; }
+.si-who { flex: 1; min-width: 0; }
+.si-toggle { font-size: 12px; color: var(--vscode-textLink-foreground); text-decoration: none; cursor: pointer; }
+.si-toggle:focus { outline: none; }
+.si-toggle:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
+.si-details { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 6px 14px; font-size: 12px; max-width: 520px; padding-left: 12px; box-sizing: border-box; }
+.si-key { color: var(--muted); }
+.si-pending { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+.si-pending .codicon { font-size: 16px; }
+.si-error { display: flex; gap: 10px; padding: 10px 12px; border: 1px solid var(--error); border-radius: 4px; max-width: 520px; box-sizing: border-box; }
+.si-error > .codicon { color: var(--error); font-size: 16px; flex: none; }
+.si-error-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.si-error-title { font-weight: 600; }
+.si-error-reason { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.si-buttons { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+button.link { background: transparent; color: var(--vscode-textLink-foreground); border-color: transparent; padding: 0 6px; }
+button.link:hover:not(:disabled) { background: transparent; text-decoration: underline; }
+
 /* ───────────── Controls ───────────── */
 
 .detail { color: var(--muted); margin: 6px 0; }
