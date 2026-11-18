@@ -30,7 +30,7 @@ def prepare(output, image_resource, version, release):
     metadata['size'] = {'download': '2GB', 'install': '2GB'}
     metadata['installation']['post-message'] = (
         'Palette Image Builder installed.\nOpen a new terminal if PATH was updated.\n'
-        'Run [cyan]pib doctor[/cyan], then [cyan]pib init my-image --flavor minimal[/cyan].\n')
+        'Run [cyan]pib init my-image --flavor minimal[/cyan] to get started.\n')
     write_metadata(output, metadata)
     print(f'Prepared sdk/pib package: {output}')
     return metadata

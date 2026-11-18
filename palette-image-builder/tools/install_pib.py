@@ -89,12 +89,14 @@ def main():
     try:
         launcher = install_launcher(args.image, directory)
         changed = False if args.no_path else add_to_path(directory)
+        print('Checking the Docker host for image building...', flush=True)
+        subprocess.run([sys.executable, str(launcher), 'doctor'], check=True)
     except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
         sys.exit(f'PIB installation failed: {error}')
     print(f'Installed PIB: {launcher}')
     if changed:
         print('Open a new terminal to use the updated PATH.')
-    print('Run pib --version, then pib doctor to check your Docker host.')
+    print('Docker host checks passed. Run pib init my-image --flavor minimal to get started.')
 
 
 if __name__ == '__main__':

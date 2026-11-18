@@ -1,4 +1,5 @@
 """Installer metadata and native host launchers; no live Docker or credentials needed."""
+import contextlib
 import hashlib
 import importlib.util
 import io
@@ -73,6 +74,26 @@ class PackageTests(unittest.TestCase):
                 elif os.name != 'nt':
                     self.assertTrue(path.stat().st_mode & 0o111)
                 subprocess.run([sys.executable, '-m', 'py_compile', str(path)], check=True)
+
+    def test_installation_checks_host_without_requiring_updated_path(self):
+        launcher = Path('bin with spaces') / 'pib'
+        with patch.object(sys, 'argv', ['install_pib.py', '--image', IMAGE, '--no-path']), \
+                patch.object(installer, 'install_launcher', return_value=launcher), \
+                patch.object(installer.subprocess, 'run') as run, \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            installer.main()
+        run.assert_called_once_with([sys.executable, str(launcher), 'doctor'], check=True)
+        self.assertIn('Docker host checks passed.', output.getvalue())
+
+    def test_failed_host_check_does_not_report_successful_installation(self):
+        with patch.object(sys, 'argv', ['install_pib.py', '--image', IMAGE, '--no-path']), \
+                patch.object(installer, 'install_launcher', return_value=Path('pib')), \
+                patch.object(installer.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, 'doctor')), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            with self.assertRaisesRegex(SystemExit, 'PIB installation failed'):
+                installer.main()
+        self.assertNotIn('Installed PIB:', output.getvalue())
+        self.assertNotIn('checks passed', output.getvalue())
 
     @unittest.skipIf(os.name == 'nt', 'POSIX shell profile')
     def test_profile_update_preserves_content_and_is_idempotent(self):
