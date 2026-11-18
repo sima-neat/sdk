@@ -34,6 +34,9 @@ jobs:
 
   resolve-platform-config:
     name: Resolve platform package configuration
+    # Same-repository PRs use the push run; fork PRs have no local push run.
+    # All SDK build/test/publication jobs depend on this root job.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
     outputs:
       sdk_apt_channel: ${{ steps.resolve.outputs.sdk_apt_channel }}
