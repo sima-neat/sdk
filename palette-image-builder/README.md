@@ -1,10 +1,17 @@
 # Palette Image Builder container
 
-A standalone companion to the Neat SDK. Customers start with
+A standalone companion to the Palette SDK. Customers start with
 [Create a custom Modalix image](../docs/palette-image-builder.md) and install with
 `sima-cli neat install sdk/pib`. This directory is not copied into the main SDK
 image. sima-cli uses the generic metadata installer; PIB commands stay in the
 container. Manual Docker installation is also supported.
+
+`pib --version` reports the SDK repository build identity: the exact release tag
+for a release build (for example `v3.0.0.2`), otherwise the branch and short Git
+hash (for example `develop-abc1234`). Branch slashes become underscores, matching
+the SDK release reference. This identity is embedded in the image and OCI labels;
+it is separate from the platform release that PIB builds. Source checkouts or
+manual builds without build metadata report `unknown-nogit`.
 
 ## Maintainer layout
 
@@ -34,7 +41,9 @@ dependencies from a floating branch.
 On a native Linux Docker host (amd64 or arm64):
 
 ```bash
-docker build -t palette-image-builder:local palette-image-builder
+docker build -t palette-image-builder:local \
+  --build-arg PIB_VERSION="$(git branch --show-current | tr / _)-$(git rev-parse --short HEAD)" \
+  --build-arg PIB_GIT_SHA="$(git rev-parse HEAD)" palette-image-builder
 export PIB_IMAGE=palette-image-builder:local
 palette-image-builder/host/pib doctor
 ```

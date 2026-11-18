@@ -151,6 +151,13 @@ COPY --chmod=755 runtime/gzip runtime/mmdebstrap /usr/local/bin/
 # key is set or shipped; pib build uses a throwaway one and pib sign the customer's.
 ENV PIB_SIMA_APT_URL=${SIMAAI_APT_URL}
 
+# Record the SDK-style build identity late so new commits retain dependency caches.
+ARG PIB_VERSION=unknown-nogit
+ARG PIB_GIT_SHA=unknown
+RUN printf '%s\n' "${PIB_VERSION}" > /etc/pib-version
+LABEL org.opencontainers.image.version="${PIB_VERSION}" \
+      org.opencontainers.image.revision="${PIB_GIT_SHA}"
+
 # Extract this launcher from the pulled image; no source checkout is needed.
 # CI embeds this build's commit-tagged image ref so copied launchers keep their toolchain.
 ARG PIB_DEFAULT_IMAGE=ghcr.io/sima-neat/palette-image-builder:latest

@@ -28,6 +28,7 @@ class Publishing(unittest.TestCase):
                                 ('codex/Add PIB', 'palette-image-builder-codex-add-pib')):
             c = self.config('refs/heads/' + branch)
             self.assertEqual(c['repository'], 'ghcr.io/sima-neat/' + package)
+            self.assertEqual(c['version'], branch.replace('/', '_') + '-' + 'a' * 7)
             self.assertIn(c['repository'] + ':latest', c['promotion_tags'])
             self.assertIn('ghcr.io/sima-neat/palette-image-builder:' + image_config.slug(branch), c['promotion_tags'])
 
@@ -35,6 +36,7 @@ class Publishing(unittest.TestCase):
         for tag in ('v3.0.0', 'v3.0.0.2'):
             c = self.config('refs/tags/' + tag)
             self.assertEqual(c['repository'], 'ghcr.io/sima-neat/palette-image-builder')
+            self.assertEqual(c['version'], tag)
             self.assertEqual(c['promotion_tags'].splitlines(), [c['repository'] + ':' + tag, c['repository'] + ':v3.0-latest'])
             self.assertNotIn(':latest', c['promotion_tags'])
         with self.assertRaises(ValueError):
@@ -43,7 +45,19 @@ class Publishing(unittest.TestCase):
     def test_pull_requests_never_publish(self):
         c = self.config('refs/pull/42/merge', event='pull_request', head_ref='codex/pib')
         self.assertEqual(c['publish'], 'false')
+        self.assertEqual(c['version'], 'codex_pib-' + 'a' * 7)
         self.assertTrue(c['repository'].endswith('-codex-pib'))
+
+
+class BuildIdentity(unittest.TestCase):
+    def test_embedded_identity_and_unbuilt_source_fallback(self):
+        from pib import build_version
+        with tempfile.TemporaryDirectory() as tmp:
+            version_file = Path(tmp) / 'pib-version'
+            self.assertEqual(build_version(version_file), 'unknown-nogit')
+            for expected in ('develop-abc1234', 'codex_feature-abc1234', 'v3.0.0.2'):
+                version_file.write_text(expected + '\n')
+                self.assertEqual(build_version(version_file), expected)
 
 
 class Workflow(unittest.TestCase):

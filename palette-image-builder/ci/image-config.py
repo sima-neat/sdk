@@ -11,7 +11,8 @@ def slug(ref):
 
 def configuration(owner, ref, sha, event='push', head_ref=''):
     canonical = f'ghcr.io/{owner.lower()}/palette-image-builder'
-    branch = slug(head_ref or ref.removeprefix('refs/heads/'))
+    branch_name = head_ref or ref.removeprefix('refs/heads/')
+    branch = slug(branch_name)
     release = re.fullmatch(r'refs/tags/(v([0-9]+)\.([0-9]+)\.[0-9]+(?:\.[0-9]+)?)', ref)
     if ref.startswith('refs/tags/') and not release:
         raise ValueError('Release tags must use vX.Y.Z or vX.Y.Z.N')
@@ -22,7 +23,8 @@ def configuration(owner, ref, sha, event='push', head_ref=''):
     else:
         tags = [f'{repository}:latest', f'{canonical}:{branch}']
         cache = branch
-    return dict(repository=repository, canonical=canonical, commit=sha,
+    version = release[1] if release else f"{branch_name.replace('/', '_')}-{sha[:7]}"
+    return dict(repository=repository, canonical=canonical, commit=sha, version=version,
                 staged=f'{repository}:staged-{sha}', cache_scope=cache,
                 promotion_tags='\n'.join(dict.fromkeys(tags)), publish=str(event != 'pull_request').lower())
 
