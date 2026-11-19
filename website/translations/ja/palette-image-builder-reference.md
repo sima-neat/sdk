@@ -41,7 +41,7 @@ pib build --sign
 | コマンド | 用途 |
 |---|---|
 | `pib doctor` | ツール、空き容量、ループデバイス、device-mapper、エミュレーションの確認 |
-| `pib init DIR --flavor minimal` | プロジェクト作成。minimal、palette、securepalette を選択可能 |
+| `pib init DIR --flavor minimal` | プロジェクト作成。minimal、palette を選択可能 |
 | `pib init DIR --example custom-image` | 完全なサンプル定義と入力のコピー |
 | `pib shell` | 現在のプロジェクトをマウントしたコンテナシェルを開く |
 | `pib keys init --cn NAME` | CA、SWU リーフ証明書、Debian 署名情報の生成 |
@@ -87,7 +87,7 @@ Modalix の eMMC/SD イメージは GPT のブートパーティションと、�
 
 | ボリューム | サイズ | ファイルシステム | 用途 |
 |---|---|---|---|
-| `rootfs.A` | `minimal` は 1.5 GiB、`palette` と `securepalette` は 5.5 GiB | ext4 | スロット A のルートファイルシステム |
+| `rootfs.A` | `minimal` は 1.5 GiB、`palette` は 5.5 GiB | ext4 | スロット A のルートファイルシステム |
 | `rootfs.B` | `rootfs.A` と同じ | 内容書き込み後に ext4 | スロット B のルートファイルシステム。初期状態は `slots` に依存 |
 | `data` | 両方の rootfs スロットの容量を確保した後の LVM 残容量 | ext4 | 汎用ストレージ。初回起動時に拡張 |
 
@@ -143,7 +143,7 @@ systemctl --root="$1" enable my-app.service
 
 `swu.description` と `swu.script` を指定すると、更新手順を置き換えられます。最初に `configs/images/files/` のリリース既定値をコピーしてください。バージョン・ハードウェア互換性のプレースホルダー、ハッシュ、必須のブート/SBOM メンバーを保持します。これらはインストール時にボードで動くため、復旧可能なボードで変更を試してください。
 
-`securepalette` は追加のカーネル FIT 署名検証を行い、出荷用には本番署名されたブートパッケージが必要です。この移植の minimal イメージのスモークテストでは検証していません。`--dev` は一時的な署名情報を使用し、通常配布用の `--sign` と併用できません。開発用に生成する顧客 CA/リーフ鍵と `--dev` モードは別のものです。
+`--dev` は一時的な署名情報を使用し、通常配布用の `--sign` と併用できません。開発用に生成する顧客 CA/リーフ鍵と `--dev` モードは別のものです。
 
 ## 署名
 

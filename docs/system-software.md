@@ -57,10 +57,6 @@ the image must match the copy embedded in `fip.bin`. Building a `u-boot.bin` is 
 authorization or a supported procedure to overwrite boot firmware. Coordinate
 boot-chain changes with the platform supplier and its recovery/signing process.
 
-The `securepalette` flavor adds kernel FIT signature checks and requires
-production-signed boot packages for shipping. Its secure-boot hardware behavior
-is separate from the minimal-image CI qualification.
-
 ## Package system changes with PIB
 
 Place release-compatible ARM64 Debian packages in `custom-debs/`, sign them with

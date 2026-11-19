@@ -62,7 +62,7 @@ The cache can contain your custom packages; keep it in your own user directory.
 | Command | Purpose |
 |---|---|
 | `pib doctor` | Check tools, storage, loop devices, device-mapper, and emulation |
-| `pib init DIR --flavor minimal` | Create a project; flavors: minimal, palette, securepalette |
+| `pib init DIR --flavor minimal` | Create a project; flavors: minimal, palette |
 | `pib init DIR --example custom-image` | Copy the complete sample image spec and inputs |
 | `pib shell` | Open the selected container with the current project mounted |
 | `pib keys init --cn NAME` | Generate CA, SWU signing leaf, and Debian signing identity |
@@ -118,7 +118,7 @@ The logical volumes reside inside partition 3.
 
 | Volume | Size | File system | Purpose |
 |---|---|---|---|
-| `rootfs.A` | 1.5 GiB for `minimal`; 5.5 GiB for `palette` and `securepalette` | ext4 | Slot A root filesystem |
+| `rootfs.A` | 1.5 GiB for `minimal`; 5.5 GiB for `palette` | ext4 | Slot A root filesystem |
 | `rootfs.B` | Same size as `rootfs.A` | ext4 when populated | Slot B root filesystem; initial population depends on `slots` |
 | `data` | Remaining LVM capacity after space for both rootfs slots is reserved | ext4 | General storage, expanded on first boot |
 
@@ -190,9 +190,7 @@ Preserve the version/hardware compatibility placeholders, hashes, and required
 boot/SBOM members. Test changes on a board that you can recover; these scripts run
 on the board during installation.
 
-`securepalette` enforces additional kernel FIT signature checks and requires
-production-signed boot packages for a shippable image. It has not been qualified
-by this port's minimal-image smoke test. `--dev` builds use a throwaway identity;
+`--dev` builds use a throwaway identity;
 they cannot be combined with `--sign` for normal delivery. Generated customer
 CA/leaf keys used for development are distinct from `--dev` mode.
 

@@ -41,7 +41,7 @@ pib build --sign
 | 명령 | 용도 |
 |---|---|
 | `pib doctor` | 도구, 공간, 루프 장치, device-mapper, 에뮬레이션 확인 |
-| `pib init DIR --flavor minimal` | 프로젝트 생성. minimal, palette, securepalette 지원 |
+| `pib init DIR --flavor minimal` | 프로젝트 생성. minimal, palette 지원 |
 | `pib init DIR --example custom-image` | 완전한 샘플 명세와 입력 복사 |
 | `pib shell` | 현재 프로젝트를 마운트한 컨테이너 셸 열기 |
 | `pib keys init --cn NAME` | CA, SWU 리프 인증서, Debian 서명 정보 생성 |
@@ -87,7 +87,7 @@ Modalix eMMC/SD 이미지는 GPT 부트 파티션과 루트 파일 시스템 및
 
 | 볼륨 | 크기 | 파일 시스템 | 목적 |
 |---|---|---|---|
-| `rootfs.A` | `minimal`은 1.5 GiB, `palette`와 `securepalette`는 5.5 GiB | ext4 | 슬롯 A 루트 파일 시스템 |
+| `rootfs.A` | `minimal`은 1.5 GiB, `palette`는 5.5 GiB | ext4 | 슬롯 A 루트 파일 시스템 |
 | `rootfs.B` | `rootfs.A`와 동일 | 내용 기록 후 ext4 | 슬롯 B 루트 파일 시스템. 초기 상태는 `slots`에 따라 결정 |
 | `data` | 두 rootfs 슬롯 공간을 예약한 뒤 남은 LVM 용량 | ext4 | 일반 저장소. 첫 부팅 시 확장 |
 
@@ -143,7 +143,7 @@ systemctl --root="$1" enable my-app.service
 
 `swu.description`과 `swu.script`는 업데이트 절차를 바꿀 수 있습니다. 먼저 `configs/images/files/`의 릴리스 기본값을 복사하세요. 버전/하드웨어 호환성 자리표시자, 해시, 필수 부팅/SBOM 항목을 유지합니다. 이 스크립트는 설치할 때 보드에서 실행되므로 복구 가능한 보드에서 변경 사항을 테스트하세요.
 
-`securepalette`는 추가 커널 FIT 서명 검사를 적용하며 출하용 이미지에는 프로덕션 서명된 부팅 패키지가 필요합니다. 이 포팅의 minimal 이미지 스모크 테스트로는 검증하지 않았습니다. `--dev` 빌드는 임시 서명 정보를 사용하며 일반 배포용 `--sign`과 함께 사용할 수 없습니다. 개발용 고객 CA/리프 키와 `--dev` 모드는 별개입니다.
+`--dev` 빌드는 임시 서명 정보를 사용하며 일반 배포용 `--sign`과 함께 사용할 수 없습니다. 개발용 고객 CA/리프 키와 `--dev` 모드는 별개입니다.
 
 ## 서명
 

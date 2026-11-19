@@ -41,7 +41,7 @@ pib build --sign
 | 命令 | 用途 |
 |---|---|
 | `pib doctor` | 檢查工具、空間、迴路裝置、device-mapper 與模擬功能 |
-| `pib init DIR --flavor minimal` | 建立專案；支援 minimal、palette、securepalette |
+| `pib init DIR --flavor minimal` | 建立專案；支援 minimal、palette |
 | `pib init DIR --example custom-image` | 複製完整範例規格與輸入 |
 | `pib shell` | 開啟已掛載目前專案的容器殼層 |
 | `pib keys init --cn NAME` | 產生 CA、SWU 終端憑證與 Debian 簽署身分 |
@@ -87,7 +87,7 @@ Modalix eMMC/SD 映像使用 GPT 開機分割區，以及存放根檔案系統�
 
 | 磁碟區 | 大小 | 檔案系統 | 用途 |
 |---|---|---|---|
-| `rootfs.A` | `minimal` 為 1.5 GiB；`palette` 與 `securepalette` 為 5.5 GiB | ext4 | A 槽根檔案系統 |
+| `rootfs.A` | `minimal` 為 1.5 GiB；`palette` 為 5.5 GiB | ext4 | A 槽根檔案系統 |
 | `rootfs.B` | 與 `rootfs.A` 相同 | 寫入內容後為 ext4 | B 槽根檔案系統，初始內容取決於 `slots` |
 | `data` | 為兩個 rootfs 槽預留空間後剩餘的 LVM 容量 | ext4 | 一般儲存空間，首次開機時擴展 |
 
@@ -143,7 +143,7 @@ systemctl --root="$1" enable my-app.service
 
 自訂 `swu.description` 與 `swu.script` 可取代更新指示。請先複製 `configs/images/files/` 的版本預設值，保留版本／硬體相容性預留位置、雜湊與必要開機／SBOM 成員。這些指令碼在安裝時於開發板執行，請在可復原的板子測試變更。
 
-`securepalette` 強制額外核心 FIT 簽章檢查，出貨映像需要正式簽署的開機套件。此移植的 minimal 映像煙霧測試尚未驗證該類型。`--dev` 建置使用臨時身分，不能與一般交付用的 `--sign` 合用。開發產生的客戶 CA／終端金鑰與 `--dev` 模式是不同概念。
+`--dev` 建置使用臨時身分，不能與一般交付用的 `--sign` 合用。開發產生的客戶 CA／終端金鑰與 `--dev` 模式是不同概念。
 
 ## 簽署
 

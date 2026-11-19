@@ -37,8 +37,6 @@ dtc -@ -I dts -O dtb -o imx415.dtbo imx415.dtso
 
 PIB 會拒絕本機替換 tRoot、ATF 與 U-Boot 的套件。映像中的 U-Boot 必須與 `fip.bin` 內的副本一致。建置 `u-boot.bin` 並不代表取得覆寫開機韌體的授權，也不等於受支援的寫入程序。開機鏈變更須與平台供應商及其復原／簽署流程協調。
 
-`securepalette` 類型增加核心 FIT 簽章檢查，正式出貨需要正式簽署的開機套件。其安全開機硬體行為須另外驗證，不能以 minimal 映像 CI 驗證代替。
-
 ## 使用 PIB 封裝系統變更
 
 將符合版本的 ARM64 Debian 套件放在 `custom-debs/`，以套件簽署身分簽署後建置映像：
