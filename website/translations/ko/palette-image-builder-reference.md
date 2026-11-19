@@ -24,6 +24,19 @@ pib doctor
 
 x86 이미지에는 에뮬레이터가 포함됩니다. 특권 PIB 시작 시 정상 ARM64 핸들러가 없으면 Docker 호스트의 Linux 커널에 등록합니다. 기존 정상 핸들러는 유지하고 네이티브 ARM64에서는 등록하지 않습니다. Docker 호스트 재부팅 뒤에도 자동 재설정됩니다. 호스트에 패키지를 설치하지 않습니다.
 
+## 환경 변수
+
+호스트에서 `pib`를 실행하는 셸에 설정합니다. 일반 설치는 고정된 이미지를 선택하므로 설정이 필요 없습니다. 파일은 Docker에서 접근 가능해야 합니다. 인증 및 서명 파일은 사용하는 명령에만 읽기 전용으로 마운트합니다. `PIB_CONFIGS`는 상위 폴더를 읽기 전용으로, `PIB_DEB_CACHE`는 쓰기 가능으로 마운트합니다.
+
+| 변수 | 사용 명령 | 용도 |
+|---|---|---|
+| `PIB_IMAGE` | 모든 명령 | 태그 또는 다이제스트로 설치된 컨테이너 이미지를 재정의합니다. |
+| `PIB_CREDENTIALS` | `pib build` | `root:<hash>`, `sima:<hash>` 암호 해시 파일. 미설정 시 새 이미지는 두 암호를 잠급니다. 기존 보드는 영구 오버레이에 인증 정보를 유지할 수 있습니다. |
+| `SWU_SIGNING_KEY`, `SWU_SIGNING_CERT` | `pib sign`, `pib build --sign` | 외부 서명 키와 인증서. 키는 `pkcs11:` URI도 가능합니다. 기본값은 프로젝트 설정이며 인증서는 이미지가 신뢰하는 CA로 연결되어야 합니다. |
+| `PIB_CONFIGS` | `pib init` | 고급: 내장 설정 대신 외부 이미지 설정 디렉터리를 사용합니다. |
+| `PIB_PCSCD_DIR` | 서명 명령 | pcscd 소켓 폴더. 기본값 `/run/pcscd`. Linux 컨테이너에서 소켓에 접근할 수 있어야 합니다. |
+| `PIB_DEB_CACHE` | `pib build`, `pib shell` | 검증된 Debian 다운로드의 호스트 캐시. 매 빌드마다 인증된 메타데이터의 해시와 크기를 검사합니다. |
+
 ## 명령
 
 이미지는 빌더에서 사용 가능한 CPU 코어를 활용하는 pigz로 압축됩니다. 출력은 gzip 호환이며 서명과 검증은 실제 압축 페이로드를 대상으로 합니다.
@@ -179,6 +192,17 @@ PIB_CREDENTIALS="$(cd ../secure && pwd)/credentials" pib build --sign
 
 
 이 선택 방식은 호스트에 OpenSSL이 필요합니다. 비밀번호를 입력받고 해시만 저장합니다. root SSH 접근은 키 전용입니다. 또는 승인된 공개 키를 `overlay/root/.ssh/authorized_keys`에 배치하세요. 디렉터리는 700, 파일은 600으로 설정합니다. 보드마다 첫 부팅 시 고유 SSH 호스트 키를 생성합니다.
+
+선택적으로 root SSH가 필요하면 빌드 전에 프로젝트 폴더에서 다음을 실행합니다. 승인된 **공개 키**만 추가하고 개인 키는 이미지에 넣지 마세요.
+
+```bash
+mkdir -p overlay/root/.ssh
+chmod 700 overlay/root/.ssh
+cat "$HOME/.ssh/id_ed25519.pub" >> overlay/root/.ssh/authorized_keys
+chmod 600 overlay/root/.ssh/authorized_keys
+```
+
+`PIB_CREDENTIALS`로 root 암호를 설정해도 SSH root 암호 인증은 비활성화됩니다. 한 줄에 공개 키 하나를 허용합니다. 배포 후 승인된 키로 `ssh root@<board-address>`에 연결합니다. 기존 보드는 영구 오버레이에 SSH 설정을 유지할 수 있습니다.
 
 ## SWU 설치
 

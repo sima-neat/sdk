@@ -24,6 +24,19 @@ pib doctor
 
 x86 イメージにはエミュレーターが含まれます。特権 PIB の起動時に、動作する ARM64 ハンドラーがなければ Docker ホストの Linux カーネルに登録します。既存の動作するハンドラーは保持され、ネイティブ ARM64 では登録不要です。Docker ホスト再起動後の再登録も自動です。ホストにパッケージをインストールしません。
 
+## 環境変数
+
+ホストで `pib` を実行するシェルに設定します。通常のインストールは固定されたイメージを選択するため、設定は不要です。ファイルは Docker から参照可能にしてください。認証・署名ファイルは使用するコマンドにのみ読み取り専用でマウントします。`PIB_CONFIGS` は親ディレクトリを読み取り専用、`PIB_DEB_CACHE` は書き込み可能でマウントします。
+
+| 変数 | 使用コマンド | 用途 |
+|---|---|---|
+| `PIB_IMAGE` | 全コマンド | インストール済みコンテナをタグまたはダイジェストで上書き。 |
+| `PIB_CREDENTIALS` | `pib build` | `root:<hash>` と `sima:<hash>` のハッシュファイル。未指定の新規イメージは両パスワードをロックします。既存ボードは永続オーバーレイに認証情報を保持する場合があります。 |
+| `SWU_SIGNING_KEY`, `SWU_SIGNING_CERT` | `pib sign`, `pib build --sign` | 外部署名鍵と証明書。鍵は `pkcs11:` URI も使用可能。既定はプロジェクト設定で、証明書はイメージの信頼する CA に連鎖する必要があります。 |
+| `PIB_CONFIGS` | `pib init` | 上級者向け：同梱設定に代わる外部イメージ設定ディレクトリ。 |
+| `PIB_PCSCD_DIR` | 署名コマンド | pcscd ソケットのディレクトリ。既定 `/run/pcscd`。Linux コンテナからアクセス可能なソケットが必要。 |
+| `PIB_DEB_CACHE` | `pib build`, `pib shell` | Debian ダウンロードのホストキャッシュ。毎回、認証済みメタデータのハッシュとサイズで検証。 |
+
 ## コマンド
 
 イメージの圧縮は、ビルダーで利用できる CPU コアを使用する pigz で行います。出力は gzip 互換であり、署名と検証は実際の圧縮ペイロードを対象とします。
@@ -179,6 +192,17 @@ PIB_CREDENTIALS="$(cd ../secure && pwd)/credentials" pib build --sign
 
 
 この方法ではホストに OpenSSL が必要です。パスワードは入力を求められ、保存されるのはハッシュだけです。root の SSH 接続は鍵認証に限定されます。代わりに、許可された公開鍵を `overlay/root/.ssh/authorized_keys` に置くこともできます。ディレクトリを 700、ファイルを 600 にしてください。各ボードは初回起動時に独自の SSH ホスト鍵を生成します。
+
+root SSH が必要な場合は、ビルド前にプロジェクト内で次を実行します。承認された**公開鍵**のみを追記し、秘密鍵をイメージに含めないでください。
+
+```bash
+mkdir -p overlay/root/.ssh
+chmod 700 overlay/root/.ssh
+cat "$HOME/.ssh/id_ed25519.pub" >> overlay/root/.ssh/authorized_keys
+chmod 600 overlay/root/.ssh/authorized_keys
+```
+
+`PIB_CREDENTIALS` で root パスワードを設定しても、SSH の root パスワード認証は無効です。1 行につき 1 公開鍵を許可します。展開後は許可済み鍵で `ssh root@<board-address>` を使用できます。既存ボードでは永続オーバーレイに SSH 設定が残る場合があります。
 
 ## SWU をインストールする
 

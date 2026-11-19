@@ -24,6 +24,19 @@ pib doctor
 
 x86 映像已內附模擬器。特權 PIB 啟動時，只在缺少可用 ARM64 處理常式時向 Docker 主機 Linux 核心註冊。既有正常處理常式會保留；原生 ARM64 不需註冊。Docker 主機重啟後也會自動重新設定，不會在主機安裝套件。
 
+## 環境變數
+
+在執行 `pib` 的主機 Shell 設定。一般安裝已選定固定映像，無須設定變數。檔案必須可供 Docker 存取。認證與簽署檔案僅以唯讀方式掛載至使用它們的命令。`PIB_CONFIGS` 以唯讀方式掛載上層目錄；`PIB_DEB_CACHE` 可寫入。
+
+| 變數 | 使用命令 | 用途 |
+|---|---|---|
+| `PIB_IMAGE` | 所有命令 | 以指定標籤或摘要覆寫已安裝的容器映像。 |
+| `PIB_CREDENTIALS` | `pib build` | 含有 `root:<hash>` 與 `sima:<hash>` 密碼雜湊的檔案。未設定時新映像鎖定兩個密碼；既有板卡可能透過持久覆蓋層保留認證資料。 |
+| `SWU_SIGNING_KEY`, `SWU_SIGNING_CERT` | `pib sign`, `pib build --sign` | 外部簽署金鑰與憑證。金鑰也可為 `pkcs11:` URI。預設來自專案設定；憑證必須連結至映像信任的 CA。 |
+| `PIB_CONFIGS` | `pib init` | 進階：使用外部映像設定目錄取代內附設定。 |
+| `PIB_PCSCD_DIR` | 簽署命令 | 覆寫 pcscd 通訊端目錄，預設 `/run/pcscd`。Linux 容器必須能存取通訊端。 |
+| `PIB_DEB_CACHE` | `pib build`, `pib shell` | 已驗證 Debian 下載檔的主機快取。每次建置都依已認證中繼資料檢查雜湊與大小。 |
+
 ## 命令
 
 映像壓縮使用 pigz，充分利用建置主機可用的 CPU 核心。輸出仍相容 gzip；簽署與驗證涵蓋實際壓縮後的承載內容。
@@ -179,6 +192,17 @@ PIB_CREDENTIALS="$(cd ../secure && pwd)/credentials" pib build --sign
 
 
 此選用方式需要主機上的 OpenSSL。密碼以提示輸入，只儲存雜湊。root SSH 仍僅允許金鑰存取。也可將核准公開金鑰放在 `overlay/root/.ssh/authorized_keys`，目錄權限設 700、檔案設 600。每塊板子於首次開機產生自己的 SSH 主機金鑰。
+
+若需要 root SSH 存取，請在建置前於專案目錄執行下列命令。僅附加核准的**公開金鑰**；勿將私密金鑰放入映像。
+
+```bash
+mkdir -p overlay/root/.ssh
+chmod 700 overlay/root/.ssh
+cat "$HOME/.ssh/id_ed25519.pub" >> overlay/root/.ssh/authorized_keys
+chmod 600 overlay/root/.ssh/authorized_keys
+```
+
+即使 `PIB_CREDENTIALS` 設定了 root 密碼，SSH 的 root 密碼驗證仍停用。每行授權一把公開金鑰。部署後可使用核准的金鑰連線至 `ssh root@<board-address>`。既有板卡可能透過持久覆蓋層保留 SSH 設定。
 
 ## 安裝 SWU
 

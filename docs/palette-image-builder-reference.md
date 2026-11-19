@@ -41,6 +41,19 @@ is missing. An existing working handler is preserved; native ARM64 needs no
 emulator registration. This runtime setup must be repeated after a Docker-host
 reboot and is automatic. It does not install packages on the host.
 
+## Environment variables
+
+Set these optional variables in the host shell that runs `pib`. Normal installation selects a pinned container image; no variables are required. File paths must be accessible to Docker. Selected credentials and signing files are mounted read-only only for commands that use them. `PIB_CONFIGS` mounts its parent directory read-only; `PIB_DEB_CACHE` is writable.
+
+| Variable | Used by | Purpose |
+|---|---|---|
+| `PIB_IMAGE` | All commands | Override the installed container image with an explicit image tag or digest. |
+| `PIB_CREDENTIALS` | `pib build` | File containing `root:<hash>` and `sima:<hash>` password hashes. Without it, fresh images lock both passwords; existing boards may retain credentials in their persistent overlay. |
+| `SWU_SIGNING_KEY`, `SWU_SIGNING_CERT` | `pib sign`, `pib build --sign` | External signing key and certificate. The key can be a `pkcs11:` URI. Defaults come from the project signing configuration; the certificate must chain to the image’s trusted CA. |
+| `PIB_CONFIGS` | `pib init` | Advanced: use an external image configuration directory instead of bundled configurations. |
+| `PIB_PCSCD_DIR` | Signing commands | Override the Docker host’s pcscd socket directory; default `/run/pcscd`. Requires a socket accessible to the Linux container. |
+| `PIB_DEB_CACHE` | `pib build`, `pib shell` | Host directory for verified Debian package downloads. Package hashes and sizes are checked against authenticated repository metadata on every build. |
+
 ## Commands
 
 Image compression uses pigz on the builder's available CPU cores. Outputs remain
@@ -246,6 +259,17 @@ This optional path needs OpenSSL on the host. Passwords are prompted for and onl
 hashes are saved. Root SSH access remains key-only. Alternatively, place an
 approved public key at `overlay/root/.ssh/authorized_keys` with directory mode 700
 and file mode 600. Each board generates its own SSH host keys on first boot.
+
+For optional root SSH access, run these commands from the project directory before building. Append only an approved **public** key; keep private keys off the image.
+
+```bash
+mkdir -p overlay/root/.ssh
+chmod 700 overlay/root/.ssh
+cat "$HOME/.ssh/id_ed25519.pub" >> overlay/root/.ssh/authorized_keys
+chmod 600 overlay/root/.ssh/authorized_keys
+```
+
+Root password authentication over SSH remains disabled, even when `PIB_CREDENTIALS` sets a root password. Each line authorizes one public key. After deploying the image, an authorized key can connect as `ssh root@<board-address>`. Existing boards may retain SSH configuration through their persistent overlay.
 
 ## Installing an SWU
 
