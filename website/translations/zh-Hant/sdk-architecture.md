@@ -4,6 +4,10 @@ Palette SDK 提供 Modalix 軟體開發工具。Palette Image Builder（PIB）�
 
 SDK 設定也會依相容性目錄安裝版本相容的 **Model Compiler 擴充功能**；若不需要，可略過。擴充功能負責編譯模型產物，SDK 工具鏈負責建置使用模型的應用程式，PIB 再將可部署軟體打包為系統映像。
 
+[![Palette SDK 系統堆疊：開發工具與 Model Compiler 擴充功能產生軟體，再由獨立的 PIB 建立 Modalix DevKit 映像。](../images/palette-sdk-system-stack.svg#gh-light-mode-only)](../images/palette-sdk-system-stack.svg)
+
+[![Palette SDK 系統堆疊：開發工具與 Model Compiler 擴充功能產生軟體，再由獨立的 PIB 建立 Modalix DevKit 映像。](../images/palette-sdk-system-stack-dark.svg#gh-dark-mode-only)](../images/palette-sdk-system-stack-dark.svg)
+
 ## 各元件的執行位置
 
 | 元件 | 執行位置 | 職責 |

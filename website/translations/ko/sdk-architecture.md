@@ -6,6 +6,10 @@ Palette SDK는 Modalix용 소프트웨어 개발 도구를 제공합니다. Pale
 
 SDK 설정은 호환성 카탈로그에 따라 버전이 맞는 **Model Compiler 확장 기능**도 설치합니다. 필요하지 않으면 건너뛸 수 있습니다. 확장 기능은 모델 아티팩트를 컴파일하고 SDK 도구는 이를 사용하는 애플리케이션을 빌드하며, PIB는 배포할 소프트웨어를 시스템 이미지로 패키징합니다.
 
+[![Palette SDK 시스템 스택: 개발 도구와 Model Compiler 확장 기능의 소프트웨어를 별도의 PIB가 Modalix DevKit 이미지로 패키징합니다.](../images/palette-sdk-system-stack.svg#gh-light-mode-only)](../images/palette-sdk-system-stack.svg)
+
+[![Palette SDK 시스템 스택: 개발 도구와 Model Compiler 확장 기능의 소프트웨어를 별도의 PIB가 Modalix DevKit 이미지로 패키징합니다.](../images/palette-sdk-system-stack-dark.svg#gh-dark-mode-only)](../images/palette-sdk-system-stack-dark.svg)
+
 ## 각 구성 요소의 실행 위치
 
 | 구성 요소 | 실행 위치 | 역할 |

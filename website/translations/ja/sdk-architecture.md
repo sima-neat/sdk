@@ -6,6 +6,10 @@ Palette SDK は Modalix 向けソフトウェアの開発ツールを提供し�
 
 SDK のセットアップは互換性カタログから対応する **Model Compiler 拡張機能**もインストールします。不要な場合はスキップできます。拡張機能はモデルをコンパイルし、SDK ツールチェーンはそれを使用するアプリケーションをビルドします。PIB はデプロイするソフトウェアをシステムイメージにまとめます。
 
+[![Palette SDK のシステムスタック：開発ツールと Model Compiler 拡張機能が生成したソフトウェアを、独立した PIB が Modalix DevKit 用イメージにまとめます。](../images/palette-sdk-system-stack.svg#gh-light-mode-only)](../images/palette-sdk-system-stack.svg)
+
+[![Palette SDK のシステムスタック：開発ツールと Model Compiler 拡張機能が生成したソフトウェアを、独立した PIB が Modalix DevKit 用イメージにまとめます。](../images/palette-sdk-system-stack-dark.svg#gh-dark-mode-only)](../images/palette-sdk-system-stack-dark.svg)
+
 ## 各コンポーネントの実行場所
 
 | コンポーネント | 実行場所 | 役割 |

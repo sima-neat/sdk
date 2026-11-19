@@ -50,6 +50,8 @@ function render(text, source, document, locale) {
     if (/^(https?:|mailto:|#)/.test(destination)) return match;
     const [filename, anchor] = destination.split('#');
     const target = path.resolve(sourceRoot, path.dirname(document.source), filename);
+    const asset = (manifest.assets || []).find(a => path.resolve(repo, a.source) === target);
+    if (asset) return `](pathname:///${asset.path}${anchor ? `#${anchor}` : ''})`;
     const selected = manifest.documents.find(d => path.resolve(sourceRoot, d.source) === target);
     if (selected) return `](./${selected.id}.md${anchor ? `#${anchor}` : ''})`;
     if (target.startsWith(sourceRoot + path.sep)) {
@@ -84,6 +86,17 @@ for (const document of manifest.documents) {
 for (const locale of locales.filter(l => l !== 'en')) {
   const catalog = path.join(site, 'locales', locale);
   if (fs.existsSync(catalog)) fs.cpSync(catalog, path.join(site, '.generated-i18n', locale), {recursive: true});
+}
+fs.rmSync(path.join(site, 'static/img/diagrams'), {recursive: true, force: true});
+for (const asset of manifest.assets || []) {
+  const source = path.resolve(repo, asset.source);
+  const destination = path.resolve(site, 'static', asset.path);
+  if (!source.startsWith(path.join(repo, 'images') + path.sep) ||
+      !destination.startsWith(path.join(site, 'static/img/diagrams') + path.sep)) {
+    throw new Error('Diagram asset escapes the publication roots');
+  }
+  fs.mkdirSync(path.dirname(destination), {recursive: true});
+  fs.copyFileSync(source, destination);
 }
 const images = path.join(site, 'static/img');
 fs.mkdirSync(images, {recursive: true});

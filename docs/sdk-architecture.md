@@ -13,6 +13,10 @@ the SDK compatibility catalog. It can be skipped when not needed. The extension
 compiles model artifacts; the SDK toolchain builds the application that uses them,
 and PIB packages the deployable software into a system image.
 
+[![Palette SDK system stack: SDK development tools and Model Compiler extension supply software to the separate PIB companion, which creates images for a Modalix DevKit.](../images/palette-sdk-system-stack.svg#gh-light-mode-only)](../images/palette-sdk-system-stack.svg)
+
+[![Palette SDK system stack: SDK development tools and Model Compiler extension supply software to the separate PIB companion, which creates images for a Modalix DevKit.](../images/palette-sdk-system-stack-dark.svg#gh-dark-mode-only)](../images/palette-sdk-system-stack-dark.svg)
+
 ## What runs where
 
 | Component | Runs on | Responsibility |

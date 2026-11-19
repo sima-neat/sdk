@@ -4,6 +4,10 @@ Palette SDK надає інструменти для створення прог
 
 Налаштування SDK також встановлює сумісне за версією **розширення Model Compiler** за каталогом сумісності. За потреби цей крок можна пропустити. Розширення компілює моделі, інструменти SDK збирають застосунок, який їх використовує, а PIB пакує готове ПЗ в образ системи.
 
+[![Системний стек Palette SDK: інструменти розробки та розширення Model Compiler готують ПЗ, а окремий PIB створює образи для Modalix DevKit.](../images/palette-sdk-system-stack.svg#gh-light-mode-only)](../images/palette-sdk-system-stack.svg)
+
+[![Системний стек Palette SDK: інструменти розробки та розширення Model Compiler готують ПЗ, а окремий PIB створює образи для Modalix DevKit.](../images/palette-sdk-system-stack-dark.svg#gh-dark-mode-only)](../images/palette-sdk-system-stack-dark.svg)
+
 ## Де працюють компоненти
 
 | Компонент | Місце виконання | Призначення |

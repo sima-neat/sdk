@@ -69,3 +69,8 @@ Custom Image Workflow, Example Image, and Palette Image Builder Reference.
 The workflow explains the general lifecycle; the example owns the runnable sample
 recipe; the reference owns technical rules and troubleshooting. The lower-level
 system-software draft remains in the repository but is excluded from publication.
+
+The system-stack diagram uses reviewable light/dark SVG sources under `../images/`.
+Diagram assets are explicitly listed in `docs-manifest.json` and copied during
+preparation. Markdown uses GitHub's theme fragments; site CSS follows the guide's
+manual light/dark selection. Select the diagram to open its full-size SVG.

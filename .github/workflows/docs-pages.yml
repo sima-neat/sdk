@@ -6,6 +6,7 @@ on:
       - 'website/**'
       - 'docs/**'
       - 'images/simaai_logo.png'
+      - 'images/palette-sdk-system-stack*.svg'
       - '.github/workflows/docs-pages.yml'
   push:
     branches: [main, develop]
@@ -14,6 +15,7 @@ on:
       - 'website/**'
       - 'docs/**'
       - 'images/simaai_logo.png'
+      - 'images/palette-sdk-system-stack*.svg'
       - '.github/workflows/docs-pages.yml'
   workflow_dispatch:
 

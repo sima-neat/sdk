@@ -30,5 +30,15 @@
       "id": "pib-reference",
       "position": 4
     }
+  ],
+  "assets": [
+    {
+      "source": "images/palette-sdk-system-stack.svg",
+      "path": "img/diagrams/palette-sdk-system-stack.svg"
+    },
+    {
+      "source": "images/palette-sdk-system-stack-dark.svg",
+      "path": "img/diagrams/palette-sdk-system-stack-dark.svg"
+    }
   ]
 }
