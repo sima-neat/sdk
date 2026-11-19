@@ -43,7 +43,7 @@ reboot and is automatic. It does not install packages on the host.
 
 ## Environment variables
 
-Set these optional variables in the host shell that runs `pib`. Normal installation selects a pinned container image; no variables are required. File paths must be accessible to Docker. Selected credentials and signing files are mounted read-only only for commands that use them. `PIB_CONFIGS` mounts its parent directory read-only; `PIB_DEB_CACHE` is writable.
+Set these optional variables in the host shell that runs `pib`. File paths must be accessible to Docker. Selected credentials and signing files are mounted read-only only for commands that use them. `PIB_CONFIGS` mounts its parent directory read-only; `PIB_DEB_CACHE` is writable.
 
 | Variable | Used by | Purpose |
 |---|---|---|
