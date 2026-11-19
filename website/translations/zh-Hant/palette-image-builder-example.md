@@ -85,6 +85,8 @@ debs:
 
 ## 5. 建置、簽署並驗證映像
 
+建置前請完成[設定板卡登入](palette-image-builder.md#4-configure-board-login)。若需要 UART／主控台密碼登入，請在此 Shell 設定 `PIB_CREDENTIALS`；否則新映像的兩個密碼都會鎖定。上述簽署金鑰建立步驟不會設定登入密碼。
+
 ```bash
 pib build --sign --supplier 'My Company'
 pib verify

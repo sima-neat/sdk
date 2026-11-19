@@ -49,7 +49,26 @@ pib keys init --cn 'My Company Development'
 
 설정 후 CA 개인 키를 오프라인으로 보관하세요. 기존 보드를 업데이트할 때 동일한 CA를 유지하고, 출하 이미지에는 조직의 프로덕션 서명 절차를 사용합니다. 외부 키, 인증서 갱신, 빌드와 서명 분리는 [서명 참조](palette-image-builder-reference.md#signing)를 확인하세요.
 
-## 4. 빌드 및 검증
+## 4. 보드 로그인 설정
+
+**UART/콘솔 암호 로그인에는 빌드 전에 `PIB_CREDENTIALS`를 설정해야 합니다.** 서명 키 생성은 로그인 암호를 설정하지 않습니다. 파일이 없으면 새 이미지의 `root`와 `sima` 암호가 잠기므로 SSH 키 접속이 작동하더라도 콘솔 암호 로그인은 실패합니다.
+
+프로젝트 폴더에서 호스트 OpenSSL로 암호 해시가 담긴 보호된 파일을 만듭니다. `root`, `sima` 순서로 암호를 입력하고 확인합니다.
+
+```bash
+mkdir -p ../secure
+chmod 700 ../secure
+(umask 077; printf 'root:%s\nsima:%s\n' \
+  "$(openssl passwd -6)" "$(openssl passwd -6)" > ../secure/credentials)
+chmod 600 ../secure/credentials
+export PIB_CREDENTIALS="$(cd ../secure && pwd)/credentials"
+```
+
+파일은 프로젝트와 소스 관리 밖에 보관하세요. 같은 셸에서 빌드하고 새 셸에서는 `PIB_CREDENTIALS`를 다시 export 하세요. PIB는 빌드 시 파일을 읽기 전용으로 마운트합니다.
+
+SSH 키만 필요하면 인증 파일을 생략하고 빌드 전에 승인된 공개 키를 추가할 수 있습니다. [보드 접근](palette-image-builder-reference.md#board-access)을 참고하세요. root 암호를 설정해도 root SSH는 키 인증만 허용합니다. 업데이트된 기존 보드는 영구 오버레이에 이전 인증 정보를 유지할 수 있습니다.
+
+## 5. 빌드 및 검증
 
 사용자 지정 Debian 패키지가 있다면 이미지 빌드 전에 서명하고 검증하세요.
 
@@ -63,7 +82,7 @@ pib verify
 
 빌드는 새 루트 파일 시스템을 만들고 프로젝트 입력을 적용하며 배포 아티팩트를 생성한 뒤 SWU를 서명하고 검증합니다. 결과와 패키지 매니페스트, SBOM, 체크섬은 `out/`에 저장됩니다.
 
-## 5. 배포 및 유지 관리
+## 6. 배포 및 유지 관리
 
 | 아티팩트 | 배포 목적 |
 |---|---|

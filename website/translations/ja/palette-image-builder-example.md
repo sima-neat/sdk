@@ -85,6 +85,8 @@ debs:
 
 ## 5. イメージをビルド・署名・検証する
 
+ビルド前に[ボードのログインを設定する](palette-image-builder.md#4-configure-board-login)を完了してください。UART／コンソールのパスワードログインには、このシェルで `PIB_CREDENTIALS` を設定します。未設定の新規イメージでは両パスワードがロックされます。署名情報の生成ではログインパスワードは設定されません。
+
 ```bash
 pib build --sign --supplier 'My Company'
 pib verify

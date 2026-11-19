@@ -95,6 +95,8 @@ boards enforce the image's no-downgrade policy.
 
 ## 5. Build, sign, and verify the image
 
+Before building, complete [Configure board login](palette-image-builder.md#4-configure-board-login). Set `PIB_CREDENTIALS` in this shell if you need UART/console password login; otherwise both passwords remain locked in a fresh image. Creating the signing identity above does not set login passwords.
+
 ```bash
 pib build --sign --supplier 'My Company'
 pib verify

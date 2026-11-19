@@ -49,7 +49,26 @@ pib keys init --cn 'My Company Development'
 
 設定完成後，請離線保存 CA 私密金鑰。更新現有板卡時保留同一 CA；出貨映像應使用組織的正式簽署程序。外部金鑰、憑證更新及分離建置與簽署流程，請參閱[簽署參考](palette-image-builder-reference.md#signing)。
 
-## 4. 建置並驗證
+## 4. 設定板卡登入
+
+**若要使用 UART／主控台密碼登入，請在建置前設定 `PIB_CREDENTIALS`。** 建立簽署金鑰不會設定登入密碼。若未提供此檔案，新映像的 `root` 與 `sima` 密碼都會鎖定，因此即使 SSH 金鑰存取正常，主控台密碼登入仍會失敗。
+
+在專案目錄中使用主機的 OpenSSL，產生含有密碼雜湊的受保護檔案。先輸入並確認 `root` 密碼，再輸入並確認 `sima` 密碼：
+
+```bash
+mkdir -p ../secure
+chmod 700 ../secure
+(umask 077; printf 'root:%s\nsima:%s\n' \
+  "$(openssl passwd -6)" "$(openssl passwd -6)" > ../secure/credentials)
+chmod 600 ../secure/credentials
+export PIB_CREDENTIALS="$(cd ../secure && pwd)/credentials"
+```
+
+將此檔案保存在專案與版本控制之外。在同一個 Shell 執行建置；若開啟新 Shell，請重新 export `PIB_CREDENTIALS`。PIB 於建置時以唯讀方式掛載此檔案。
+
+若只需要 SSH 金鑰存取，可略過認證檔案，並在建置前加入核准的公開金鑰，請參閱[板卡存取](palette-image-builder-reference.md#board-access)。設定 root 密碼後，root SSH 仍僅允許金鑰驗證。更新既有板卡時，持久覆蓋層可能保留舊認證資料。
+
+## 5. 建置並驗證
 
 若專案包含自訂 Debian 套件，請在建置映像前簽署並驗證：
 
@@ -63,7 +82,7 @@ pib verify
 
 建置會建立新的根檔案系統、套用專案輸入、產生部署檔案，並簽署及驗證 SWU。結果、套件清單、SBOM 與檢查碼都儲存在 `out/`。
 
-## 5. 部署與維護
+## 6. 部署與維護
 
 | 產物 | 部署用途 |
 |---|---|

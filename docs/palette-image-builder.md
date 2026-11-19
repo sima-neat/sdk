@@ -67,7 +67,26 @@ existing boards, and use your organization's production signing process for
 shipping images. See the [signing reference](palette-image-builder-reference.md#signing)
 for external keys, renewal, and separate build/sign workflows.
 
-## 4. Build and verify
+## 4. Configure board login
+
+**For UART/console password login, set `PIB_CREDENTIALS` before building.** Signing-key creation does not set login passwords. Without this file, a fresh image leaves both `root` and `sima` passwords locked, so console password login fails even if SSH key access works.
+
+From the project directory, use OpenSSL on the host to generate a protected file containing password hashes. Enter and confirm a password for `root`, then for `sima`:
+
+```bash
+mkdir -p ../secure
+chmod 700 ../secure
+(umask 077; printf 'root:%s\nsima:%s\n' \
+  "$(openssl passwd -6)" "$(openssl passwd -6)" > ../secure/credentials)
+chmod 600 ../secure/credentials
+export PIB_CREDENTIALS="$(cd ../secure && pwd)/credentials"
+```
+
+Keep this file outside the project and source control. Run the build in the same shell; in a new shell, export `PIB_CREDENTIALS` again. PIB mounts the file read-only for the build.
+
+If you only need SSH key access, you can omit the credentials file and add an authorized public key before building; see [Board access](palette-image-builder-reference.md#board-access). Root SSH remains key-only even when a root password is set. Existing boards may retain old credentials in their persistent overlay after an update.
+
+## 5. Build and verify
 
 When your project contains custom Debian packages, sign and verify them before
 building the image:
@@ -83,7 +102,7 @@ The build creates a new root filesystem, applies the project inputs, generates
 deployment artifacts, and signs and verifies the SWU. Results are written to
 `out/`, alongside a package manifest, SBOM, and checksums.
 
-## 5. Deploy and maintain
+## 6. Deploy and maintain
 
 | Artifact | Deployment purpose |
 |---|---|

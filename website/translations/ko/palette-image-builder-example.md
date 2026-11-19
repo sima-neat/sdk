@@ -85,6 +85,8 @@ debs:
 
 ## 5. 이미지 빌드·서명·검증
 
+빌드 전에 [보드 로그인 설정](palette-image-builder.md#4-configure-board-login)을 완료하세요. UART/콘솔 암호 로그인이 필요하면 이 셸에서 `PIB_CREDENTIALS`를 설정합니다. 미설정 시 새 이미지의 두 암호가 잠깁니다. 위의 서명 키 생성은 로그인 암호를 설정하지 않습니다.
+
 ```bash
 pib build --sign --supplier 'My Company'
 pib verify
