@@ -1,6 +1,6 @@
-# Palette Image Builder reference
+# Palette Image Builder Reference
 
-Start with [Create a custom Modalix image](palette-image-builder.md). This page
+Start with [Custom Image Workflow](palette-image-builder.md). This page
 covers optional features and board operations; container maintenance belongs in
 the [builder README](../palette-image-builder/README.md).
 
@@ -79,6 +79,29 @@ workspace mounts, and explicitly selected external files. `build`, `doctor`,
 `clean`, and the interactive shell use privileged device access; signing,
 verification, key generation, and project creation do not need it.
 
+## Build outputs
+
+| File | Technical purpose |
+|---|---|
+| `*.swu` | Signed update bundle |
+| `*.unsigned.swu` | Input for a separate signing step |
+| `*.img.gz` | Compressed disk image for provisioning or recovery |
+| `*-boot0.be` | Associated tRoot payload; follow the platform provisioning procedure |
+| `*.manifest.json` | Package versions, origins, and boot-payload provenance |
+| `*.cdx.json` | CycloneDX software bill of materials |
+| `SHA256SUMS` | Artifact checksums |
+
+`pib sign` and `pib verify` select the current `image.yaml` version even if `out/`
+contains older builds. Rebuilding the same version replaces its outputs,
+including a previously signed SWU. Increase the version for subsequent updates.
+
+## Troubleshooting
+
+- **Missing loop or device-mapper access:** run `pib doctor`. Docker must provide these devices and allow privileged containers.
+- **ARM64 setup fails on x86:** check that the Linux Docker engine permits privileged binfmt registration.
+- **Interrupted image build:** stop builds, inspect leftovers with `pib clean`, then use `pib clean --yes` if appropriate. Cleanup can affect other PIB projects on the same Docker host.
+- **Package or bootstrap failure:** inspect `configs/images/mmdebstrap.log` and check repository connectivity.
+
 ## Customization
 
 Edit `image.yaml`; leave the release defaults under `configs/` unchanged unless
@@ -95,6 +118,8 @@ overlay: overlay/
 hooks: [hooks/enable-my-app.sh]
 vendor: My Company
 ```
+
+Overlay files retain their permissions and become root-owned in the image. The overlay is applied before package installation, so packages can replace files outside `/etc`. Use a post-install hook for changes that must happen after packages are installed.
 
 Create a post-install hook to enable your application's service:
 

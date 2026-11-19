@@ -1,36 +1,13 @@
-# Build the sample custom image
+# Example Image
 
 This walkthrough creates a signed Modalix image containing a small application,
 a configuration file, and a service that starts automatically. The complete sample
 ships in PIB; you do not need to clone this repository or install build tools on
 your computer. The same image specification is tested on x86 and ARM64 in CI.
 
-## 1. Install and check PIB
+Install PIB using the [Custom Image Workflow](palette-image-builder.md#install-pib) before starting. This page focuses on the files and commands specific to the included example.
 
-Install sima-cli and start Docker with a Linux engine, then run:
-
-```bash
-sima-cli neat install sdk/pib
-pib --version
-pib doctor
-```
-
-If your current terminal cannot find `pib`, open a new terminal. In a Bash or Zsh
-terminal you can also refresh PATH immediately:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-PIB uses a native x86 or ARM64 container. On x86, it automatically configures the
-ARM64 emulator. Allow privileged Docker containers and at least 10 GiB free in
-both your project location and Docker storage for this minimal-image example.
-
-Windows installation uses a native launcher with Docker in Linux-container mode.
-Windows installer unit tests have passed; full Docker Desktop/WSL2 image creation
-is not yet qualified. The commands below use shell quoting accepted by Bash.
-
-## 2. Copy the example into a project
+## 1. Copy the example into a project
 
 ```bash
 pib init my-custom-image --example custom-image
@@ -58,7 +35,7 @@ Your project is mounted at `/workspace`. Run `exit` to return to your computer.
 The remaining commands in this walkthrough run from the project directory on
 your computer; each `pib` command starts the container automatically.
 
-## 3. Create your development signing identity
+## 2. Create your development signing identity
 
 ```bash
 pib keys init --cn 'My Company Development'
@@ -69,7 +46,7 @@ identity for your custom Debian packages. Move `keys/ca.key` to a secure locatio
 outside the project after setup. Keep the same CA when updating existing boards.
 Use your organization's production signing process for shipping images.
 
-## 4. Package and sign the application
+## 3. Package and sign the application
 
 Build the package inside PIB, then sign and verify it:
 
@@ -84,16 +61,28 @@ compiled Modalix application must be built for `arm64`, normally using the SDK.
 PIB accepts ARM64 or architecture-independent packages; it does not cross-compile
 application source code.
 
-## 5. Review the image specification
+## 4. Review the image specification
 
 The example includes these customization settings:
 
 ```yaml
+base: minimal
+target: modalix
+slots: ab
+release: 3.0.0
+version: 3.0.0.1
+vendor: PIB Example
 packages:
   add: [pib-example-app]
   remove: []
-overlay: overlay
+overlay: overlay/
 hooks: [hooks/enable-example.sh]
+signing:
+  ca: keys/ca.crt
+  cert: keys/swu-signing.crt
+  key: keys/swu-signing.key
+debs:
+  key: keys/debs-signing.asc
 ```
 
 The package list uses the Debian package name, not the `.deb` filename. Change
@@ -104,7 +93,7 @@ The image version must match the container's platform release followed by a buil
 number, for example `3.0.0.1`. Increase the final number for your next image:
 boards enforce the image's no-downgrade policy.
 
-## 6. Build, sign, and verify the image
+## 5. Build, sign, and verify the image
 
 ```bash
 pib build --sign --supplier 'My Company'
@@ -116,7 +105,7 @@ applies your overlay and hook, creates the deployment artifacts, signs the SWU,
 and verifies it. The second command demonstrates standalone verification using
 the project's default CA and the adjacent build manifest.
 
-## 7. Find the outputs
+## 6. Find the outputs
 
 Open the project's `out/` directory:
 
@@ -133,24 +122,27 @@ An SWU and a full disk image are different deployment formats. Follow the
 for SWU installation and initial CA trust. Use the Modalix provisioning procedure
 for a full disk image. Qualify your image on a development board before production.
 
-## 8. Replace the sample with your application
+## 7. Check the example's behavior
 
-Build your application as an ARM64 Debian package using the SDK, place it in
-`custom-debs/`, and list its package name in `image.yaml`. Update the configuration,
-service, and hook for your application, then repeat package signing and image
-generation. See the [SDK architecture guide](sdk-architecture.md) for the roles of
-the SDK, PIB, and the DevKit.
+The package installs `/usr/bin/pib-example-app`. The overlay supplies its
+configuration and `pib-example.service`. The post-install hook enables that
+service for `multi-user.target` and writes `/etc/pib-example-build` into the image.
 
-## Faster repeat builds
-
-PIB uses pigz for parallel gzip-compatible compression. To reuse verified package
-downloads between builds:
+After installing the image on a development board using the
+[board update reference](palette-image-builder-reference.md#installing-an-swu),
+run these commands **on the board**:
 
 ```bash
-export PIB_DEB_CACHE="$HOME/.cache/sima/pib-debs"
-pib build --sign
+sudo systemctl status pib-example.service --no-pager
+sudo journalctl -u pib-example.service --no-pager
+cat /etc/pib-example-build
 ```
 
-Repository signatures and package hashes are checked on each build. A warm cache
-does not reuse a root filesystem or skip package installation, hooks, signing,
-or verification.
+The service is a one-shot application, so a successful run remains active with
+an exited process. Its journal includes `Hello from the custom PIB image.` and
+the contents of `/etc/pib-example.conf`. The build marker contains
+`PIB example post-install hook`.
+
+CI checks the sample's packaged files, configuration, service enablement, build
+marker, and signed SWU payload on both builder architectures. These board-side
+checks additionally confirm startup behavior on your hardware.

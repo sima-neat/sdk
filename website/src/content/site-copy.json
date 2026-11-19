@@ -4,20 +4,20 @@
     "description": "A guide for system engineers creating updatable device images. Palette SDK provides tools for building applications and compiling models. Its companion, Palette Image Builder, packages system software and applications into signed, updatable eLxr images.",
     "eyebrow": "Systems Builder Guide",
     "primary": "Create your first image",
-    "secondary": "Explore system software",
+    "secondary": "Explore the SDK system stack",
     "terminal": "Start with the prebuilt toolchain",
     "pathsTitle": "Choose your next step",
-    "pibTitle": "Palette Image Builder",
-    "pibDescription": "Create a project, add an application and a service, then build and verify a signed SWU. A complete example is included in the container.",
-    "pibLink": "Build the working example",
-    "sdkTitle": "Palette SDK and the system stack",
-    "sdkDescription": "Understand the toolchain, target sysroot, boot components, and DevKit—and how they fit into a system-image workflow.",
-    "sdkLink": "Understand the system architecture",
+    "pibTitle": "Custom Image Workflow",
+    "pibDescription": "Follow the overall process: prepare a project, add software, configure signing, build, verify, and deploy.",
+    "pibLink": "Follow the workflow",
+    "sdkTitle": "Palette SDK System Stack",
+    "sdkDescription": "See how the toolchain, sysroot, Model Compiler extension, PIB, and DevKit fit together.",
+    "sdkLink": "Understand the system stack",
     "workflowTitle": "From development to deployment",
     "steps": [
       [
-        "Prepare system software",
-        "Use the Palette SDK toolchain and release-compatible BSP inputs to prepare your system changes."
+        "Develop applications and models",
+        "Use Palette SDK tools and the Model Compiler extension to prepare the software for your device."
       ],
       [
         "Package the image",
@@ -30,32 +30,32 @@
     ],
     "reference": "Already have a project? Open the PIB reference.",
     "referenceLink": "Commands, signing, and board updates",
-    "bspTitle": "Lower-level software",
-    "bspDescription": "Work with the kernel and device trees, understand boot-chain constraints, and package release-compatible changes into your image.",
-    "bspLink": "Work with BSP software",
     "applicationTitle": "Application development",
     "applicationDescription": "For building applications, using Neat APIs, and developing data-processing pipelines, use the application developer documentation. This guide focuses on system integration, image packaging, and the lower-level software stack.",
-    "applicationLink": "Build applications at developer.sima.ai/software"
+    "applicationLink": "Build applications at developer.sima.ai/software",
+    "exampleTitle": "Example Image",
+    "exampleDescription": "Build the included application package, configuration overlay, and service, then inspect the signed image and its behavior.",
+    "exampleLink": "Build the example image"
   },
   "uk": {
     "title": "Створіть власний системний образ для пристрою Modalix.",
     "description": "Посібник для системних інженерів зі створення оновлюваних образів пристроїв. Palette SDK надає інструменти для розробки застосунків і компіляції моделей. Його супутній інструмент Palette Image Builder пакує системне ПЗ та застосунки в підписані оновлювані образи eLxr.",
     "eyebrow": "Systems Builder Guide",
     "primary": "Створити перший образ",
-    "secondary": "Оглянути системне ПЗ",
+    "secondary": "Оглянути системний стек SDK",
     "terminal": "Почніть із готового набору інструментів",
     "pathsTitle": "Виберіть наступний крок",
-    "pibTitle": "Palette Image Builder",
-    "pibDescription": "Створіть проєкт, додайте застосунок і службу, а потім зберіть та перевірте підписаний SWU. Повний приклад входить до контейнера.",
-    "pibLink": "Зібрати робочий приклад",
-    "sdkTitle": "Palette SDK і системний стек",
-    "sdkDescription": "Дізнайтеся про інструменти, цільовий sysroot, компоненти завантаження та DevKit у процесі створення системного образу.",
-    "sdkLink": "Зрозуміти архітектуру системи",
+    "pibTitle": "Процес створення власного образу",
+    "pibDescription": "Пройдіть загальний процес: підготовка проєкту, додавання ПЗ, налаштування підписування, збирання, перевірка та розгортання.",
+    "pibLink": "Переглянути процес",
+    "sdkTitle": "Системний стек Palette SDK",
+    "sdkDescription": "Дізнайтеся про зв’язок інструментів, sysroot, розширення Model Compiler, PIB і DevKit.",
+    "sdkLink": "Зрозуміти системний стек",
     "workflowTitle": "Від розробки до розгортання",
     "steps": [
       [
-        "Підготовка системного ПЗ",
-        "Готуйте системні зміни за допомогою інструментів Palette SDK і сумісних із випуском компонентів BSP."
+        "Розробка застосунків і моделей",
+        "Готуйте ПЗ для пристрою за допомогою інструментів Palette SDK та розширення Model Compiler."
       ],
       [
         "Пакування образу",
@@ -68,32 +68,32 @@
     ],
     "reference": "Уже маєте проєкт? Відкрийте довідник PIB.",
     "referenceLink": "Команди, підписування та оновлення плати",
-    "bspTitle": "Низькорівневе програмне забезпечення",
-    "bspDescription": "Працюйте з ядром і деревами пристроїв, враховуйте обмеження ланцюжка завантаження та пакуйте сумісні зміни до образу.",
-    "bspLink": "Працювати з ПЗ BSP",
     "applicationTitle": "Розробка застосунків",
     "applicationDescription": "Для створення застосунків, використання Neat API та розробки конвеєрів обробки даних зверніться до документації розробника. Цей посібник присвячений системній інтеграції, пакуванню образів і низькорівневому програмному стеку.",
-    "applicationLink": "Розробляти застосунки на developer.sima.ai/software"
+    "applicationLink": "Розробляти застосунки на developer.sima.ai/software",
+    "exampleTitle": "Приклад образу",
+    "exampleDescription": "Зберіть вбудований пакет застосунку, накладання конфігурації та службу, потім перевірте підписаний образ і його поведінку.",
+    "exampleLink": "Зібрати приклад образу"
   },
   "ja": {
     "title": "Modalix デバイス用のカスタムシステムイメージを作成する。",
     "description": "更新可能なデバイスイメージを作成するシステムエンジニア向けのガイドです。Palette SDK はアプリケーション開発とモデルのコンパイルに必要なツールを提供します。その補完ツールである Palette Image Builder は、システムソフトウェアとアプリケーションを署名済みの更新可能な eLxr イメージにパッケージ化します。",
     "eyebrow": "Systems Builder Guide",
     "primary": "最初のイメージを作成",
-    "secondary": "システムソフトウェアを確認",
+    "secondary": "SDK システムスタックを確認",
     "terminal": "ビルド済みのツールから始める",
     "pathsTitle": "次のステップを選ぶ",
-    "pibTitle": "Palette Image Builder",
-    "pibDescription": "プロジェクトにアプリケーションとサービスを追加し、署名済み SWU をビルドして検証します。コンテナには完全なサンプルが含まれます。",
-    "pibLink": "動作するサンプルをビルド",
-    "sdkTitle": "Palette SDK とシステムスタック",
-    "sdkDescription": "ツールチェーン、ターゲット sysroot、ブートコンポーネント、DevKit と、システムイメージ作成における役割を理解します。",
-    "sdkLink": "システムの構成を理解",
+    "pibTitle": "カスタムイメージの作成フロー",
+    "pibDescription": "プロジェクトの準備、ソフトウェアの追加、署名設定、ビルド、検証、デプロイまでの全体を確認します。",
+    "pibLink": "作成フローを確認する",
+    "sdkTitle": "Palette SDK システムスタック",
+    "sdkDescription": "ツールチェーン、sysroot、Model Compiler 拡張機能、PIB、DevKit の関係を理解します。",
+    "sdkLink": "システムスタックを理解する",
     "workflowTitle": "開発からデプロイまで",
     "steps": [
       [
-        "システムソフトウェアを準備",
-        "Palette SDK のツールチェーンと対象リリースに対応した BSP を使って変更を準備します。"
+        "アプリケーションとモデルを開発する",
+        "Palette SDK のツールと Model Compiler 拡張機能でデバイス用のソフトウェアを準備します。"
       ],
       [
         "イメージをパッケージ化",
@@ -106,32 +106,32 @@
     ],
     "reference": "プロジェクトは作成済みですか？PIB リファレンスをご覧ください。",
     "referenceLink": "コマンド、署名、ボードの更新",
-    "bspTitle": "低レベルソフトウェア",
-    "bspDescription": "カーネルやデバイスツリーを扱い、ブートチェーンの制約を確認して、リリース互換の変更をイメージに組み込みます。",
-    "bspLink": "BSP ソフトウェアを扱う",
     "applicationTitle": "アプリケーション開発",
     "applicationDescription": "アプリケーションの構築、Neat API、データ処理パイプラインについては、開発者向けドキュメントをご覧ください。このガイドはシステム統合、イメージのパッケージ化、低レベルソフトウェアを扱います。",
-    "applicationLink": "developer.sima.ai/software でアプリケーションを開発"
+    "applicationLink": "developer.sima.ai/software でアプリケーションを開発",
+    "exampleTitle": "イメージの例",
+    "exampleDescription": "同梱のアプリケーションパッケージ、設定オーバーレイ、サービスを作成し、署名済みイメージと動作を確認します。",
+    "exampleLink": "例のイメージを作成する"
   },
   "ko": {
     "title": "Modalix 장치를 위한 맞춤형 시스템 이미지를 만드세요.",
     "description": "업데이트 가능한 장치 이미지를 만드는 시스템 엔지니어를 위한 가이드입니다. Palette SDK는 애플리케이션 개발과 모델 컴파일 도구를 제공합니다. 함께 사용하는 Palette Image Builder는 시스템 소프트웨어와 애플리케이션을 서명된 업데이트 가능 eLxr 이미지로 패키징합니다.",
     "eyebrow": "Systems Builder Guide",
     "primary": "첫 이미지 만들기",
-    "secondary": "시스템 소프트웨어 살펴보기",
+    "secondary": "SDK 시스템 스택 살펴보기",
     "terminal": "미리 빌드된 도구로 시작하기",
     "pathsTitle": "다음 단계 선택",
-    "pibTitle": "Palette Image Builder",
-    "pibDescription": "프로젝트를 만들고 애플리케이션과 서비스를 추가한 다음 서명된 SWU를 빌드하고 검증하세요. 컨테이너에 완전한 예제가 포함되어 있습니다.",
-    "pibLink": "동작하는 예제 빌드하기",
-    "sdkTitle": "Palette SDK와 시스템 스택",
-    "sdkDescription": "툴체인, 대상 sysroot, 부팅 구성 요소, DevKit이 시스템 이미지 작업 흐름에서 담당하는 역할을 알아보세요.",
-    "sdkLink": "시스템 아키텍처 이해하기",
+    "pibTitle": "맞춤형 이미지 워크플로",
+    "pibDescription": "프로젝트 준비, 소프트웨어 추가, 서명 설정, 빌드, 검증, 배포까지 전체 과정을 살펴봅니다.",
+    "pibLink": "워크플로 따라가기",
+    "sdkTitle": "Palette SDK 시스템 스택",
+    "sdkDescription": "도구, sysroot, Model Compiler 확장 기능, PIB, DevKit의 관계를 이해합니다.",
+    "sdkLink": "시스템 스택 이해하기",
     "workflowTitle": "개발부터 배포까지",
     "steps": [
       [
-        "시스템 소프트웨어 준비",
-        "Palette SDK 툴체인과 릴리스에 맞는 BSP 입력으로 시스템 변경 사항을 준비합니다."
+        "애플리케이션 및 모델 개발",
+        "Palette SDK 도구와 Model Compiler 확장 기능으로 장치에 필요한 소프트웨어를 준비합니다."
       ],
       [
         "이미지 패키징",
@@ -144,32 +144,32 @@
     ],
     "reference": "이미 프로젝트가 있나요? PIB 참조 문서를 확인하세요.",
     "referenceLink": "명령, 서명 및 보드 업데이트",
-    "bspTitle": "하위 소프트웨어",
-    "bspDescription": "커널과 디바이스 트리를 다루고 부팅 체인의 제약을 이해하며 릴리스와 호환되는 변경 사항을 이미지에 패키징합니다.",
-    "bspLink": "BSP 소프트웨어 작업",
     "applicationTitle": "애플리케이션 개발",
     "applicationDescription": "애플리케이션 개발, Neat API 사용, 데이터 처리 파이프라인 개발은 애플리케이션 개발자 문서를 참고하세요. 이 가이드는 시스템 통합, 이미지 패키징, 하위 소프트웨어 스택에 중점을 둡니다.",
-    "applicationLink": "developer.sima.ai/software에서 애플리케이션 개발"
+    "applicationLink": "developer.sima.ai/software에서 애플리케이션 개발",
+    "exampleTitle": "예제 이미지",
+    "exampleDescription": "포함된 애플리케이션 패키지, 설정 오버레이, 서비스를 빌드하고 서명된 이미지와 동작을 확인합니다.",
+    "exampleLink": "예제 이미지 빌드하기"
   },
   "zh-Hant": {
     "title": "為您的 Modalix 裝置建立自訂系統映像。",
     "description": "協助系統工程師建立可更新裝置映像的指南。Palette SDK 提供應用程式開發與模型編譯工具。搭配使用的 Palette Image Builder 可將系統軟體和應用程式打包成經過簽署、可更新的 eLxr 映像。",
     "eyebrow": "Systems Builder Guide",
     "primary": "建立第一個映像",
-    "secondary": "了解系統軟體",
+    "secondary": "探索 SDK 系統堆疊",
     "terminal": "從預先建置的工具開始",
     "pathsTitle": "選擇下一步",
-    "pibTitle": "Palette Image Builder",
-    "pibDescription": "建立專案、加入應用程式與服務，再建置並驗證已簽署的 SWU。容器內附有完整範例。",
-    "pibLink": "建置可執行的範例",
-    "sdkTitle": "Palette SDK 與系統堆疊",
-    "sdkDescription": "了解工具鏈、目標 sysroot、開機元件與 DevKit 在系統映像工作流程中的角色。",
-    "sdkLink": "了解系統架構",
+    "pibTitle": "自訂映像工作流程",
+    "pibDescription": "了解專案準備、加入軟體、設定簽署、建置、驗證與部署的整體流程。",
+    "pibLink": "遵循工作流程",
+    "sdkTitle": "Palette SDK 系統堆疊",
+    "sdkDescription": "了解工具鏈、sysroot、Model Compiler 擴充功能、PIB 與 DevKit 的關係。",
+    "sdkLink": "了解系統堆疊",
     "workflowTitle": "從開發到部署",
     "steps": [
       [
-        "準備系統軟體",
-        "使用 Palette SDK 工具鏈與符合版本的 BSP 輸入準備系統變更。"
+        "開發應用程式與模型",
+        "使用 Palette SDK 工具與 Model Compiler 擴充功能，準備裝置所需的軟體。"
       ],
       [
         "封裝映像",
@@ -182,11 +182,11 @@
     ],
     "reference": "已有專案？請參閱 PIB 參考文件。",
     "referenceLink": "命令、簽署與開發板更新",
-    "bspTitle": "底層軟體",
-    "bspDescription": "處理核心與裝置樹，了解開機鏈限制，並將與版本相容的變更封裝到映像中。",
-    "bspLink": "處理 BSP 軟體",
     "applicationTitle": "應用程式開發",
     "applicationDescription": "如需建置應用程式、使用 Neat API 或開發資料處理管線，請參閱應用程式開發者文件。本指南專注於系統整合、映像封裝與底層軟體堆疊。",
-    "applicationLink": "前往 developer.sima.ai/software 開發應用程式"
+    "applicationLink": "前往 developer.sima.ai/software 開發應用程式",
+    "exampleTitle": "範例映像",
+    "exampleDescription": "建置內附的應用程式套件、設定覆蓋檔案與服務，再檢查簽署映像及其行為。",
+    "exampleLink": "建置範例映像"
   }
 }

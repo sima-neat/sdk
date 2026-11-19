@@ -1,6 +1,6 @@
 # Palette Image Builder 參考
 
-請先閱讀[建立自訂 Modalix 映像](palette-image-builder.md)。此頁說明選用功能與開發板操作；容器維護請參閱[建置工具 README](../palette-image-builder/README.md)。
+請先閱讀[自訂映像工作流程](palette-image-builder.md)。此頁說明選用功能與開發板操作；容器維護請參閱[建置工具 README](../palette-image-builder/README.md)。
 
 ## 安裝
 
@@ -55,6 +55,27 @@ pib build --sign
 
 所有命令均在容器內執行。主機啟動器僅處理 Docker、工作區掛載與明確指定的外部檔案。`build`、`doctor`、`clean` 與互動殼層使用特權裝置存取；簽署、驗證、金鑰產生與專案建立不需要。
 
+## 建置產物
+
+| 檔案 | 技術用途 |
+|---|---|
+| `*.swu` | 已簽署的更新套件 |
+| `*.unsigned.swu` | 獨立簽署階段的輸入 |
+| `*.img.gz` | 佈建或復原用的壓縮磁碟映像 |
+| `*-boot0.be` | 相關 tRoot 內容，請遵循平台佈建程序 |
+| `*.manifest.json` | 套件版本、來源與開機內容的來源紀錄 |
+| `*.cdx.json` | CycloneDX 軟體物料清單 |
+| `SHA256SUMS` | 產物檢查碼 |
+
+即使 `out/` 含有舊版建置，`pib sign` 與 `pib verify` 仍會選擇目前 `image.yaml` 的版本。重建相同版本會取代其產物，包括已簽署的 SWU。後續更新請提高版本。
+
+## 疑難排解
+
+- **缺少 loop 或 device-mapper 存取：** 執行 `pib doctor`。Docker 必須提供所需裝置並允許特權容器。
+- **x86 上 ARM64 設定失敗：** 確認 Linux Docker 引擎允許特權 binfmt 註冊。
+- **映像建置中斷：** 停止建置，使用 `pib clean` 檢視殘留資源，再視需要使用 `pib clean --yes`。清理可能影響同一主機上的其他 PIB 專案。
+- **套件或初始檔案系統建立失敗：** 檢查 `configs/images/mmdebstrap.log` 與套件庫連線。
+
 ## 自訂
 
 編輯 `image.yaml`。除非正在開發開發板支援，否則保留 `configs/` 中的版本預設值。
@@ -70,6 +91,8 @@ overlay: overlay/
 hooks: [hooks/enable-my-app.sh]
 vendor: My Company
 ```
+
+覆蓋檔案會保留權限，並在映像中成為 root 所有。覆蓋內容在套件安裝前套用，因此套件可能取代 `/etc` 以外的檔案。必須在套件安裝後執行的變更，請使用安裝後掛鉤。
 
 
 建立安裝後掛鉤以啟用應用程式服務：

@@ -1,4 +1,4 @@
-# Understand the Palette SDK system stack
+# Palette SDK System Stack
 
 The Palette SDK provides the tools to build software for Modalix. Palette Image
 Builder (PIB) assembles that software into a custom eLxr operating-system image.
@@ -8,12 +8,18 @@ working on image packaging and the lower-level software stack. For application
 APIs and application-development workflows, visit
 [developer.sima.ai/software](https://developer.sima.ai/software).
 
+SDK setup also installs a version-compatible **Model Compiler extension** using
+the SDK compatibility catalog. It can be skipped when not needed. The extension
+compiles model artifacts; the SDK toolchain builds the application that uses them,
+and PIB packages the deployable software into a system image.
+
 ## What runs where
 
 | Component | Runs on | Responsibility |
 |---|---|---|
 | sima-cli | Your computer | Installs packages and starts or configures the development environment |
 | Palette SDK container | Docker on your computer | Cross-compiles applications against the ARM64 sysroot and provides development tools |
+| Model Compiler extension | Your development environment, installed during SDK setup | Compiles models for Modalix acceleration |
 | PIB container | Docker on your computer | Builds root filesystems, packages, disk images, and signed SWU updates from your image specification |
 | Modalix DevKit | The target device | Runs the ARM64 application and the installed eLxr image |
 
@@ -21,12 +27,12 @@ Both SDK and PIB have native x86 and ARM64 container variants. Docker selects th
 variant for your host. The target application and device image remain ARM64.
 PIB uses ARM64 emulation automatically when assembling an image on an x86 host.
 
-## Open the system software toolchain
+## Open the SDK development environment
 
-Install Palette SDK and configure your system-software development environment:
+Install Palette SDK and configure your development environment:
 
 ```bash
-sima-cli neat install sdk@develop
+sima-cli neat install sdk
 sima-cli sdk setup
 sima-cli sdk neat
 ```
@@ -44,41 +50,21 @@ The SDK contains the cross-toolchain, target sysroot, headers, libraries, and
 development helpers. Your workspace is mounted into the container at `/workspace`
 so you can edit files on your computer and build inside the SDK.
 
-## Package the result for your image
+## How software reaches the device
 
-Build against the Modalix ARM64 sysroot. Package the resulting application and its
-required files as a Debian package with architecture `arm64`. Scripts and other
-architecture-independent content may use architecture `all`.
+Use the SDK toolchain to build applications against the Modalix ARM64 sysroot.
+The Model Compiler extension produces the compiled model artifacts used by those
+applications. Package the application, model assets, and required files as Debian
+packages with architecture `arm64`; architecture-independent scripts can use `all`.
 
-An application container and a device operating-system image serve different
-purposes. Building an application Docker image does not create an SWU or replace
-the board's eLxr root filesystem.
+PIB consumes those packages together with an image specification, configuration
+overlay, hooks, and signing identity. It creates a signed `.swu` for updates and an
+`.img.gz` for initial provisioning or recovery. Building an application container
+alone does not create either system-image artifact. PIB can run independently of
+the SDK container.
 
-## Assemble a device image with PIB
-
-Install PIB independently:
-
-```bash
-sima-cli neat install sdk/pib
-pib doctor
-pib init my-image --flavor minimal
-cd my-image
-```
-
-Your project combines:
-
-- `image.yaml` to select the flavor, version, packages, and signing identity.
-- `custom-debs/` for your signed ARM64 or architecture-independent packages.
-- `overlay/` for configuration and other root-owned files.
-- `hooks/` for changes that must happen after package installation.
-- `keys/` for the signing identity and public trust material.
-
-PIB downloads packages from the configured repositories and constructs a new root
-filesystem. It creates a signed `.swu` for updates and an `.img.gz` for full-disk
-provisioning or recovery. It does not require the main SDK container to be running.
-
-Start with the [complete custom-image example](palette-image-builder-example.md)
-to see application packaging, a service, and a post-install hook together.
+Follow [Custom Image Workflow](palette-image-builder.md) for the general process,
+or [Example Image](palette-image-builder-example.md) for the complete sample recipe.
 
 ## Keep toolchain, image, and board versions aligned
 
@@ -93,6 +79,6 @@ container.
 
 ## Choose the right next step
 
-- To create a first image, follow the [PIB getting-started guide](palette-image-builder.md).
-- To build the working application example, follow the [sample walkthrough](palette-image-builder-example.md).
-- For custom kernels, external signing identities, and board updates, use the [PIB reference](palette-image-builder-reference.md).
+- To create a first image, follow the [Custom Image Workflow](palette-image-builder.md).
+- To build the working application example, follow the [Example Image](palette-image-builder-example.md).
+- For custom kernels, external signing identities, and board updates, use the [Palette Image Builder Reference](palette-image-builder-reference.md).

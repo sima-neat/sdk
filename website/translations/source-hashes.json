@@ -1,30 +1,26 @@
 {
   "uk": {
-    "palette-image-builder.md": "8ea288e25b41ad4457188d7405e1109ecc1d96649597854283d7ee9bce5d5955",
-    "palette-image-builder-example.md": "1890ad06bd2ec9f27b293779426bdbbf70487b94bc1612f1a0634bab5e3aefec",
-    "palette-image-builder-reference.md": "f877fe4abcb6b971dc9cf0849af8a9f58fab5c12302d7b1fc7ec7cf8f632bfc2",
-    "sdk-architecture.md": "e9dec76bc726f2e8beccc861335c35462d5681f1abc576fe038dea3c545113ec",
-    "system-software.md": "c49dc68cefb08db13c6b741e3c936dcbc377dddf19baf840cc5772e0d1fe6659"
+    "sdk-architecture.md": "36bca36626fac7759c7db1cba571db1d8fc7cd1e73647eb09c0c89280a321e2d",
+    "palette-image-builder.md": "b5674d09fea3ab922ebc3829accdfaa6f854fd8e4a5efa756541523bb8d2d304",
+    "palette-image-builder-example.md": "1c5f52896148de545c38d43045292c9be753ba6d7f5b827fd202d54bf6716b31",
+    "palette-image-builder-reference.md": "990d819b7f280b18814c3da5a01ad94c8f45c8231f991f0ad0d749cf65ae0131"
   },
   "ja": {
-    "palette-image-builder.md": "8ea288e25b41ad4457188d7405e1109ecc1d96649597854283d7ee9bce5d5955",
-    "palette-image-builder-example.md": "1890ad06bd2ec9f27b293779426bdbbf70487b94bc1612f1a0634bab5e3aefec",
-    "palette-image-builder-reference.md": "f877fe4abcb6b971dc9cf0849af8a9f58fab5c12302d7b1fc7ec7cf8f632bfc2",
-    "sdk-architecture.md": "e9dec76bc726f2e8beccc861335c35462d5681f1abc576fe038dea3c545113ec",
-    "system-software.md": "c49dc68cefb08db13c6b741e3c936dcbc377dddf19baf840cc5772e0d1fe6659"
+    "sdk-architecture.md": "36bca36626fac7759c7db1cba571db1d8fc7cd1e73647eb09c0c89280a321e2d",
+    "palette-image-builder.md": "b5674d09fea3ab922ebc3829accdfaa6f854fd8e4a5efa756541523bb8d2d304",
+    "palette-image-builder-example.md": "1c5f52896148de545c38d43045292c9be753ba6d7f5b827fd202d54bf6716b31",
+    "palette-image-builder-reference.md": "990d819b7f280b18814c3da5a01ad94c8f45c8231f991f0ad0d749cf65ae0131"
   },
   "ko": {
-    "palette-image-builder.md": "8ea288e25b41ad4457188d7405e1109ecc1d96649597854283d7ee9bce5d5955",
-    "palette-image-builder-example.md": "1890ad06bd2ec9f27b293779426bdbbf70487b94bc1612f1a0634bab5e3aefec",
-    "palette-image-builder-reference.md": "f877fe4abcb6b971dc9cf0849af8a9f58fab5c12302d7b1fc7ec7cf8f632bfc2",
-    "sdk-architecture.md": "e9dec76bc726f2e8beccc861335c35462d5681f1abc576fe038dea3c545113ec",
-    "system-software.md": "c49dc68cefb08db13c6b741e3c936dcbc377dddf19baf840cc5772e0d1fe6659"
+    "sdk-architecture.md": "36bca36626fac7759c7db1cba571db1d8fc7cd1e73647eb09c0c89280a321e2d",
+    "palette-image-builder.md": "b5674d09fea3ab922ebc3829accdfaa6f854fd8e4a5efa756541523bb8d2d304",
+    "palette-image-builder-example.md": "1c5f52896148de545c38d43045292c9be753ba6d7f5b827fd202d54bf6716b31",
+    "palette-image-builder-reference.md": "990d819b7f280b18814c3da5a01ad94c8f45c8231f991f0ad0d749cf65ae0131"
   },
   "zh-Hant": {
-    "palette-image-builder.md": "8ea288e25b41ad4457188d7405e1109ecc1d96649597854283d7ee9bce5d5955",
-    "palette-image-builder-example.md": "1890ad06bd2ec9f27b293779426bdbbf70487b94bc1612f1a0634bab5e3aefec",
-    "palette-image-builder-reference.md": "f877fe4abcb6b971dc9cf0849af8a9f58fab5c12302d7b1fc7ec7cf8f632bfc2",
-    "sdk-architecture.md": "e9dec76bc726f2e8beccc861335c35462d5681f1abc576fe038dea3c545113ec",
-    "system-software.md": "c49dc68cefb08db13c6b741e3c936dcbc377dddf19baf840cc5772e0d1fe6659"
+    "sdk-architecture.md": "36bca36626fac7759c7db1cba571db1d8fc7cd1e73647eb09c0c89280a321e2d",
+    "palette-image-builder.md": "b5674d09fea3ab922ebc3829accdfaa6f854fd8e4a5efa756541523bb8d2d304",
+    "palette-image-builder-example.md": "1c5f52896148de545c38d43045292c9be753ba6d7f5b827fd202d54bf6716b31",
+    "palette-image-builder-reference.md": "990d819b7f280b18814c3da5a01ad94c8f45c8231f991f0ad0d749cf65ae0131"
   }
 }

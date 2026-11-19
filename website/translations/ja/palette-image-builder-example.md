@@ -1,30 +1,10 @@
-# カスタムイメージのサンプルをビルドする
+# イメージの例
 
 この手順では、小さなアプリケーション、設定ファイル、自動起動するサービスを含む署名済み Modalix イメージを作成します。完全なサンプルが PIB に含まれるため、リポジトリの取得やホストへのビルドツールのインストールは不要です。CI でも同じイメージ定義を x86 と ARM64 で検証しています。
 
-## 1. PIB をインストールして確認する
+開始前に[カスタムイメージの作成フロー](palette-image-builder.md#install-pib)に従って PIB をインストールしてください。このページでは、同梱の例に固有のファイルとコマンドを説明します。
 
-sima-cli をインストールし、Linux エンジンの Docker を起動してから実行します。
-
-```bash
-sima-cli neat install sdk/pib
-pib --version
-pib doctor
-```
-
-
-現在のターミナルで `pib` が見つからない場合は、新しいターミナルを開きます。Bash または Zsh では PATH をすぐに更新することもできます。
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-
-PIB はホストに対応した x86 または ARM64 コンテナを使用します。x86 では ARM64 エミュレーターを自動設定します。この minimal イメージの例には、特権コンテナの許可と、プロジェクトおよび Docker ストレージそれぞれに 10 GiB 以上の空き容量が必要です。
-
-Windows では Linux コンテナモードの Docker とネイティブランチャーを使用します。Windows のインストーラーユニットテストは合格していますが、Docker Desktop/WSL2 での完全なイメージ作成はまだ検証されていません。以下の例は Bash の引用符構文を使用します。
-
-## 2. サンプルをプロジェクトにコピーする
+## 1. サンプルをプロジェクトにコピーする
 
 ```bash
 pib init my-custom-image --example custom-image
@@ -52,7 +32,7 @@ pib shell
 
 プロジェクトは `/workspace` にマウントされます。`exit` でホストに戻ります。以降はホストのプロジェクトディレクトリで操作してください。各 `pib` コマンドがコンテナを自動起動します。
 
-## 3. 開発用の署名情報を作成する
+## 2. 開発用の署名情報を作成する
 
 ```bash
 pib keys init --cn 'My Company Development'
@@ -61,7 +41,7 @@ pib keys init --cn 'My Company Development'
 
 CA、SWU 署名用の証明書と秘密鍵、カスタム Debian パッケージの署名情報が作成されます。設定後は `keys/ca.key` をプロジェクト外の安全な場所に移動してください。既存ボードを更新する際も同じ CA を維持します。出荷用イメージには組織の本番署名プロセスを使用してください。
 
-## 4. アプリケーションをパッケージ化して署名する
+## 3. アプリケーションをパッケージ化して署名する
 
 PIB 内でパッケージを作成し、署名と検証を行います。
 
@@ -74,16 +54,28 @@ pib verify-debs
 
 サンプルはシェルスクリプトなのでアーキテクチャは `all` です。コンパイル済みの Modalix アプリケーションは、通常 SDK を使って `arm64` 向けにビルドします。PIB が受け付けるのは ARM64 またはアーキテクチャ非依存のパッケージです。アプリケーションのソースコード自体をクロスコンパイルするツールではありません。
 
-## 5. イメージ定義を確認する
+## 4. イメージ定義を確認する
 
 サンプルには次のカスタマイズ設定が含まれます。
 
 ```yaml
+base: minimal
+target: modalix
+slots: ab
+release: 3.0.0
+version: 3.0.0.1
+vendor: PIB Example
 packages:
   add: [pib-example-app]
   remove: []
-overlay: overlay
+overlay: overlay/
 hooks: [hooks/enable-example.sh]
+signing:
+  ca: keys/ca.crt
+  cert: keys/swu-signing.crt
+  key: keys/swu-signing.key
+debs:
+  key: keys/debs-signing.asc
 ```
 
 
@@ -91,7 +83,7 @@ hooks: [hooks/enable-example.sh]
 
 イメージのバージョンは、コンテナのプラットフォームリリースにビルド番号を追加した形式（例：`3.0.0.1`）にする必要があります。次回のイメージでは最後の番号を増やします。ボードはダウングレード禁止ポリシーを適用します。
 
-## 6. イメージをビルド・署名・検証する
+## 5. イメージをビルド・署名・検証する
 
 ```bash
 pib build --sign --supplier 'My Company'
@@ -101,7 +93,7 @@ pib verify
 
 最初のコマンドは新しいルートファイルシステムを構築し、アプリケーション、オーバーレイ、フックを適用してデプロイ成果物を作成し、SWU に署名して検証します。2 番目のコマンドは、プロジェクトの既定 CA と隣接するマニフェストによる個別検証を示します。
 
-## 7. 出力を確認する
+## 6. 出力を確認する
 
 プロジェクトの `out/` ディレクトリを開きます。
 
@@ -115,18 +107,19 @@ pib verify
 
 SWU とディスクイメージは異なるデプロイ形式です。SWU のインストールと初回 CA 信頼設定は、[ボード更新リファレンス](palette-image-builder-reference.md#installing-an-swu)に従ってください。完全なディスクイメージには Modalix のプロビジョニング手順を使用します。本番環境の前に開発用ボードでイメージを検証してください。
 
-## 8. 独自のアプリケーションに置き換える
+## 7. 例の動作を確認する
 
-SDK で ARM64 Debian パッケージを作成して `custom-debs/` に置き、`image.yaml` にそのパッケージ名を追加します。設定、サービス、フックを変更し、パッケージの署名とイメージ生成を繰り返します。SDK、PIB、DevKit の役割は [SDK アーキテクチャガイド](sdk-architecture.md)を参照してください。
+パッケージは `/usr/bin/pib-example-app` をインストールします。オーバーレイは設定ファイルと `pib-example.service` を提供します。インストール後フックは `multi-user.target` でサービスを有効にし、イメージ内に `/etc/pib-example-build` を書き込みます。
 
-## 繰り返しビルドを高速化する
-
-PIB は pigz で gzip 互換の並列圧縮を行います。検証済みのパッケージダウンロードを再利用するには、次のように設定します。
+[ボード更新リファレンス](palette-image-builder-reference.md#installing-an-swu)に従って開発用ボードにイメージをインストールした後、次のコマンドを**ボード上で**実行します。
 
 ```bash
-export PIB_DEB_CACHE="$HOME/.cache/sima/pib-debs"
-pib build --sign
+sudo systemctl status pib-example.service --no-pager
+sudo journalctl -u pib-example.service --no-pager
+cat /etc/pib-example-build
 ```
 
 
-リポジトリの署名とパッケージのハッシュは毎回確認されます。キャッシュが温まっていても、ルートファイルシステムの再利用や、インストール、フック、署名、検証の省略は行いません。
+サービスは一度だけ実行されるアプリケーションです。成功するとプロセス終了後も active 状態を維持します。ジャーナルには `Hello from the custom PIB image.` と `/etc/pib-example.conf` の内容が記録されます。ビルドマーカーは `PIB example post-install hook` です。
+
+CI は両方のビルダーアーキテクチャで、パッケージファイル、設定、サービス有効化、ビルドマーカー、署名済み SWU のペイロードを検証します。上記のボード上の確認では、実際のハードウェアでの起動動作も検証できます。

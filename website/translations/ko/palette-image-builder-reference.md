@@ -1,6 +1,6 @@
 # Palette Image Builder 참조
 
-먼저 [사용자 지정 Modalix 이미지 만들기](palette-image-builder.md)를 읽으세요. 이 페이지는 선택 기능과 보드 작업을 설명합니다. 컨테이너 유지 관리는 [빌더 README](../palette-image-builder/README.md)를 확인하세요.
+먼저 [맞춤형 이미지 워크플로](palette-image-builder.md)를 읽으세요. 이 페이지는 선택 기능과 보드 작업을 설명합니다. 컨테이너 유지 관리는 [빌더 README](../palette-image-builder/README.md)를 확인하세요.
 
 ## 설치
 
@@ -55,6 +55,27 @@ pib build --sign
 
 모든 명령은 컨테이너 안에서 실행됩니다. 호스트 런처는 Docker, 작업 공간 마운트, 명시적으로 선택한 외부 파일만 처리합니다. `build`, `doctor`, `clean`, 대화형 셸은 특권 장치 접근을 사용합니다. 서명, 검증, 키 생성, 프로젝트 생성에는 필요하지 않습니다.
 
+## 빌드 결과물
+
+| 파일 | 기술적 목적 |
+|---|---|
+| `*.swu` | 서명된 업데이트 번들 |
+| `*.unsigned.swu` | 별도 서명 단계의 입력 |
+| `*.img.gz` | 프로비저닝 또는 복구용 압축 디스크 이미지 |
+| `*-boot0.be` | 관련 tRoot 페이로드. 플랫폼 프로비저닝 절차를 따르세요 |
+| `*.manifest.json` | 패키지 버전, 출처, 부트 페이로드 이력 |
+| `*.cdx.json` | CycloneDX 소프트웨어 구성 명세 |
+| `SHA256SUMS` | 아티팩트 체크섬 |
+
+`out/`에 이전 빌드가 있어도 `pib sign`과 `pib verify`는 현재 `image.yaml` 버전을 선택합니다. 같은 버전을 다시 빌드하면 이미 서명된 SWU를 포함한 결과물을 덮어씁니다. 후속 업데이트에는 버전을 올리세요.
+
+## 문제 해결
+
+- **loop 또는 device-mapper 접근 누락:** `pib doctor`를 실행하세요. Docker는 필요한 장치와 특권 컨테이너를 허용해야 합니다.
+- **x86에서 ARM64 설정 실패:** Linux Docker 엔진이 특권 binfmt 등록을 허용하는지 확인하세요.
+- **이미지 빌드 중단:** 빌드를 멈추고 `pib clean`으로 잔여 리소스를 확인한 후 필요하면 `pib clean --yes`를 사용하세요. 같은 호스트의 다른 PIB 프로젝트에도 영향을 줄 수 있습니다.
+- **패키지 또는 부트스트랩 실패:** `configs/images/mmdebstrap.log`와 저장소 연결을 확인하세요.
+
 ## 사용자 지정
 
 `image.yaml`을 편집하세요. 보드 지원을 개발하는 경우가 아니면 `configs/`의 릴리스 기본값을 유지합니다.
@@ -70,6 +91,8 @@ overlay: overlay/
 hooks: [hooks/enable-my-app.sh]
 vendor: My Company
 ```
+
+오버레이 파일은 권한을 유지하며 이미지에서 root 소유가 됩니다. 오버레이는 패키지 설치 전에 적용되므로 패키지가 `/etc` 외부의 파일을 교체할 수 있습니다. 설치 이후에 필요한 변경에는 설치 후 훅을 사용하세요.
 
 
 애플리케이션 서비스를 활성화하는 설치 후 훅을 만드세요.

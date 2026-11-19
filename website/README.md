@@ -61,3 +61,11 @@ requests. Updates on `main` or `develop`, `sdk-docs-*` tags, and manual dispatch
 publish the validated artifact through the `github-pages` environment. Repository
 Pages settings and environment rules must permit that deployment; DNS is managed
 separately in Vulcan. A feature-branch push alone does not publish the site.
+
+## Reader paths
+
+The published menu contains four pages, in order: Palette SDK System Stack,
+Custom Image Workflow, Example Image, and Palette Image Builder Reference.
+The workflow explains the general lifecycle; the example owns the runnable sample
+recipe; the reference owns technical rules and troubleshooting. The lower-level
+system-software draft remains in the repository but is excluded from publication.
