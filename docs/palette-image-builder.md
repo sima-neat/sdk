@@ -100,6 +100,8 @@ signing identity. Increase the image version for subsequent updates, and migrate
 release-compatible inputs into a fresh project when changing platform releases.
 See the [platform upgrade reference](palette-image-builder-reference.md#new-platform-release).
 
+See [media and partition layout](palette-image-builder-reference.md#media-and-partition-layout) for boot partitions, rootfs slots, and data-volume allocation.
+
 ## Continue with the example or reference
 
 - [Example Image](palette-image-builder-example.md): build the included application package, configuration, and service step by step.

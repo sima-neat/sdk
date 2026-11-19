@@ -74,6 +74,8 @@ pib verify
 
 복구 가능한 하드웨어에서 이미지를 검증하고 매니페스트, 체크섬, 서명 정보를 보관하세요. 후속 업데이트에는 이미지 버전을 올립니다. 플랫폼 릴리스를 바꿀 때는 새 프로젝트로 호환되는 입력을 옮기세요. [플랫폼 업그레이드 참조](palette-image-builder-reference.md#new-platform-release)를 확인하세요.
 
+부트 파티션, rootfs 슬롯, 데이터 볼륨 할당은 [미디어 및 파티션 구조](palette-image-builder-reference.md#media-and-partition-layout)를 참조하세요.
+
 ## 예제 또는 참조로 계속하기
 
 - [예제 이미지](palette-image-builder-example.md): 포함된 애플리케이션 패키지, 설정, 서비스를 단계별로 빌드합니다.

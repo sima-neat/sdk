@@ -1,26 +1,26 @@
 {
   "uk": {
     "sdk-architecture.md": "d490410b7fd649a912919c145d5d7da5cc847b3471e383a525f36fcf85b7d38f",
-    "palette-image-builder.md": "b5674d09fea3ab922ebc3829accdfaa6f854fd8e4a5efa756541523bb8d2d304",
+    "palette-image-builder.md": "346374b395ee7071bbf4a26628b1780340f57993db22979566aa726e504d26f6",
     "palette-image-builder-example.md": "1c5f52896148de545c38d43045292c9be753ba6d7f5b827fd202d54bf6716b31",
-    "palette-image-builder-reference.md": "990d819b7f280b18814c3da5a01ad94c8f45c8231f991f0ad0d749cf65ae0131"
+    "palette-image-builder-reference.md": "962d94c391d122f61f73bd5ef70173318b3ea78ce7af7d4ed4761c55ff070c30"
   },
   "ja": {
     "sdk-architecture.md": "d490410b7fd649a912919c145d5d7da5cc847b3471e383a525f36fcf85b7d38f",
-    "palette-image-builder.md": "b5674d09fea3ab922ebc3829accdfaa6f854fd8e4a5efa756541523bb8d2d304",
+    "palette-image-builder.md": "346374b395ee7071bbf4a26628b1780340f57993db22979566aa726e504d26f6",
     "palette-image-builder-example.md": "1c5f52896148de545c38d43045292c9be753ba6d7f5b827fd202d54bf6716b31",
-    "palette-image-builder-reference.md": "990d819b7f280b18814c3da5a01ad94c8f45c8231f991f0ad0d749cf65ae0131"
+    "palette-image-builder-reference.md": "962d94c391d122f61f73bd5ef70173318b3ea78ce7af7d4ed4761c55ff070c30"
   },
   "ko": {
     "sdk-architecture.md": "d490410b7fd649a912919c145d5d7da5cc847b3471e383a525f36fcf85b7d38f",
-    "palette-image-builder.md": "b5674d09fea3ab922ebc3829accdfaa6f854fd8e4a5efa756541523bb8d2d304",
+    "palette-image-builder.md": "346374b395ee7071bbf4a26628b1780340f57993db22979566aa726e504d26f6",
     "palette-image-builder-example.md": "1c5f52896148de545c38d43045292c9be753ba6d7f5b827fd202d54bf6716b31",
-    "palette-image-builder-reference.md": "990d819b7f280b18814c3da5a01ad94c8f45c8231f991f0ad0d749cf65ae0131"
+    "palette-image-builder-reference.md": "962d94c391d122f61f73bd5ef70173318b3ea78ce7af7d4ed4761c55ff070c30"
   },
   "zh-Hant": {
     "sdk-architecture.md": "d490410b7fd649a912919c145d5d7da5cc847b3471e383a525f36fcf85b7d38f",
-    "palette-image-builder.md": "b5674d09fea3ab922ebc3829accdfaa6f854fd8e4a5efa756541523bb8d2d304",
+    "palette-image-builder.md": "346374b395ee7071bbf4a26628b1780340f57993db22979566aa726e504d26f6",
     "palette-image-builder-example.md": "1c5f52896148de545c38d43045292c9be753ba6d7f5b827fd202d54bf6716b31",
-    "palette-image-builder-reference.md": "990d819b7f280b18814c3da5a01ad94c8f45c8231f991f0ad0d749cf65ae0131"
+    "palette-image-builder-reference.md": "962d94c391d122f61f73bd5ef70173318b3ea78ce7af7d4ed4761c55ff070c30"
   }
 }

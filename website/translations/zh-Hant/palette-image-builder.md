@@ -74,6 +74,8 @@ pib verify
 
 請在可復原的硬體上驗證映像，並保留清單、檢查碼與簽署身分。後續更新請提高映像版本；更換平台版本時，將相容輸入遷移至新專案。請參閱[平台升級參考](palette-image-builder-reference.md#new-platform-release)。
 
+開機分割區、rootfs 槽位與資料空間配置，請參閱[媒體與分割區配置](palette-image-builder-reference.md#media-and-partition-layout)。
+
 ## 繼續閱讀範例或參考文件
 
 - [範例映像](palette-image-builder-example.md)：逐步建置內附的應用程式套件、設定與服務。

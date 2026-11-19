@@ -95,6 +95,42 @@ verification, key generation, and project creation do not need it.
 contains older builds. Rebuilding the same version replaces its outputs,
 including a previously signed SWU. Increase the version for subsequent updates.
 
+## Media and partition layout
+
+The Modalix eMMC/SD image uses GPT boot partitions and an LVM partition for the
+root filesystems and data. These are the defaults of the current PIB platform
+release (`3.0.0`), not fixed sizes for every release. Check the selected builder's
+`configs/images/image-params.yaml` and `image-stages.yaml` for its exact geometry.
+The LVM partition and data volume grow to the device's available capacity on first
+boot; the downloaded disk image can be smaller than the physical device.
+
+### Physical partitions
+
+| # | Name | Size | Format | Contents |
+|---|---|---|---|---|
+| 1 | `boot.A` | 256 MiB | vFAT | Slot A boot artifacts: `fip.bin`, U-Boot, boot scripts, kernel FIT/device-tree data, and U-Boot environment |
+| 2 | `boot.B` | 256 MiB | vFAT | Boot artifacts for slot B |
+| 3 | `lvm` | Remaining usable device capacity after first-boot growth | LVM physical volume | Holds the logical volumes below |
+
+### Logical volumes
+
+The logical volumes reside inside partition 3.
+
+| Volume | Size | File system | Purpose |
+|---|---|---|---|
+| `rootfs.A` | 1.5 GiB for `minimal`; 5.5 GiB for `palette` and `securepalette` | ext4 | Slot A root filesystem |
+| `rootfs.B` | Same size as `rootfs.A` | ext4 when populated | Slot B root filesystem; initial population depends on `slots` |
+| `data` | Remaining LVM capacity after space for both rootfs slots is reserved | ext4 | General storage, expanded on first boot |
+
+### Slot population
+
+- **`slots: ab` (PIB default):** both rootfs volumes are created and populated in the disk image.
+- **`slots: a`:** the disk image contains only `rootfs.A`. On first boot, `simaai-growlvm` creates `rootfs.B` at the same size before expanding `data`. Slot B has no root filesystem until an update populates it.
+
+The `slots` setting controls the initial disk image population; it does not
+remove A/B update support. Updates write the inactive slot. The boot artifacts
+and root filesystem in the two slots can differ after an update.
+
 ## Troubleshooting
 
 - **Missing loop or device-mapper access:** run `pib doctor`. Docker must provide these devices and allow privileged containers.
@@ -245,9 +281,8 @@ image. The default update preserves the board's writable overlay; a clean-overla
 update can remove local credentials/settings. Follow the platform recovery guide
 for initial eMMC flashing; an SWU is not a raw disk image.
 
-The current PIB layout uses GPT `boot.A`, `boot.B`, and an LVM partition containing
-rootfs A/B and data. Do not apply older raw-partition U-Boot flashing instructions
-to this layout. Exact geometry belongs to the release's board templates.
+Use the [media and partition layout](#media-and-partition-layout) for this release.
+Do not apply older raw-partition U-Boot flashing instructions to the GPT/LVM layout.
 
 ## New platform release
 

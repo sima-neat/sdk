@@ -74,6 +74,8 @@ pib verify
 
 復旧可能なハードウェアでイメージを検証し、マニフェスト、チェックサム、署名情報を保管してください。更新時はイメージバージョンを増やし、プラットフォームを変更する場合は新しいプロジェクトに互換性のある入力を移行します。[プラットフォーム更新のリファレンス](palette-image-builder-reference.md#new-platform-release)も参照してください。
 
+ブートパーティション、rootfs スロット、データ容量の割り当ては[メディアとパーティション構成](palette-image-builder-reference.md#media-and-partition-layout)を参照してください。
+
 ## 例またはリファレンスへ進む
 
 - [イメージの例](palette-image-builder-example.md)：同梱のアプリケーションパッケージ、設定、サービスを手順に沿って作成します。

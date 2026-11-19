@@ -69,6 +69,35 @@ pib build --sign
 
 即使 `out/` 含有舊版建置，`pib sign` 與 `pib verify` 仍會選擇目前 `image.yaml` 的版本。重建相同版本會取代其產物，包括已簽署的 SWU。後續更新請提高版本。
 
+## 媒體與分割區配置
+
+Modalix eMMC/SD 映像使用 GPT 開機分割區，以及存放根檔案系統和資料的 LVM 分割區。下列數值是目前 PIB 平台版本（`3.0.0`）的預設值，並非所有版本都固定如此。確切配置請查看所選建置器的 `configs/images/image-params.yaml` 與 `image-stages.yaml`。首次開機時，LVM 分割區與資料磁碟區會擴展至裝置可用容量，因此下載的磁碟映像可能小於實體裝置。
+
+### 實體分割區
+
+| # | 名稱 | 大小 | 格式 | 內容 |
+|---|---|---|---|---|
+| 1 | `boot.A` | 256 MiB | vFAT | A 槽的 `fip.bin`、U-Boot、開機指令碼、核心 FIT／裝置樹資料及 U-Boot 環境 |
+| 2 | `boot.B` | 256 MiB | vFAT | B 槽的開機產物 |
+| 3 | `lvm` | 首次開機擴展後剩餘的裝置可用容量 | LVM 實體磁碟區 | 包含下列邏輯磁碟區 |
+
+### 邏輯磁碟區
+
+邏輯磁碟區位於分割區 3 內。
+
+| 磁碟區 | 大小 | 檔案系統 | 用途 |
+|---|---|---|---|
+| `rootfs.A` | `minimal` 為 1.5 GiB；`palette` 與 `securepalette` 為 5.5 GiB | ext4 | A 槽根檔案系統 |
+| `rootfs.B` | 與 `rootfs.A` 相同 | 寫入內容後為 ext4 | B 槽根檔案系統，初始內容取決於 `slots` |
+| `data` | 為兩個 rootfs 槽預留空間後剩餘的 LVM 容量 | ext4 | 一般儲存空間，首次開機時擴展 |
+
+### 槽位初始內容
+
+- **`slots: ab`（PIB 預設）：** 在磁碟映像中建立兩個 rootfs 磁碟區並寫入內容。
+- **`slots: a`：** 磁碟映像只包含 `rootfs.A`。首次開機時，`simaai-growlvm` 會先建立與其相同大小的 `rootfs.B`，再擴展 `data`。更新寫入內容前，B 槽沒有根檔案系統。
+
+`slots` 控制初始磁碟映像內容，不會移除 A/B 更新支援。更新會寫入非作用中槽位。更新後，兩槽的開機產物與根檔案系統可能不同。
+
 ## 疑難排解
 
 - **缺少 loop 或 device-mapper 存取：** 執行 `pib doctor`。Docker 必須提供所需裝置並允許特權容器。
