@@ -1,8 +1,50 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-action="${1:?missing container action}"
-shift
+usage() {
+  cat <<'EOF'
+Usage: bash install-devkit-docker.sh install
+
+Install or repair Docker on an ARM64 Modalix DevKit.
+Run as your normal DevKit user; sudo prompts for a password when needed.
+Docker and containerd data use /data. Existing configuration is preserved.
+Run the same command again to recover an interrupted installation.
+Log out and back in after setup to activate Docker group membership.
+
+The Palette SDK uses this same script with its internal setup/runtime actions.
+EOF
+}
+
+# Downloaded installers may prompt for sudo. SDK SSH actions must remain
+# noninteractive, including preflight, recovery and registry configuration.
+sudo_command=(sudo -n)
+sudo_requirement="passwordless sudo"
+standalone_install=0
+case "${1:-}" in
+  --help|-h)
+    usage
+    exit 0
+    ;;
+  install)
+    if [[ $# != 1 ]]; then
+      usage >&2
+      exit 2
+    fi
+    sudo_command=(sudo)
+    sudo_requirement="sudo access"
+    standalone_install=1
+    action=setup
+    shift
+    ;;
+  "")
+    usage >&2
+    exit 2
+    ;;
+  *)
+    action="$1"
+    shift
+    ;;
+esac
 
 install_marker="${DEVKIT_CONTAINER_INSTALL_MARKER:-/etc/docker/.sima-sdk-install-in-progress}"
 elxr_mirror="${DEVKIT_CONTAINER_ELXR_MIRROR:-/etc/apt/sources.list.d/0000mirror.list}"
@@ -13,7 +55,7 @@ docker_is_usable() {
   if docker info >/dev/null 2>&1; then
     return 0
   fi
-  command -v sudo >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1
+  command -v sudo >/dev/null 2>&1 && "${sudo_command[@]}" docker info >/dev/null 2>&1
 }
 
 containerd_bind_mount_ready() {
@@ -46,7 +88,7 @@ docker_install_postconditions_ready() {
   if docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)"; then
     :
   elif command -v sudo >/dev/null 2>&1; then
-    docker_root="$(sudo -n docker info --format '{{.DockerRootDir}}' 2>/dev/null)" || return 1
+    docker_root="$("${sudo_command[@]}" docker info --format '{{.DockerRootDir}}' 2>/dev/null)" || return 1
   else
     return 1
   fi
@@ -59,11 +101,11 @@ configure_container_registry() {
   if [[ -z "${registry}" ]]; then
     return 0
   fi
-  if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
-    echo "Container registry setup requires passwordless sudo on the DevKit." >&2
+  if ! command -v sudo >/dev/null 2>&1 || ! "${sudo_command[@]}" true >/dev/null 2>&1; then
+    echo "Container registry setup requires ${sudo_requirement} on the DevKit." >&2
     return 2
   fi
-  changed="$(sudo -n python3 - "${registry}" <<'PY'
+  changed="$("${sudo_command[@]}" python3 - "${registry}" <<'PY'
 import json
 import os
 import shutil
@@ -111,14 +153,14 @@ legacy_state_path.unlink(missing_ok=True)
 print("restart" if changed or applied != registry else "unchanged")
 PY
   )"
-  if [[ "${changed}" == restart ]] || ! sudo -n systemctl is-active --quiet docker; then
+  if [[ "${changed}" == restart ]] || ! "${sudo_command[@]}" systemctl is-active --quiet docker; then
     echo "Docker registry settings changed. Restarting Docker on the DevKit."
-    sudo -n systemctl restart docker
+    "${sudo_command[@]}" systemctl restart docker
   fi
-  sudo -n docker info >/dev/null
+  "${sudo_command[@]}" docker info >/dev/null
   if [[ "${changed}" == restart ]]; then
-    printf '%s\n' "${registry}" | sudo -n tee /etc/docker/sima-sdk-registry-applied.tmp >/dev/null
-    sudo -n mv /etc/docker/sima-sdk-registry-applied.tmp /etc/docker/sima-sdk-registry-applied
+    printf '%s\n' "${registry}" | "${sudo_command[@]}" tee /etc/docker/sima-sdk-registry-applied.tmp >/dev/null
+    "${sudo_command[@]}" mv /etc/docker/sima-sdk-registry-applied.tmp /etc/docker/sima-sdk-registry-applied
   fi
   echo "The DevKit can now download images from ${registry}."
 }
@@ -126,33 +168,33 @@ PY
 configure_docker_access() {
   local target_user
   target_user="$(id -un)"
-  if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
-    echo "Docker setup requires passwordless sudo for ${target_user} on the DevKit." >&2
+  if ! command -v sudo >/dev/null 2>&1 || ! "${sudo_command[@]}" true >/dev/null 2>&1; then
+    echo "Docker setup requires ${sudo_requirement} for ${target_user} on the DevKit." >&2
     return 2
   fi
-  sudo -n usermod -aG docker "${target_user}"
-  sudo -n systemctl enable --now containerd docker
-  sudo -n docker info >/dev/null
+  "${sudo_command[@]}" usermod -aG docker "${target_user}"
+  "${sudo_command[@]}" systemctl enable --now containerd docker
+  "${sudo_command[@]}" docker info >/dev/null
   echo "Docker is ready on the DevKit. User ${target_user} was added to the docker group."
 }
 
 finalize_interrupted_docker_install() {
   local target_user=""
   target_user="$(id -un)"
-  if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
-    echo "Docker setup recovery requires passwordless sudo for ${target_user} on the DevKit." >&2
+  if ! command -v sudo >/dev/null 2>&1 || ! "${sudo_command[@]}" true >/dev/null 2>&1; then
+    echo "Docker setup recovery requires ${sudo_requirement} for ${target_user} on the DevKit." >&2
     return 2
   fi
-  if sudo -n test -e "${disabled_elxr_mirror}"; then
-    if sudo -n test -e "${elxr_mirror}"; then
+  if "${sudo_command[@]}" test -e "${disabled_elxr_mirror}"; then
+    if "${sudo_command[@]}" test -e "${elxr_mirror}"; then
       echo "Cannot restore ${elxr_mirror}: ${disabled_elxr_mirror} also exists." >&2
       return 2
     fi
-    sudo -n mkdir -p "$(dirname "${elxr_mirror}")"
-    sudo -n mv "${disabled_elxr_mirror}" "${elxr_mirror}"
+    "${sudo_command[@]}" mkdir -p "$(dirname "${elxr_mirror}")"
+    "${sudo_command[@]}" mv "${disabled_elxr_mirror}" "${elxr_mirror}"
   fi
   configure_docker_access
-  sudo -n rm -f "${install_marker}"
+  "${sudo_command[@]}" rm -f "${install_marker}"
   echo "Completed the interrupted Docker setup without reinstalling packages."
 }
 
@@ -175,8 +217,8 @@ install_docker() (
   local -a migration_markers=()
 
   target_user="$(id -un)"
-  if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
-    echo "Docker installation requires passwordless sudo for ${target_user} on the DevKit." >&2
+  if ! command -v sudo >/dev/null 2>&1 || ! "${sudo_command[@]}" true >/dev/null 2>&1; then
+    echo "Docker installation requires ${sudo_requirement} for ${target_user} on the DevKit." >&2
     return 2
   fi
   architecture="$(dpkg --print-architecture 2>/dev/null || true)"
@@ -190,51 +232,51 @@ install_docker() (
   fi
 
   restore_elxr_mirror() {
-    if [[ "${mirror_moved}" == 1 ]] && sudo -n test -e "${disabled_elxr_mirror}" && \
-       ! sudo -n test -e "${elxr_mirror}"; then
-      sudo -n mkdir -p "$(dirname "${elxr_mirror}")"
-      sudo -n mv "${disabled_elxr_mirror}" "${elxr_mirror}"
+    if [[ "${mirror_moved}" == 1 ]] && "${sudo_command[@]}" test -e "${disabled_elxr_mirror}" && \
+       ! "${sudo_command[@]}" test -e "${elxr_mirror}"; then
+      "${sudo_command[@]}" mkdir -p "$(dirname "${elxr_mirror}")"
+      "${sudo_command[@]}" mv "${disabled_elxr_mirror}" "${elxr_mirror}"
     fi
   }
   cleanup_install() {
     restore_elxr_mirror
     if [[ "${services_stopped}" == 1 ]]; then
       if containerd_bind_mount_ready; then
-        sudo -n systemctl start containerd docker >/dev/null 2>&1 || true
+        "${sudo_command[@]}" systemctl start containerd docker >/dev/null 2>&1 || true
       else
         echo "Docker services remain stopped until containerd storage setup is completed." >&2
       fi
     fi
-    if sudo -n test -e "${install_marker}"; then
+    if "${sudo_command[@]}" test -e "${install_marker}"; then
       echo "Docker installation did not complete. Run 'dk container setup' to retry safely." >&2
     fi
   }
   trap cleanup_install EXIT
 
   echo "Installing Docker CE for ARM64 on the Modalix DevKit."
-  sudo -n mkdir -p /etc/docker
-  if sudo -n test -e "${install_marker}"; then
-    install_phase="$(sudo -n cat "${install_marker}" 2>/dev/null || true)"
+  "${sudo_command[@]}" mkdir -p /etc/docker
+  if "${sudo_command[@]}" test -e "${install_marker}"; then
+    install_phase="$("${sudo_command[@]}" cat "${install_marker}" 2>/dev/null || true)"
     echo "Resuming an interrupted Docker installation."
   else
     install_phase=started
-    printf '%s\n' "${install_phase}" | sudo -n tee "${install_marker}" >/dev/null
+    printf '%s\n' "${install_phase}" | "${sudo_command[@]}" tee "${install_marker}" >/dev/null
   fi
-  if sudo -n test -e "${disabled_elxr_mirror}" && ! sudo -n test -e "${elxr_mirror}"; then
+  if "${sudo_command[@]}" test -e "${disabled_elxr_mirror}" && ! "${sudo_command[@]}" test -e "${elxr_mirror}"; then
     mirror_moved=1
     echo "Resuming with the eLxr package mirror temporarily disabled."
-  elif sudo -n test -e "${elxr_mirror}"; then
-    sudo -n mkdir -p "$(dirname "${disabled_elxr_mirror}")"
-    if sudo -n test -e "${disabled_elxr_mirror}"; then
+  elif "${sudo_command[@]}" test -e "${elxr_mirror}"; then
+    "${sudo_command[@]}" mkdir -p "$(dirname "${disabled_elxr_mirror}")"
+    if "${sudo_command[@]}" test -e "${disabled_elxr_mirror}"; then
       echo "Cannot disable ${elxr_mirror}: ${disabled_elxr_mirror} already exists." >&2
       return 2
     fi
-    sudo -n mv "${elxr_mirror}" "${disabled_elxr_mirror}"
+    "${sudo_command[@]}" mv "${elxr_mirror}" "${disabled_elxr_mirror}"
     mirror_moved=1
   fi
 
-  sudo -n mkdir -p /data/docker
-  sudo -n python3 <<'PY'
+  "${sudo_command[@]}" mkdir -p /data/docker
+  "${sudo_command[@]}" python3 <<'PY'
 import json
 import os
 import shutil
@@ -258,15 +300,15 @@ os.chmod(str(temporary), 0o644)
 os.replace(str(temporary), str(path))
 PY
   printf 'net.ipv4.ip_forward=1\nnet.ipv6.conf.all.forwarding=1\n' \
-    | sudo -n tee /etc/sysctl.d/99-docker-forward.conf >/dev/null
-  sudo -n sysctl --system >/dev/null
+    | "${sudo_command[@]}" tee /etc/sysctl.d/99-docker-forward.conf >/dev/null
+  "${sudo_command[@]}" sysctl --system >/dev/null
 
-  sudo -n install -m 0755 -d /etc/apt/keyrings
+  "${sudo_command[@]}" install -m 0755 -d /etc/apt/keyrings
   if command -v curl >/dev/null 2>&1; then
-    sudo -n curl -fsSL https://download.docker.com/linux/debian/gpg \
+    "${sudo_command[@]}" curl -fsSL https://download.docker.com/linux/debian/gpg \
       -o /etc/apt/keyrings/docker.asc
   else
-    python3 - <<'PY' | sudo -n tee /etc/apt/keyrings/docker.asc >/dev/null
+    python3 - <<'PY' | "${sudo_command[@]}" tee /etc/apt/keyrings/docker.asc >/dev/null
 import sys
 import urllib.request
 
@@ -274,17 +316,17 @@ with urllib.request.urlopen("https://download.docker.com/linux/debian/gpg", time
     sys.stdout.buffer.write(response.read())
 PY
   fi
-  sudo -n chmod a+r /etc/apt/keyrings/docker.asc
+  "${sudo_command[@]}" chmod a+r /etc/apt/keyrings/docker.asc
   printf '%s\n' \
     'deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian trixie stable' \
-    | sudo -n tee /etc/apt/sources.list.d/docker.list >/dev/null
-  sudo -n apt-get update
-  sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    | "${sudo_command[@]}" tee /etc/apt/sources.list.d/docker.list >/dev/null
+  "${sudo_command[@]}" apt-get update
+  "${sudo_command[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y \
     docker-ce docker-ce-cli containerd.io
 
-  sudo -n systemctl stop docker.socket docker containerd
+  "${sudo_command[@]}" systemctl stop docker.socket docker containerd
   services_stopped=1
-  sudo -n mkdir -p /data/containerd /var/lib/containerd
+  "${sudo_command[@]}" mkdir -p /data/containerd /var/lib/containerd
   if mountpoint -q /var/lib/containerd; then
     if ! containerd_bind_mount_ready; then
       echo "/var/lib/containerd is already mounted from an unexpected source; refusing to replace it." >&2
@@ -292,37 +334,37 @@ PY
     fi
   else
     if [[ "${install_phase}" != migration ]] && \
-       sudo -n sh -c 'test -n "$(find /data/containerd -mindepth 1 -print -quit)"' && \
-       sudo -n sh -c 'test -n "$(find /var/lib/containerd -mindepth 1 -print -quit)"'; then
+       "${sudo_command[@]}" sh -c 'test -n "$(find /data/containerd -mindepth 1 -print -quit)"' && \
+       "${sudo_command[@]}" sh -c 'test -n "$(find /var/lib/containerd -mindepth 1 -print -quit)"'; then
       echo "Both /data/containerd and /var/lib/containerd already contain data; refusing to merge unrelated state." >&2
       return 2
     fi
     install_phase=migration
-    printf '%s\n' "${install_phase}" | sudo -n tee "${install_marker}" >/dev/null
-    sudo -n mkdir -p "${migration_marker_dir}" "${migration_staging_root}"
+    printf '%s\n' "${install_phase}" | "${sudo_command[@]}" tee "${install_marker}" >/dev/null
+    "${sudo_command[@]}" mkdir -p "${migration_marker_dir}" "${migration_staging_root}"
     mapfile -d '' -t migration_markers < <(
-      sudo -n find "${migration_marker_dir}" -mindepth 1 -maxdepth 1 -type f -print0
+      "${sudo_command[@]}" find "${migration_marker_dir}" -mindepth 1 -maxdepth 1 -type f -print0
     )
     for marker_entry in "${migration_markers[@]}"; do
       marker_name="$(basename "${marker_entry}")"
       entry="/var/lib/containerd/${marker_name}"
       destination="/data/containerd/${marker_name}"
       staging="${migration_staging_root}/${marker_name}"
-      if sudo -n test -e "${entry}" || sudo -n test -L "${entry}"; then
+      if "${sudo_command[@]}" test -e "${entry}" || "${sudo_command[@]}" test -L "${entry}"; then
         continue
       fi
-      if sudo -n test -e "${destination}" || sudo -n test -L "${destination}"; then
-        sudo -n rm -f -- "${marker_entry}"
-      elif sudo -n test -e "${staging}" || sudo -n test -L "${staging}"; then
-        sudo -n mv -- "${staging}" "${destination}"
-        sudo -n rm -f -- "${marker_entry}"
+      if "${sudo_command[@]}" test -e "${destination}" || "${sudo_command[@]}" test -L "${destination}"; then
+        "${sudo_command[@]}" rm -f -- "${marker_entry}"
+      elif "${sudo_command[@]}" test -e "${staging}" || "${sudo_command[@]}" test -L "${staging}"; then
+        "${sudo_command[@]}" mv -- "${staging}" "${destination}"
+        "${sudo_command[@]}" rm -f -- "${marker_entry}"
       else
         echo "Cannot resume containerd migration: no data remains for ${marker_name}." >&2
         return 2
       fi
     done
     mapfile -d '' -t containerd_entries < <(
-      sudo -n find /var/lib/containerd -mindepth 1 -maxdepth 1 -print0
+      "${sudo_command[@]}" find /var/lib/containerd -mindepth 1 -maxdepth 1 -print0
     )
     for entry in "${containerd_entries[@]}"; do
       entry_name="$(basename "${entry}")"
@@ -330,21 +372,21 @@ PY
       staging="${migration_staging_root}/${entry_name}"
       migration_marker="${migration_marker_dir}/${entry_name}"
 
-      if sudo -n test -e "${migration_marker}"; then
-        if ! sudo -n test -e "${destination}" && ! sudo -n test -L "${destination}"; then
-          if sudo -n test -e "${staging}" || sudo -n test -L "${staging}"; then
-            sudo -n mv -- "${staging}" "${destination}"
+      if "${sudo_command[@]}" test -e "${migration_marker}"; then
+        if ! "${sudo_command[@]}" test -e "${destination}" && ! "${sudo_command[@]}" test -L "${destination}"; then
+          if "${sudo_command[@]}" test -e "${staging}" || "${sudo_command[@]}" test -L "${staging}"; then
+            "${sudo_command[@]}" mv -- "${staging}" "${destination}"
           else
             echo "Cannot resume containerd migration: both ${destination} and ${staging} are missing." >&2
             return 2
           fi
         fi
-        sudo -n rm -rf -- "${entry}"
-        sudo -n rm -f -- "${migration_marker}"
+        "${sudo_command[@]}" rm -rf -- "${entry}"
+        "${sudo_command[@]}" rm -f -- "${migration_marker}"
         continue
       fi
 
-      if sudo -n test -e "${destination}" || sudo -n test -L "${destination}"; then
+      if "${sudo_command[@]}" test -e "${destination}" || "${sudo_command[@]}" test -L "${destination}"; then
         echo "Cannot migrate containerd state: ${destination} exists without a migration marker." >&2
         return 2
       fi
@@ -352,32 +394,32 @@ PY
       # Copy across filesystems without changing the source. The marker is
       # written only after the copy completes and before the same-filesystem
       # rename, so every possible interruption has an unambiguous retry path.
-      sudo -n rm -rf -- "${staging}"
-      sudo -n cp -a -- "${entry}" "${staging}"
-      sudo -n touch "${migration_marker}"
-      sudo -n mv -- "${staging}" "${destination}"
-      sudo -n rm -rf -- "${entry}"
-      sudo -n rm -f -- "${migration_marker}"
+      "${sudo_command[@]}" rm -rf -- "${staging}"
+      "${sudo_command[@]}" cp -a -- "${entry}" "${staging}"
+      "${sudo_command[@]}" touch "${migration_marker}"
+      "${sudo_command[@]}" mv -- "${staging}" "${destination}"
+      "${sudo_command[@]}" rm -rf -- "${entry}"
+      "${sudo_command[@]}" rm -f -- "${migration_marker}"
     done
-    sudo -n rmdir "${migration_staging_root}" "${migration_marker_dir}" 2>/dev/null || true
-    if ! sudo -n grep -Fqx '/data/containerd /var/lib/containerd none bind 0 0' /etc/fstab; then
+    "${sudo_command[@]}" rmdir "${migration_staging_root}" "${migration_marker_dir}" 2>/dev/null || true
+    if ! "${sudo_command[@]}" grep -Fqx '/data/containerd /var/lib/containerd none bind 0 0' /etc/fstab; then
       printf '%s\n' '/data/containerd /var/lib/containerd none bind 0 0' \
-        | sudo -n tee -a /etc/fstab >/dev/null
+        | "${sudo_command[@]}" tee -a /etc/fstab >/dev/null
     fi
-    sudo -n mount /var/lib/containerd
+    "${sudo_command[@]}" mount /var/lib/containerd
   fi
 
-  sudo -n systemctl enable containerd docker
-  sudo -n systemctl restart containerd docker
+  "${sudo_command[@]}" systemctl enable containerd docker
+  "${sudo_command[@]}" systemctl restart containerd docker
   services_stopped=0
   configure_docker_access
-  if [[ "$(sudo -n docker info --format '{{.DockerRootDir}}')" != /data/docker ]]; then
+  if [[ "$("${sudo_command[@]}" docker info --format '{{.DockerRootDir}}')" != /data/docker ]]; then
     echo "Docker started, but its data root is not /data/docker." >&2
     return 2
   fi
   restore_elxr_mirror
   mirror_moved=0
-  sudo -n rm -f "${install_marker}"
+  "${sudo_command[@]}" rm -f "${install_marker}"
   trap - EXIT
   echo "Docker installation completed on the DevKit."
 )
@@ -403,6 +445,16 @@ if [[ -e "$managed_helper" || -L "$managed_helper" ]]; then
 elif [[ -e /usr/local/sbin/kerrigan-sdk-nfs ]]; then
   echo "Docker is not enabled in this Kerrigan-managed DevKit's device bundle. Ask the administrator to enable it." >&2
   exit 2
+fi
+
+# Authenticate visibly before any redirected health checks. Do not run the
+# whole installer as root: group membership belongs to the invoking user.
+if [[ "$managed" == 0 && "$standalone_install" == 1 ]]; then
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "Docker installation requires sudo access on the DevKit." >&2
+    exit 2
+  fi
+  sudo -v
 fi
 
 if [[ "$managed" == 0 && "${action}" == managed-docker-check ]]; then
@@ -456,8 +508,8 @@ DOCKER=(docker)
 if [[ "$managed" == 1 ]]; then
   DOCKER=("$managed_helper" docker)
 elif ! docker info >/dev/null 2>&1; then
-  if command -v sudo >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; then
-    DOCKER=(sudo -n docker)
+  if command -v sudo >/dev/null 2>&1 && "${sudo_command[@]}" docker info >/dev/null 2>&1; then
+    DOCKER=("${sudo_command[@]}" docker)
   else
     echo "Docker is installed on the DevKit, but the current user cannot use it." >&2
     echo "Run DevKit setup again so sima-cli can configure passwordless sudo." >&2

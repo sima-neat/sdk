@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 
-SCRIPT = Path(__file__).resolve().parents[2] / 'scripts/devkit-container-remote.sh'
+SCRIPT = Path(__file__).resolve().parents[2] / 'scripts/install-devkit-docker.sh'
 
 
 class ManagedDockerTests(unittest.TestCase):
@@ -25,7 +25,7 @@ class ManagedDockerTests(unittest.TestCase):
         return subprocess.run(['bash', str(self.remote), *args], env={**os.environ, 'CALL_LOG': str(self.log), **env}, capture_output=True, text=True, timeout=10)
 
     def test_managed_setup_and_commands_use_helper_without_sudo(self):
-        for args in [('setup', '192.0.2.1:5050'), ('docker-check',), ('managed-docker-check',), ('list',)]:
+        for args in [('setup', '192.0.2.1:5050'), ('install',), ('docker-check',), ('managed-docker-check',), ('list',)]:
             result = self.run_remote(*args)
             self.assertEqual(result.returncode, 0, result.stderr)
         lines = self.log.read_text().splitlines()
