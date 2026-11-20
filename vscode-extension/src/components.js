@@ -53,9 +53,15 @@ function validateCatalog(value) {
   }
   return value;
 }
-function resolveCatalog(catalog, { release, arch, codeServer, vscode, testVersion, allowCandidate = false, allowSdkFallback = false }) {
+function resolveCatalog(catalog, { release, imageSdkVersion, arch, codeServer, vscode, testVersion, allowCandidate = false, allowSdkFallback = false }) {
   validateCatalog(catalog);
-  const normalized = /^v?(\d+\.\d+\.\d+(?:\.\d+)?)$/.exec(release || '')?.[1];
+  const releaseLine = /^release-(\d+\.\d+)$/.exec(release || '')?.[1];
+  // Release-branch images record their exact SDK identity separately from the
+  // Git ref. Never substitute the platform version or the catalog build default.
+  const branchVersion = releaseLine && typeof imageSdkVersion === 'string' &&
+    VERSION.test(imageSdkVersion) && imageSdkVersion.startsWith(releaseLine + '.')
+    ? imageSdkVersion : undefined;
+  const normalized = /^v?(\d+\.\d+\.\d+(?:\.\d+)?)$/.exec(release || '')?.[1] || branchVersion;
   // Explicit test selections and known SDK policies always take precedence.
   let sdk = testVersion && allowCandidate ? testVersion : Object.keys(catalog.sdks).find(
     key => catalog.sdks[key].sdk_releases.includes(normalized));
@@ -189,11 +195,12 @@ class ComponentCatalog {
     const execute = this.options.execute || promisify(execFile);
     const releaseText = this.options.releaseText ?? await fs.readFile('/etc/sdk-release', 'utf8');
     const release = /^SDK Release\s*=\s*(.+)$/m.exec(releaseText)?.[1].trim();
+    const imageSdkVersion = /^SDK Version[ \t]*=[ \t]*(\d+\.\d+\.\d+(?:\.\d+)?)_Palette_SDK_neat_/m.exec(releaseText)?.[1];
     const server = this.options.codeServer ?? JSON.parse(await fs.readFile(this.options.serverVersionFile || '/opt/code-server/package.json', 'utf8')).version;
     let cliVersion = 'Unavailable';
     try { cliVersion = (await execute('codex', ['--version'], { timeout: 5000, env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('VSCODE_') && key !== 'ELECTRON_RUN_AS_NODE')) })).stdout.trim().replace(/^codex-cli\s+/, ''); } catch { /* Display unavailable. */ }
     this.detected = { sdkRelease: release, codeServer: server, installedCliVersion: cliVersion };
-    const resolved = resolveCatalog(catalog, { release, arch: ARCHES[process.arch], codeServer: server,
+    const resolved = resolveCatalog(catalog, { release, imageSdkVersion, arch: ARCHES[process.arch], codeServer: server,
       vscode: this.options.vscodeVersion, testVersion: env.SIMA_SDK_COMPONENT_TEST_VERSION,
       allowCandidate: env.SIMA_SDK_COMPONENTS_ALLOW_CANDIDATE === '1',
       allowSdkFallback: this.options.allowSdkFallback === true });
