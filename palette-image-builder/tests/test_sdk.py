@@ -31,6 +31,14 @@ class Publishing(unittest.TestCase):
             self.assertEqual(c['version'], branch.replace('/', '_') + '-' + 'a' * 7)
             self.assertIn(c['repository'] + ':latest', c['promotion_tags'])
             self.assertIn('ghcr.io/sima-neat/palette-image-builder:' + image_config.slug(branch), c['promotion_tags'])
+            # pib sbp's image next to each tag, as the launcher derives it from PIB_IMAGE
+            self.assertEqual(c['sbp_promotion_tags'].splitlines(),
+                             [t + '-sbp' for t in c['promotion_tags'].splitlines()])
+            self.assertEqual(c['sbp_staged'], c['staged'] + '-sbp')
+        # canonical:develop-sbp is develop's pib-sbp alias, so branch develop-sbp gets no canonical alias
+        c = self.config('refs/heads/develop-sbp')
+        self.assertEqual(c['promotion_tags'].splitlines(), ['ghcr.io/sima-neat/palette-image-builder-develop-sbp:latest'])
+        self.assertNotIn('ghcr.io/sima-neat/palette-image-builder:develop-sbp', c['promotion_tags'] + c['sbp_promotion_tags'])
 
     def test_release_aliases_and_invalid_tags(self):
         for tag in ('v3.0.0', 'v3.0.0.2'):
@@ -39,6 +47,8 @@ class Publishing(unittest.TestCase):
             self.assertEqual(c['version'], tag)
             self.assertEqual(c['promotion_tags'].splitlines(), [c['repository'] + ':' + tag, c['repository'] + ':v3.0-latest'])
             self.assertNotIn(':latest', c['promotion_tags'])
+            self.assertEqual(c['sbp_promotion_tags'].splitlines(),
+                             [c['repository'] + ':' + tag + '-sbp', c['repository'] + ':v3.0-latest-sbp'])
         with self.assertRaises(ValueError):
             self.config('refs/tags/v3.0.0-bad')
 

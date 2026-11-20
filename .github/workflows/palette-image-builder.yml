@@ -21,7 +21,7 @@ jobs:
     name: ${{ github.event_name == 'pull_request' && 'Qualify fork' || 'Qualify' }} ${{ matrix.arch }}
     environment: ${{ vars.VULCAN_ENV || 'production' }}
     runs-on: [self-hosted, linux, "${{ matrix.runner_arch }}", "vulcan-${{ vars.VULCAN_ENV || 'production' }}", ubuntu, default]
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write
@@ -69,17 +69,61 @@ jobs:
             type=gha,scope=pib-${{ steps.image.outputs.cache_scope }}-${{ matrix.arch }}
             type=gha,scope=pib-develop-${{ matrix.arch }}
           cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,scope=pib-{0}-{1},mode=max', steps.image.outputs.cache_scope, matrix.arch) || '' }}
+      # pib sbp's image, the pib-sbp target: PIB plus the kernel build tools. The same build
+      # arguments reuse the PIB stage just built; it is published next to PIB as <tag>-sbp.
+      - name: Build native package-builder container (pib sbp)
+        uses: docker/build-push-action@v7
+        with:
+          context: palette-image-builder
+          file: palette-image-builder/Dockerfile
+          target: pib-sbp
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: palette-image-builder:ci-sbp
+          build-args: |
+            PIB_DEFAULT_IMAGE=${{ steps.image.outputs.repository }}:${{ github.sha }}
+            PIB_VERSION=${{ steps.image.outputs.version }}
+            PIB_GIT_SHA=${{ github.sha }}
+          cache-from: |
+            type=gha,scope=pib-${{ steps.image.outputs.cache_scope }}-${{ matrix.arch }}
+            type=gha,scope=pib-sbp-${{ steps.image.outputs.cache_scope }}-${{ matrix.arch }}
+            type=gha,scope=pib-sbp-develop-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,scope=pib-sbp-{0}-{1},mode=max', steps.image.outputs.cache_scope, matrix.arch) || '' }}
       - name: Check the published CLI build identity
         env:
           EXPECTED_VERSION: ${{ steps.image.outputs.version }}
         run: |
+          set -euo pipefail
           test "$(docker run --rm --entrypoint pib palette-image-builder:ci --version)" = "${EXPECTED_VERSION}"
+          test "$(docker run --rm --entrypoint pib palette-image-builder:ci-sbp --version)" = "${EXPECTED_VERSION}"
+          # Only the package-builder image carries the pib sbp marker.
+          docker run --rm --entrypoint test palette-image-builder:ci-sbp -e /etc/pib-sbp
+          if docker run --rm --entrypoint test palette-image-builder:ci -e /etc/pib-sbp; then
+            echo "::error::the PIB image carries the pib-sbp marker"; exit 1
+          fi
       - name: Run CLI, signing, launcher, and publication-policy tests
         run: |
-          docker run --rm --network none --entrypoint bash \
-            -v "$PWD/palette-image-builder:/source" -w /source \
-            palette-image-builder:ci -lc \
-            'tests/run-unit-tests.sh'
+          set -euo pipefail
+          for image in palette-image-builder:ci palette-image-builder:ci-sbp; do
+            docker run --rm --network none --entrypoint bash \
+              -v "$PWD/palette-image-builder:/source" -w /source \
+              "$image" -lc \
+              'tests/run-unit-tests.sh'
+          done
+      - name: Start pib sbp through the launcher (its set-up, no build)
+        env:
+          PIB_IMAGE: palette-image-builder:ci
+          PIB_SBP_VOLUME: pib-sbp-ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          trap 'docker volume rm -f "$PIB_SBP_VOLUME" > /dev/null 2>&1 || true' EXIT
+          mkdir -p "$RUNNER_TEMP/pib-sbp-start" && cd "$RUNNER_TEMP/pib-sbp-start"
+          # The launcher selects palette-image-builder:ci-sbp. "pib sbp list" (not --help, which
+          # skips it) runs sbp/setup.sh first: sbp's local repo, nginx, apt pins and apt-get update
+          # against SiMa.ai's release repo. pib then checks the pib-sbp marker and looks for sbp:
+          # a listing once the image carries sbp; until then, a message printed only after both.
+          python3 "$GITHUB_WORKSPACE/palette-image-builder/ci/check-sbp-start.py" \
+            python3 "$GITHUB_WORKSPACE/palette-image-builder/host/pib"
       - name: Test automatic emulator setup from an unregistered x86 host
         if: matrix.arch == 'x86_64'
         run: |
@@ -145,15 +189,18 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          ref="${IMAGE}:${GITHUB_SHA}-${ARCH}"
-          docker tag palette-image-builder:ci "$ref"
-          docker push "$ref"
           mkdir -p "${RUNNER_TEMP}/pib-digests"
-          # The Vulcan containerd store can report a local RepoDigest name.
-          # Resolve the pushed registry reference instead of trusting that name.
-          digest="$(docker buildx imagetools inspect "$ref" | awk '$1 == "Digest:" { print $2 }')"
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          printf '%s@%s\n' "$IMAGE" "$digest" > "${RUNNER_TEMP}/pib-digests/${ARCH}.txt"
+          # PIB, then pib sbp's image (-sbp), each recorded as <arch><variant>.txt.
+          for variant in "" -sbp; do
+            ref="${IMAGE}:${GITHUB_SHA}-${ARCH}${variant}"
+            docker tag "palette-image-builder:ci${variant}" "$ref"
+            docker push "$ref"
+            # The Vulcan containerd store can report a local RepoDigest name.
+            # Resolve the pushed registry reference instead of trusting that name.
+            digest="$(docker buildx imagetools inspect "$ref" | awk '$1 == "Digest:" { print $2 }')"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            printf '%s@%s\n' "$IMAGE" "$digest" > "${RUNNER_TEMP}/pib-digests/${ARCH}${variant}.txt"
+          done
       - name: Upload immutable image reference
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
@@ -187,6 +234,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       image_resource: ${{ steps.promote.outputs.image_resource }}
+      sbp_image_resource: ${{ steps.promote.outputs.sbp_image_resource }}
     permissions:
       contents: read
       packages: write
@@ -212,32 +260,53 @@ jobs:
           IMAGE: ${{ steps.image.outputs.repository }}
           STAGED: ${{ steps.image.outputs.staged }}
           PROMOTION_TAGS: ${{ steps.image.outputs.promotion_tags }}
+          SBP_STAGED: ${{ steps.image.outputs.sbp_staged }}
+          SBP_PROMOTION_TAGS: ${{ steps.image.outputs.sbp_promotion_tags }}
         run: |
           set -euo pipefail
-          sources=()
-          for arch in x86_64 aarch64; do
-            ref="$(cat ".pib-digests/${arch}.txt")"
-            [[ "$ref" == "${IMAGE}@sha256:"* ]]
-            sources+=("$ref")
-          done
-          docker buildx imagetools create \
-            --tag "${IMAGE}:${GITHUB_SHA}" --tag "$STAGED" "${sources[@]}"
-          docker buildx imagetools inspect "$STAGED"
-          tags=()
-          while IFS= read -r ref; do
-            [[ -z "$ref" ]] || tags+=(--tag "$ref")
-          done <<< "$PROMOTION_TAGS"
-          docker buildx imagetools create "${tags[@]}" "$STAGED"
-          # Consume all output: exiting awk early can close Buildx's pipe and
-          # fail this step under pipefail even after successful tag promotion.
-          digest="$(docker buildx imagetools inspect "$STAGED" | awk '$1 == "Digest:" { print $2 }')"
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          echo "image_resource=ghcr:${IMAGE#ghcr.io/}@${digest}" >> "$GITHUB_OUTPUT"
+          # stage VARIANT STAGED: the multi-platform index of the tested x86_64 and ARM64 images
+          # of VARIANT ("" for PIB, -sbp for pib sbp's image), tagged with the commit and STAGED.
+          stage() {
+            local variant="$1" staged="$2" arch ref
+            local sources=()
+            for arch in x86_64 aarch64; do
+              ref="$(cat ".pib-digests/${arch}${variant}.txt")"
+              [[ "$ref" == "${IMAGE}@sha256:"* ]]
+              sources+=("$ref")
+            done
+            docker buildx imagetools create \
+              --tag "${IMAGE}:${GITHUB_SHA}${variant}" --tag "$staged" "${sources[@]}"
+            docker buildx imagetools inspect "$staged"
+          }
+          # promote STAGED PROMOTION_TAGS OUTPUT: STAGED's index under the public tags; its
+          # digest becomes the step output OUTPUT.
+          promote() {
+            local staged="$1" promotion="$2" output="$3" ref digest
+            local tags=()
+            while IFS= read -r ref; do
+              [[ -z "$ref" ]] || tags+=(--tag "$ref")
+            done <<< "$promotion"
+            docker buildx imagetools create "${tags[@]}" "$staged"
+            # Consume all output: exiting awk early can close Buildx's pipe and
+            # fail this step under pipefail even after successful tag promotion.
+            digest="$(docker buildx imagetools inspect "$staged" | awk '$1 == "Digest:" { print $2 }')"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            echo "${output}=ghcr:${IMAGE#ghcr.io/}@${digest}" >> "$GITHUB_OUTPUT"
+          }
+          # Both images are staged before either is promoted: a failure leaves no public tag
+          # moved for one image and not the other.
+          stage "" "$STAGED"
+          stage -sbp "$SBP_STAGED"
+          promote "$STAGED" "$PROMOTION_TAGS" image_resource
+          promote "$SBP_STAGED" "$SBP_PROMOTION_TAGS" sbp_image_resource
           {
             echo "### Qualified Palette Image Builder images"
             echo "Native x86_64 and ARM64 custom-SWU tests passed."
             # shellcheck disable=SC2016
             printf '\n```text\n%s\n%s\n```\n' "$STAGED" "$PROMOTION_TAGS"
+            echo "pib sbp's package-builder images (unit tests and the pib sbp set-up passed; no kernel built):"
+            # shellcheck disable=SC2016
+            printf '\n```text\n%s\n%s\n```\n' "$SBP_STAGED" "$SBP_PROMOTION_TAGS"
           } >> "$GITHUB_STEP_SUMMARY"
 
   prepare-install-package:
@@ -251,15 +320,19 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -r palette-image-builder/deps/install-requirements.txt
-      - name: Prepare installer bound to the qualified multi-platform digest
+      - name: Prepare installer bound to the qualified multi-platform digests
         env:
           IMAGE_RESOURCE: ${{ needs.publish.outputs.image_resource }}
+          SBP_IMAGE_RESOURCE: ${{ needs.publish.outputs.sbp_image_resource }}
         run: |
           set -euo pipefail
           version="$GITHUB_REF_NAME"
           if [[ "$GITHUB_REF_TYPE" == tag ]]; then version="${version#v}"; fi
+          # The pib-sbp digest is bound into the launcher (pib sbp's default image), not
+          # downloaded with the package: Docker pulls it on the first pib sbp.
           python palette-image-builder/tools/prepare_package.py \
             --output-dir pib-install-package --image-resource "$IMAGE_RESOURCE" \
+            --sbp-image-resource "$SBP_IMAGE_RESOURCE" \
             --version "$version" --release "$GITHUB_SHA"
       - uses: actions/upload-artifact@v7
         with:
@@ -287,7 +360,7 @@ jobs:
   verify-install-package:
     name: Install sdk/pib on ${{ matrix.arch }}
     if: github.event_name != 'pull_request'
-    needs: publish-install-package
+    needs: [publish, publish-install-package]  # publish: the pib-sbp digest the launcher must name
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -335,3 +408,14 @@ jobs:
           cd "$RUNNER_TEMP/pib-installed-project"
           "$HOME/.local/bin/pib" init project --example custom-image
           cmp "$GITHUB_WORKSPACE/palette-image-builder/examples/custom-image/image.yaml" project/image.yaml
+      - name: Start pib sbp with the image the installer bound
+        env:
+          SBP_IMAGE_RESOURCE: ${{ needs.publish.outputs.sbp_image_resource }}
+        run: |
+          set -euo pipefail
+          # The installed launcher names pib sbp's image by the published digest.
+          expected="ghcr.io/${SBP_IMAGE_RESOURCE#ghcr:}"
+          grep -qxF "DEFAULT_SBP_IMAGE = \"${expected}\"" "$HOME/.local/bin/pib"
+          # Docker pulls it now (on first use); its set-up and marker check must pass.
+          mkdir -p "$RUNNER_TEMP/pib-sbp-start" && cd "$RUNNER_TEMP/pib-sbp-start"
+          python3 "$GITHUB_WORKSPACE/palette-image-builder/ci/check-sbp-start.py" "$HOME/.local/bin/pib"
