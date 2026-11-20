@@ -39,6 +39,44 @@ test('matching is exact for SDK release, engine pair and architecture', () => {
   c.sdks['3.0.0'].status = 'revoked';
   assert.throws(() => resolveCatalog(c, {...options, allowCandidate:true}), /revoked/);
 });
+test('release branches use only an exact image SDK identity from the same release line', () => {
+  const catalog = qualified();
+  for (const arch of ['amd64', 'arm64']) {
+    const selected = resolveCatalog(catalog, {...options, arch, release: 'release-3.0', imageSdkVersion: '3.0.0.2'});
+    assert.equal(selected.sdkVersion, '3.0.0');
+    assert.equal(selected.sdkRelease, 'release-3.0');
+    assert.equal(selected.sdkFallback, false);
+    assert.deepEqual(selected.components, catalog.sdks['3.0.0'].components);
+  }
+  for (const change of [
+    {imageSdkVersion: undefined}, {imageSdkVersion: '3.0'}, {imageSdkVersion: 'v3.0.0.2'},
+    {imageSdkVersion: '3.0.0.2-extra'}, {imageSdkVersion: '3.0.0.3'}, {imageSdkVersion: '3.1.0'},
+    {release: 'release-3.1'}, {release: 'release-3.00'}, {release: 'release-3.0-extra'},
+    {release: 'develop'}, {release: 'feature'}, {release: 'v3.0.0.3'},
+  ]) {
+    assert.throws(() => resolveCatalog(catalog, {...options, release: 'release-3.0', imageSdkVersion: '3.0.0.2', ...change}), /No compatible/);
+  }
+  // Numeric/tagged releases continue to select their own mapping, regardless of metadata.
+  assert.equal(resolveCatalog(catalog, {...options, imageSdkVersion: '9.0.0'}).sdkVersion, '3.0.0');
+  catalog.sdks['3.0.1'] = structuredClone(catalog.sdks['3.0.0']);
+  catalog.sdks['3.0.1'].sdk_releases = ['3.0.1.0'];
+  catalog.sdks['3.0.1'].components.codex.version = '1.2.3';
+  const next = resolveCatalog(catalog, {...options, release: 'release-3.0', imageSdkVersion: '3.0.1.0'});
+  assert.equal(next.sdkVersion, '3.0.1');
+  assert.equal(next.sdkFallback, false);
+  assert.equal(next.components.codex.version, '1.2.3');
+});
+test('release-branch identity preserves candidate, revocation, architecture and engine restrictions', () => {
+  const branch = {...options, release: 'release-3.0', imageSdkVersion: '3.0.0.2'};
+  assert.throws(() => resolveCatalog(candidate(), branch), /candidate/);
+  assert.equal(resolveCatalog(candidate(), {...branch, allowCandidate: true}).status, 'candidate');
+  const catalog = qualified();
+  for (const change of [{arch: 'riscv64'}, {codeServer: '4.137.0'}, {vscode: '1.140.0'}])
+    assert.throws(() => resolveCatalog(catalog, {...branch, ...change}), /not been qualified/);
+  catalog.sdks['3.0.0'].status = 'revoked';
+  for (const allowSdkFallback of [false, true])
+    assert.throws(() => resolveCatalog(catalog, {...branch, allowSdkFallback, allowCandidate: true}), /revoked/);
+});
 test('panel SDK fallback uses default pins for unmapped releases and preserves exact pins', () => {
   const catalog = qualified();
   for (const release of ['v3.0.0.3', 'v3.1.0', 'develop-1234567', undefined]) {
