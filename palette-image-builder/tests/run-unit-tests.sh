@@ -13,4 +13,5 @@ for name in configs files scripts; do
 done
 cd "$scratch"
 python3 pib/test_cli.py
-python3 -m unittest discover -s tests -p 'test_*.py'
+# This checkout's pib package, not the image's installed one, for every test module.
+PYTHONPATH="$scratch/pib${PYTHONPATH:+:$PYTHONPATH}" python3 -m unittest discover -s tests -p 'test_*.py'

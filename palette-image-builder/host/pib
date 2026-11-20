@@ -2,11 +2,153 @@
 """Portable Docker launcher; image-building commands live inside the container."""
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
 
 DEFAULT_IMAGE = "ghcr.io/sima-neat/palette-image-builder:latest"
+# pib sbp's image when PIB_IMAGE is not set: the installer binds the pib-sbp digest published with
+# DEFAULT_IMAGE's (install_pib.py --sbp-image). Empty: DEFAULT_IMAGE's tag + '-sbp'.
+DEFAULT_SBP_IMAGE = ""
+VOLUME_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]*')  # what docker accepts as a volume name
+FIT_KEY = ('fit-signing.key', 'fit-signing.crt')  # in keys/: the only keys pib sbp sees
+# PIB_SBP_KERNEL_URL and _REF as pib sbp accepts them (pib/pib/sbp.py HTTPS_URL, REF).
+HTTPS_URL = re.compile(r'https://[A-Za-z0-9.-]+(?::[0-9]+)?/[A-Za-z0-9._~%+/-]+')
+KERNEL_REF = re.compile(r'[A-Za-z0-9._/][A-Za-z0-9._/-]*')
+
+
+def sbp_image(env):
+    """pib sbp's image, the Dockerfile's pib-sbp target, which CI publishes next to every PIB image
+    as <tag>-sbp: PIB_SBP_IMAGE; else PIB_IMAGE's tag + '-sbp'; else the one installed with this
+    launcher (DEFAULT_SBP_IMAGE), else DEFAULT_IMAGE's tag + '-sbp'. Docker pulls it on first use."""
+    if env.get('PIB_SBP_IMAGE'):
+        return env['PIB_SBP_IMAGE']
+    image = env.get('PIB_IMAGE')
+    if not image:
+        if DEFAULT_SBP_IMAGE:
+            return DEFAULT_SBP_IMAGE
+        image = DEFAULT_IMAGE
+    if '@' in image:
+        raise ValueError(f'{image} is pinned by digest, which names no pib-sbp image: set '
+                         'PIB_SBP_IMAGE to the pib-sbp image (the same tag + -sbp, or its digest)')
+    repository, _, tag = image.rpartition(':')
+    if not repository or '/' in tag:  # no tag: that colon belonged to a registry port
+        repository, tag = image, 'latest'
+    return f'{repository}:{tag}-sbp'
+
+
+def host_directory(env, variable, cwd):
+    path = Path(env[variable]).expanduser()
+    if not path.is_absolute():
+        path = cwd / path
+    if not path.is_dir():
+        raise ValueError(f'{variable}: {env[variable]} is not a directory')
+    return path.resolve()
+
+
+def sbp_arguments(env, cwd):
+    """pib sbp runs unprivileged, and builds code fetched from the network (the kernel, smifb,
+    lttng-modules) as root in its container. So it sees the workspace read-only except custom-debs/,
+    and of keys/ only the kernel FIT key pair; of the sbp checkout (PIB_SBP_SRC) only sbp and its
+    package configs, never the checkout's own keys; the user's kernel repository (PIB_SBP_KERNEL_SRC)
+    read-only. Its work tree, local repo and ccache live on a volume."""
+    uid = os.getuid() if hasattr(os, 'getuid') else 1000
+    volume = env.get('PIB_SBP_VOLUME') or f'pib-sbp-{uid}'
+    if not VOLUME_NAME.fullmatch(volume):
+        raise ValueError(f'PIB_SBP_VOLUME: {volume} is not a Docker volume name')
+    ws = cwd.resolve()
+    # Named after the volume: two runs cannot share one at once.
+    name = volume if volume.startswith('pib-sbp-') else f'pib-sbp-{volume}'
+    args = ['--name', name, '-v', f'{volume}:/var/tmp/pib-sbp']
+    if (ws / 'image.yaml').is_file():  # a workspace: pib sbp writes its .debs to custom-debs/
+        (ws / 'custom-debs').mkdir(exist_ok=True)
+    if (ws / 'custom-debs').is_dir():
+        args += ['-v', f'{ws / "custom-debs"}:/workspace/custom-debs']
+    if (ws / 'keys').is_dir():  # a tmpfs hides the customer keys; the FIT pair is mounted on it
+        args += ['--mount', 'type=tmpfs,destination=/workspace/keys']
+        if all((ws / 'keys' / name).is_file() for name in FIT_KEY):
+            for name in FIT_KEY:
+                args += ['-v', f'{(ws / "keys" / name).resolve()}:/workspace/keys/{name}:ro']
+    if env.get('PIB_SBP_SRC'):
+        src = host_directory(env, 'PIB_SBP_SRC', cwd)
+        for part in ('pkgbuild', 'configs/packages'):
+            if not (src / part).is_dir():
+                raise ValueError(f'PIB_SBP_SRC: {src} has no {part}/; it must be a checkout with pkgbuild/ '
+                                 'and configs/packages/ (swsoc-simaai-elxr-doc or swsoc-elxr)')
+            args += ['-v', f'{src / part}:/src/{part}:ro']
+        args += ['-e', 'PIB_SBP_SRC=/src']
+    if env.get('PIB_SBP_GIT_MIRRORS'):
+        mirrors = host_directory(env, 'PIB_SBP_GIT_MIRRORS', cwd)
+        args += ['-v', f'{mirrors}:/mirrors:ro', '-e', 'PIB_SBP_GIT_MIRRORS=/mirrors']
+    if env.get('PIB_SBP_KERNEL_SRC'):
+        repo, git_dir = kernel_repository(env, cwd)
+        args += ['-v', f'{git_dir}:/kernel-src:ro', '-e', 'PIB_SBP_KERNEL_SRC=/kernel-src']
+        changes = kernel_changes(repo) if git_dir != repo else None
+        if changes:
+            args += ['-e', f'PIB_SBP_KERNEL_SRC_HEAD={changes[0]}', '-e', f'PIB_SBP_KERNEL_SRC_CHANGES={changes[1]}']
+    # Checked here, before they enter the container (pib sbp checks them again): no credentials.
+    if env.get('PIB_SBP_KERNEL_URL') and not HTTPS_URL.fullmatch(env['PIB_SBP_KERNEL_URL']):
+        raise ValueError('PIB_SBP_KERNEL_URL must be the https URL of a git repository, with no user or '
+                         'token in it: the container fetches it without credentials (for a private '
+                         'repository, clone it on the host and set PIB_SBP_KERNEL_SRC)')
+    if env.get('PIB_SBP_KERNEL_REF') and not KERNEL_REF.fullmatch(env['PIB_SBP_KERNEL_REF']):
+        raise ValueError('PIB_SBP_KERNEL_REF must be a branch name or a full commit')
+    for variable in ('PIB_SBP_KERNEL_URL', 'PIB_SBP_KERNEL_REF', 'PIB_SBP_JOBS', 'PIB_SBP_CCACHE_SIZE'):
+        if env.get(variable):
+            args += ['-e', f'{variable}={env[variable]}']
+    return args
+
+
+def kernel_repository(env, cwd):
+    """PIB_SBP_KERNEL_SRC, a checkout or a bare repository: (the repository, its git directory).
+    Only the git directory is mounted: the build needs commits, not the working tree and its
+    untracked files (a kernel tree often holds certs/signing_key.pem). The container sees only
+    that directory, so it must be whole in itself: not a worktree or submodule (their .git is a
+    file), not borrowing objects (objects/info/alternates), not a partial clone (git clone
+    --filter), whose missing objects come from its remote; and, as the container runs code it
+    fetched, with no credentials in its git config."""
+    repo = host_directory(env, 'PIB_SBP_KERNEL_SRC', cwd)
+    git_dir = repo / '.git'
+    if git_dir.is_file() or git_dir.is_symlink():
+        raise ValueError(f'PIB_SBP_KERNEL_SRC: {repo}/.git is not a directory (a worktree, a submodule '
+                         'or a link), whose repository the container would not see: name the repository itself')
+    if not git_dir.is_dir():
+        if not ((repo / 'HEAD').is_file() and (repo / 'objects').is_dir() and (repo / 'refs').is_dir()):
+            raise ValueError(f'PIB_SBP_KERNEL_SRC: {repo} is not a git repository')
+        git_dir = repo
+    if (git_dir / 'objects/info/alternates').is_file():
+        raise ValueError(f'PIB_SBP_KERNEL_SRC: {repo} borrows objects from another repository '
+                         '(objects/info/alternates), which the container would not see: run '
+                         'git repack -a -d in it and remove that file')
+    config = (git_dir / 'config').read_text(errors='replace') if (git_dir / 'config').is_file() else ''
+    if any((git_dir / 'objects/pack').glob('*.promisor')) or re.search(r'(?im)^\s*partialclone\s*=', config):
+        raise ValueError(f'PIB_SBP_KERNEL_SRC: {repo} is a partial clone (git clone --filter), whose missing '
+                         'objects the container cannot fetch: use a complete clone')
+    if re.search(r'(?im)^\s*extraheader\s*=|^\s*(push)?url\s*=\s*https?://[^/\s]*@', config):
+        raise ValueError(f'PIB_SBP_KERNEL_SRC: the git config of {repo} holds credentials (a URL with a '
+                         'user or token, or an http extraheader), which the build container would see: '
+                         'remove them (e.g. git remote set-url) or use a clone without them')
+    return repo, git_dir
+
+
+def kernel_changes(repo):
+    """(HEAD commit, number of tracked files with uncommitted changes) of the checkout at repo, from
+    git on the host: as the user, so the repository's own git settings (fsmonitor, filters) never
+    run as root in the container, which sees no working tree. None without git."""
+    git = shutil.which('git')
+    if not git:
+        return None
+    try:
+        head = subprocess.run([git, '-C', str(repo), 'rev-parse', '-q', '--verify', 'HEAD'],
+                              capture_output=True, text=True, timeout=60)
+        status = subprocess.run([git, '-C', str(repo), '--no-optional-locks', 'status', '--porcelain',
+                                 '--untracked-files=no'], capture_output=True, text=True, timeout=300)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if head.returncode or status.returncode:
+        return None
+    return head.stdout.strip(), len(status.stdout.splitlines())
 
 
 def docker_arguments(arguments, environment=None, directory=None, interactive=None):
@@ -16,6 +158,8 @@ def docker_arguments(arguments, environment=None, directory=None, interactive=No
     shell = arguments[:1] == ['shell']
     command = ['bash', *arguments[1:]] if shell else ['pib', *arguments]
     verb = arguments[0] if arguments else ''
+    if verb == 'sbp':
+        image = sbp_image(env)
     args = ['run', '--rm', '-i', '--init']
     tty = sys.stdin.isatty() and sys.stdout.isatty() if interactive is None else interactive
     if tty:
@@ -29,7 +173,7 @@ def docker_arguments(arguments, environment=None, directory=None, interactive=No
         cache.mkdir(mode=0o700, parents=True, exist_ok=True)
         args += ['-v', f'{cache.resolve()}:/var/cache/pib-debs',
                  '-e', 'PIB_DEB_CACHE_DIR=/var/cache/pib-debs']
-    args += ['-v', f'{cwd.resolve()}:/workspace']
+    args += ['-v', f'{cwd.resolve()}:/workspace' + (':ro' if verb == 'sbp' else '')]
     if hasattr(os, 'getuid'):
         args += ['-e', f'PIB_UID={os.getuid()}', '-e', f'PIB_GID={os.getgid()}']
     signing = verb == 'sign' or (verb == 'build' and '--sign' in arguments)
@@ -54,7 +198,7 @@ def docker_arguments(arguments, environment=None, directory=None, interactive=No
         socket_dir = cwd / socket_dir
     if signing and (socket_dir / 'pcscd.comm').is_socket():
         args += ['-v', f'{socket_dir.resolve()}:/run/pcscd:ro']
-    if env.get('PIB_CONFIGS'):
+    if env.get('PIB_CONFIGS') and verb != 'sbp':  # its parent directory may hold keys pib sbp must not see
         configs = Path(env['PIB_CONFIGS'])
         if not configs.is_absolute():
             configs = cwd / configs
@@ -62,6 +206,8 @@ def docker_arguments(arguments, environment=None, directory=None, interactive=No
         if not configs.is_dir():
             raise ValueError('PIB_CONFIGS must be a directory')
         args += ['-v', f'{configs.parent}:/pib-src:ro', '-e', f'PIB_CONFIGS=/pib-src/{configs.name}']
+    if verb == 'sbp':
+        args += sbp_arguments(env, cwd)
     return [*args, image, *command]
 
 

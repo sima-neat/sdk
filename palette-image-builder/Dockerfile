@@ -8,7 +8,10 @@
 # The pinned OCI index selects the matching eLxr base for each architecture.
 # Customers pull the published image; see docs/palette-image-builder.md.
 ARG BASE_IMAGE=elxrlinux/elxr@sha256:922b153fccfe20337d71586dc9a6823cbe4cf0769ecec431279c662029814058
-FROM ${BASE_IMAGE}
+# Stages: pib-deps (PIB without its build identity), pib-sbp-tools (pib-deps plus pib sbp's
+# build tools), then pib and pib-sbp, each ending with the per-commit build identity, so the
+# layers before it stay cached across commits in both images. The default target is pib.
+FROM ${BASE_IMAGE} AS pib-deps
 LABEL org.opencontainers.image.title="Palette Image Builder" \
       org.opencontainers.image.source="https://github.com/sima-neat/sdk"
 
@@ -151,21 +154,87 @@ COPY --chmod=755 runtime/gzip runtime/mmdebstrap /usr/local/bin/
 # key is set or shipped; pib build uses a throwaway one and pib sign the customer's.
 ENV PIB_SIMA_APT_URL=${SIMAAI_APT_URL}
 
-# Record the SDK-style build identity late so new commits retain dependency caches.
-ARG PIB_VERSION=unknown-nogit
-ARG PIB_GIT_SHA=unknown
-RUN printf '%s\n' "${PIB_VERSION}" > /etc/pib-version
-LABEL org.opencontainers.image.version="${PIB_VERSION}" \
-      org.opencontainers.image.revision="${PIB_GIT_SHA}"
-
-# Extract this launcher from the pulled image; no source checkout is needed.
-# CI embeds this build's commit-tagged image ref so copied launchers keep their toolchain.
-ARG PIB_DEFAULT_IMAGE=ghcr.io/sima-neat/palette-image-builder:latest
-COPY --chmod=755 host/pib /usr/local/share/pib/host/pib
-RUN sed -i "s|ghcr.io/sima-neat/palette-image-builder:latest|${PIB_DEFAULT_IMAGE}|g" /usr/local/share/pib/host/pib
 COPY UPSTREAM /usr/share/doc/palette-image-builder/UPSTREAM
 
 WORKDIR /workspace
 
 ENTRYPOINT ["/usr/local/bin/pib-entrypoint"]
 CMD ["pib", "--help"]
+
+# ---- pib-sbp-tools: what pib sbp needs on top of PIB's dependencies ----------------------------
+# "pib sbp" builds the kernel (and the kernel-module packages palette images carry) with sbp,
+# SiMa.ai's package builder, for custom-debs/, in the pib-sbp image (docker build --target pib-sbp).
+# This adds what sbp and those builds need on top of PIB: the arm64 cross toolchain and target
+# libraries on amd64, the kernel's host build dependencies, Debian packaging tools, and graphviz,
+# which sbp renders its plans with. A C compiler, make and dpkg-dev already come with rucksack.
+# sbp itself and its package configs are not in the image yet: pib sbp takes them from a mounted
+# checkout (PIB_SBP_SRC: swsoc-simaai-elxr-doc or swsoc-elxr) until deps/artifacts.json pins a
+# swsoc-simaai-elxr-doc commit that carries them. sbp's settings are made at run time by
+# sbp/setup.sh, never as ENV here: pib build reads several of the same names.
+FROM pib-deps AS pib-sbp-tools
+RUN if [ "$(dpkg --print-architecture)" = amd64 ]; then \
+        dpkg --add-architecture arm64 && \
+        cross="gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6:arm64 libssl-dev:arm64"; \
+    else \
+        cross=""; \
+    fi && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        graphviz \
+        python3-graphviz \
+        build-essential \
+        dpkg-dev \
+        debhelper \
+        devscripts \
+        fakeroot \
+        ccache \
+        quilt \
+        rsync \
+        pkg-config \
+        bc \
+        bison \
+        flex \
+        bzip2 \
+        libssl-dev \
+        libelf-dev \
+        libdw-dev \
+        zlib1g-dev \
+        $cross && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+COPY --chmod=644 sbp/distributions.in sbp/nginx.conf.in sbp/90-pib-sbp.pref sbp/sources.json \
+     /usr/share/pib/sbp/
+COPY --chmod=755 sbp/setup.sh /usr/local/lib/pib/sbp-setup
+COPY --chmod=755 sbp/sbp /usr/local/bin/sbp
+RUN touch /etc/pib-sbp && \
+    python3 -c "import apt, click, graphviz, omegaconf, rich, yaml" && \
+    for tool in dot dpkg-buildpackage dch dh fakeroot reprepro nginx bc bison flex; do \
+        command -v "$tool" >/dev/null || { echo "pib-sbp: $tool is missing" >&2; exit 1; }; \
+    done
+
+# ---- pib and pib-sbp: the build identity, last, so new commits retain the layers above ---------
+# Both images end with the same lines (keep them identical): the SDK-style version and revision,
+# and the launcher to extract from the pulled image (no source checkout is needed). CI embeds
+# this build's commit-tagged image ref, so copied launchers keep their toolchain; pib sbp takes
+# that tag + -sbp.
+FROM pib-deps AS pib
+ARG PIB_VERSION=unknown-nogit
+ARG PIB_GIT_SHA=unknown
+RUN printf '%s\n' "${PIB_VERSION}" > /etc/pib-version
+LABEL org.opencontainers.image.version="${PIB_VERSION}" \
+      org.opencontainers.image.revision="${PIB_GIT_SHA}"
+ARG PIB_DEFAULT_IMAGE=ghcr.io/sima-neat/palette-image-builder:latest
+COPY --chmod=755 host/pib /usr/local/share/pib/host/pib
+RUN sed -i "s|ghcr.io/sima-neat/palette-image-builder:latest|${PIB_DEFAULT_IMAGE}|g" /usr/local/share/pib/host/pib
+
+FROM pib-sbp-tools AS pib-sbp
+ARG PIB_VERSION=unknown-nogit
+ARG PIB_GIT_SHA=unknown
+RUN printf '%s\n' "${PIB_VERSION}" > /etc/pib-version
+LABEL org.opencontainers.image.version="${PIB_VERSION}" \
+      org.opencontainers.image.revision="${PIB_GIT_SHA}"
+ARG PIB_DEFAULT_IMAGE=ghcr.io/sima-neat/palette-image-builder:latest
+COPY --chmod=755 host/pib /usr/local/share/pib/host/pib
+RUN sed -i "s|ghcr.io/sima-neat/palette-image-builder:latest|${PIB_DEFAULT_IMAGE}|g" /usr/local/share/pib/host/pib
+
+# The default target stays PIB itself.
+FROM pib

@@ -1,0 +1,14 @@
+# pib sbp: local builds first, then SiMa.ai's release repo, then eLxr - the order SiMa's CI uses
+# (swsoc-elxr files/stable.pref 999, files/98simaai-repository 950, files/99pablo-repository 900).
+# A local build can sort below the release (2.2.0~git... < 2.2.0), so only the pin makes it win.
+Package: *
+Pin: origin localhost
+Pin-Priority: 999
+
+Package: *
+Pin: origin repo.sima.ai
+Pin-Priority: 950
+
+Package: *
+Pin: origin mirror.elxr.dev
+Pin-Priority: 900

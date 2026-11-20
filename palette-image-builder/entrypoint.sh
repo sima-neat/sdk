@@ -15,6 +15,7 @@
 #     kernel replaces SiMa.ai's
 #   - SOURCE_DATE_EPOCH from /etc/pib-release-epoch (the release's package
 #     index date, read when the image was built), for reproducible file times
+# "pib sbp" in the pib-sbp image runs sbp/setup.sh (/usr/local/lib/pib/sbp-setup) instead.
 #
 # Inputs (environment):
 #   SWU_SIGNING_KEY,
@@ -25,6 +26,15 @@ set -eo pipefail
 case "${1:-} ${2:-}" in
     "pib doctor") python3 -m pib.emulation; exec "$@" ;;
     "pib build" | bash*) python3 -m pib.emulation ;;
+    # Package builds have their own set-up (sbp/setup.sh), in the pib-sbp image only; the
+    # container is unprivileged, so the emulator is not registered here (pib doctor does).
+    "pib sbp")
+        case "${3:-}" in "" | -h | --help | help) exec "$@" ;; esac  # help needs no set-up
+        if [ "${3:-}" = package ]; then
+            for arg in "${@:4}"; do case "$arg" in -h | --help) exec "$@" ;; esac; done
+        fi
+        if [ -x /usr/local/lib/pib/sbp-setup ]; then exec /usr/local/lib/pib/sbp-setup "$@"; fi
+        exec "$@" ;;
     *) exec "$@" ;;
 esac
 

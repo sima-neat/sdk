@@ -263,6 +263,27 @@ def cmd_keys_payload(a):
           "image.yaml so the image holds it, and keep it secret")
 
 
+def gen_fit_key(out, cn="Customer"):
+    """Write fit-signing.{key,crt}: the RSA-2048 key a kernel built by pib sbp signs its FIT
+    with (the kernel's FIT_SIGN_ALGO is sha256,rsa2048), and its certificate."""
+    out, cn_subj = Path(out), subj(cn, "kernel FIT")
+    out.mkdir(parents=True, exist_ok=True)
+    key, crt = out / "fit-signing.key", out / "fit-signing.crt"
+    if key.exists() or crt.exists():
+        die(f"{out}/fit-signing.key or .crt exists; refusing to overwrite keys")
+    run(["openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out", key])
+    key.chmod(0o600)
+    run(["openssl", "req", "-batch", "-new", "-x509", "-days", "3650", "-key", key,
+         "-subj", cn_subj, "-out", crt])
+
+
+def cmd_keys_fit(a):
+    gen_fit_key(a.out, a.cn)
+    chown(a.out)
+    print(f"pib: kernel FIT signing key written to {a.out}/fit-signing.key (keep it secret) "
+          "and .crt, for pib sbp")
+
+
 def read_aes_key(path):
     """The hex AES key of a payload key file."""
     f = Path(path)
@@ -792,23 +813,28 @@ def discard(out, stem):
         write_sums(out)
 
 
+def release_deb(spec, cfg, d):
+    """Download a package (spec: name or name=version) from the SiMa.ai apt line the image
+    installs from (nothing else) into the new directory d, and return the .deb."""
+    d = Path(d)
+    (d / "lists/partial").mkdir(parents=True)
+    (d / "cache/archives/partial").mkdir(parents=True)
+    (d / "src.list").write_text(sima_release_line(cfg) + "\n")
+    opt = [f"-o{k}={v}" for k, v in (
+        ("Dir::Etc::sourcelist", d / "src.list"), ("Dir::Etc::sourceparts", "/dev/null"),
+        ("Dir::State", d), ("Dir::Cache", d / "cache"), ("Dir::State::status", "/dev/null"),
+        ("APT::Architecture", "arm64"), ("APT::Architectures", "arm64"),
+        ("Debug::NoLocking", "1"))]
+    run(["apt-get", *opt, "update"])
+    run(["apt-get", *opt, "download", spec], cwd=d)
+    return next(d.glob(f"{spec.partition('=')[0]}_*.deb"))
+
+
 def release_boot0_md5(spec, cfg):
     """md5 of boot/Release/boot0.be in a tRoot package (spec: name or name=version) of the
     SiMa.ai apt line the image installs from (nothing else), read from the package's own md5sums."""
-    line = sima_release_line(cfg)
     with tempfile.TemporaryDirectory() as d:
-        d = Path(d)
-        (d / "lists/partial").mkdir(parents=True)
-        (d / "cache/archives/partial").mkdir(parents=True)
-        (d / "src.list").write_text(line + "\n")
-        opt = [f"-o{k}={v}" for k, v in (
-            ("Dir::Etc::sourcelist", d / "src.list"), ("Dir::Etc::sourceparts", "/dev/null"),
-            ("Dir::State", d), ("Dir::Cache", d / "cache"), ("Dir::State::status", "/dev/null"),
-            ("APT::Architecture", "arm64"), ("APT::Architectures", "arm64"),
-            ("Debug::NoLocking", "1"))]
-        run(["apt-get", *opt, "update"])
-        run(["apt-get", *opt, "download", spec], cwd=d)
-        for ln in run(["dpkg-deb", "-I", next(d.glob(f"{spec.partition('=')[0]}_*.deb")), "md5sums"]).splitlines():
+        for ln in run(["dpkg-deb", "-I", release_deb(spec, cfg, d), "md5sums"]).splitlines():
             md5, _, name = ln.partition("  ")
             if name == "boot/Release/boot0.be":
                 return md5
@@ -1450,6 +1476,10 @@ def parser():
     s = keys.add_parser("payload", help="create the AES key for pib sign --encrypt")
     s.add_argument("--out", default="keys")
     s.set_defaults(fn=cmd_keys_payload)
+    s = keys.add_parser("fit", help="create the kernel FIT signing key for pib sbp")
+    s.add_argument("--out", default="keys")
+    s.add_argument("--cn", default="Customer")
+    s.set_defaults(fn=cmd_keys_fit)
     for name, fn, text in (
             ("init", cmd_keys_init, "create the customer CA and SWU leaf"),
             ("renew", cmd_keys_renew, "replace the SWU leaf with a new one from the same CA")):
@@ -1460,6 +1490,10 @@ def parser():
         s.set_defaults(fn=fn)
 
     sub.add_parser("verify-debs", help="check custom-debs/ signatures").set_defaults(fn=cmd_verify_debs)
+
+    # pib sbp is routed in main(): its options are sbp's and pass through. Listed here for --help.
+    sub.add_parser("sbp", help="build SiMa.ai packages (the kernel) with sbp into custom-debs/ "
+                   "(pib-sbp image)", add_help=False).set_defaults(fn=lambda a: sbp_main([]))
 
     s = sub.add_parser("sign-debs", help="sign every custom-debs/*.deb (writes <deb>.sig)")
     s.add_argument("--key", default="keys/debs-signing.secret.asc")
@@ -1510,9 +1544,18 @@ def parser():
     return p
 
 
+def sbp_main(argv):
+    from pib import sbp  # only the pib-sbp image can run it; importing it costs nothing elsewhere
+    sbp.cmd_sbp(argv)
+
+
 def main(argv=None):
-    a = parser().parse_args(argv)
+    argv = sys.argv[1:] if argv is None else argv
     try:
+        if argv[:1] == ["sbp"]:  # before argparse, which would take sbp's options as its own
+            sbp_main(argv[1:])
+            return
+        a = parser().parse_args(argv)
         a.fn(a)
     except FileNotFoundError as e:  # a missing input file: one line, not a traceback
         die(f"{e.filename}: {e.strerror}")

@@ -1,0 +1,8 @@
+Codename: @CODENAME@
+Suite: unstable
+Architectures: source arm64 i386 amd64
+Components: non-free
+SignWith: default
+Origin: PIB local build
+Label: PIB local build
+Description: Packages built with pib sbp, not SiMa.ai releases

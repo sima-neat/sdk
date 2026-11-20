@@ -1,0 +1,11 @@
+# pib sbp: sbp's local apt repo, on loopback only; other containers on the network cannot reach it.
+server {
+    listen 127.0.0.1:80 default_server;
+    server_name localhost;
+    location /deb/ {
+        alias @REPO_ROOT@/;
+    }
+    location / {
+        return 404;
+    }
+}
