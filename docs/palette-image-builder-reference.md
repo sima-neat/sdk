@@ -53,6 +53,11 @@ Set these optional variables in the host shell that runs `pib`. File paths must 
 | `PIB_CONFIGS` | `pib init` | Advanced: use an external image configuration directory instead of bundled configurations. |
 | `PIB_PCSCD_DIR` | Signing commands | Override the Docker host’s pcscd socket directory; default `/run/pcscd`. Requires a socket accessible to the Linux container. |
 | `PIB_DEB_CACHE` | `pib build`, `pib shell` | Host directory for verified Debian package downloads. Package hashes and sizes are checked against authenticated repository metadata on every build. |
+| `PIB_SBP_KERNEL_URL`, `PIB_SBP_KERNEL_REF` | `pib sbp` | Kernel repository (an https URL without credentials) and branch or commit to build on every run. `--kernel-url` and `--kernel-ref` override them for one run. |
+| `PIB_SBP_KERNEL_SRC` | `pib sbp` | Git repository on the host, a checkout or a bare repository, holding your kernel; mounted read-only. Use it for a private repository or commits not pushed anywhere. |
+| `PIB_SBP_SRC` | `pib sbp` | Checkout holding sbp (`pkgbuild/`) and its package configurations (`configs/packages/`), required until the image includes them. Only those two directories are mounted, read-only. |
+| `PIB_SBP_IMAGE` | `pib sbp` | Override the package-builder image. By default it is the one published with `PIB_IMAGE` (the same tag with `-sbp`), or the one bound at installation. |
+| `PIB_SBP_JOBS`, `PIB_SBP_CCACHE_SIZE`, `PIB_SBP_VOLUME` | `pib sbp` | Parallel compile jobs; compiler cache size (default `5G`); Docker volume for sbp's work tree, package repository and cache (default `pib-sbp-<uid>`). |
 
 ## Commands
 
@@ -80,6 +85,8 @@ The cache can contain your custom packages; keep it in your own user directory.
 | `pib shell` | Open the selected container with the current project mounted |
 | `pib keys init --cn NAME` | Generate CA, SWU signing leaf, and Debian signing identity |
 | `pib keys renew --cn NAME` | Renew the leaf using the existing CA |
+| `pib keys fit` | Generate the key pair that signs kernel FIT images built by `pib sbp` |
+| `pib sbp package -p linux` | Build the kernel, and palette's kernel-module packages, into `custom-debs/` |
 | `pib sign-debs` / `pib verify-debs` | Sign/check local Debian packages |
 | `pib build [--sign] [--supplier NAME]` | Build, optionally sign and verify |
 | `pib sign [FILE]` | Sign a bundle; defaults to the current project version |
@@ -90,7 +97,9 @@ The cache can contain your custom packages; keep it in your own user directory.
 All commands run inside the container. The host launcher only handles Docker,
 workspace mounts, and explicitly selected external files. `build`, `doctor`,
 `clean`, and the interactive shell use privileged device access; signing,
-verification, key generation, and project creation do not need it.
+verification, key generation, and project creation do not need it. `pib sbp`
+runs unprivileged in its own image and sees the project read-only, except
+`custom-debs/`; of `keys/` it sees only the kernel FIT key pair.
 
 ## Build outputs
 
@@ -194,8 +203,10 @@ packages with that identity externally, and use `pib verify-debs` before buildin
 
 Kernel packages are special: keep the release's existing kernel package name,
 found in `configs/images/image-params.yaml`. PIB selects that kernel automatically;
-it must be the only installed kernel. Local tRoot, ATF, and U-Boot replacement
-packages are rejected. The packaged U-Boot must match the one embedded in `fip.bin`.
+it must be the only installed kernel. `pib sbp` builds such packages from SiMa's
+kernel source or yours; see [Building the kernel](#building-the-kernel). Local
+tRoot, ATF, and U-Boot replacement packages are rejected. The packaged U-Boot must
+match the one embedded in `fip.bin`.
 
 Custom `swu.description` and `swu.script` overrides can replace the update
 instructions. Copy the release defaults from `configs/images/files/` first.
@@ -206,6 +217,52 @@ on the board during installation.
 `--dev` builds use a throwaway identity;
 they cannot be combined with `--sign` for normal delivery. Generated customer
 CA/leaf keys used for development are distinct from `--dev` mode.
+
+## Building the kernel
+
+`pib sbp` builds the Modalix kernel from SiMa's public kernel source or your own,
+using sbp, SiMa's package builder, and puts the kernel's Debian packages in
+`custom-debs/`. For palette projects it also rebuilds the kernel-module packages
+palette images carry, smifb and lttng-modules, for that kernel. It runs in a
+separate package-builder image with the ARM64 cross toolchain, which Docker
+downloads, about 2.5 GB, on first use.
+
+```bash
+pib keys fit
+pib sbp package -p linux
+pib sign-debs
+pib build --sign
+```
+
+`pib keys fit` creates `keys/fit-signing.key` and `keys/fit-signing.crt` once;
+`pib sbp` signs the kernel's FIT image with that key. Then choose the source:
+
+| Kernel source | How to select it |
+|---|---|
+| SiMa's public repository, branch `master` | The default: `https://github.com/SiMa-ai/simaai-linux.git` |
+| Your fork, one of its branches, or a commit | `--kernel-url https://github.com/<you>/simaai-linux.git --kernel-ref <branch>`, or `PIB_SBP_KERNEL_URL` and `PIB_SBP_KERNEL_REF` |
+| A repository on your computer | `PIB_SBP_KERNEL_SRC=<path>`: its checked-out branch, or `PIB_SBP_KERNEL_REF` |
+
+Each run looks the branch up and builds its latest commit, which `pib sbp`
+prints; when the branch has moved, the kernel is rebuilt. Only committed changes
+are built, and `pib sbp` warns about uncommitted ones. The build container has no
+credentials: name a public repository by an https URL without a token, and a
+private one by `PIB_SBP_KERNEL_SRC`, which is mounted read-only. The first build
+from a repository downloads all of it.
+
+Keep the release's kernel version (6.18.3), its `simaai_modalix_defconfig`
+configuration, and SiMa's FIT packaging. The image installs only the release's
+kernel package name, so another version is left out. A kernel package without a
+FIT (`boot/fitImage`) boots unsigned, as a plain kernel image, and `pib sbp` warns
+about it. It also compares the kernel's SiMa-specific headers with the release's,
+which SiMa's prebuilt software, such as the camera ISP and the MLA runtime, is
+built against, and warns when they differ. The `master` branch currently holds
+SiMa's 2.1.3 kernel, which has neither the FIT packaging nor all of the current
+headers, so both warnings appear until SiMa publishes the current kernel there.
+
+A kernel build takes about half an hour and 6-8 GB in the Docker volume
+`pib-sbp-<uid>`. Until sbp itself is included in the package-builder image, set
+`PIB_SBP_SRC` to a checkout that contains it (`pkgbuild/` and `configs/packages/`).
 
 ## Signing
 

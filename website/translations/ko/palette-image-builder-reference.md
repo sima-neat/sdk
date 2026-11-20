@@ -36,6 +36,11 @@ x86 이미지에는 에뮬레이터가 포함됩니다. 특권 PIB 시작 시 �
 | `PIB_CONFIGS` | `pib init` | 고급: 내장 설정 대신 외부 이미지 설정 디렉터리를 사용합니다. |
 | `PIB_PCSCD_DIR` | 서명 명령 | pcscd 소켓 폴더. 기본값 `/run/pcscd`. Linux 컨테이너에서 소켓에 접근할 수 있어야 합니다. |
 | `PIB_DEB_CACHE` | `pib build`, `pib shell` | 검증된 Debian 다운로드의 호스트 캐시. 매 빌드마다 인증된 메타데이터의 해시와 크기를 검사합니다. |
+| `PIB_SBP_KERNEL_URL`, `PIB_SBP_KERNEL_REF` | `pib sbp` | 실행할 때마다 빌드할 커널 저장소(인증 정보가 없는 https URL)와 브랜치 또는 커밋. `--kernel-url`과 `--kernel-ref`는 한 번의 실행에 한해 이 값을 재정의합니다. |
+| `PIB_SBP_KERNEL_SRC` | `pib sbp` | 사용자 커널이 담긴 호스트의 Git 저장소(체크아웃 또는 bare 저장소). 읽기 전용으로 마운트됩니다. 비공개 저장소나 어디에도 푸시하지 않은 커밋에 사용하세요. |
+| `PIB_SBP_SRC` | `pib sbp` | sbp(`pkgbuild/`)와 sbp의 패키지 설정(`configs/packages/`)이 들어 있는 체크아웃. 이미지에 이 둘이 포함될 때까지 필요합니다. 이 두 디렉터리만 읽기 전용으로 마운트됩니다. |
+| `PIB_SBP_IMAGE` | `pib sbp` | 패키지 빌더 이미지를 재정의합니다. 기본값은 `PIB_IMAGE`와 함께 공개된 이미지(같은 태그에 `-sbp`를 붙인 것) 또는 설치 시 연결된 이미지입니다. |
+| `PIB_SBP_JOBS`, `PIB_SBP_CCACHE_SIZE`, `PIB_SBP_VOLUME` | `pib sbp` | 병렬 컴파일 작업 수. 컴파일러 캐시 크기(기본값 `5G`). sbp의 작업 트리, 패키지 저장소, 캐시를 위한 Docker 볼륨(기본값 `pib-sbp-<uid>`). |
 
 ## 명령
 
@@ -59,6 +64,8 @@ pib build --sign
 | `pib shell` | 현재 프로젝트를 마운트한 컨테이너 셸 열기 |
 | `pib keys init --cn NAME` | CA, SWU 리프 인증서, Debian 서명 정보 생성 |
 | `pib keys renew --cn NAME` | 같은 CA로 리프 인증서 갱신 |
+| `pib keys fit` | `pib sbp`가 빌드한 커널 FIT 이미지를 서명하는 키 쌍 생성 |
+| `pib sbp package -p linux` | 커널, 그리고 palette의 커널 모듈 패키지를 `custom-debs/`에 빌드 |
 | `pib sign-debs` / `pib verify-debs` | 사용자 지정 Debian 패키지 서명/검사 |
 | `pib build [--sign] [--supplier NAME]` | 빌드하고 선택적으로 서명 및 검증 |
 | `pib sign [FILE]` | 번들 서명. 기본값은 현재 프로젝트 버전 |
@@ -66,7 +73,7 @@ pib build --sign
 | `pib diff --against MANIFEST` | 이전 빌드와 패키지 차이 확인 |
 | `pib clean [--yes]` | 남은 빌드 루프 장치와 볼륨 그룹 검사/제거 |
 
-모든 명령은 컨테이너 안에서 실행됩니다. 호스트 런처는 Docker, 작업 공간 마운트, 명시적으로 선택한 외부 파일만 처리합니다. `build`, `doctor`, `clean`, 대화형 셸은 특권 장치 접근을 사용합니다. 서명, 검증, 키 생성, 프로젝트 생성에는 필요하지 않습니다.
+모든 명령은 컨테이너 안에서 실행됩니다. 호스트 런처는 Docker, 작업 공간 마운트, 명시적으로 선택한 외부 파일만 처리합니다. `build`, `doctor`, `clean`, 대화형 셸은 특권 장치 접근을 사용합니다. 서명, 검증, 키 생성, 프로젝트 생성에는 필요하지 않습니다. `pib sbp`는 자체 이미지에서 특권 없이 실행되며, 프로젝트에는 `custom-debs/`를 제외하고 읽기 전용으로 접근합니다. `keys/`에서는 커널 FIT 키 쌍에만 접근합니다.
 
 ## 빌드 결과물
 
@@ -152,11 +159,36 @@ systemctl --root="$1" enable my-app.service
 
 사용자 지정 Debian 패키지는 `image.yaml`의 `debs.key`로 검증할 수 있는 분리 서명이 필요합니다. `pib sign-debs`는 생성한 Debian 서명 키를 사용합니다. 기존 GPG 서명 정보를 쓰려면 공개 키를 `keys/debs-signing.asc`로 내보내고 외부에서 패키지를 서명한 뒤 빌드 전에 `pib verify-debs`를 실행하세요.
 
-커널 패키지는 특별 취급됩니다. `configs/images/image-params.yaml`에 있는 릴리스 커널 패키지 이름을 유지하세요. PIB가 자동 선택하며 설치된 커널은 하나여야 합니다. 로컬 tRoot, ATF, U-Boot 교체 패키지는 거부합니다. 패키지 U-Boot는 `fip.bin` 내부 U-Boot와 일치해야 합니다.
+커널 패키지는 특별 취급됩니다. `configs/images/image-params.yaml`에 있는 릴리스 커널 패키지 이름을 유지하세요. PIB가 자동 선택하며 설치된 커널은 하나여야 합니다. `pib sbp`는 SiMa의 커널 소스나 사용자의 커널 소스로 이러한 패키지를 빌드합니다. [커널 빌드](#building-the-kernel)를 참조하세요. 로컬 tRoot, ATF, U-Boot 교체 패키지는 거부합니다. 패키지 U-Boot는 `fip.bin` 내부 U-Boot와 일치해야 합니다.
 
 `swu.description`과 `swu.script`는 업데이트 절차를 바꿀 수 있습니다. 먼저 `configs/images/files/`의 릴리스 기본값을 복사하세요. 버전/하드웨어 호환성 자리표시자, 해시, 필수 부팅/SBOM 항목을 유지합니다. 이 스크립트는 설치할 때 보드에서 실행되므로 복구 가능한 보드에서 변경 사항을 테스트하세요.
 
 `--dev` 빌드는 임시 서명 정보를 사용하며 일반 배포용 `--sign`과 함께 사용할 수 없습니다. 개발용 고객 CA/리프 키와 `--dev` 모드는 별개입니다.
+
+## 커널 빌드
+
+`pib sbp`는 SiMa의 패키지 빌더인 sbp를 사용해 SiMa의 공개 커널 소스나 사용자의 커널 소스로 Modalix 커널을 빌드하고, 커널의 Debian 패키지를 `custom-debs/`에 넣습니다. palette 프로젝트에서는 palette 이미지에 포함되는 커널 모듈 패키지인 smifb와 lttng-modules도 해당 커널에 맞춰 다시 빌드합니다. ARM64 크로스 툴체인이 포함된 별도의 패키지 빌더 이미지에서 실행되며, Docker는 처음 사용할 때 이 이미지(약 2.5 GB)를 다운로드합니다.
+
+```bash
+pib keys fit
+pib sbp package -p linux
+pib sign-debs
+pib build --sign
+```
+
+`pib keys fit`은 `keys/fit-signing.key`와 `keys/fit-signing.crt`를 한 번 생성합니다. `pib sbp`는 이 키로 커널의 FIT 이미지를 서명합니다. 그런 다음 소스를 선택하세요.
+
+| 커널 소스 | 선택 방법 |
+|---|---|
+| SiMa의 공개 저장소, `master` 브랜치 | 기본값: `https://github.com/SiMa-ai/simaai-linux.git` |
+| 사용자의 포크, 그 포크의 브랜치 중 하나 또는 커밋 | `--kernel-url https://github.com/<you>/simaai-linux.git --kernel-ref <branch>` 또는 `PIB_SBP_KERNEL_URL`과 `PIB_SBP_KERNEL_REF` |
+| 사용자 컴퓨터의 저장소 | `PIB_SBP_KERNEL_SRC=<path>`: 해당 저장소에서 체크아웃된 브랜치 또는 `PIB_SBP_KERNEL_REF` |
+
+실행할 때마다 브랜치를 조회해 최신 커밋을 빌드하며, `pib sbp`가 그 커밋을 출력합니다. 브랜치가 이동했으면 커널이 다시 빌드됩니다. 커밋된 변경 사항만 빌드되며, 커밋되지 않은 변경 사항이 있으면 `pib sbp`가 경고합니다. 빌드 컨테이너에는 인증 정보가 없습니다. 공개 저장소는 토큰이 없는 https URL로 지정하고, 비공개 저장소는 읽기 전용으로 마운트되는 `PIB_SBP_KERNEL_SRC`로 지정하세요. 저장소에서 처음 빌드할 때는 그 저장소 전체를 다운로드합니다.
+
+릴리스 커널의 버전(6.18.3)과 `simaai_modalix_defconfig` 설정, 그리고 SiMa의 FIT 패키징을 유지하세요. 이미지는 릴리스의 커널 패키지 이름만 설치하므로 다른 버전은 제외됩니다. FIT 이미지(`boot/fitImage`)가 없는 커널 패키지는 서명되지 않은 일반 커널 이미지로 부팅되며, `pib sbp`가 이에 대해 경고합니다. 또한 커널의 SiMa 고유 헤더를 릴리스의 헤더와 비교하고, 서로 다르면 경고합니다. 카메라 ISP와 MLA 런타임 같은 SiMa의 사전 빌드된 소프트웨어는 릴리스의 헤더를 기준으로 빌드됩니다. 현재 `master` 브랜치에는 SiMa의 2.1.3 커널이 있습니다. 이 커널에는 FIT 패키징이 없고 현재 헤더의 일부도 빠져 있으므로, SiMa가 이 브랜치에 현재 커널을 공개할 때까지 두 경고가 모두 나타납니다.
+
+커널 빌드에는 약 30분이 걸리며 Docker 볼륨 `pib-sbp-<uid>`에 6-8 GB가 필요합니다. sbp 자체가 패키지 빌더 이미지에 포함될 때까지는 sbp가 들어 있는 체크아웃(`pkgbuild/`와 `configs/packages/`)을 `PIB_SBP_SRC`로 지정하세요.
 
 ## 서명
 

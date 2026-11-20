@@ -48,6 +48,9 @@ Run subsequent commands from your project directory.
 Build applications and compile models with Palette SDK, then package the required
 files for the target. PIB assembles packages; it does not compile application
 source. See [Palette SDK System Stack](sdk-architecture.md) for the component roles.
+The kernel is the exception: `pib sbp` builds it, from SiMa's public source or
+yours, into kernel packages in `custom-debs/`; see
+[Building the kernel](palette-image-builder-reference.md#building-the-kernel).
 
 List Debian package names in `image.yaml`, rather than `.deb` filenames. Use an
 overlay for files and a hook for changes that must follow package installation.
