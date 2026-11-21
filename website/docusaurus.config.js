@@ -1,11 +1,13 @@
-const manifest = require('./docs-manifest.json');
+const manifest = require('./site-settings.cjs');
 const {themes} = require('prism-react-renderer');
 
 module.exports = {
   title: "Systems Builder Guide",
   tagline: 'Package device images and work with the system software stack',
   url: `https://${manifest.hostname}`,
-  baseUrl: '/',
+  baseUrl: manifest.baseUrl,
+  noIndex: manifest.preview,
+  customFields: {installTarget: manifest.installTarget},
   organizationName: 'sima-neat',
   projectName: 'sdk',
   favicon: 'img/sima-favicon.png',
@@ -43,8 +45,10 @@ module.exports = {
   }]],
   themeConfig: {
     announcementBar: {
-      id: 'content-verification-in-progress',
-      content: '<strong>Under construction</strong> — this content is still being verified. This banner will be removed once verification is complete. Please check back later.',
+      id: manifest.preview ? 'develop-preview' : 'content-verification-in-progress',
+      content: manifest.preview
+        ? '<strong>Develop preview</strong> — unreleased documentation. Use sdk/pib@develop for these instructions. <a href="https://sdk.neat.sima.ai/">Production guide</a>'
+        : '<strong>Under construction</strong> — this content is still being verified. This banner will be removed once verification is complete. Please check back later.',
       backgroundColor: '#fff3cd',
       textColor: '#664d03',
       isCloseable: false,

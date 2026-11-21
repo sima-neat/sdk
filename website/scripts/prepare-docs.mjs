@@ -3,10 +3,10 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import GithubSlugger from 'github-slugger';
+import manifest from '../site-settings.cjs';
 
 const site = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repo = path.dirname(site);
-const manifest = JSON.parse(fs.readFileSync(path.join(site, 'docs-manifest.json')));
 const selectedIndex = process.argv.indexOf('--locale');
 const selectedLocale = selectedIndex < 0 ? null : process.argv[selectedIndex + 1];
 if (selectedLocale && !manifest.locales.includes(selectedLocale)) throw new Error('Unsupported preview locale');
@@ -51,7 +51,13 @@ function render(text, source, document, locale) {
     const [filename, anchor] = destination.split('#');
     const target = path.resolve(sourceRoot, path.dirname(document.source), filename);
     const asset = (manifest.assets || []).find(a => path.resolve(repo, a.source) === target);
-    if (asset) return `](pathname:///${asset.path}${anchor ? `#${anchor}` : ''})`;
+    if (asset) {
+      // Docusaurus adds the locale base to root-relative anchor links. Relative
+      // asset URLs work for both <a> and <img> without duplicating that prefix.
+      const route = path.posix.join(locale === 'en' ? '' : locale, 'guides', document.id);
+      const relative = path.posix.relative(route, asset.path);
+      return `](pathname://${relative}${anchor ? `#${anchor}` : ''})`;
+    }
     const selected = manifest.documents.find(d => path.resolve(sourceRoot, d.source) === target);
     if (selected) return `](./${selected.id}.md${anchor ? `#${anchor}` : ''})`;
     if (target.startsWith(sourceRoot + path.sep)) {
@@ -102,4 +108,6 @@ const images = path.join(site, 'static/img');
 fs.mkdirSync(images, {recursive: true});
 fs.copyFileSync(path.join(repo, 'images/simaai_logo.png'), path.join(images, 'simaai-logo.png'));
 fs.writeFileSync(path.join(site, 'static/CNAME'), manifest.hostname + '\n');
+// noIndex covers HTML pages; the root robots.txt also excludes the preview.
+fs.writeFileSync(path.join(site, 'static/robots.txt'), 'User-agent: *\nDisallow: /staging-preview/\n');
 console.log(`Prepared ${manifest.documents.length} allowed documents in ${locales.length} languages.`);

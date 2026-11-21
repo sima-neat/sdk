@@ -85,14 +85,16 @@ class PackageTests(unittest.TestCase):
         run.assert_called_once_with([sys.executable, str(launcher), 'doctor'], check=True)
         self.assertIn('Docker host checks passed.', output.getvalue())
 
-    def test_failed_host_check_does_not_report_successful_installation(self):
+    def test_failed_host_check_warns_after_successful_installation(self):
         with patch.object(sys, 'argv', ['install_pib.py', '--image', IMAGE, '--no-path']), \
                 patch.object(installer, 'install_launcher', return_value=Path('pib')), \
                 patch.object(installer.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, 'doctor')), \
-                contextlib.redirect_stdout(io.StringIO()) as output:
-            with self.assertRaisesRegex(SystemExit, 'PIB installation failed'):
-                installer.main()
-        self.assertNotIn('Installed PIB:', output.getvalue())
+                contextlib.redirect_stdout(io.StringIO()) as output, \
+                contextlib.redirect_stderr(io.StringIO()) as errors:
+            installer.main()
+        self.assertIn('Installed PIB:', output.getvalue())
+        self.assertIn('PIB is installed', errors.getvalue())
+        self.assertIn('Run pib doctor from your image project', errors.getvalue())
         self.assertNotIn('checks passed', output.getvalue())
 
     @unittest.skipIf(os.name == 'nt', 'POSIX shell profile')

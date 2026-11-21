@@ -1,14 +1,28 @@
 #!/usr/bin/env python3
 """Add verified download-cache hooks without changing the bootstrap/package stages."""
 import os
+from pathlib import Path
+import subprocess
 import sys
+import tempfile
 
 args = sys.argv[1:]
-if os.environ.get('PIB_DEB_CACHE_DIR'):
-    hook = 'python3 -m pib.deb_cache'
-    # Save essentials before mmdebstrap unlinks them, and remaining downloads
-    # before the reference customization hooks clean the target APT cache.
-    args = [f'--extract-hook={hook} save "$1"', f'--customize-hook={hook} save "$1"', *args]
-    position = args.index('--') if '--' in args else len(args)
-    args.insert(position, f'--setup-hook={hook} restore "$1"')
-os.execv('/usr/bin/mmdebstrap', ['/usr/bin/mmdebstrap', *args])
+if not os.environ.get('PIB_DEB_CACHE_DIR'):
+    os.execv('/usr/bin/mmdebstrap', ['/usr/bin/mmdebstrap', *args])
+
+from pib.deb_cache import prune
+
+hook = 'python3 -m pib.deb_cache'
+# Save essentials before mmdebstrap unlinks them, and remaining downloads
+# before the reference customization hooks clean the target APT cache.
+args = [f'--extract-hook={hook} save "$1"', f'--customize-hook={hook} save "$1"', *args]
+position = args.index('--') if '--' in args else len(args)
+args.insert(position, f'--setup-hook={hook} restore "$1"')
+with tempfile.TemporaryDirectory(prefix='pib-cache-used-') as used:
+    result = subprocess.run(['/usr/bin/mmdebstrap', *args],
+                            env={**os.environ, 'PIB_DEB_CACHE_USED': used})
+    # A failed bootstrap must never prune a usable cache. The marker set spans
+    # extract and customize, so pruning cannot discard an earlier phase's debs.
+    if result.returncode == 0:
+        prune(Path(os.environ['PIB_DEB_CACHE_DIR']), Path(used))
+    sys.exit(result.returncode)

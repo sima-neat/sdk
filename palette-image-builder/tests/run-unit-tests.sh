@@ -12,5 +12,6 @@ for name in configs files scripts; do
     cp -a "/usr/share/pib/$name/." "$scratch/$name/"
 done
 cd "$scratch"
+export PYTHONPATH="$scratch/pib${PYTHONPATH:+:$PYTHONPATH}"
 python3 pib/test_cli.py
 python3 -m unittest discover -s tests -p 'test_*.py'

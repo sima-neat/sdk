@@ -28,9 +28,12 @@ concurrency:
 
 jobs:
   cleanup:
-    name: Cleanup branch SDK packages
+    name: Cleanup branch SDK and PIB packages
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v5
+      - name: Check cleanup safeguards
+        run: node --test tests/sdk/test-package-cleanup.cjs
       - name: Cleanup GHCR package versions
         uses: actions/github-script@v8
         env:
@@ -47,7 +50,8 @@ jobs:
             const requestedBranch = String(process.env.REQUESTED_BRANCH || '').trim();
             const deletedRef = String(process.env.DELETED_REF || '').trim();
             const deletedRefType = String(process.env.DELETED_REF_TYPE || '').trim();
-            const buildWorkflowFile = 'docker-build.yml';
+            const buildWorkflowFiles = ['docker-build.yml', 'palette-image-builder.yml'];
+            let packageFamily;
             const workflowRunPageLimit = 50;
 
             const protectedBranchNames = new Set(['develop', 'main']);
@@ -67,7 +71,8 @@ jobs:
 
             function sdkPackageForBranch(branchName) {
               const branch = branchSlug(branchName);
-              return `sdk-${branch}`;
+              return packageFamily === 'palette-image-builder' && branchName === 'main'
+                ? packageFamily : `${packageFamily}-${branch}`;
             }
 
             function isReleaseOrInfrastructureTag(tag) {
@@ -161,6 +166,10 @@ jobs:
             }
 
             async function deletePackage(packageName, commitShas = new Set()) {
+              if (['sdk', 'palette-image-builder'].includes(packageName)) {
+                core.warning(`${packageName}: never delete a canonical package wholesale.`);
+                return;
+              }
               const pkg = await getPackage(packageName);
               if (!pkg) {
                 core.info(`${packageName}: package does not exist; nothing to delete.`);
@@ -235,7 +244,7 @@ jobs:
               }
             }
 
-            async function listWorkflowRunsForBuildWorkflow() {
+            async function listWorkflowRunsForBuildWorkflow(buildWorkflowFile) {
               const runs = [];
               for (let page = 1; page <= workflowRunPageLimit; page += 1) {
                 const response = await github.request(
@@ -270,116 +279,125 @@ jobs:
               return true;
             }
 
+            const workflowRuns = [];
+            if (!requestedBranch && context.eventName !== 'delete') {
+              for (const file of buildWorkflowFiles) {
+                workflowRuns.push(...await listWorkflowRunsForBuildWorkflow(file));
+              }
+            }
             const branches = await paginate('GET /repos/{owner}/{repo}/branches', {
               owner,
               repo,
             });
-            const branchPackages = new Set();
-            const protectedBranchPackages = new Set();
-            const branchSlugs = new Set();
+            const branchSlugs = new Set(protectedBranchNames);
+            for (packageFamily of ['sdk', 'palette-image-builder']) {
+              const branchPackages = new Set();
+              const protectedBranchPackages = new Set();
 
-            for (const branch of branches) {
-              const slug = branchSlug(branch.name);
-              const packageName = sdkPackageForBranch(branch.name);
-              branchSlugs.add(slug);
-              branchPackages.add(packageName);
-              if (branch.protected || protectedBranchNames.has(branch.name)) {
-                protectedBranchPackages.add(packageName);
-              }
-            }
-
-            core.info(`Found ${branches.length} branch(es).`);
-            core.info(`Found ${protectedBranchPackages.size} protected branch package name(s).`);
-
-            const sdkBranchPackages = new Map();
-            function addSdkBranchPackage(branchName, commitSha = '') {
-              const packageName = sdkPackageForBranch(branchName);
-              if (!sdkBranchPackages.has(packageName)) {
-                sdkBranchPackages.set(packageName, new Set());
-              }
-              if (commitSha) {
-                sdkBranchPackages.get(packageName).add(commitSha);
-              }
-              return packageName;
-            }
-
-            if (requestedBranch) {
-              addSdkBranchPackage(requestedBranch);
-              core.info(`Added requested branch package candidate for ${requestedBranch}.`);
-            }
-            if (deletedRef && deletedRefType === 'branch') {
-              addSdkBranchPackage(deletedRef);
-              core.info(`Added deleted branch package candidate for ${deletedRef}.`);
-            } else if (deletedRef && deletedRefType) {
-              core.info(`Delete event was for ${deletedRefType} ${deletedRef}; skipping direct branch package cleanup.`);
-            }
-
-            if (!requestedBranch && context.eventName !== 'delete') {
-              const workflowRuns = await listWorkflowRunsForBuildWorkflow();
-              core.info(`Scanned ${workflowRuns.length} ${buildWorkflowFile} workflow run(s).`);
-              for (const run of workflowRuns) {
-                if (shouldTrackBranchPackageFromRun(run)) {
-                  addSdkBranchPackage(run.head_branch, run.head_sha || '');
+              for (const branch of branches) {
+                const slug = branchSlug(branch.name);
+                const packageName = sdkPackageForBranch(branch.name);
+                branchSlugs.add(slug);
+                branchPackages.add(packageName);
+                if (branch.protected || protectedBranchNames.has(branch.name)) {
+                  protectedBranchPackages.add(packageName);
                 }
               }
-            }
 
-            core.info(`Found ${sdkBranchPackages.size} SDK branch package candidate(s).`);
+              core.info(`Found ${branches.length} branch(es).`);
+              core.info(`Found ${protectedBranchPackages.size} protected branch package name(s).`);
 
-            for (const [packageName, commitShas] of sdkBranchPackages) {
-              if (!branchPackages.has(packageName)) {
-                core.info(`${packageName}: no matching branch; deleting entire package.`);
-                await deletePackage(packageName, commitShas);
-                continue;
+              const sdkBranchPackages = new Map();
+              function addSdkBranchPackage(branchName, commitSha = '') {
+                const packageName = sdkPackageForBranch(branchName);
+                if (!sdkBranchPackages.has(packageName)) {
+                  sdkBranchPackages.set(packageName, new Set());
+                }
+                if (commitSha) {
+                  sdkBranchPackages.get(packageName).add(commitSha);
+                }
+                return packageName;
               }
 
-              if (protectedBranchPackages.has(packageName)) {
-                core.info(`${packageName}: matching branch is protected; keeping all versions.`);
-                continue;
+              if (requestedBranch) {
+                addSdkBranchPackage(requestedBranch);
+                core.info(`Added requested branch package candidate for ${requestedBranch}.`);
+              }
+              if (deletedRef && deletedRefType === 'branch') {
+                addSdkBranchPackage(deletedRef);
+                core.info(`Added deleted branch package candidate for ${deletedRef}.`);
+              } else if (deletedRef && deletedRefType) {
+                core.info(`Delete event was for ${deletedRefType} ${deletedRef}; skipping direct branch package cleanup.`);
               }
 
-              core.info(`${packageName}: matching branch still exists; keeping package and all versions.`);
-            }
+              if (!requestedBranch && context.eventName !== 'delete') {
+                core.info(`Scanned ${workflowRuns.length} SDK/PIB workflow run(s).`);
+                for (const run of workflowRuns) {
+                  if (shouldTrackBranchPackageFromRun(run)) {
+                    addSdkBranchPackage(run.head_branch, run.head_sha || '');
+                  }
+                }
+              }
 
-            if (!(await packageExists('sdk'))) {
-              core.info('sdk: canonical package does not exist; skipping canonical branch-tag cleanup.');
-            } else {
-              const versions = await paginate(
-                'GET /orgs/{org}/packages/{package_type}/{package_name}/versions',
-                {
-                  org: owner,
-                  package_type: 'container',
-                  package_name: 'sdk',
-                },
-              );
-              let deletedCanonical = 0;
-              let keptCanonical = 0;
-              let skippedCanonical = 0;
-              for (const version of versions) {
-                const tags = version.metadata?.container?.tags ?? [];
-                const deletedBranchTags = tags.filter((tag) => isBranchTag(tag, branchSlugs));
-                if (deletedBranchTags.length === 0) {
-                  keptCanonical += 1;
+              core.info(`Found ${sdkBranchPackages.size} ${packageFamily} branch package candidate(s).`);
+
+              for (const [packageName, commitShas] of sdkBranchPackages) {
+                if (!branchPackages.has(packageName)) {
+                  core.info(`${packageName}: no matching branch; deleting entire package.`);
+                  await deletePackage(packageName, commitShas);
                   continue;
                 }
 
-                const retainedTags = tags.filter((tag) => !deletedBranchTags.includes(tag));
-                if (retainedTags.length > 0) {
-                  skippedCanonical += 1;
-                  core.warning(
-                    `sdk: version ${version.id} has deleted-branch tag(s) [${deletedBranchTags.join(', ')}] ` +
-                    `but also retained tag(s) [${retainedTags.join(', ')}]; keeping the version because GHCR deletes versions, not individual tags.`,
-                  );
+                if (protectedBranchPackages.has(packageName)) {
+                  core.info(`${packageName}: matching branch is protected; keeping all versions.`);
                   continue;
                 }
 
-                await deletePackageVersion('sdk', version);
-                deletedCanonical += 1;
+                core.info(`${packageName}: matching branch still exists; keeping package and all versions.`);
               }
-              core.info(
-                `sdk: deleted ${deletedCanonical} deleted-branch-only version(s), ` +
-                `kept ${keptCanonical} version(s), skipped ${skippedCanonical} mixed-tag version(s).`,
-              );
+
+              const canonical = await getPackage(packageFamily);
+              if (!canonical || packageRepositoryFullName(canonical) !== repoFullName) {
+                core.info(`${packageFamily}: canonical package missing or ownership unverified; skipping branch-tag cleanup.`);
+              } else {
+                const versions = await paginate(
+                  'GET /orgs/{org}/packages/{package_type}/{package_name}/versions',
+                  {
+                    org: owner,
+                    package_type: 'container',
+                    package_name: packageFamily,
+                  },
+                );
+                let deletedCanonical = 0;
+                let keptCanonical = 0;
+                let skippedCanonical = 0;
+                for (const version of versions) {
+                  const tags = version.metadata?.container?.tags ?? [];
+                  const deletedBranchTags = tags.filter((tag) => isBranchTag(tag, branchSlugs));
+                  if (deletedBranchTags.length === 0) {
+                    keptCanonical += 1;
+                    continue;
+                  }
+
+                  const retainedTags = tags.filter((tag) => !deletedBranchTags.includes(tag));
+                  if (retainedTags.length > 0) {
+                    skippedCanonical += 1;
+                    core.warning(
+                      `${packageFamily}: version ${version.id} has deleted-branch tag(s) [${deletedBranchTags.join(', ')}] ` +
+                      `but also retained tag(s) [${retainedTags.join(', ')}]; keeping the version because GHCR deletes versions, not individual tags.`,
+                    );
+                    continue;
+                  }
+
+                  await deletePackageVersion(packageFamily, version);
+                  deletedCanonical += 1;
+                }
+                core.info(
+                  `${packageFamily}: deleted ${deletedCanonical} deleted-branch-only version(s), ` +
+                  `kept ${keptCanonical} version(s), skipped ${skippedCanonical} mixed-tag version(s).`,
+                );
+              }
+
             }
 
             if (!(await packageExists('sdk-buildcache'))) {

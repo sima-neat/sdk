@@ -23,14 +23,19 @@ permissions:
   contents: read
 
 concurrency:
-  group: sdk-docs-${{ github.event_name == 'pull_request' && github.ref || 'publication' }}
-  cancel-in-progress: true
+  # Serialize complete-site publications; never cancel an active deployment.
+  # Fresh main/develop checkouts below prevent queued runs restoring stale refs.
+  group: sdk-docs-${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && 'publication' || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
-    name: Build all documentation languages
+    name: Build all documentation languages (${{ matrix.channel }})
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    strategy:
+      matrix:
+        channel: [production, preview]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
@@ -42,24 +47,49 @@ jobs:
         run: npm ci
         working-directory: website
       - name: Validate curated sources and build all languages
+        env:
+          DOCS_CHANNEL: ${{ matrix.channel }}
         run: npm run build
         working-directory: website
-      - uses: actions/upload-pages-artifact@v4
-        with:
-          path: website/build
+      - name: Check publication assembly
+        run: python3 website/scripts/test-publication.py
 
   deploy:
     name: Publish GitHub Pages
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          path: publisher
+      - name: Check out current production source
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          path: production-source
+      - name: Check out current preview source
+        uses: actions/checkout@v5
+        with:
+          ref: develop
+          path: preview-source
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build production and preview into one site
+        run: >-
+          python3 publisher/website/scripts/assemble-publication.py
+          --main production-source --develop preview-source --output published-site
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: published-site
       - uses: actions/deploy-pages@v4
         id: deployment

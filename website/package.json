@@ -5,7 +5,7 @@
   "scripts": {
     "prepare:docs": "node scripts/prepare-docs.mjs",
     "start": "node scripts/prepare-docs.mjs --locale en && docusaurus start",
-    "build": "npm run prepare:docs && docusaurus build",
+    "build": "npm run prepare:docs && docusaurus build && node scripts/check-build.mjs",
     "serve": "docusaurus serve",
     "write-translations": "npm run prepare:docs && docusaurus write-translations"
   },

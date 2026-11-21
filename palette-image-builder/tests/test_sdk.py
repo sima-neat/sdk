@@ -95,6 +95,7 @@ class Workflow(unittest.TestCase):
                 target.with_suffix('.manifest.json').touch()
                 Path('out/elxr-minimal-modalix-3.0.0.1-agate-arm64.swu').touch()
                 Path('out/elxr-minimal-modalix-3.0.0.2-agate-arm64.unsigned.swu').touch()
+                Path('out/elxr-minimal-modalix-3.0.0.2-dev-agate-arm64.swu').touch()
                 args = argparse.Namespace(swu=None, ca=None, manifest=None)
                 # Stop at archive reading: this checks input resolution without faking signatures.
                 with patch.object(cli, 'read_swu', side_effect=RuntimeError('resolved')):
@@ -105,6 +106,22 @@ class Workflow(unittest.TestCase):
                 self.assertEqual(args.manifest, str(target.with_suffix('.manifest.json')))
             finally:
                 os.chdir(old)
+
+    def test_duplicate_package_versions_name_both_files_before_repo_import(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            debs = root / cli.DEBS
+            debs.mkdir()
+            for filename in ('app-1.deb', 'app-2.deb'):
+                (debs / filename).touch()
+            def metadata(cmd):
+                version = '1' if Path(cmd[2]).name == 'app-1.deb' else '2'
+                return f'Package: my-app\nVersion: {version}\nArchitecture: all\n'
+            with patch.object(cli, 'run', side_effect=metadata), patch.object(cli, 'check_deb_signature'):
+                for invoke in (lambda: cli.check_unique_debs(sorted(debs.glob('*.deb'))),
+                               lambda: cli.check_debs(root, {'target': 'modalix', 'debs': {'key': 'key'}})):
+                    with self.assertRaisesRegex(SystemExit, r'duplicate custom package my-app: app-1.deb \(1\) and app-2.deb \(2\)'):
+                        invoke()
 
     def test_copied_launcher_preserves_paths_and_limits_secret_mounts(self):
         with tempfile.TemporaryDirectory() as tmp:

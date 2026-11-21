@@ -4,13 +4,12 @@ import Link from '@docusaurus/Link';
 import CodeBlock from '@theme/CodeBlock';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import copy from '../content/site-copy.json';
-import manifest from '../../docs-manifest.json';
 import ImageBuilderIcon from '../components/icons/image-builder.svg';
 import SdkStackIcon from '../components/icons/sdk-stack.svg';
 import ExampleImageIcon from '../components/icons/example-image.svg';
 
 export default function Home() {
-  const {i18n} = useDocusaurusContext();
+  const {i18n, siteConfig} = useDocusaurusContext();
   const text = copy[i18n.currentLocale] || copy.en;
   return (
     <Layout title={text.title} description={text.description}>
@@ -27,7 +26,7 @@ export default function Home() {
           </div>
           <aside className="sdk-terminal">
             <p>{text.terminal}</p>
-            <CodeBlock language="bash">{`sima-cli neat install ${manifest.installTarget}\npib init my-image --example custom-image`}</CodeBlock>
+            <CodeBlock language="bash">{`sima-cli neat install ${siteConfig.customFields.installTarget}\npib init my-image --example custom-image`}</CodeBlock>
           </aside>
         </section>
         <section className="sdk-paths" aria-labelledby="paths-title">
