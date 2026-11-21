@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""Use native parallel compression; preserve GNU gzip's inspection/decode behavior."""
+import os
+import sys
+
+args = sys.argv[1:]
+decode = False
+for arg in args:
+    if arg == '--':
+        break
+    if arg in ('--decompress', '--uncompress', '--test', '--list', '--help', '--version'):
+        decode = True
+    elif arg.startswith('-') and not arg.startswith('--') and any(c in arg[1:] for c in 'dtlhV'):
+        decode = True
+program = '/usr/bin/gzip' if decode else '/usr/bin/pigz'
+os.execv(program, [program, *args])

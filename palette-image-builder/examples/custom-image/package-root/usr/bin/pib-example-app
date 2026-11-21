@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+printf 'Hello from the custom PIB image.\n'
+cat /etc/pib-example.conf

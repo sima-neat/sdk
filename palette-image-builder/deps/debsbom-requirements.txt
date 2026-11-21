@@ -1,0 +1,19 @@
+# debsbom 0.10.2 and its dependencies, downloaded from PyPI with exact wheel hashes.
+boolean-py==5.0 \
+    --hash=sha256:ef28a70bd43115208441b53a045d1549e2f0ec6e3d08a9d142cbc41c1938e8d9
+cyclonedx-python-lib==11.12.0 \
+    --hash=sha256:0e807521a921a5c3cb8ce1153f8a61d29eedfe76a46aac2796b7c6b573391a54
+debsbom[cdx]==0.10.2 \
+    --hash=sha256:592bb404b87fa3e7877ae1ef041c97f339dc360ec60868a08374f54c0d89aeb0
+defusedxml==0.7.1 \
+    --hash=sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61
+license-expression==30.4.4 \
+    --hash=sha256:421788fdcadb41f049d2dc934ce666626265aeccefddd25e162a26f23bcbf8a4
+packageurl-python==0.17.6 \
+    --hash=sha256:31a85c2717bc41dd818f3c62908685ff9eebcb68588213745b14a6ee9e7df7c9
+py-serializable==2.1.0 \
+    --hash=sha256:b56d5d686b5a03ba4f4db5e769dc32336e142fc3bd4d68a8c25579ebb0a67304
+python-debian==1.1.1 \
+    --hash=sha256:f98ae013e8e5310e49041cc3860a7105df73af73d4ff1d8afb474770d328a6ad
+sortedcontainers==2.4.0 \
+    --hash=sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0

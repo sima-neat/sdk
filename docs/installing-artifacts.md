@@ -2,6 +2,11 @@
 
 These are advanced BSP workflows for manually installing generated artifacts on a SiMa.ai platform.
 
+The raw partition layout below is different from Palette Image Builder
+images, which use boot A/B partitions and LVM root filesystems. For PIB images,
+use the [PIB deployment reference](palette-image-builder-reference.md#installing-an-swu)
+and the platform-specific recovery procedure.
+
 ## Assumptions
 
 - The board is booted with an eLxr image.

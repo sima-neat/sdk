@@ -1,0 +1,124 @@
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+
+/* Corporate tokens from releases.neat.sima.ai/brand.css and sima.ai. */
+:root {
+  --sima-white: #ffffff;
+  --sima-ink: #0b1220;
+  --sima-muted: #6e6e73;
+  --sima-blue: #5998dd;
+  --sima-blue-text: #346ca9;
+  --sima-blue-hover: #376ba7;
+  --sima-blue-heading: #4a85c8;
+  --sima-green: #2a9c4f;
+  --sima-lime: #a4cc2d;
+  --sima-purple: #4a4276;
+  --sima-lavender: #d1cee6;
+  --sima-mint: #c0e8db;
+  --sima-orange: #d26728;
+  --sima-surface: #f5f5f7;
+  --sima-sky: #eaf2fc;
+  --sima-border: #e5e5ea;
+  --ifm-color-primary: var(--sima-blue-text);
+  --ifm-color-primary-dark: #2f6198;
+  --ifm-color-primary-darker: #2c5c90;
+  --ifm-color-primary-darkest: #244c76;
+  --ifm-color-primary-light: #3977ba;
+  --ifm-color-primary-lighter: #3f7dc4;
+  --ifm-color-primary-lightest: var(--sima-blue);
+  --ifm-font-family-base: 'IBM Plex Sans', 'Noto Sans', 'Segoe UI', sans-serif;
+  --ifm-heading-font-weight: 600;
+  --ifm-line-height-base: 1.7;
+  --ifm-background-color: var(--sima-white);
+  --ifm-background-surface-color: var(--sima-white);
+  --ifm-font-color-base: var(--sima-ink);
+  --ifm-code-font-size: 88%;
+  --ifm-navbar-shadow: none;
+  --ifm-navbar-background-color: var(--sima-white);
+  --ifm-footer-background-color: var(--sima-surface);
+  --ifm-color-emphasis-100: var(--sima-surface);
+  --ifm-color-emphasis-200: var(--sima-border);
+  --ifm-color-emphasis-300: var(--sima-border);
+  --ifm-code-background: var(--sima-sky);
+}
+[data-theme='dark'] {
+  --ifm-color-primary: var(--sima-blue);
+  --ifm-color-primary-dark: #4088d6;
+  --ifm-color-primary-darker: #3380d3;
+  --ifm-color-primary-darkest: var(--sima-blue-hover);
+  --ifm-color-primary-light: #72a8e2;
+  --ifm-color-primary-lighter: #7eafe5;
+  --ifm-color-primary-lightest: #a4c7ee;
+  --ifm-background-color: #0d1117;
+  --ifm-background-surface-color: #171c25;
+  --ifm-font-color-base: var(--sima-surface);
+  --ifm-navbar-background-color: #0d1117;
+  --ifm-footer-background-color: #171c25;
+  --ifm-color-emphasis-100: #171c25;
+  --ifm-color-emphasis-200: #303744;
+  --ifm-color-emphasis-300: #404857;
+  --ifm-code-background: #171c25;
+}
+.button--primary {background: var(--sima-blue); border-color: var(--sima-blue); color: var(--sima-ink);}
+.button--primary:hover {background: var(--sima-blue-hover); border-color: var(--sima-blue-hover); color: var(--sima-white);}
+.navbar {border-bottom: 1px solid var(--ifm-color-emphasis-200);}
+.navbar__logo {height: 1.25rem; width: 5.4rem; margin-right: .75rem; flex-shrink: 0;}
+.navbar__logo img {width: 100%; height: 100%; object-fit: contain;}
+[data-theme='dark'] .navbar__logo img {filter: invert(1) hue-rotate(180deg); mix-blend-mode: screen;}
+.navbar__title {font-weight: 500; font-size: 1rem;}
+.navbar__brand {min-width: 0;}
+.navbar__title {white-space: normal; line-height: 1.25; max-width: 260px;}
+.footer {border-top: 1px solid var(--ifm-color-emphasis-200);}
+.theme-doc-markdown {max-width: 800px;}
+.sdk-home {max-width: 1220px; margin: 0 auto; padding: 0 clamp(24px, 5vw, 64px);}
+.sdk-intro {display: grid; grid-template-columns: 1.15fr 1fr; gap: clamp(32px, 6vw, 80px); align-items: center; padding: clamp(56px, 8vw, 112px) 0 64px;}
+.sdk-eyebrow {font-size: .8rem; font-weight: 600; letter-spacing: .11em; text-transform: uppercase; color: var(--ifm-color-primary); margin: 0 0 22px;}
+.sdk-intro h1 {font-size: clamp(2.3rem, 4.2vw, 3.8rem); line-height: 1.1; letter-spacing: -.035em; margin: 0 0 24px; text-wrap: balance;}
+.sdk-lead {font-size: 1.13rem; line-height: 1.75; margin: 0; max-width: 39rem;}
+.sdk-actions {display: flex; flex-wrap: wrap; align-items: center; gap: 20px; margin-top: 32px;}
+.sdk-actions .button {padding: 12px 19px; border-radius: 5px; font-weight: 500;}
+.sdk-text-link {font-weight: 500;}
+.sdk-terminal {min-width: 0; border: 1px solid var(--ifm-color-emphasis-300); background: var(--ifm-color-emphasis-100); padding: 22px; border-radius: 6px;}
+.sdk-terminal > p {font-size: .9rem; font-weight: 500; margin: 0 0 14px;}
+.sdk-terminal pre {font-size: .78rem; line-height: 1.9;}
+.sdk-paths {border-top: 1px solid var(--ifm-color-emphasis-300); padding: 38px 0 18px;}
+.sdk-home h2 {font-size: 1.65rem; letter-spacing: -.02em; margin-bottom: 28px;}
+.sdk-paths article {display: grid; grid-template-columns: 1fr 1.65fr; gap: 8px 36px; padding: 24px 0; border-top: 1px solid var(--ifm-color-emphasis-200);}
+.sdk-paths h3 {grid-row: span 2; display: flex; align-items: flex-start; gap: 14px; font-size: 1.25rem; margin: 0;}
+.sdk-path-icon {flex: 0 0 48px; width: 48px; height: 48px; margin-top: -4px; color: var(--ifm-color-primary);}
+.sdk-paths p {margin: 0;}
+.sdk-paths a {font-weight: 500; justify-self: start;}
+.sdk-workflow {padding: 38px 0 40px;}
+.sdk-workflow ol {list-style: none; counter-reset: step; display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; margin: 0; padding: 0;}
+.sdk-workflow li {counter-increment: step; border-top: 2px solid var(--ifm-color-emphasis-300); padding-top: 20px;}
+.sdk-workflow li::before {content: '0' counter(step); font-size: .83rem; color: var(--ifm-color-primary); font-weight: 600;}
+.sdk-workflow li:nth-child(1) {border-top-color: var(--sima-green);}
+.sdk-workflow li:nth-child(2) {border-top-color: var(--sima-blue);}
+.sdk-workflow li:nth-child(3) {border-top-color: var(--sima-orange);}
+.sdk-workflow h3 {font-size: 1.1rem; margin: 9px 0;}
+.sdk-workflow p {font-size: .96rem;}
+.sdk-reference {display: flex; justify-content: space-between; gap: 16px; align-items: baseline; padding: 28px 0 44px; border-top: 1px solid var(--ifm-color-emphasis-300);}
+.sdk-reference p {margin: 0;}
+.sdk-application {padding: 24px 0 36px; border-top: 1px solid var(--ifm-color-emphasis-300);}
+.sdk-application h2 {margin-bottom: 10px;}
+.sdk-application p {max-width: 780px; margin-bottom: 12px;}
+a:focus-visible, button:focus-visible {outline: 3px solid var(--ifm-color-primary); outline-offset: 4px;}
+@media (max-width: 900px) {
+  .sdk-intro {grid-template-columns: 1fr; padding-top: 48px; gap: 32px;}
+  .sdk-intro h1 {max-width: 700px;}
+  .sdk-terminal {max-width: 700px;}
+  .sdk-workflow ol {grid-template-columns: 1fr; gap: 12px;}
+  .sdk-paths article {grid-template-columns: 1fr;}
+  .sdk-paths h3 {grid-row: auto; margin-bottom: 7px;}
+  .sdk-path-icon {flex-basis: 40px; width: 40px; height: 40px;}
+  .sdk-reference {flex-direction: column;}
+}
+
+/* Match GitHub's themed-image fragments to the guide's theme selector. */
+[data-theme='light'] img[src$='#gh-dark-mode-only'],
+[data-theme='light'] a:has(> img[src$='#gh-dark-mode-only']),
+[data-theme='dark'] img[src$='#gh-light-mode-only'],
+[data-theme='dark'] a:has(> img[src$='#gh-light-mode-only']) {display: none;}
+
+.theme-doc-markdown img[src*='/img/diagrams/'] {width: 100%; height: auto;}
