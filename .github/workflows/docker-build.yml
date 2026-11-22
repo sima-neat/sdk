@@ -572,7 +572,9 @@ jobs:
           set -euo pipefail
 
           source .venv/bin/activate
-          sima-cli sdk setup -y -n --no-model-sdk
+          # Agent installation is separate from -y/-n in current sima-cli.
+          # Do not allow a runner environment override to skip this coverage.
+          SDK_SKIP_CODING_AGENT_INSTALL=0 sima-cli sdk setup -y -n --no-model-sdk --all-extensions
 
       - name: Summarize generated SDK release metadata
         env:

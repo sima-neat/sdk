@@ -1,7 +1,14 @@
 # SDK Smoke Tests
 
 This directory contains CI smoke tests that validate a published Palette SDK
-container after `sima-cli sdk setup -y -n` starts it.
+container after `sima-cli sdk setup -y -n --no-model-sdk --all-extensions` starts it.
+`--all-extensions` explicitly selects Codex and Claude; Neat is installed
+automatically. CI disables the `SDK_SKIP_CODING_AGENT_INSTALL` override.
+The smoke suite lists installed extensions as the configured non-root editor
+user, requires Neat plus both agents, and checks agent versions against the
+SDK-qualified component resolver. Missing or mismatched installations fail
+the smoke job, including for Core-less images. This verifies installation,
+not agent sign-in or browser extension activation.
 
 ## Layout
 

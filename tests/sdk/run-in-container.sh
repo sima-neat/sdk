@@ -316,6 +316,20 @@ test_hello_neat_python() {
   echo "Skipping Python runtime example; pyneat is validated on the DevKit side."
 }
 
+test_setup_extensions() {
+  local backend_user user_home extensions_dir
+  backend_user="${CODE_SERVER_USER:-${OPENVSCODE_SERVER_USER:-}}"
+  if [[ -z "${backend_user}" || "${backend_user}" == root ]]; then
+    echo "SDK setup must configure a non-root code-server user for extension validation." >&2
+    return 1
+  fi
+  user_home="$(getent passwd "${backend_user}" | cut -d: -f6)"
+  test -n "${user_home}"
+  extensions_dir="${CODE_SERVER_EXTENSIONS_DIR:-${OPENVSCODE_SERVER_EXTENSIONS_DIR:-${user_home}/.local/share/code-server/extensions}}"
+  runuser -u "${backend_user}" -- env HOME="${user_home}" \
+    python3 "${ROOT_DIR}/check-setup-extensions.py" "${extensions_dir}"
+}
+
 test_code_server() {
   local actual_version auth_secret backend_user http_status https_status
   local cookie_jar="${WORK_DIR}/code-server.cookies"
@@ -459,6 +473,7 @@ cp -a "${REPRESENTATIVE_SRC}/." "${REPRESENTATIVE_WORK}/"
 
 run_test "Initialized SDK compiler flags" test_initialized_compiler_flags
 run_test "code-server browser IDE" test_code_server
+run_test "SDK setup installed Neat, Codex, and Claude extensions" test_setup_extensions
 
 if [[ -r "${SDK_RELEASE_FILE}" ]] && [[ "$(sdk_release_value "SDK Profile")" == "platform-cross" ]]; then
   run_test "Core-less SDK profile" test_platform_cross_profile
