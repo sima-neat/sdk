@@ -1,0 +1,44 @@
+{
+  "hostname": "sdk.neat.sima.ai",
+  "installTarget": "sdk/pib",
+  "sourceRef": "main",
+  "locales": [
+    "en",
+    "uk",
+    "ja",
+    "ko",
+    "zh-Hant"
+  ],
+  "documents": [
+    {
+      "source": "sdk-architecture.md",
+      "id": "sdk-architecture",
+      "position": 1
+    },
+    {
+      "source": "palette-image-builder.md",
+      "id": "pib",
+      "position": 2
+    },
+    {
+      "source": "palette-image-builder-example.md",
+      "id": "pib-example",
+      "position": 3
+    },
+    {
+      "source": "palette-image-builder-reference.md",
+      "id": "pib-reference",
+      "position": 4
+    }
+  ],
+  "assets": [
+    {
+      "source": "images/palette-sdk-system-stack.svg",
+      "path": "img/diagrams/palette-sdk-system-stack.svg"
+    },
+    {
+      "source": "images/palette-sdk-system-stack-dark.svg",
+      "path": "img/diagrams/palette-sdk-system-stack-dark.svg"
+    }
+  ]
+}

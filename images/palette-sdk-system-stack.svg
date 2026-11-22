@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="948" viewBox="0 0 1280 948" role="img" aria-labelledby="palette-stack-title palette-stack-desc">
+<title id="palette-stack-title">Palette SDK system stack</title>
+<desc id="palette-stack-desc">On the developer computer, sima-cli installs and configures the Palette SDK environment and the separate Palette Image Builder companion. The SDK environment includes application development tools and a Model Compiler extension installed during SDK setup. Application source and models become custom Debian packages containing applications and model assets. PIB combines these with image specifications, overlays, hooks and signing keys to produce signed SWU updates and full disk images for an ARM64 Modalix DevKit.</desc>
+<defs>
+<style>
+text {font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;fill:#0b1220}
+.muted {fill:#62626b} .blue {fill:#346ca9} .green {fill:#15614c} .purple {fill:#4a4276}
+.eyebrow {font-size:16px;font-weight:600;letter-spacing:1.6px} .title {font-size:36px;font-weight:600;letter-spacing:-.6px} .h {font-size:24px;font-weight:600} .name {font-size:20px;font-weight:600} .body {font-size:16px} .small {font-size:12px;font-weight:600;letter-spacing:1px}
+.flow {stroke:#62626b;stroke-width:2;fill:none;marker-end:url(#arrow)}
+.control {stroke:#62626b;stroke-width:1.2;stroke-dasharray:4 4;fill:none;marker-end:url(#arrow)}
+</style>
+<marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#62626b"/></marker>
+<marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#2a9c4f"/></marker>
+<marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#5998dd"/></marker>
+</defs>
+<rect width="1280" height="948" fill="#ffffff"/>
+
+<text x="48" y="52" class="eyebrow blue">PALETTE SYSTEM BUILDER’S GUIDE</text>
+<text x="48" y="104" class="title">Palette SDK system stack</text>
+<text x="48" y="144" class="body muted">Build applications and compile models. Assemble and sign the system image.</text>
+<rect x="32" y="184" width="948" height="640" rx="8" fill="#f5f5f7" stroke="#d7d7df" stroke-width="1.2"/>
+<text x="56" y="216" class="eyebrow muted">YOUR COMPUTER</text>
+<text x="1040" y="216" class="eyebrow muted">ON YOUR DEVICE</text>
+<path d="M244 308 V352" class="control"/>
+<path d="M788 308 V352" class="control"/>
+<path d="M428 500 H620" class="flow"/>
+<path d="M956 500 H1040" class="flow"/>
+<path d="M244 700 V652" class="flow"/>
+<path d="M788 700 V652" class="flow"/>
+<rect x="56" y="244" width="900" height="64" rx="8" fill="#ffffff" stroke="#d7d7df" stroke-width="1.2"/>
+<text x="80" y="284" class="name">sima-cli</text>
+<text x="224" y="284" class="body muted">Install tools · configure the SDK · manage the PIB companion</text>
+<rect x="56" y="352" width="372" height="300" rx="8" fill="#eaf2fc" stroke="#5998dd" stroke-width="1.2"/>
+<text x="80" y="388" class="h blue">Palette SDK environment</text>
+<text x="80" y="416" class="body muted">Application + model development</text>
+<rect x="80" y="436" width="324" height="84" rx="8" fill="#ffffff" stroke="#d7d7df" stroke-width="1.2"/>
+<text x="96" y="460" class="name">Application development</text>
+<text x="96" y="484" class="body muted">C/C++ toolchain · ARM64 sysroot</text>
+<text x="96" y="508" class="body muted">Neat libraries · editor · debug tools</text>
+<rect x="80" y="536" width="324" height="96" rx="8" fill="#f0eef8" stroke="#4a4276" stroke-width="1.2"/>
+<text x="96" y="564" class="name purple">Model Compiler extension</text>
+<text x="96" y="588" class="body">Installed during SDK setup</text>
+<text x="96" y="612" class="body muted">Models → compiled model artifacts</text>
+<rect x="620" y="352" width="336" height="300" rx="8" fill="#eef8f2" stroke="#2a9c4f" stroke-width="1.2"/>
+<text x="644" y="388" class="h green">Palette Image Builder</text>
+<text x="644" y="416" class="body muted">Separate companion container</text>
+<text x="644" y="456" class="body">Build the eLxr root filesystem</text>
+<text x="644" y="488" class="body">Apply packages, overlay and hooks</text>
+<text x="644" y="520" class="body">Sign and verify the update</text>
+<path d="M644 544 H932" stroke="#d7d7df"/>
+<text x="660" y="572" class="name">Signed update: .swu</text>
+<text x="660" y="596" class="body">Disk image: .img.gz</text>
+<text x="644" y="624" class="body muted">Manifest · SBOM · checksums</text>
+<rect x="644" y="556" width="4" height="44" fill="#d26728"/>
+<rect x="1040" y="352" width="208" height="300" rx="8" fill="#f5f5f7" stroke="#d7d7df" stroke-width="1.2"/>
+<text x="1060" y="392" class="h">Modalix DevKit</text>
+<text x="1060" y="452" class="name">eLxr system</text>
+<text x="1060" y="484" class="body">Applications</text>
+<text x="1060" y="508" class="body">and model runtime</text>
+<path d="M1060 536 H1228" stroke="#d7d7df"/>
+<text x="1060" y="576" class="body">Run on ARM64</text>
+<text x="1060" y="608" class="body muted">Validate on hardware</text>
+<rect x="56" y="700" width="372" height="96" rx="8" fill="#ffffff" stroke="#d7d7df" stroke-width="1.2"/>
+<text x="80" y="732" class="name">Application source + models</text>
+<text x="80" y="764" class="body muted">Your workspace and build inputs</text>
+<rect x="620" y="700" width="336" height="96" rx="8" fill="#ffffff" stroke="#d7d7df" stroke-width="1.2"/>
+<text x="644" y="732" class="name">PIB project + signing keys</text>
+<text x="644" y="764" class="body muted">image.yaml · overlay · hooks</text>
+<rect x="440" y="448" width="168" height="44" fill="#f5f5f7"/>
+<text x="524" y="468" class="body" text-anchor="middle">Your .deb packages</text>
+<text x="524" y="488" class="body muted" text-anchor="middle">apps + model assets</text>
+<rect x="984" y="464" width="52" height="28" fill="#ffffff"/>
+<text x="1012" y="484" class="small muted" text-anchor="middle">DEPLOY</text>
+<rect x="252" y="660" width="76" height="28" fill="#f5f5f7"/>
+<text x="264" y="680" class="small muted">INPUTS</text>
+<rect x="796" y="660" width="76" height="28" fill="#f5f5f7"/>
+<text x="808" y="680" class="small muted">INPUTS</text>
+<text x="56" y="856" class="body muted">Build host: x86_64 or ARM64  ·  Target system: ARM64</text>
+<path d="M48 888 H1232" stroke="#d7d7df"/>
+<text x="48" y="920" class="body muted">The SDK environment includes setup-managed extensions. PIB runs independently of the SDK container.</text>
+</svg>

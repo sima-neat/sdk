@@ -1,0 +1,355 @@
+name: Build Palette Image Builder
+
+on:
+  # The SDK workflow calls this for every source commit so sdk/pib is present
+  # at the same commit selected by the SDK's shared latest.tag pointer.
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: palette-image-builder-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Same-repository PRs use the push run; only forks need a separate PR build.
+    # A distinct fork check name prevents skipped PR jobs masking push failures.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    name: ${{ github.event_name == 'pull_request' && 'Qualify fork' || 'Qualify' }} ${{ matrix.arch }}
+    environment: ${{ vars.VULCAN_ENV || 'production' }}
+    runs-on: [self-hosted, linux, "${{ matrix.runner_arch }}", "vulcan-${{ vars.VULCAN_ENV || 'production' }}", ubuntu, default]
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner_arch: amd64
+            platform: linux/amd64
+          - arch: aarch64
+            runner_arch: arm64
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify native Vulcan build host
+        env:
+          EXPECTED_ARCH: ${{ matrix.runner_arch }}
+        run: |
+          set -euo pipefail
+          source /etc/os-release
+          test "${ID}" = ubuntu
+          test "${VERSION_ID}" = 24.04
+          test "$(dpkg --print-architecture)" = "${EXPECTED_ARCH}"
+          docker version
+          docker info
+          df -h
+      - name: Resolve SDK-style repository and tags
+        id: image
+        run: python3 palette-image-builder/ci/image-config.py
+      - uses: docker/setup-buildx-action@v4
+      - name: Build native container
+        uses: docker/build-push-action@v7
+        with:
+          context: palette-image-builder
+          file: palette-image-builder/Dockerfile
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: palette-image-builder:ci
+          build-args: |
+            PIB_DEFAULT_IMAGE=${{ steps.image.outputs.repository }}:${{ github.sha }}
+            PIB_VERSION=${{ steps.image.outputs.version }}
+            PIB_GIT_SHA=${{ github.sha }}
+          cache-from: |
+            type=gha,scope=pib-${{ steps.image.outputs.cache_scope }}-${{ matrix.arch }}
+            type=gha,scope=pib-develop-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,scope=pib-{0}-{1},mode=max', steps.image.outputs.cache_scope, matrix.arch) || '' }}
+      - name: Check the published CLI build identity
+        env:
+          EXPECTED_VERSION: ${{ steps.image.outputs.version }}
+        run: |
+          test "$(docker run --rm --entrypoint pib palette-image-builder:ci --version)" = "${EXPECTED_VERSION}"
+      - name: Run CLI, signing, launcher, and publication-policy tests
+        run: |
+          docker run --rm --network none --entrypoint bash \
+            -v "$PWD/palette-image-builder:/source" -w /source \
+            palette-image-builder:ci -lc \
+            'tests/run-unit-tests.sh'
+      # Missing-handler registration is covered by test_emulation.py above.
+      # Never unregister the shared host's handler: other jobs may be using it.
+      - name: Restore verified Debian downloads
+        id: deb-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/pib-debs
+          key: pib-debs-v2-${{ matrix.arch }}-${{ hashFiles('palette-image-builder/RELEASE', 'palette-image-builder/CODENAME', 'palette-image-builder/deps/artifacts.json') }}-lookup
+          restore-keys: |
+            pib-debs-v2-${{ matrix.arch }}-${{ hashFiles('palette-image-builder/RELEASE', 'palette-image-builder/CODENAME', 'palette-image-builder/deps/artifacts.json') }}-
+            pib-debs-v2-${{ matrix.arch }}-
+      - name: Build, sign, verify, and inspect the checked-in example SWU
+        env:
+          PIB_IMAGE: palette-image-builder:ci
+          PIB_TEST_OUTPUT: ${{ runner.temp }}/pib-smoke
+          PIB_DEB_CACHE: ${{ runner.temp }}/pib-debs
+        run: |
+          set -o pipefail
+          palette-image-builder/tests/smoke.sh 2>&1 | tee "${RUNNER_TEMP}/pib-smoke.log"
+      - name: Identify qualified package-cache contents
+        id: deb-cache-content
+        env:
+          CACHE_DIR: ${{ runner.temp }}/pib-debs
+        run: |
+          python3 - <<'PYTHON'
+          import hashlib
+          import os
+          from pathlib import Path
+          cache = Path(os.environ['CACHE_DIR'])
+          digest = hashlib.sha256()
+          for path in sorted(cache.glob('*.deb')):
+              digest.update(path.name.encode())
+              with path.open('rb') as stream:
+                  digest.update(hashlib.file_digest(stream, 'sha256').digest())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'digest={digest.hexdigest()}\n')
+          PYTHON
+      - name: Save qualified package-cache contents
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/pib-debs
+          key: pib-debs-v2-${{ matrix.arch }}-${{ hashFiles('palette-image-builder/RELEASE', 'palette-image-builder/CODENAME', 'palette-image-builder/deps/artifacts.json') }}-${{ steps.deb-cache-content.outputs.digest }}
+      - name: Report authenticated package-cache use
+        if: always()
+        env:
+          MMDEBSTRAP_LOG: ${{ runner.temp }}/pib-smoke/workspace/configs/images/mmdebstrap.log
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          log = Path(os.environ['MMDEBSTRAP_LOG'])
+          lines = [line for line in log.read_text().splitlines() if line.startswith('pib: Debian cache ')] if log.exists() else []
+          print('\n'.join(lines) or 'No package-cache report was produced.')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('\n### Verified Debian download cache\n\n```text\n' + '\n'.join(lines) + '\n```\n')
+          PY
+      - name: Upload qualification logs and metadata
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pib-qualification-${{ matrix.arch }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/pib-smoke.log
+            ${{ runner.temp }}/pib-smoke/workspace/configs/images/mmdebstrap.log
+            ${{ runner.temp }}/pib-smoke/workspace/image.yaml
+            ${{ runner.temp }}/pib-smoke/workspace/out/*.manifest.json
+            ${{ runner.temp }}/pib-smoke/workspace/out/*.cdx.json
+            ${{ runner.temp }}/pib-smoke/workspace/out/SHA256SUMS
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push qualified architecture image
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE: ${{ steps.image.outputs.repository }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          ref="${IMAGE}:${GITHUB_SHA}-${ARCH}"
+          docker tag palette-image-builder:ci "$ref"
+          docker push "$ref"
+          mkdir -p "${RUNNER_TEMP}/pib-digests"
+          # The Vulcan containerd store can report a local RepoDigest name.
+          # Resolve the pushed registry reference instead of trusting that name.
+          digest="$(docker buildx imagetools inspect "$ref" | awk '$1 == "Digest:" { print $2 }')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf '%s@%s\n' "$IMAGE" "$digest" > "${RUNNER_TEMP}/pib-digests/${ARCH}.txt"
+      - name: Upload immutable image reference
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pib-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/pib-digests/*.txt
+          if-no-files-found: error
+
+  package-tests:
+    name: Installer on ${{ matrix.os }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install metadata tooling
+        run: python -m pip install -r palette-image-builder/deps/install-requirements.txt
+      - name: Test portable installer and sdk/pib resolution
+        run: python -m unittest discover -s palette-image-builder/package-tests -p "test_*.py"
+
+  publish:
+    name: Publish qualified multi-platform image
+    if: github.event_name != 'pull_request'
+    needs: [build, package-tests]
+    runs-on: ubuntu-24.04
+    outputs:
+      image_resource: ${{ steps.promote.outputs.image_resource }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Resolve SDK-style repository and tags
+        id: image
+        run: python3 palette-image-builder/ci/image-config.py
+      - uses: docker/setup-buildx-action@v4
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: pib-digest-*
+          path: .pib-digests
+          merge-multiple: true
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Stage and promote tested digests
+        id: promote
+        env:
+          IMAGE: ${{ steps.image.outputs.repository }}
+          STAGED: ${{ steps.image.outputs.staged }}
+          PROMOTION_TAGS: ${{ steps.image.outputs.promotion_tags }}
+        run: |
+          set -euo pipefail
+          sources=()
+          for arch in x86_64 aarch64; do
+            ref="$(cat ".pib-digests/${arch}.txt")"
+            [[ "$ref" == "${IMAGE}@sha256:"* ]]
+            sources+=("$ref")
+          done
+          docker buildx imagetools create \
+            --tag "${IMAGE}:${GITHUB_SHA}" --tag "$STAGED" "${sources[@]}"
+          docker buildx imagetools inspect "$STAGED"
+          tags=()
+          while IFS= read -r ref; do
+            [[ -z "$ref" ]] || tags+=(--tag "$ref")
+          done <<< "$PROMOTION_TAGS"
+          docker buildx imagetools create "${tags[@]}" "$STAGED"
+          # Consume all output: exiting awk early can close Buildx's pipe and
+          # fail this step under pipefail even after successful tag promotion.
+          digest="$(docker buildx imagetools inspect "$STAGED" | awk '$1 == "Digest:" { print $2 }')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "image_resource=ghcr:${IMAGE#ghcr.io/}@${digest}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Qualified Palette Image Builder images"
+            echo "Native x86_64 and ARM64 custom-SWU tests passed."
+            # shellcheck disable=SC2016
+            printf '\n```text\n%s\n%s\n```\n' "$STAGED" "$PROMOTION_TAGS"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  prepare-install-package:
+    name: Prepare sdk/pib metadata package
+    if: github.event_name != 'pull_request'
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r palette-image-builder/deps/install-requirements.txt
+      - name: Prepare installer bound to the qualified multi-platform digest
+        env:
+          IMAGE_RESOURCE: ${{ needs.publish.outputs.image_resource }}
+        run: |
+          set -euo pipefail
+          version="$GITHUB_REF_NAME"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then version="${version#v}"; fi
+          python palette-image-builder/tools/prepare_package.py \
+            --output-dir pib-install-package --image-resource "$IMAGE_RESOURCE" \
+            --version "$version" --release "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sdk-pib-install-stub
+          path: pib-install-package/
+          if-no-files-found: error
+
+  publish-install-package:
+    name: Publish sdk/pib metadata to Vulcan
+    if: github.event_name != 'pull_request'
+    needs: prepare-install-package
+    permissions:
+      contents: read
+      actions: write
+      id-token: write
+    uses: sima-neat/.github/.github/workflows/vulcan-publish-artifacts.yml@main
+    with:
+      aws_region: us-west-2
+      environment_name: ${{ vars.VULCAN_ENV || 'production' }}
+      artifact_pattern: sdk-pib-install-stub
+      artifact_folder: pib
+      artifact_glob: "**/*"
+      min_artifact_count: 2
+
+  verify-install-package:
+    name: Install sdk/pib on ${{ matrix.arch }}
+    if: github.event_name != 'pull_request'
+    needs: publish-install-package
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    env:
+      SIMA_CLI_CHECK_FOR_UPDATE: '0'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r palette-image-builder/deps/install-requirements.txt
+      - name: Configure artifact authentication
+        env:
+          SIMA_CLI_ACCESS_TOKEN_FILE: ${{ secrets.SIMA_CLI_ACCESS_TOKEN_FILE }}
+        run: |
+          set -euo pipefail
+          set +x
+          test -n "$SIMA_CLI_ACCESS_TOKEN_FILE"
+          echo "::add-mask::${SIMA_CLI_ACCESS_TOKEN_FILE}"
+          mkdir -p "$HOME/.sima-cli"
+          umask 077
+          printf '%s' "$SIMA_CLI_ACCESS_TOKEN_FILE" > "$HOME/.sima-cli/.tokens.json"
+          cp "$HOME/.sima-cli/.tokens.json" "$HOME/.sima-cli/.token.json"
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install the published subfolder package using sima-cli
+        run: |
+          set -euo pipefail
+          target="sdk/pib@${GITHUB_REF_NAME}:${GITHUB_SHA:0:12}"
+          sima-cli neat install "$target" --install-dir "$RUNNER_TEMP/pib-download"
+          "$HOME/.local/bin/pib" --version
+          mkdir -p "$RUNNER_TEMP/pib-installed-project"
+          cd "$RUNNER_TEMP/pib-installed-project"
+          "$HOME/.local/bin/pib" init project --example custom-image
+          cmp "$GITHUB_WORKSPACE/palette-image-builder/examples/custom-image/image.yaml" project/image.yaml

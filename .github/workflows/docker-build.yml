@@ -25,8 +25,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Start PIB independently of SDK configuration/build so both qualify in parallel.
+  palette-image-builder:
+    name: Palette Image Builder
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    uses: ./.github/workflows/palette-image-builder.yml
+    secrets: inherit
+
   resolve-platform-config:
     name: Resolve platform package configuration
+    # Same-repository PRs use the push run; fork PRs have no local push run.
+    # All SDK build/test/publication jobs depend on this root job.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
     outputs:
       sdk_apt_channel: ${{ steps.resolve.outputs.sdk_apt_channel }}
@@ -254,14 +264,19 @@ jobs:
           BASE_SDK_VERSION: ${{ needs.resolve-platform-config.outputs.base_sdk_version }}
 
       - name: Verify SDK terminal tools
-        if: github.event_name == 'pull_request'
         env:
           IMAGE_SUFFIX: ${{ matrix.image_suffix }}
           EXPECTED_ARCH: ${{ matrix.runner_arch }}
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
         run: |
           set -euo pipefail
+          image="sdk:ci-${IMAGE_SUFFIX}"
+          if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
+            image="${IMAGE_NAME}:${GITHUB_SHA}-${IMAGE_SUFFIX}"
+            docker pull "$image"
+          fi
           docker run --rm --network none --user nobody -e HOME=/tmp -e SHELL=/bin/bash \
-            --entrypoint /bin/bash "sdk:ci-${IMAGE_SUFFIX}" -ec '
+            --entrypoint /bin/bash "$image" -ec '
               test "$(dpkg --print-architecture)" = "$1"
               node /usr/local/bin/components-catalog.js check-claude-cli /usr/local/share/sima-sdk/components.json
               tmux -V
@@ -822,7 +837,9 @@ jobs:
   mark-vulcan-install-stub-latest:
     name: Mark SDK install stub as latest
     if: github.event_name != 'pull_request'
-    needs: publish-vulcan-install-stub
+    # Publish the shared pointer only after both SDK and PIB build/test/publish
+    # chains succeed, including installation of the published PIB metadata.
+    needs: [publish-vulcan-install-stub, palette-image-builder]
     uses: sima-neat/.github/.github/workflows/vulcan-update-latest-artifacts.yml@main
     with:
       aws_region: us-west-2
