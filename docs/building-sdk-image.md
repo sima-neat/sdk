@@ -14,6 +14,12 @@ sudo apt install qemu-user-static
 
 The normal SDK image build does not require `qemu-user-static` when the container is built for the host's native architecture and only carries an `arm64` sysroot for cross-compilation.
 
+## Palette Image Builder
+
+Custom board images are built with the separate
+[Palette Image Builder container](palette-image-builder.md). Pull its published
+image and use `pib`; it is independent of the main SDK image build below.
+
 ## Build
 
 Build the default local image:

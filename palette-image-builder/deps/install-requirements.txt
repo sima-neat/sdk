@@ -1,0 +1,2 @@
+# Metadata schema/builder used by the host installer publication and tests.
+sima-cli==2.1.23

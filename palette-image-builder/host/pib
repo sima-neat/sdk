@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Portable Docker launcher; image-building commands live inside the container."""
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+
+DEFAULT_IMAGE = "ghcr.io/sima-neat/palette-image-builder:latest"
+
+
+def docker_arguments(arguments, environment=None, directory=None, interactive=None):
+    env = os.environ if environment is None else environment
+    cwd = Path.cwd() if directory is None else Path(directory)
+    image = env.get('PIB_IMAGE') or DEFAULT_IMAGE
+    shell = arguments[:1] == ['shell']
+    command = ['bash', *arguments[1:]] if shell else ['pib', *arguments]
+    verb = arguments[0] if arguments else ''
+    args = ['run', '--rm', '-i', '--init']
+    tty = sys.stdin.isatty() and sys.stdout.isatty() if interactive is None else interactive
+    if tty:
+        args.append('-t')
+    if shell or verb in ('build', 'clean', 'doctor'):
+        args += ['--privileged', '-v', '/dev:/dev']
+    if env.get('PIB_DEB_CACHE') and (shell or verb == 'build'):
+        cache = Path(env['PIB_DEB_CACHE']).expanduser()
+        if not cache.is_absolute():
+            cache = cwd / cache
+        cache.mkdir(mode=0o700, parents=True, exist_ok=True)
+        args += ['-v', f'{cache.resolve()}:/var/cache/pib-debs',
+                 '-e', 'PIB_DEB_CACHE_DIR=/var/cache/pib-debs']
+    args += ['-v', f'{cwd.resolve()}:/workspace']
+    if hasattr(os, 'getuid'):
+        args += ['-e', f'PIB_UID={os.getuid()}', '-e', f'PIB_GID={os.getgid()}']
+    signing = verb == 'sign' or (verb == 'build' and '--sign' in arguments)
+    variables = ['PIB_CREDENTIALS'] if verb == 'build' else []
+    if signing:
+        variables += ['SWU_SIGNING_KEY', 'SWU_SIGNING_CERT']
+    for variable in variables:
+        value = env.get(variable)
+        if not value:
+            continue
+        if value.startswith('pkcs11:'):
+            args += ['-e', f'{variable}={value}']
+        else:
+            path = Path(value)
+            if not path.is_absolute():
+                path = cwd / path
+            if not path.is_file():
+                raise ValueError(f'{variable}: {value} is not a file')
+            args += ['-v', f'{path.resolve()}:/keys/{variable}:ro', '-e', f'{variable}=/keys/{variable}']
+    socket_dir = Path(env.get('PIB_PCSCD_DIR') or '/run/pcscd')
+    if not socket_dir.is_absolute():
+        socket_dir = cwd / socket_dir
+    if signing and (socket_dir / 'pcscd.comm').is_socket():
+        args += ['-v', f'{socket_dir.resolve()}:/run/pcscd:ro']
+    if env.get('PIB_CONFIGS'):
+        configs = Path(env['PIB_CONFIGS'])
+        if not configs.is_absolute():
+            configs = cwd / configs
+        configs = configs.resolve(strict=True)
+        if not configs.is_dir():
+            raise ValueError('PIB_CONFIGS must be a directory')
+        args += ['-v', f'{configs.parent}:/pib-src:ro', '-e', f'PIB_CONFIGS=/pib-src/{configs.name}']
+    return [*args, image, *command]
+
+
+def main():
+    docker = shutil.which('docker')
+    if not docker:
+        sys.exit('pib: Docker CLI is required')
+    try:
+        args = docker_arguments(sys.argv[1:])
+        if os.name == 'nt':
+            return subprocess.call([docker, *args])
+        os.execv(docker, [docker, *args])
+    except (OSError, ValueError) as error:
+        sys.exit(f'pib: {error}')
+
+
+if __name__ == '__main__':
+    sys.exit(main())
