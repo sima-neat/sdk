@@ -44,15 +44,6 @@ module.exports = {
     theme: {customCss: './src/css/custom.css'},
   }]],
   themeConfig: {
-    announcementBar: {
-      id: manifest.preview ? 'develop-preview' : 'content-verification-in-progress',
-      content: manifest.preview
-        ? '<strong>Develop preview</strong> — unreleased documentation. Use sdk/pib@develop for these instructions. <a href="https://sdk.neat.sima.ai/">Production guide</a>'
-        : '<strong>Under construction</strong> — this content is still being verified. This banner will be removed once verification is complete. Please check back later.',
-      backgroundColor: '#fff3cd',
-      textColor: '#664d03',
-      isCloseable: false,
-    },
     colorMode: {defaultMode: 'light', respectPrefersColorScheme: true},
     navbar: {
       title: "Systems Builder Guide",

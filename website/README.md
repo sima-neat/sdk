@@ -44,7 +44,7 @@ npm run serve -- --host 127.0.0.1 --port 3040 --no-open
 # Open http://127.0.0.1:3040/staging-preview/
 ```
 
-Preview pages carry an unreleased banner and noindex metadata. The GitHub
+Preview pages carry noindex metadata. The GitHub
 Pages hostname is `sdk.neat.sima.ai`; building this site does not configure
 GitHub Pages or DNS.
 
