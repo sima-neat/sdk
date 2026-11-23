@@ -60,17 +60,34 @@ EOF
     # the sysroot stays downloadable.
     snapshot_file=/usr/local/share/sima-sdk/debian-snapshot
     if [[ ! -s "${snapshot_file}" ]]; then
-      now="$(date -u +%Y%m%dT%H%M%SZ)"
       mkdir -p "$(dirname "${snapshot_file}")"
       for archive in debian debian-security; do
+        suites="trixie trixie-updates"
+        [[ "${archive}" == debian ]] || suites="trixie-security"
+        at="$(date -u +%Y%m%dT%H%M%SZ)"
+        snapshot=""
         # The archive redirects any time to the snapshot that was current then.
-        location="$(curl -fsS --retry 3 -o /dev/null -w '%{redirect_url}' \
-          "https://snapshot.debian.org/archive/${archive}/${now}/")"
-        if [[ ! "${location}" =~ /archive/${archive}/([0-9]{8}T[0-9]{6}Z)/$ ]]; then
-          echo "Cannot resolve the current ${archive} snapshot: ${location:-no redirect}" >&2
+        # It can list a new snapshot before it serves that snapshot's files, so
+        # step back until one serves the Release file of every suite used here.
+        for _ in {1..12}; do
+          location="$(curl -fsS --retry 3 -o /dev/null -w '%{redirect_url}' \
+            "https://snapshot.debian.org/archive/${archive}/${at}/")"
+          [[ "${location}" =~ /archive/${archive}/([0-9]{8}T[0-9]{6}Z)/$ ]] || break
+          at="${BASH_REMATCH[1]}"
+          snapshot="${at}"
+          for suite in ${suites}; do
+            curl -fsSL -o /dev/null \
+              "https://snapshot.debian.org/archive/${archive}/${at}/dists/${suite}/InRelease" || snapshot=""
+          done
+          [[ -z "${snapshot}" ]] || break
+          at="$(date -u -d "${at:0:4}-${at:4:2}-${at:6:2} ${at:9:2}:${at:11:2}:${at:13:2} UTC 1 second ago" \
+            +%Y%m%dT%H%M%SZ)"
+        done
+        if [[ -z "${snapshot}" ]]; then
+          echo "Cannot resolve a ${archive} snapshot that serves its Release files" >&2
           exit 1
         fi
-        printf '%s=%s\n' "${archive}" "${BASH_REMATCH[1]}"
+        printf '%s=%s\n' "${archive}" "${snapshot}"
       done > "${snapshot_file}.tmp"
       mv "${snapshot_file}.tmp" "${snapshot_file}"
     fi

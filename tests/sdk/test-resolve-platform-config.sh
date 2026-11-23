@@ -179,12 +179,17 @@ cat > "${tmpdir}/bin/gpg" <<'SH'
 cat
 SH
 # The snapshot archive redirects a dated directory to the snapshot current then.
+# The newest debian-security snapshot is listed before its files are served, as
+# the real archive does, so the snapshot before it must be the one recorded.
 cat > "${tmpdir}/bin/curl" <<SH
 #!/usr/bin/env bash
 echo call >> "${tmpdir}/curl-calls"
 case "\${@: -1}" in
+  */20261117T151500Z/dists/*) exit 22 ;;
+  */dists/*) ;;
   */archive/debian/*) printf 'https://snapshot.debian.org/archive/debian/20261117T143434Z/' ;;
-  *) printf 'https://snapshot.debian.org/archive/debian-security/20261117T150737Z/' ;;
+  */20261117T151459Z/) printf 'https://snapshot.debian.org/archive/debian-security/20261117T150737Z/' ;;
+  *) printf 'https://snapshot.debian.org/archive/debian-security/20261117T151500Z/' ;;
 esac
 SH
 chmod +x "${tmpdir}/bin/wget" "${tmpdir}/bin/gpg" "${tmpdir}/bin/curl"
@@ -204,7 +209,7 @@ for channel in release pre-release daily release; do
     fi
     # A release sysroot is frozen, so its Debian sources are frozen with it. The
     # second release pass reuses the recorded snapshots and resolves nothing.
-    [[ "$(wc -l < "${tmpdir}/curl-calls")" == 2 ]] || fail "release 3.0 resolved the Debian snapshots again"
+    [[ "$(wc -l < "${tmpdir}/curl-calls")" == 7 ]] || fail "release 3.0 resolved the Debian snapshots again"
     diff -u - "${apt_root}/sources.list.d/debian-target.list" <<EOF || fail "release 3.0 does not read the recorded Debian snapshots"
 deb [${debian_options}] https://snapshot.debian.org/archive/debian/20261117T143434Z trixie main
 deb [${debian_options}] https://snapshot.debian.org/archive/debian/20261117T143434Z trixie-updates main
