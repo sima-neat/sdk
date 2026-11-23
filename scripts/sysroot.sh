@@ -470,6 +470,10 @@ Pin: origin "deb.debian.org"
 Pin-Priority: 990
 
 Package: *
+Pin: origin "snapshot.debian.org"
+Pin-Priority: 990
+
+Package: *
 Pin: release o=Ubuntu
 Pin-Priority: 100
 EOF
@@ -879,6 +883,10 @@ Pin-Priority: ${target_priority}
 
 Package: *
 Pin: origin "security.debian.org"
+Pin-Priority: ${target_priority}
+
+Package: *
+Pin: origin "snapshot.debian.org"
 Pin-Priority: ${target_priority}
 
 Package: *

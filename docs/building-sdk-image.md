@@ -138,6 +138,24 @@ package version is `3.0.1`, and its base-files package records
 `3.0.1_master_B2796` in `/etc/packageinfo`. Target dependencies continue to come
 from Debian 13 Trixie.
 
+A release image reads Debian from `snapshot.debian.org`, not from the live
+archive. The live archive serves only the newest version of each package, so a
+later Debian update would make the versions in the image's sysroot impossible to
+download again. The first `configure-apt-repos.sh` run of an image build resolves
+the current snapshot of the `debian` and `debian-security` archives and records
+both in `/usr/local/share/sima-sdk/debian-snapshot`:
+
+```text
+debian=20261117T143434Z
+debian-security=20261117T150737Z
+```
+
+The sysroot is built from those snapshots, and every later run in that image
+reuses the record. The exact versions listed in
+`var/lib/sima-sdk/sysroot-packages.tsv` therefore stay available to `apt-get`
+for as long as the image is used. The `daily` and `pre-release` channels keep
+following the live archive.
+
 CI uses the official release by default on develop, other branches, and tags.
 The manifest's `sdk-version` defines the SDK identity for branch images, including
 `develop-latest`. It is independent of `platform-version`, which selects the

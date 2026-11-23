@@ -178,9 +178,24 @@ cat > "${tmpdir}/bin/gpg" <<'SH'
 #!/usr/bin/env bash
 cat
 SH
-chmod +x "${tmpdir}/bin/wget" "${tmpdir}/bin/gpg"
-sed "s|/etc/apt|${apt_root}|g" "${apt_config_script}" > "${tmpdir}/configure-apt-repos.sh"
-for channel in release pre-release daily; do
+# The snapshot archive answers a dated directory with a redirect to the snapshot
+# that was current then. Each archive has its own snapshot times.
+cat > "${tmpdir}/bin/curl" <<SH
+#!/usr/bin/env bash
+echo call >> "${tmpdir}/curl-calls"
+case "\${@: -1}" in
+  https://snapshot.debian.org/archive/debian/*) printf '%s' 'https://snapshot.debian.org/archive/debian/20261117T143434Z/' ;;
+  https://snapshot.debian.org/archive/debian-security/*) printf '%s' 'https://snapshot.debian.org/archive/debian-security/20261117T150737Z/' ;;
+  *) exit 22 ;;
+esac
+SH
+chmod +x "${tmpdir}/bin/wget" "${tmpdir}/bin/gpg" "${tmpdir}/bin/curl"
+snapshot_file="${tmpdir}/debian-snapshot"
+sed -e "s|/etc/apt|${apt_root}|g" \
+    -e "s|/usr/local/share/sima-sdk/debian-snapshot|${snapshot_file}|g" \
+    "${apt_config_script}" > "${tmpdir}/configure-apt-repos.sh"
+debian_options='arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg'
+for channel in release pre-release daily release; do
   PATH="${tmpdir}/bin:${PATH}" SDK_APT_CHANNEL="${channel}" bash "${tmpdir}/configure-apt-repos.sh" 3.0.0 "${patterns_file}"
   grep -Fq 'trixie main' "${apt_root}/sources.list.d/debian-target.list" || fail "${channel} 3.0 did not select Trixie"
   grep -Fq ' agate non-free' "${apt_root}/sources.list.d/elxr.list" || fail "${channel} 3.0 did not select Agate"
@@ -190,11 +205,39 @@ for channel in release pre-release daily; do
     if grep -Fq trusted=yes "${apt_root}/sources.list.d/elxr.list"; then
       fail "official source bypasses signature verification"
     fi
+    # A release sysroot is frozen, so its Debian sources must be frozen with it.
+    # The second release pass must reuse the recorded snapshots, not resolve new ones.
+    [[ "$(cat "${snapshot_file}")" == $'debian=20261117T143434Z\ndebian-security=20261117T150737Z' ]] || \
+      fail "release 3.0 did not record the resolved Debian snapshots"
+    [[ "$(wc -l < "${tmpdir}/curl-calls")" == 2 ]] || fail "release 3.0 resolved the Debian snapshots again"
+    diff -u - "${apt_root}/sources.list.d/debian-target.list" <<EOF || fail "release 3.0 does not read the recorded Debian snapshots"
+deb [${debian_options} check-valid-until=no] https://snapshot.debian.org/archive/debian/20261117T143434Z trixie main
+deb [${debian_options} check-valid-until=no] https://snapshot.debian.org/archive/debian/20261117T143434Z trixie-updates main
+deb [${debian_options} check-valid-until=no] https://snapshot.debian.org/archive/debian-security/20261117T150737Z trixie-security main
+EOF
+  else
+    diff -u - "${apt_root}/sources.list.d/debian-target.list" <<EOF || fail "${channel} 3.0 does not follow the live Debian archive"
+deb [${debian_options}] http://deb.debian.org/debian trixie main
+deb [${debian_options}] http://deb.debian.org/debian trixie-updates main
+deb [${debian_options}] http://deb.debian.org/debian-security trixie-security main
+EOF
   fi
+  for origin in deb.debian.org snapshot.debian.org; do
+    grep -A1 -F "Pin: origin \"${origin}\"" "${apt_root}/preferences.d/stable.pref" | \
+      grep -Fq 'Pin-Priority: 100' || fail "${channel} 3.0 does not keep ${origin} below the SDK host packages"
+  done
   if grep -Rq bookworm "${apt_root}"; then
     fail "${channel} 3.0 configured a Bookworm source"
   fi
 done
+
+# A snapshot that cannot be resolved must stop the build, not leave live sources.
+rm -f "${snapshot_file}"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${tmpdir}/bin/curl"
+if PATH="${tmpdir}/bin:${PATH}" SDK_APT_CHANNEL=release bash "${tmpdir}/configure-apt-repos.sh" 3.0.0 "${patterns_file}" 2>/dev/null; then
+  fail "release 3.0 accepted an unresolved Debian snapshot"
+fi
+[[ ! -e "${snapshot_file}" ]] || fail "an unresolved Debian snapshot was recorded"
 
 for apt_script in \
   "${apt_config_script}" \

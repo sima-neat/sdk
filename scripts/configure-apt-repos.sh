@@ -50,10 +50,46 @@ if [[ "${sdk_apt_channel}" == daily || "${base_sdk_version}" == 3.* ]]; then
   cat > /etc/apt/sources.list.d/elxr.list <<EOF
 deb [${platform_source_options}] ${sdk_platform_repository} agate non-free
 EOF
-  cat > /etc/apt/sources.list.d/debian-target.list <<'EOF'
-deb [arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian trixie main
-deb [arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian trixie-updates main
-deb [arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian-security trixie-security main
+  debian_source_options="arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg"
+  debian_archive="http://deb.debian.org/debian"
+  debian_security_archive="http://deb.debian.org/debian-security"
+  if [[ "${sdk_apt_channel}" == release ]]; then
+    # A release sysroot keeps the Debian versions it was built from, but the
+    # live archive serves only the newest version of each package. Read the
+    # archive as it was when this SDK first resolved it, so every version in
+    # the sysroot stays downloadable.
+    snapshot_file=/usr/local/share/sima-sdk/debian-snapshot
+    if [[ ! -s "${snapshot_file}" ]]; then
+      now="$(date -u +%Y%m%dT%H%M%SZ)"
+      mkdir -p "$(dirname "${snapshot_file}")"
+      for archive in debian debian-security; do
+        # The archive redirects any time to the snapshot that was current then.
+        location="$(curl -fsS --retry 3 -o /dev/null -w '%{redirect_url}' \
+          "https://snapshot.debian.org/archive/${archive}/${now}/")"
+        if [[ ! "${location}" =~ /archive/${archive}/([0-9]{8}T[0-9]{6}Z)/$ ]]; then
+          echo "Cannot resolve the current ${archive} snapshot: ${location:-no redirect}" >&2
+          exit 1
+        fi
+        printf '%s=%s\n' "${archive}" "${BASH_REMATCH[1]}"
+      done > "${snapshot_file}.tmp"
+      mv "${snapshot_file}.tmp" "${snapshot_file}"
+    fi
+    debian_snapshot="$(sed -n 's/^debian=//p' "${snapshot_file}")"
+    debian_security_snapshot="$(sed -n 's/^debian-security=//p' "${snapshot_file}")"
+    if [[ ! "${debian_snapshot}" =~ ^[0-9]{8}T[0-9]{6}Z$ || \
+          ! "${debian_security_snapshot}" =~ ^[0-9]{8}T[0-9]{6}Z$ ]]; then
+      echo "Invalid Debian snapshot record: ${snapshot_file}" >&2
+      exit 1
+    fi
+    # Snapshot Release files are past their Valid-Until date by design.
+    debian_source_options+=" check-valid-until=no"
+    debian_archive="https://snapshot.debian.org/archive/debian/${debian_snapshot}"
+    debian_security_archive="https://snapshot.debian.org/archive/debian-security/${debian_security_snapshot}"
+  fi
+  cat > /etc/apt/sources.list.d/debian-target.list <<EOF
+deb [${debian_source_options}] ${debian_archive} trixie main
+deb [${debian_source_options}] ${debian_archive} trixie-updates main
+deb [${debian_source_options}] ${debian_security_archive} trixie-security main
 EOF
   cat > /etc/apt/preferences.d/stable.pref <<EOF
 Package: *
@@ -62,6 +98,10 @@ Pin-Priority: 100
 
 Package: *
 Pin: origin "deb.debian.org"
+Pin-Priority: 100
+
+Package: *
+Pin: origin "snapshot.debian.org"
 Pin-Priority: 100
 EOF
   # Agate components have independent versions. Only Palette equals the

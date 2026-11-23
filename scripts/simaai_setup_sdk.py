@@ -548,7 +548,7 @@ def daily_candidate(candidates, platform_version, requested_version="", relation
                 revision = re.search(r"-([0-9]+)$", candidate.version)
             if revision and int(revision[1]) <= build:
                 daily.append(candidate)
-        elif any(origin.site in {"deb.debian.org", "security.debian.org"}
+        elif any(origin.site in {"deb.debian.org", "security.debian.org", "snapshot.debian.org"}
                  and origin.codename in {"trixie", "trixie-updates", "trixie-security"}
                  for origin in origins):
             debian.append(candidate)
