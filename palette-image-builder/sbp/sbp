@@ -1,11 +1,10 @@
 #!/bin/sh
 # sbp from a tree with pkgbuild/ and configs/packages/: PIB_SBP_SRC (a mounted checkout of
-# swsoc-simaai-elxr-doc or swsoc-elxr), else /usr/share/pib, where the image will keep them once
-# deps/artifacts.json pins a swsoc-simaai-elxr-doc commit that has them (the pinned one's configs/
-# holds only images/). The tool and
+# swsoc-simaai-elxr-doc or swsoc-elxr), else /usr/share/pib/sbp-src, the image's own, fetched from
+# the swsoc-simaai-elxr-doc commit deps/artifacts.json pins when that commit has them. The tool and
 # the package configs always come from the same tree, as in SiMa's CI (swsoc-elxr
 # scripts/build_scripts/elxrPackage.sh uses the checkout's own pkgbuild/).
-src="${PIB_SBP_SRC:-/usr/share/pib}"
+src="${PIB_SBP_SRC:-/usr/share/pib/sbp-src}"
 if [ ! -f "$src/pkgbuild/sbp/cli.py" ]; then
     echo "sbp: no pkgbuild/sbp at $src; set PIB_SBP_SRC to a swsoc-simaai-elxr-doc or swsoc-elxr checkout (the pib launcher mounts it)" >&2
     exit 2

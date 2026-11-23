@@ -26,7 +26,10 @@ from pib import cli
 
 MARKER = Path("/etc/pib-sbp")                     # made by the pib-sbp image only
 SOURCES = Path("/usr/share/pib/sbp/sources.json")  # default sources (sbp/sources.json)
-BAKED_SRC = Path("/usr/share/pib")                 # pkgbuild/ and configs/ once the image carries them
+# sbp and its package configs from the swsoc-simaai-elxr-doc commit deps/artifacts.json pins, when it
+# carries them (deps/fetch-artifacts.py --sbp, with the files below and a SOURCE line naming it)
+BAKED_SRC = Path("/usr/share/pib/sbp-src")
+SBP_FILES = ("pkgbuild/sbp/cli.py", "configs/packages/packages.yaml")
 ARM64_LOADER = "/lib/ld-linux-aarch64.so.1"
 UAPI = ("usr/include/linux/media/simaai/", "usr/include/linux/simaai/")
 COMMIT = re.compile(r"[0-9a-f]{40}")
@@ -71,8 +74,9 @@ PACKAGES   comma-separated: linux (the kernel), smifb, lttng (kernel-module pack
            leave custom-debs/, so the image falls back to SiMa.ai's
 
 Environment (set on the host; the launcher passes them):
-  PIB_SBP_SRC          a checkout with pkgbuild/ (sbp) and configs/packages/:
-                       swsoc-simaai-elxr-doc once they are published there, or swsoc-elxr
+  PIB_SBP_SRC          a checkout of swsoc-simaai-elxr-doc or swsoc-elxr with pkgbuild/ (sbp)
+                       and configs/packages/, used instead of the image's own while it is set;
+                       needed while the image carries none
   PIB_SBP_KERNEL_SRC   your kernel: a git repository on the host (a checkout or a bare one),
                        for a private repository or commits not pushed anywhere (the container
                        gets no credentials). Only its git directory is mounted, read-only; it
@@ -164,16 +168,33 @@ def check_url(what, url):
                 "repository, clone it on the host and set PIB_SBP_KERNEL_SRC to the clone")
 
 
+def baked():
+    """Where this image's own sbp and package configs come from (BAKED_SRC/SOURCE: the repository
+    and commit), or None when the image carries none."""
+    if not all((BAKED_SRC / f).is_file() for f in SBP_FILES):
+        return None
+    source = (BAKED_SRC / "SOURCE").read_text().split() if (BAKED_SRC / "SOURCE").is_file() else []
+    return f"{source[0]} @ {source[1]}" if len(source) == 2 else str(BAKED_SRC)
+
+
 def source_tree():
-    """The tree with sbp and configs/packages: PIB_SBP_SRC, else the image's own (BAKED_SRC)."""
-    src = Path(os.environ.get("PIB_SBP_SRC") or BAKED_SRC)
-    for need in ("pkgbuild/sbp/cli.py", "configs/packages/packages.yaml"):
-        if not (src / need).is_file():
-            hint = ("" if os.environ.get("PIB_SBP_SRC") else
-                    "; this image does not carry sbp yet: set PIB_SBP_SRC to a checkout with "
-                    "pkgbuild/ and configs/packages/ (swsoc-simaai-elxr-doc or swsoc-elxr)")
-            cli.die(f"{src}/{need} not found{hint}")
-    return src
+    """The tree with sbp and configs/packages, and what to call it: the checkout PIB_SBP_SRC names
+    when it is set, else this image's own (BAKED_SRC), which the pib-sbp image carries when the
+    swsoc-simaai-elxr-doc commit it was built from has them."""
+    named, own = os.environ.get("PIB_SBP_SRC"), baked()
+    if named:
+        named = os.path.abspath(named)  # sbp itself runs in the volume's tree, not here
+        missing = [f for f in SBP_FILES if not (Path(named) / f).is_file()]
+        if missing:
+            cli.die(f"PIB_SBP_SRC: {named}/{missing[0]} not found: PIB_SBP_SRC must be a checkout of "
+                    "swsoc-simaai-elxr-doc or swsoc-elxr that carries sbp and its package configs"
+                    + (f", or unset it to use this image's own ({own})" if own else ""))
+        return Path(named), f"PIB_SBP_SRC ({named})" + (", not this image's own" if own else "")
+    if not own:
+        cli.die("this image does not carry sbp yet: the swsoc-simaai-elxr-doc commit it was built from "
+                "has no pkgbuild/ and configs/packages/. Set PIB_SBP_SRC to a checkout with both "
+                "(swsoc-simaai-elxr-doc or swsoc-elxr)")
+    return BAKED_SRC, f"this image's, from {own}"
 
 
 def config_names(target):
@@ -858,12 +879,13 @@ def cmd_sbp(argv):
     if a.cmd == "package" and cfg["base"] == "securepalette":
         cli.die("securepalette images check the kernel FIT against SiMa.ai's U-Boot key, which a "
                 "kernel built here is not signed with; use minimal or palette")
-    src = source_tree()
+    src, src_name = source_tree()
     tree, sources = prepare_tree(src, target)
     # sbp gets the environment without pib's own kernel settings: they are in the kernel's config.
     env = {k: v for k, v in os.environ.items() if not k.startswith("PIB_SBP_KERNEL_")}
     env["PIB_SBP_SRC"] = str(src)
     if a.cmd == "list":
+        print(f"pib: sbp and its package configs: {src_name}")
         run_sbp(tree, env, ["list", *a.rest])
         return
     names = config_names(target)
@@ -875,7 +897,7 @@ def cmd_sbp(argv):
             print(f"pib: {cfg['base']} images carry the kernel modules smifb and lttng-modules: "
                   "they follow this kernel (--no-modules builds the kernel alone)")
     modules = [m for m in MODULES if m in picked]
-    print(f"pib: sbp and its package configs: {src}")
+    print(f"pib: sbp and its package configs: {src_name}")
     commit = None
     if "linux" in picked:
         branch, commit, where, clone_from = resolve_kernel(a, tree, sources, names, target)

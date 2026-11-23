@@ -188,6 +188,76 @@ class ArtifactDownloads(unittest.TestCase):
             self.assertIn('/' + lock['upstream']['commit'] + '/', artifact['url'])
             self.assertRegex(artifact['sha256'], r'^[0-9a-f]{64}$')
 
+    def test_sbp_comes_from_the_pinned_commit_when_it_carries_it(self):
+        """fetch_sbp, the work of deps/fetch-artifacts.py --sbp: from a commit with sbp and its package
+        configs, just those two (and a SOURCE line naming the commit); from one with neither,
+        nothing; either one alone fails."""
+        module_spec = importlib.util.spec_from_file_location('fetch_artifacts', ROOT / 'deps/fetch-artifacts.py')
+        downloads = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(downloads)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / 'swsoc-simaai-elxr-doc'
+            def git(*args):
+                return subprocess.run(['git', '-C', str(repo), *args], check=True, capture_output=True,
+                                      text=True).stdout.strip()
+            def commit(files):
+                for rel, text in files.items():
+                    (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+                    (repo / rel).write_text(text)
+                git('add', '-A')
+                git('-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'x')
+                return git('rev-parse', 'HEAD')
+            repo.mkdir()
+            git('init', '-q')
+            git('config', 'uploadpack.allowFilter', 'true')  # the fetch is blob-filtered, as from GitHub
+            board = commit({'RELEASE': '3.0.0\n', 'configs/images/image-palette-modalix.yaml': 'x\n',
+                            'files/f': 'f\n'})
+            half = commit({'pkgbuild/sbp/cli.py': '', 'pkgbuild/README.md': 'sbp\n'})
+            whole = commit({'configs/packages/packages.yaml': '', 'configs/packages/kernel/linux.yaml': 'k\n'})
+            git('rm', '-r', '-q', 'pkgbuild')
+            alone = commit({})  # the package configs without sbp
+            pin = lambda c: {'repository': repo.as_uri(), 'commit': c, 'paths': ['configs']}  # noqa: E731
+            # only the https check is skipped: the rest is the real sparse fetch of one commit
+            with patch.object(downloads, 'pinned', lambda s: (s['repository'], s['commit'])):
+                self.assertFalse(downloads.fetch_sbp(pin(board), root / 'none'))
+                self.assertFalse((root / 'none').exists())
+                with self.assertRaisesRegex(ValueError, 'carries only part of sbp: it has no configs/packages/packages.yaml'):
+                    downloads.fetch_sbp(pin(half), root / 'half')
+                self.assertFalse((root / 'half').exists())
+                with self.assertRaisesRegex(ValueError, 'carries only part of sbp: it has no pkgbuild/sbp/cli.py$'):
+                    downloads.fetch_sbp(pin(alone), root / 'alone')
+                self.assertFalse((root / 'alone').exists())
+                self.assertTrue(downloads.fetch_sbp(pin(whole), root / 'sbp-src'))
+                downloads.fetch_source(pin(whole), root / 'board')
+            tree = root / 'sbp-src'
+            self.assertEqual(sorted(str(f.relative_to(tree)) for f in tree.rglob('*') if f.is_file()),
+                             ['SOURCE', 'configs/packages/kernel/linux.yaml', 'configs/packages/packages.yaml',
+                              'pkgbuild/README.md', 'pkgbuild/sbp/cli.py'])
+            self.assertEqual((tree / 'SOURCE').read_text(), f'{repo.as_uri()} {whole}\n')
+            # the board inputs' configs/ holds configs/packages too: the Dockerfile leaves it out
+            self.assertTrue((root / 'board/configs/packages/packages.yaml').is_file())
+            for bad in ({'repository': 'http://example.invalid/x.git', 'commit': whole},
+                        {'repository': 'https://example.invalid/x.git', 'commit': whole[:12]}):
+                with self.assertRaisesRegex(ValueError, 'HTTPS repository and a full commit SHA'):
+                    downloads.fetch_sbp(bad, root / 'bad')
+
+    def test_fetch_artifacts_takes_one_mode_at_a_time(self):
+        """deps/fetch-artifacts.py takes --sbp DIR alone, or --destination, --release and --codename
+        together: a mix, an empty --sbp or a missing option stops before anything is fetched."""
+        for args, error in (
+                (['--sbp', '/nonexistent/sbp', '--release', '3.0.0'], '--sbp takes a directory and no other option'),
+                (['--sbp', ''], '--sbp takes a directory and no other option'),
+                (['--sbp', '', '--destination', '/nonexistent/d', '--release', '3.0.0', '--codename', 'agate'],
+                 '--sbp takes a directory and no other option'),
+                (['--destination', '/nonexistent/d', '--release', '3.0.0'], 'required: --codename (or --sbp DIR alone)'),
+                ([], 'required: --destination, --release, --codename (or --sbp DIR alone)')):
+            r = subprocess.run([sys.executable, str(ROOT / 'deps/fetch-artifacts.py'), *args],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 2, (args, r.stderr))
+            self.assertIn(error, r.stderr, args)
+            self.assertEqual(r.stdout, '', 'nothing was fetched')
+
     def test_no_wheels_or_binary_archives_in_builder_sources(self):
         self.assertEqual(list(ROOT.rglob('*.whl')), [])
         self.assertEqual(list(ROOT.rglob('*.tar.gz')), [])

@@ -85,10 +85,12 @@ also rebuilds, whenever the kernel changes, the out-of-tree kernel-module
 packages palette images carry (`smifb`, `lttng-modules`); with `--no-modules` it
 builds the kernel alone and removes module packages it built for an older kernel
 from `custom-debs/`, so the image falls back to SiMa.ai's. A kernel or module is
-rebuilt from scratch whenever its source, its sbp recipe (the checkout's config
-directory) or, for the kernel, the FIT key changes. securepalette is refused:
-its images check the kernel FIT against SiMa.ai's U-Boot key. `pib sbp --help`
-lists the options.
+rebuilt from scratch whenever its source, its sbp recipe (its directory under
+`configs/packages/`) or, for the kernel, the FIT key changes. A different sbp
+alone (a newer image, or `PIB_SBP_SRC`) rebuilds nothing: `-t clean+` rebuilds
+the kernel with it, and the module packages follow the new kernel.
+securepalette is refused: its images check the kernel FIT against SiMa.ai's
+U-Boot key. `pib sbp --help` lists the options.
 
 The kernel source is yours to choose; sbp builds it with SiMa.ai's recipe
 (`configs/packages/kernel/`: `simaai_modalix_defconfig`, the Debian packages and
@@ -138,14 +140,23 @@ read-only except `custom-debs/`, and of `keys/` only the kernel FIT key pair
 (`keys/fit-signing.{key,crt}`, made once by `pib keys fit`). sbp's work tree,
 local repo and ccache live in the Docker volume `pib-sbp-<uid>` (`PIB_SBP_VOLUME`).
 
-sbp and its package configs (`pkgbuild/` and `configs/packages/`) are to come
-with the image configs from swsoc-simaai-elxr-doc (`deps/artifacts.json`), whose
-pinned commit does not carry them yet. Until then, `PIB_SBP_SRC` names a
-checkout that does (swsoc-simaai-elxr-doc once they are published there, or
-SiMa.ai's swsoc-elxr), of which only those two directories are mounted, read-only.
+sbp and its package configs (`pkgbuild/` and `configs/packages/`) come from the
+same swsoc-simaai-elxr-doc commit as the image configs (`deps/artifacts.json`).
+When that commit carries both, the `pib-sbp` image fetches them into
+`/usr/share/pib/sbp-src` and `pib sbp` uses them, printing the commit; a commit
+that carries only one of the two fails the `pib-sbp` image build. The PIB image
+never carries them: its configs leave `configs/packages/` out, so `pib init`
+copies none from them (configs given with `--configs`, `PIB_CONFIGS` or a
+`./configs` are copied whole). `PIB_SBP_SRC` names a checkout of
+swsoc-simaai-elxr-doc or SiMa.ai's swsoc-elxr to use instead of the image's
+while it is set, for example to try a newer sbp without rebuilding the image;
+only those two directories are mounted, read-only. Unset it once the image
+carries sbp, or it keeps replacing the image's. The pinned commit carries
+neither yet, so for now `pib sbp` stops and asks for `PIB_SBP_SRC`.
 
 pib sbp takes the kernel's repository from `sbp/sources.json`, `--kernel-url` or
-`PIB_SBP_KERNEL_SRC`, never from the URL in `PIB_SBP_SRC`'s own config.
+`PIB_SBP_KERNEL_SRC`, never from the URL in the sbp tree's own kernel config
+(the image's or `PIB_SBP_SRC`'s).
 `PIB_SBP_GIT_MIRRORS` serves SiMa.ai's private Bitbucket repositories, for a
 kernel named with `--kernel-url https://bitbucket.org/sima-ai/<name>.git`: a
 directory of bare mirrors (`<name>.git`) made on the host, mounted read-only, into
@@ -158,7 +169,7 @@ anything: a branch and its tip are read from the mirror, so refresh it first
 docker build -t palette-image-builder:local palette-image-builder
 docker build --target pib-sbp -t palette-image-builder:local-sbp palette-image-builder
 export PIB_IMAGE=palette-image-builder:local          # pib sbp uses ...:local-sbp
-export PIB_SBP_SRC=~/swsoc-simaai-elxr-doc            # a checkout with pkgbuild/ and configs/packages/
+export PIB_SBP_SRC=~/swsoc-simaai-elxr-doc            # while the image has no sbp: a checkout with it
 pib init --flavor palette my-image && cd my-image && pib keys init && pib keys fit
 pib doctor                    # on amd64, once per host boot: arm64 tools for the module builds
 pib sbp package -p linux      # SiMa.ai's kernel: master of github.com/SiMa-ai/simaai-linux
@@ -238,7 +249,7 @@ by this port.
 ## Updating platform inputs
 
 Update `RELEASE`, `CODENAME`, the Pasha artifact URL/hash in `deps/artifacts.json`,
-the upstream board-input commit and the `pib sbp` sources in `sbp/sources.json` (the kernel's branch, the lttng-modules pin) together. Update the pinned eLxr OCI index and elxr-config
+the upstream board-input commit and the `pib sbp` sources in `sbp/sources.json` (the kernel's branch, the lttng-modules pin) together. The upstream commit also gives the `pib-sbp` image its sbp and package configs, when it carries `pkgbuild/` and `configs/packages/`: `deps/fetch-artifacts.py --sbp` fetches those two (`SBP_PARTS`) for that image only, so they are not in `upstream.paths`, the board inputs both images take. When the new commit is the first to carry them, also update the text that says the image has no sbp yet: this README (Building the kernel, CI and GHCR naming), `UPSTREAM`, and `docs/palette-image-builder-reference.md` with its four translations and `website/translations/source-hashes.json`. Update the pinned eLxr OCI index and elxr-config
 artifact as needed. Keep standard Python versions and wheel hashes in
 `deps/debsbom-requirements.txt`; record source commits in `UPSTREAM`. Update the `upstream` commit in the same
 lock for board templates, the public APT key, nginx configuration and helper

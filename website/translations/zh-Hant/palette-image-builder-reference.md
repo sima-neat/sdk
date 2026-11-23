@@ -38,7 +38,7 @@ x86 映像已內附模擬器。特權 PIB 啟動時，只在缺少可用 ARM64 �
 | `PIB_DEB_CACHE` | `pib build`, `pib shell` | 已驗證 Debian 下載檔的主機快取。每次建置都依已認證中繼資料檢查雜湊與大小。 |
 | `PIB_SBP_KERNEL_URL`, `PIB_SBP_KERNEL_REF` | `pib sbp` | 每次執行時要建置的核心儲存庫（不含認證資訊的 https URL）與分支或提交。`--kernel-url` 與 `--kernel-ref` 可針對單次執行覆寫這兩個變數。 |
 | `PIB_SBP_KERNEL_SRC` | `pib sbp` | 主機上存放您核心的 Git 儲存庫，可為簽出目錄或 bare 儲存庫；以唯讀方式掛載。適用於私人儲存庫，或尚未推送到任何地方的提交。 |
-| `PIB_SBP_SRC` | `pib sbp` | 包含 sbp（`pkgbuild/`）及其套件設定（`configs/packages/`）的簽出目錄，在映像內含這些內容之前為必要設定。只會以唯讀方式掛載這兩個目錄。 |
+| `PIB_SBP_SRC` | `pib sbp` | 包含 sbp（`pkgbuild/`）及其套件設定（`configs/packages/`）的簽出目錄，用來取代套件建置器映像內附的版本；在映像內含這些內容之前為必要設定。只會以唯讀方式掛載這兩個目錄。 |
 | `PIB_SBP_IMAGE` | `pib sbp` | 覆寫套件建置器映像。預設為與 `PIB_IMAGE` 一同發佈的映像（相同標籤加上 `-sbp`），或安裝時繫結的映像。 |
 | `PIB_SBP_JOBS`, `PIB_SBP_CCACHE_SIZE`, `PIB_SBP_VOLUME` | `pib sbp` | 平行編譯工作數；編譯器快取大小（預設 `5G`）；存放 sbp 工作目錄、套件庫與快取的 Docker 磁碟區（預設 `pib-sbp-<uid>`）。 |
 

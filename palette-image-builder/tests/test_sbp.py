@@ -76,6 +76,15 @@ SOURCES = {"release": "3.0.0", "codename": "agate", "packages": {
                               "commit-id": "5f23d6ea07a1b965c9f805c1dd5aab0a213b455b"}}}
 LOCAL_URL = 'https://pib-sbp.invalid/PIB_SBP_KERNEL_SRC.git'  # sbp/setup.sh's PIB_SBP_KERNEL_SRC_URL
 
+
+def script(path):
+    """A script of this checkout (ci/, deps/) as a module."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(path.stem.replace('-', '_'), path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 # A stand-in for sbp: logs each call, then publishes .debs the way sbp + reprepro leave them.
 FAKE_SBP = r'''#!/usr/bin/env python3
 import hashlib, json, os, subprocess, sys, tempfile
@@ -301,14 +310,14 @@ class Launcher(unittest.TestCase):
         # the other verbs keep the read-write workspace and know nothing of sbp
         args = self.run_pib('verify', PIB_SBP_SRC=str(self.root)).stdout.splitlines()
         self.assertIn(f'{self.ws}:/workspace', args)
-        self.assertFalse(any('pib-sbp' in a or a.startswith('PIB_SBP_') or 'tmpfs' in a for a in args), args)
+        self.assertFalse(any('pib-sbp' in a or a.startswith(('PIB_SBP_', 'type=tmpfs')) for a in args), args)
 
     def test_outside_a_workspace_nothing_is_created(self):
         bare = self.root / 'bare'
         bare.mkdir()
         args = self.run_pib('sbp', 'list', cwd=bare).stdout.splitlines()
         self.assertFalse((bare / 'custom-debs').exists())
-        self.assertFalse(any('custom-debs' in a or 'tmpfs' in a for a in args), args)
+        self.assertFalse(any('custom-debs' in a or a.startswith('type=tmpfs') for a in args), args)
 
     def test_image_choice(self):
         def image(r):  # the argument before the command ('pib ...')
@@ -451,6 +460,28 @@ class Layout(unittest.TestCase):
         for name in ('BUILD', 'BUILD_TYPE', 'KEY_PATH', 'REPO', 'REPO_ROOT', 'REPO_PUSH', 'REPO_PULL', 'DAILY_MIRROR'):
             self.assertNotRegex(env, rf'(^|\s){name}=', f'{name} would leak into pib build')
         self.assertIn('!sbp/', (ROOT / '.dockerignore').read_text().splitlines())
+
+    def test_sbp_comes_with_the_pinned_commit(self):
+        """pib-sbp fetches sbp and its package configs from the commit deps/artifacts.json pins, into
+        the tree pib sbp and the sbp wrapper look in; PIB's own image configs, which pib init copies
+        into workspaces, never hold configs/packages."""
+        text = (ROOT / 'Dockerfile').read_text()
+        names = [m[1] for m in re.findall(r'^FROM\s+(\S+)(?:\s+AS\s+(\S+))?', text, re.M)]
+        body = dict(zip(names, re.split(r'^FROM\s+.*$', text, flags=re.M)[1:]))
+        self.assertIn(f'python3 /tmp/deps/fetch-artifacts.py --sbp {sbp.BAKED_SRC}\n', body['pib-sbp-tools'])
+        check = body['pib-sbp-tools'].split(f'if [ -d {sbp.BAKED_SRC} ]; then', 1)
+        self.assertEqual(len(check), 2, 'the fetched sbp is checked')
+        self.assertIn('sbp --help', check[1], 'it must start')
+        self.assertIn('pkgutil.walk_packages(sbp.__path__', check[1], 'and all of its modules must import')
+        self.assertNotIn('--sbp', body['pib-deps'])
+        self.assertIn('rm -rf /tmp/pib-artifacts /usr/share/pib/configs/packages', body['pib-deps'])
+        self.assertIn(f'src="${{PIB_SBP_SRC:-{sbp.BAKED_SRC}}}"', (ROOT / 'sbp/sbp').read_text())
+        fetcher = script(ROOT / 'deps/fetch-artifacts.py')
+        self.assertEqual(fetcher.SBP_FILES, sbp.SBP_FILES, 'what the fetch checks is what pib sbp needs')
+        self.assertIn(f'for part in {fetcher.SBP_PARTS!r}:', (ROOT / 'host/pib').read_text(),
+                      'PIB_SBP_SRC mounts the same two parts')
+        # run-unit-tests.sh copies the image's configs here: PIB's image has none to copy
+        self.assertFalse((ROOT / 'configs/packages').exists())
 
     def test_launcher_has_no_unpublished_default(self):
         text = (ROOT / 'host/pib').read_text()
@@ -826,6 +857,7 @@ class Orchestration(unittest.TestCase):
         self.patches = [patch.dict(os.environ, self.env),
                         patch.object(sbp, 'MARKER', base / 'marker'),
                         patch.object(sbp, 'SOURCES', base / 'sources.json'),
+                        patch.object(sbp, 'BAKED_SRC', base / 'baked'),  # the image's own: none
                         patch.object(sbp, 'ARM64_LOADER', shutil.which('true')),
                         patch.object(cli, 'RELEASE_FILE', base / 'release'),
                         patch.object(cli, 'CODENAME_FILE', base / 'codename'),
@@ -1101,6 +1133,51 @@ class Orchestration(unittest.TestCase):
         with self.assertRaises(SystemExit) as e:
             self.pib_sbp(self.base / 'empty', 'package', '-p', 'linux')
         self.assertIn("run 'pib init' first", str(e.exception.code))
+
+    def test_the_images_own_sbp_unless_pib_sbp_src_names_another(self):
+        ws = workspace(self.base, 'minimal')
+        not_yet = script(ROOT / 'ci/check-sbp-start.py').NOT_YET
+        del os.environ['PIB_SBP_SRC']
+        msg = dies(self.pib_sbp, ws, 'package', '-p', 'linux')    # neither: stops before sbp runs
+        self.assertIn(not_yet, msg, 'what CI looks for in the start check')
+        self.assertIn('Set PIB_SBP_SRC', msg)
+        self.assertFalse(self.log.exists(), 'sbp never ran')
+        # the tree the pib-sbp image fetched from the pinned commit (deps/fetch-artifacts.py --sbp)
+        shutil.copytree(self.src, self.base / 'baked')
+        pin = 'https://github.com/SiMa-ai/swsoc-simaai-elxr-doc.git ' + 'c' * 40
+        (self.base / 'baked/SOURCE').write_text(pin + '\n')
+        out, calls = self.printed(ws, 'package', '-p', 'linux', '--dry-run')
+        self.assertIn("pib: sbp and its package configs: this image's, from " + pin.replace(' ', ' @ '), out)
+        self.assertEqual({c['src'] for c in calls}, {str(self.base / 'baked')}, 'sbp runs from it too')
+        out, calls = self.printed(ws, 'list')
+        self.assertIn("pib: sbp and its package configs: this image's, from " + pin.replace(' ', ' @ '), out,
+                      'list names it too')
+        self.assertEqual([c['src'] for c in calls], [str(self.base / 'baked')])
+        # PIB_SBP_SRC replaces it
+        os.environ['PIB_SBP_SRC'] = str(self.src)
+        label = f"pib: sbp and its package configs: PIB_SBP_SRC ({self.src}), not this image's own"
+        out, calls = self.printed(ws, 'package', '-p', 'linux', '--dry-run')
+        self.assertIn(label, out)
+        self.assertEqual({c['src'] for c in calls}, {str(self.src)})
+        out, calls = self.printed(ws, 'list')
+        self.assertIn(label, out)
+        self.assertEqual([c['src'] for c in calls], [str(self.src)])
+        # and one without sbp stops, rather than being passed over for the image's
+        (self.src / 'pkgbuild/sbp/cli.py').unlink()
+        msg = dies(self.pib_sbp, ws, 'package', '-p', 'linux')
+        self.assertIn(f'PIB_SBP_SRC: {self.src}/pkgbuild/sbp/cli.py not found', msg)
+        self.assertIn("or unset it to use this image's own (" + pin.replace(' ', ' @ ') + ")", msg)
+        self.assertNotIn(not_yet, msg)
+        # without the image's own, PIB_SBP_SRC alone is named; a relative one is taken from here,
+        # and sbp, which runs in the volume's tree, gets it absolute
+        shutil.rmtree(self.base / 'baked')
+        shutil.copytree(self.base / 'swsoc-elxr', self.base / 'other')
+        (self.base / 'other/pkgbuild/sbp/cli.py').write_text('')
+        os.environ['PIB_SBP_SRC'] = os.path.relpath(self.base / 'other', ws)
+        other = Path(os.path.realpath(self.base)) / 'other'
+        out, calls = self.printed(ws, 'package', '-p', 'linux', '--dry-run')
+        self.assertIn(f"pib: sbp and its package configs: PIB_SBP_SRC ({other})", out)
+        self.assertEqual({c['src'] for c in calls}, {str(other)})
 
     def test_a_changed_source_is_never_stamped_before_it_is_built(self):
         ws = workspace(self.base)

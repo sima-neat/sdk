@@ -55,7 +55,7 @@ Set these optional variables in the host shell that runs `pib`. File paths must 
 | `PIB_DEB_CACHE` | `pib build`, `pib shell` | Host directory for verified Debian package downloads. Package hashes and sizes are checked against authenticated repository metadata on every build. |
 | `PIB_SBP_KERNEL_URL`, `PIB_SBP_KERNEL_REF` | `pib sbp` | Kernel repository (an https URL without credentials) and branch or commit to build on every run. `--kernel-url` and `--kernel-ref` override them for one run. |
 | `PIB_SBP_KERNEL_SRC` | `pib sbp` | Git repository on the host, a checkout or a bare repository, holding your kernel; mounted read-only. Use it for a private repository or commits not pushed anywhere. |
-| `PIB_SBP_SRC` | `pib sbp` | Checkout holding sbp (`pkgbuild/`) and its package configurations (`configs/packages/`), required until the image includes them. Only those two directories are mounted, read-only. |
+| `PIB_SBP_SRC` | `pib sbp` | Checkout holding sbp (`pkgbuild/`) and its package configurations (`configs/packages/`), used instead of the ones in the package-builder image; required until the image includes them. Only those two directories are mounted, read-only. |
 | `PIB_SBP_IMAGE` | `pib sbp` | Override the package-builder image. By default it is the one published with `PIB_IMAGE` (the same tag with `-sbp`), or the one bound at installation. |
 | `PIB_SBP_JOBS`, `PIB_SBP_CCACHE_SIZE`, `PIB_SBP_VOLUME` | `pib sbp` | Parallel compile jobs; compiler cache size (default `5G`); Docker volume for sbp's work tree, package repository and cache (default `pib-sbp-<uid>`). |
 

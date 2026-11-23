@@ -18,6 +18,9 @@ Build dependencies (downloaded during container build; binaries are not committe
   https://gitlab.com/elxr/tools/elxr-config.
   Board configs, public APT key, files/ and scripts/ are sparse-fetched at the
   same full upstream commit. They are not copied into the SDK Git tree.
+  The pib-sbp image also sparse-fetches sbp (pkgbuild/) and its package configs
+  (configs/packages/) at that commit, when it carries them (3b3ee82 does not);
+  the board configs in both images leave configs/packages/ out.
   The public APT key also has an independently checked fingerprint.
   Rucksack and external system tools come from signed APT repositories.
 

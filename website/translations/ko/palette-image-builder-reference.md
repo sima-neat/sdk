@@ -38,7 +38,7 @@ x86 이미지에는 에뮬레이터가 포함됩니다. 특권 PIB 시작 시 �
 | `PIB_DEB_CACHE` | `pib build`, `pib shell` | 검증된 Debian 다운로드의 호스트 캐시. 매 빌드마다 인증된 메타데이터의 해시와 크기를 검사합니다. |
 | `PIB_SBP_KERNEL_URL`, `PIB_SBP_KERNEL_REF` | `pib sbp` | 실행할 때마다 빌드할 커널 저장소(인증 정보가 없는 https URL)와 브랜치 또는 커밋. `--kernel-url`과 `--kernel-ref`는 한 번의 실행에 한해 이 값을 재정의합니다. |
 | `PIB_SBP_KERNEL_SRC` | `pib sbp` | 사용자 커널이 담긴 호스트의 Git 저장소(체크아웃 또는 bare 저장소). 읽기 전용으로 마운트됩니다. 비공개 저장소나 어디에도 푸시하지 않은 커밋에 사용하세요. |
-| `PIB_SBP_SRC` | `pib sbp` | sbp(`pkgbuild/`)와 sbp의 패키지 설정(`configs/packages/`)이 들어 있는 체크아웃. 이미지에 이 둘이 포함될 때까지 필요합니다. 이 두 디렉터리만 읽기 전용으로 마운트됩니다. |
+| `PIB_SBP_SRC` | `pib sbp` | sbp(`pkgbuild/`)와 sbp의 패키지 설정(`configs/packages/`)이 들어 있는 체크아웃. 패키지 빌더 이미지에 포함된 것 대신 사용됩니다. 이미지에 이 둘이 포함될 때까지 필요합니다. 이 두 디렉터리만 읽기 전용으로 마운트됩니다. |
 | `PIB_SBP_IMAGE` | `pib sbp` | 패키지 빌더 이미지를 재정의합니다. 기본값은 `PIB_IMAGE`와 함께 공개된 이미지(같은 태그에 `-sbp`를 붙인 것) 또는 설치 시 연결된 이미지입니다. |
 | `PIB_SBP_JOBS`, `PIB_SBP_CCACHE_SIZE`, `PIB_SBP_VOLUME` | `pib sbp` | 병렬 컴파일 작업 수. 컴파일러 캐시 크기(기본값 `5G`). sbp의 작업 트리, 패키지 저장소, 캐시를 위한 Docker 볼륨(기본값 `pib-sbp-<uid>`). |
 

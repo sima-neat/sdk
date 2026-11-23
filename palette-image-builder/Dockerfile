@@ -9,8 +9,9 @@
 # Customers pull the published image; see docs/palette-image-builder.md.
 ARG BASE_IMAGE=elxrlinux/elxr@sha256:922b153fccfe20337d71586dc9a6823cbe4cf0769ecec431279c662029814058
 # Stages: pib-deps (PIB without its build identity), pib-sbp-tools (pib-deps plus pib sbp's
-# build tools), then pib and pib-sbp, each ending with the per-commit build identity, so the
-# layers before it stay cached across commits in both images. The default target is pib.
+# build tools, and sbp itself when the pinned upstream commit carries it), then pib and pib-sbp,
+# each ending with the per-commit build identity, so the layers before it stay cached across
+# commits in both images. The default target is pib.
 FROM ${BASE_IMAGE} AS pib-deps
 LABEL org.opencontainers.image.title="Palette Image Builder" \
       org.opencontainers.image.source="https://github.com/sima-neat/sdk"
@@ -89,6 +90,8 @@ RUN CODENAME="$(cat /etc/pib-codename)" && \
 # Download standard Python dependencies with exact wheel hashes. SiMa Pasha and
 # elxr-config use commit-pinned URLs and checksums recorded in deps/artifacts.json.
 # Downloaded binaries exist only in this build layer, never in the SDK Git tree.
+# The image configs leave out configs/packages/, sbp's package configs: the pib-sbp image
+# fetches those itself (below), and pib init must not copy them into workspaces.
 RUN --mount=type=bind,source=deps,target=/tmp/deps \
     python3 /tmp/deps/fetch-artifacts.py --destination /tmp/pib-artifacts \
         --release "$(cat /etc/pib-release)" --codename "$(cat /etc/pib-codename)" && \
@@ -102,7 +105,7 @@ RUN --mount=type=bind,source=deps,target=/tmp/deps \
         -C /usr/share/pib/elxr-config --strip-components=1 --exclude='esp.img' && \
     cp -a /tmp/pib-artifacts/upstream/configs /tmp/pib-artifacts/upstream/files \
         /tmp/pib-artifacts/upstream/scripts /usr/share/pib/ && \
-    rm -rf /tmp/pib-artifacts && \
+    rm -rf /tmp/pib-artifacts /usr/share/pib/configs/packages && \
     python3 -c "from importlib.metadata import entry_points; \
 missing = {'bootstrap.mmdebstrap', 'image.compress', 'image.raw', 'installer.disk.lvm', \
 'installer.disk.lvm.teardown', 'installer.disk.parted', 'simaai.bootloader', \
@@ -167,10 +170,8 @@ CMD ["pib", "--help"]
 # This adds what sbp and those builds need on top of PIB: the arm64 cross toolchain and target
 # libraries on amd64, the kernel's host build dependencies, Debian packaging tools, and graphviz,
 # which sbp renders its plans with. A C compiler, make and dpkg-dev already come with rucksack.
-# sbp itself and its package configs are not in the image yet: pib sbp takes them from a mounted
-# checkout (PIB_SBP_SRC: swsoc-simaai-elxr-doc or swsoc-elxr) until deps/artifacts.json pins a
-# swsoc-simaai-elxr-doc commit that carries them. sbp's settings are made at run time by
-# sbp/setup.sh, never as ENV here: pib build reads several of the same names.
+# sbp's settings are made at run time by sbp/setup.sh, never as ENV here: pib build reads several
+# of the same names.
 FROM pib-deps AS pib-sbp-tools
 RUN if [ "$(dpkg --print-architecture)" = amd64 ]; then \
         dpkg --add-architecture arm64 && \
@@ -201,6 +202,13 @@ RUN if [ "$(dpkg --print-architecture)" = amd64 ]; then \
         zlib1g-dev \
         $cross && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+# sbp itself (pkgbuild/) and its package configs (configs/packages/) come from the
+# swsoc-simaai-elxr-doc commit deps/artifacts.json pins, the one the image configs come from, into
+# /usr/share/pib/sbp-src, when that commit carries them. pib sbp uses them unless PIB_SBP_SRC names
+# a checkout to use instead, which it needs while the pinned commit carries none. The check below
+# starts sbp and imports all of its modules: sbp loads its build modules only when a build asks.
+RUN --mount=type=bind,source=deps,target=/tmp/deps \
+    python3 /tmp/deps/fetch-artifacts.py --sbp /usr/share/pib/sbp-src
 COPY --chmod=644 sbp/distributions.in sbp/nginx.conf.in sbp/90-pib-sbp.pref sbp/sources.json \
      /usr/share/pib/sbp/
 COPY --chmod=755 sbp/setup.sh /usr/local/lib/pib/sbp-setup
@@ -209,7 +217,14 @@ RUN touch /etc/pib-sbp && \
     python3 -c "import apt, click, graphviz, omegaconf, rich, yaml" && \
     for tool in dot dpkg-buildpackage dch dh fakeroot reprepro nginx bc bison flex; do \
         command -v "$tool" >/dev/null || { echo "pib-sbp: $tool is missing" >&2; exit 1; }; \
-    done
+    done && \
+    if [ -d /usr/share/pib/sbp-src ]; then \
+        PYTHONDONTWRITEBYTECODE=1 sbp --help >/dev/null || \
+            { echo "pib-sbp: the pinned commit's sbp does not start" >&2; exit 1; }; \
+        PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/usr/share/pib/sbp-src/pkgbuild python3 -c \
+            'import importlib, pkgutil, sbp; [importlib.import_module(m.name) for m in pkgutil.walk_packages(sbp.__path__, "sbp.")]' || \
+            { echo "pib-sbp: the pinned commit's sbp modules do not import" >&2; exit 1; }; \
+    fi
 
 # ---- pib and pib-sbp: the build identity, last, so new commits retain the layers above ---------
 # Both images end with the same lines (keep them identical): the SDK-style version and revision,
