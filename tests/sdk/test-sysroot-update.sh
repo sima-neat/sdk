@@ -78,8 +78,7 @@ else
     repo.sima.ai \
     mirror.elxr.dev \
     deb.debian.org \
-    security.debian.org \
-    snapshot.debian.org; do
+    security.debian.org; do
     grep -A1 -F "Pin: origin \"${origin}\"" "${SYSROOT_UPDATE_APT_PREFERENCES_FILE:?}" | \
       grep -Fq 'Pin-Priority: 1001'
   done
@@ -316,8 +315,7 @@ for origin in \
   repo.sima.ai \
   mirror.elxr.dev \
   deb.debian.org \
-  security.debian.org \
-  snapshot.debian.org; do
+  security.debian.org; do
   grep -A1 -F "Pin: origin \"${origin}\"" "${preferences_file}" | \
     grep -Fq 'Pin-Priority: 990'
 done
