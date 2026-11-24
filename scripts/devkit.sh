@@ -1233,8 +1233,8 @@ devkit-container-remote() {
   # Supplying the helper through bash -c also leaves SSH stdin attached to the
   # caller, which is required by `docker run -i` and interactive shells.
   local remote_script_path="${DEVKIT_CONTAINER_REMOTE_SCRIPT:-/usr/local/libexec/sima-sdk/devkit-container-remote.sh}"
-  if [[ ! -r "${remote_script_path}" && -r "$(dirname "${BASH_SOURCE[0]}")/devkit-container-remote.sh" ]]; then
-    remote_script_path="$(dirname "${BASH_SOURCE[0]}")/devkit-container-remote.sh"
+  if [[ ! -r "${remote_script_path}" && -r "$(dirname "${BASH_SOURCE[0]}")/install-devkit-docker.sh" ]]; then
+    remote_script_path="$(dirname "${BASH_SOURCE[0]}")/install-devkit-docker.sh"
   fi
   if [[ ! -r "${remote_script_path}" ]]; then
     echo "DevKit container remote helper not found: ${remote_script_path}" >&2

@@ -31,7 +31,7 @@ def verified_copy(source, destination, digest, size):
             temp.unlink(missing_ok=True)
 
 
-def trusted_records(wanted):
+def trusted_records(wanted, packages=None):
     """Read SHA256 and sizes only from APT-authenticated package indexes."""
     import apt_pkg
     apt_pkg.init_config()
@@ -50,6 +50,8 @@ def trusted_records(wanted):
             for record in apt_pkg.TagFile(proc.stdout):
                 digest = record.get('SHA256', '')
                 if digest not in wanted or digest in seen:
+                    continue
+                if packages is not None and (record['Package'], record['Version'], record['Architecture']) not in packages:
                     continue
                 name = record['Package']
                 version = apt_pkg.quote_string(record['Version'], ':')
@@ -76,16 +78,33 @@ def transfer(mode, root, directory):
                  if re.fullmatch('[0-9a-f]{64}', p.stem) and not p.is_symlink() and p.is_file()}
     else:
         files = {}
-        for p in archives.glob('*.deb'):
+        # A restored archive may still be authorized by the repository without
+        # being selected by this build. Only retain packages actually used.
+        candidates = (root / p.lstrip('/') for p in os.environ.get('MMDEBSTRAP_ESSENTIAL', '').split()) \
+            if os.environ.get('MMDEBSTRAP_HOOK') == 'extract' else archives.glob('*.deb')
+        for p in candidates:
             if p.is_file() and not p.is_symlink():
                 with p.open('rb') as stream:
                     files[hashlib.file_digest(stream, 'sha256').hexdigest()] = p
     count = total = rejected = 0
+    packages = None
+    if mode == 'save' and os.environ.get('MMDEBSTRAP_HOOK') == 'customize':
+        packages = set()
+        status = root / 'var/lib/dpkg/status'
+        for stanza in (status.read_text() if status.exists() else '').split('\n\n'):
+            fields = dict(line.split(': ', 1) for line in stanza.splitlines()
+                          if ': ' in line and not line.startswith((' ', '\t')))
+            if fields.get('Status', '').endswith((' installed', ' unpacked')):
+                packages.add(tuple(fields.get(key, '') for key in ('Package', 'Version', 'Architecture')))
     if files:
-        for digest, size, name in trusted_records(set(files)):
+        for digest, size, name in trusted_records(set(files), packages):
             source = files[digest]
             target = archives / name if mode == 'restore' else directory / f'{digest}.deb'
             if verified_copy(source, target, digest, size):
+                if mode == 'save' and os.environ.get('PIB_DEB_CACHE_USED'):
+                    used = Path(os.environ['PIB_DEB_CACHE_USED'])
+                    used.mkdir(parents=True, exist_ok=True)
+                    (used / digest).touch()
                 count += 1
                 total += size
             else:
@@ -93,6 +112,13 @@ def transfer(mode, root, directory):
                 if mode == 'restore':
                     source.unlink(missing_ok=True)
     print(f'pib: Debian cache {mode}: verified={count} bytes={total} rejected={rejected}', flush=True)
+
+
+def prune(directory, used):
+    """Keep the union saved by all successful bootstrap phases, not old downloads."""
+    for blob in directory.glob('*.deb'):
+        if not (used / blob.stem).is_file():
+            blob.unlink()
 
 
 def main():

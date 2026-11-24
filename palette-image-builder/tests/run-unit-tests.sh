@@ -12,6 +12,7 @@ for name in configs files scripts; do
     cp -a "/usr/share/pib/$name/." "$scratch/$name/"
 done
 cd "$scratch"
+# This checkout's pib package, not the image's installed one, for every test.
+export PYTHONPATH="$scratch/pib${PYTHONPATH:+:$PYTHONPATH}"
 python3 pib/test_cli.py
-# This checkout's pib package, not the image's installed one, for every test module.
-PYTHONPATH="$scratch/pib${PYTHONPATH:+:$PYTHONPATH}" python3 -m unittest discover -s tests -p 'test_*.py'
+python3 -m unittest discover -s tests -p 'test_*.py'

@@ -3,11 +3,12 @@ import email.utils
 import hashlib
 import os
 from pathlib import Path
+from unittest.mock import patch
 import subprocess
 import tempfile
 import unittest
 
-from pib.deb_cache import verified_copy
+from pib.deb_cache import verified_copy, transfer, prune
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -37,6 +38,37 @@ class Compression(unittest.TestCase):
 
 
 class DebianCache(unittest.TestCase):
+    def test_pruning_preserves_both_phases_and_removes_unused_authorized_packages(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root, cache, used = base / 'root', base / 'cache', base / 'used'
+            archives = root / 'var/cache/apt/archives'
+            archives.mkdir(parents=True)
+            cache.mkdir()
+            records = []
+            for name in ('essential', 'app', 'unused'):
+                data = name.encode()
+                digest = hashlib.sha256(data).hexdigest()
+                (archives / f'{name}.deb').write_bytes(data)
+                (cache / f'{digest}.deb').write_bytes(data)
+                records.append((digest, len(data), f'{name}.deb'))
+            def trusted(wanted, packages):
+                return (record for record in records if record[0] in wanted
+                        and (packages is None or (record[2][:-4], '1', 'all') in packages))
+            with patch('pib.deb_cache.trusted_records', side_effect=trusted), \
+                    patch.dict(os.environ, {'PIB_DEB_CACHE_USED': str(used), 'MMDEBSTRAP_HOOK': 'extract',
+                               'MMDEBSTRAP_ESSENTIAL': '/var/cache/apt/archives/essential.deb'}):
+                transfer('save', root, cache)
+                (archives / 'essential.deb').unlink()
+                status = root / 'var/lib/dpkg/status'
+                status.parent.mkdir(parents=True)
+                status.write_text('Package: app\nVersion: 1\nArchitecture: all\nStatus: install ok installed\n')
+                os.environ['MMDEBSTRAP_HOOK'] = 'customize'
+                transfer('save', root, cache)
+                prune(cache, used)
+            self.assertEqual({p.stem for p in cache.glob('*.deb')},
+                             {records[0][0], records[1][0]})
+
     def test_cold_warm_corrupt_and_new_metadata(self):
         with tempfile.TemporaryDirectory(prefix='pib-cache-test-') as tmp:
             base = Path(tmp)
@@ -112,11 +144,15 @@ class DebianCache(unittest.TestCase):
                 self.assertNotEqual(newer, digest)
                 changed = bootstrap(4)
                 self.assertIn('cache restore: verified=0', changed)
+                self.assertFalse(blob.exists(), 'unused old packages must be pruned after a successful build')
+                newer_blob = cache / f'{newer}.deb'
+                self.assertTrue(newer_blob.exists())
                 # Authentication failures must stop bootstrap, even with an existing warm cache.
                 release = repo / 'dists/fixture/InRelease'
                 release.write_text(release.read_text().replace('Codename: fixture', 'Codename: altered'))
                 with self.assertRaises(subprocess.CalledProcessError):
                     bootstrap(5)
+                self.assertTrue(newer_blob.exists(), 'failed bootstraps must preserve the last usable cache')
             finally:
                 subprocess.run(['gpgconf', '--homedir', str(gnupg), '--kill', 'all'], capture_output=True)
 

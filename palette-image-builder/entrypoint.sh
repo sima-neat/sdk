@@ -45,6 +45,10 @@ KEY_UID="PIB local repo <pib-local-repo@localhost>"
 
 # --- arm64 emulation is configured above by pib.emulation ---------------------
 
+# Validate even a shell without image.yaml, before modifying the repo or importing
+# any package. Use the same package-name policy as explicit CLI verification.
+python3 -c 'from pathlib import Path; from pib.cli import check_unique_debs; check_unique_debs(sorted(Path("/workspace/custom-debs").glob("*.deb")))'
+
 # --- local repo signing key ---------------------------------------------------
 # Made fresh for each container run in a temporary directory: the repo below
 # is rebuilt on every start, so nothing needs the key afterwards, and no

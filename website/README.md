@@ -33,8 +33,18 @@ The favicon is the square SiMa brand mark from
 <https://developer.sima.ai/img/sima-logo.png>, stored at
 `static/img/sima-favicon.png`.
 
-The manifest records the hostname, source branch, and install target. Examples
-use the released `sdk/pib` package and source links point to `main`. The GitHub
+The manifest records the hostname and publication allowlist. `site-settings.cjs`
+selects the channel: production uses `sdk/pib` with source links to `main`;
+`DOCS_CHANNEL=preview` uses `sdk/pib@develop` with source links to `develop`
+and serves the site under `/staging-preview/`. To preview that layout locally:
+
+```sh
+DOCS_CHANNEL=preview npm run build
+npm run serve -- --host 127.0.0.1 --port 3040 --no-open
+# Open http://127.0.0.1:3040/staging-preview/
+```
+
+Preview pages carry noindex metadata. The GitHub
 Pages hostname is `sdk.neat.sima.ai`; building this site does not configure
 GitHub Pages or DNS.
 
@@ -57,10 +67,25 @@ Before pushing, run `npm run build` to check every locale and its internal links
 ## GitHub Pages workflow
 
 `.github/workflows/docs-pages.yml` builds all languages for documentation pull
-requests. Updates on `main` or `develop`, `sdk-docs-*` tags, and manual dispatches
-publish the validated artifact through the `github-pages` environment. Repository
-Pages settings and environment rules must permit that deployment; DNS is managed
-separately in Vulcan. A feature-branch push alone does not publish the site.
+requests and `sdk-docs-*` tags without publishing. Pushes or manual dispatches on
+`main` and `develop` publish a combined artifact through `github-pages`:
+
+- `/` is built only from current `main`.
+- `/staging-preview/` is built only from current `develop`.
+
+Publication runs are serialized without cancelling active deployments. The
+publisher checks out both current branch heads after acquiring that workflow
+slot and records their commits in `publication.json`; an older queued event
+therefore cannot restore older branch content. Both subtrees are rebuilt and
+shipped together so neither deployment erases the other. If `main` does not yet
+contain this new site, the root displays a release-pending landing page while
+the develop preview remains available. Build failures preserve the deployed site.
+This workflow does not publish PIB packages: preview installation requires a
+qualified `sdk/pib@develop` package from the separate image workflow.
+
+Repository Pages settings and environment rules must permit deployments from
+both `main` and `develop`; DNS is managed separately in Vulcan. Feature-branch
+pushes and manual dispatches on other refs do not publish.
 
 ## Reader paths
 

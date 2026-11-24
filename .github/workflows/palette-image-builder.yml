@@ -124,22 +124,17 @@ jobs:
           # a listing once the image carries sbp; until then, a message printed only after both.
           python3 "$GITHUB_WORKSPACE/palette-image-builder/ci/check-sbp-start.py" \
             python3 "$GITHUB_WORKSPACE/palette-image-builder/host/pib"
-      - name: Test automatic emulator setup from an unregistered x86 host
-        if: matrix.arch == 'x86_64'
-        run: |
-          docker run --rm --privileged --entrypoint bash palette-image-builder:ci -lc '
-            mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
-            if [ -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
-              echo -1 > /proc/sys/fs/binfmt_misc/qemu-aarch64
-            fi'
+      # Missing-handler registration is covered by test_emulation.py above.
+      # Never unregister the shared host's handler: other jobs may be using it.
       - name: Restore verified Debian downloads
-        uses: actions/cache@v4
+        id: deb-cache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/pib-debs
-          key: pib-debs-v1-${{ matrix.arch }}-${{ hashFiles('palette-image-builder/RELEASE', 'palette-image-builder/CODENAME', 'palette-image-builder/deps/artifacts.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: pib-debs-v2-${{ matrix.arch }}-${{ hashFiles('palette-image-builder/RELEASE', 'palette-image-builder/CODENAME', 'palette-image-builder/deps/artifacts.json') }}-lookup
           restore-keys: |
-            pib-debs-v1-${{ matrix.arch }}-${{ hashFiles('palette-image-builder/RELEASE', 'palette-image-builder/CODENAME', 'palette-image-builder/deps/artifacts.json') }}-
-            pib-debs-v1-${{ matrix.arch }}-
+            pib-debs-v2-${{ matrix.arch }}-${{ hashFiles('palette-image-builder/RELEASE', 'palette-image-builder/CODENAME', 'palette-image-builder/deps/artifacts.json') }}-
+            pib-debs-v2-${{ matrix.arch }}-
       - name: Build, sign, verify, and inspect the checked-in example SWU
         env:
           PIB_IMAGE: palette-image-builder:ci
@@ -148,6 +143,29 @@ jobs:
         run: |
           set -o pipefail
           palette-image-builder/tests/smoke.sh 2>&1 | tee "${RUNNER_TEMP}/pib-smoke.log"
+      - name: Identify qualified package-cache contents
+        id: deb-cache-content
+        env:
+          CACHE_DIR: ${{ runner.temp }}/pib-debs
+        run: |
+          python3 - <<'PYTHON'
+          import hashlib
+          import os
+          from pathlib import Path
+          cache = Path(os.environ['CACHE_DIR'])
+          digest = hashlib.sha256()
+          for path in sorted(cache.glob('*.deb')):
+              digest.update(path.name.encode())
+              with path.open('rb') as stream:
+                  digest.update(hashlib.file_digest(stream, 'sha256').digest())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'digest={digest.hexdigest()}\n')
+          PYTHON
+      - name: Save qualified package-cache contents
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/pib-debs
+          key: pib-debs-v2-${{ matrix.arch }}-${{ hashFiles('palette-image-builder/RELEASE', 'palette-image-builder/CODENAME', 'palette-image-builder/deps/artifacts.json') }}-${{ steps.deb-cache-content.outputs.digest }}
       - name: Report authenticated package-cache use
         if: always()
         env:

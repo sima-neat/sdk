@@ -450,6 +450,24 @@ def boot_chain(target):
             ("ATF", f"^atf-{t}$"))
 
 
+def check_unique_debs(debs):
+    """Reject ambiguous local repositories before reprepro can discard a version."""
+    records = []
+    seen = {}
+    for deb in debs:
+        f = dict(ln.split(": ", 1) for ln in run(["dpkg-deb", "-f", deb, "Package", "Version",
+                                                  "Architecture"]).splitlines() if ": " in ln)
+        pkg = f.get("Package", "")
+        ver = f.get("Version", "")
+        if pkg in seen:
+            previous, previous_version = seen[pkg]
+            die(f"duplicate custom package {pkg}: {previous.name} ({previous_version}) and "
+                f"{deb.name} ({ver}); keep only one .deb per package in {DEBS}/")
+        seen[pkg] = (deb, ver)
+        records.append((deb, f))
+    return records
+
+
 def check_debs(ws, cfg):
     """Return [(package, version)] for custom-debs/: signed by the customer
     key and arm64 or all."""
@@ -460,9 +478,7 @@ def check_debs(ws, cfg):
             die("custom .debs must be signed: set debs.key in image.yaml")
         check_deb_signature(debs, ws / keyfile)
     found = []
-    for deb in debs:
-        f = dict(ln.split(": ", 1) for ln in run(["dpkg-deb", "-f", deb, "Package", "Version",
-                                                  "Architecture"]).splitlines() if ": " in ln)
+    for deb, f in check_unique_debs(debs):
         arch, pkg = f.get("Architecture", ""), f.get("Package", "")
         if arch not in ("arm64", "all"):
             die(f"{deb.name} is for {arch}, not arm64")
@@ -1034,7 +1050,8 @@ def cmd_verify(a):
     if not a.swu:
         stem = f"elxr-{cfg.get('base', '*')}-{cfg.get('target', '*')}-{cfg['version']}-" if cfg.get("version") else ""
         found = sorted(p for p in Path("out").glob(f"{stem}*.swu")
-                       if not p.name.endswith(".unsigned.swu"))
+                       if not p.name.endswith(".unsigned.swu")
+                       and not p.name.startswith(f"{stem}dev-"))
         if len(found) != 1:
             die(f"name the signed .swu to verify (out/ holds {len(found)})")
         a.swu = str(found[0])

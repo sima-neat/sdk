@@ -242,9 +242,10 @@ index by digest, so Docker selects the native image. Host installer tests run on
 Linux, macOS and Windows; post-publication jobs install the exact subfolder package
 on native Linux x86 and ARM. The bare `sdk/pib` command becomes available when this
 workflow publishes from main; feature branches use `sdk/pib@<branch>`. GHCR packages must be made customer-readable by repository
-maintainers before advertising them publicly. The existing SDK package cleanup
-workflow is scoped to SDK packages; automatic PIB retention/cleanup is not added
-by this port.
+maintainers before advertising them publicly. The package cleanup workflow
+(`.github/workflows/cleanup-packages.yml`) covers PIB too: once a branch is
+deleted, it removes the branch's package and the canonical versions tagged only
+with that branch's aliases. A `<tag>-sbp` image is kept as long as its `<tag>`.
 
 ## Updating platform inputs
 
