@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pib"
+version = "0.2.0"
+description = "SiMa.ai Palette Image Builder CLI"
+requires-python = ">=3.9"
+# PyYAML comes from Debian's python3-yaml in the PIB image.
+dependencies = []
+
+[project.scripts]
+pib = "pib.cli:main"
+
+[tool.setuptools]
+packages = ["pib"]

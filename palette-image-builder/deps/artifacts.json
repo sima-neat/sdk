@@ -1,0 +1,24 @@
+{
+  "platform_release": "3.0.0",
+  "artifacts": [
+    {
+      "filename": "pasha-3.0.0-py3-none-any.whl",
+      "url": "https://raw.githubusercontent.com/SiMa-ai/swsoc-simaai-elxr-doc/3b3ee82d4a88fe6ad67834de83fe3db6ea9539e4/dist/pasha-3.0.0-py3-none-any.whl",
+      "sha256": "b490b69f1ea6b96049a778e19375505398d4a877ea343c3f3d7e244b62fe2996"
+    },
+    {
+      "filename": "elxr-config-1.1.0-elxr14.tar.gz",
+      "url": "https://raw.githubusercontent.com/SiMa-ai/swsoc-simaai-elxr-doc/3b3ee82d4a88fe6ad67834de83fe3db6ea9539e4/dist/elxr-config-1.1.0-elxr14.tar.gz",
+      "sha256": "9cfd9cfb62f809b9a4293fe6352e2295ea1c3fdd3831d86ec6dbb3a68ff10d60"
+    }
+  ],
+  "upstream": {
+    "repository": "https://github.com/SiMa-ai/swsoc-simaai-elxr-doc.git",
+    "commit": "3b3ee82d4a88fe6ad67834de83fe3db6ea9539e4",
+    "paths": [
+      "configs",
+      "files",
+      "scripts"
+    ]
+  }
+}

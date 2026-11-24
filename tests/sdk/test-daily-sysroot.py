@@ -50,6 +50,8 @@ class DailySelectionTest(unittest.TestCase):
         bookworm = candidate('2.36', 'deb.debian.org', 'bookworm')
         self.assertIs(module.daily_candidate([daily, prerelease, legacy, release], '3.0.0'), release)
         self.assertIs(module.daily_candidate([bookworm, trixie], '3.0.0'), trixie)
+        snapshot = candidate('2.41', 'snapshot.debian.org', 'trixie-security')
+        self.assertIs(module.daily_candidate([bookworm, snapshot], '3.0.0'), snapshot)
         self.assertIsNone(module.daily_candidate([daily, prerelease, legacy, bookworm], '3.0.0'))
         self.assertIsNone(module.daily_candidate([release], '3.0.0', '9.0'))
 

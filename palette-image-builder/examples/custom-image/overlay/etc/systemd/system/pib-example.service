@@ -1,0 +1,11 @@
+[Unit]
+Description=PIB example application
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/pib-example-app
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,47 @@
+Palette Image Builder sources and dependency provenance
+
+PIB CLI source and fetched SiMa Modalix board inputs:
+  https://github.com/SiMa-ai/swsoc-simaai-elxr-doc
+  Commit: 3b3ee82d4a88fe6ad67834de83fe3db6ea9539e4
+  Platform release 3.0.0, suite agate.
+
+Container base:
+  elxrlinux/elxr:bianca-26.04.02, selected by multi-platform index
+  sha256:922b153fccfe20337d71586dc9a6823cbe4cf0769ecec431279c662029814058
+
+Build dependencies (downloaded during container build; binaries are not committed):
+  deps/debsbom-requirements.txt locks PyPI versions and allowed wheel hashes.
+  deps/artifacts.json locks the SiMa Pasha 3.0.0 wheel and elxr-config archive
+  to files in the source commit above, with SHA256 verification.
+  The elxr-config archive is upstream's unmodified 1.1.0+elxr14 archive,
+  GitLab commit 75cce348412fb4e75e917ba424fcd1e057c8cdc7 of
+  https://gitlab.com/elxr/tools/elxr-config.
+  Board configs, public APT key, files/ and scripts/ are sparse-fetched at the
+  same full upstream commit. They are not copied into the SDK Git tree.
+  The public APT key also has an independently checked fingerprint.
+  Rucksack and external system tools come from signed APT repositories.
+
+SDK changes:
+  Native ARM64 support, standalone launcher, doctor/build --sign/verify defaults,
+  runnable example, download verification, native CI and revised customer docs.
+
+Original SiMa template changes relative to upstream eLxr configs:
+- Package sources: repo.sima.ai is the only SiMa.ai apt host (hooks/minimal.sh,
+  hooks/base.sh, 98simaai-repository), and the SiMa.ai mirror in image-stages.yaml
+  defaults to https://repo.sima.ai/elxr/deb/release. hooks/minimal.sh downloads no apt
+  key. The public key is configs/images/files/simaai-public.asc; hooks/base.sh copies
+  the SiMa.ai apt keyring into the image for the signed-by of the SiMa.ai line only.
+- hooks/base.sh: the root and sima passwords come from PIB_CREDENTIALS (locked
+  without it), root SSH login stays key-only, and each board makes its own SSH host
+  keys on first boot (simaai-ssh-hostkeys.service).
+- hooks/palette.sh writes its manifest, du and licenses files to OUTPUT_DIR (out/),
+  which the hpalette/hsecurepalette lines in image-params.yaml pass to it.
+- The troot_upgrade.efi stage fails the build when the file is missing.
+  prepare_buildinfo.sh falls back to "pib" without git.
+- files/update_modalix.sh: preinst removes a stale /tmp boot0 and OS marker
+  (rm -f "$BOOT0" "$OSMARK"); release_boot() unmounts the inactive boot partition
+  when postinst fails with it mounted and in postfailure, so a retry does not write
+  under a mount; postinst refuses an inactive rootfs that is not one linear
+  device-mapper segment; the postfailure message no longer has the comma inside the
+  quoted slot UUID.
+- Comments are reworded for PIB throughout configs/images.
