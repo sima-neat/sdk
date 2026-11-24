@@ -10,6 +10,55 @@ const fixture = require('../../components.json');
 const source = require('node:fs').readFileSync(path.join(__dirname, '../../scripts/sdk-components.js'), 'utf8');
 const upstreamVersion = { status: 0, stdout: '4.144.0 hash with Code 1.144.0' };
 
+for (const ref of ['release-3.0-fa97d5564223', 'develop-fa97d5564223', 'codex_sdk-branch-components-fa97d5564223']) {
+test(`setup resolves build-generated ${ref} metadata online and offline`, async t => {
+  const { spawnSync } = require('node:child_process');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sdk-branch-resolver-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const releaseFile = path.join(root, 'sdk-release');
+  const manifest = path.join(root, 'manifest.json');
+  await fs.writeFile(manifest, JSON.stringify({'sdk-version': '3.0.0.2'}));
+  const writer = spawnSync('bash', [path.join(__dirname, '../../scripts/write-sdk-release.sh')], {
+    encoding: 'utf8', env: {...process.env, SDK_RELEASE_FILE: releaseFile,
+      SDK_RELEASE_REF: ref, SDK_GIT_BRANCH: ref.replace(/-[a-f0-9]+$/, ''), SDK_GIT_HASH: 'fa97d5564223',
+      SDK_DEPS_MANIFEST: manifest,
+      NEAT_CORE_STATUS_FILE: path.join(root, 'no-core-status'), BASE_SDK_VERSION: '3.0.1', SDK_APT_CHANNEL: 'release'},
+  });
+  assert.equal(writer.status, 0, writer.stderr);
+  const releaseText = await fs.readFile(releaseFile, 'utf8');
+  assert.ok(releaseText.includes(`SDK Release = ${ref}\n`));
+  assert.ok(releaseText.includes('SDK Version = 3.0.0.2_Palette_SDK_neat_'));
+  let offline = false;
+  const service = createComponentService({ spawn: () => upstreamVersion,
+    Catalog: class extends ComponentCatalog {
+      constructor(context, detected) {
+        super({...context, globalStorageUri: {fsPath: path.join(root, 'cache')}}, {
+          ...detected, releaseText, execute: async () => ({stdout: 'codex-cli 0.153.4'}),
+          fetchCatalog: async () => {if (offline) throw Error('offline'); return structuredClone(fixture);},
+        });
+      }
+    },
+  });
+  for (const source of ['online', 'offline']) {
+    offline = source === 'offline';
+    const resolved = await resolveComponents(service);
+    assert.equal(resolved.sdk_release, ref);
+    assert.equal(resolved.cohort, '3.0.0');
+    assert.equal(resolved.status, 'qualified');
+    assert.equal(resolved.source, source);
+    assert.equal(service.snapshot().sdkFallback, false);
+    for (const agent of ['codex', 'claude']) {
+      const target = fixture.sdks['3.0.0'].components[agent];
+      assert.equal(resolved.extensions[target.id], target.version);
+    }
+  }
+  // Platform Version must never stand in for a missing SDK identity.
+  service.options.releaseText = releaseText.replace(/^SDK Version = .*\n/m, '');
+  await assert.rejects(resolveComponents(service), /No compatible/);
+});
+
+}
+
 test('shell resolver uses the actual SDK catalog rules and installed profile', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sdk-resolver-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));

@@ -15,6 +15,26 @@ component IDs, versions, URLs and SHA-256 values. SDK identity comes from
 image builds additionally require the selected build cohort to be qualified and
 to explicitly list that tag as a supported SDK release.
 
+For release-branch images such as `release-3.0-<commit>`, the resolver uses the exact
+numeric SDK identity from `SDK Version` in `/etc/sdk-release` (written from
+`deps/manifest.json` at image build time). Its major/minor version must match the
+branch line, and the complete version must appear in the catalog's `sdk_releases`.
+For example, `release-3.0` with SDK identity `3.0.0.2` selects the same cohort as
+`v3.0.0.2`. This applies to setup, the code-server wrapper, and the Neat panel.
+It preserves candidate/revocation, architecture and exact engine-pair checks.
+Missing, mismatched or unmapped identities fail setup; neither `Platform Version`
+nor the catalog's `build_sdk_version` substitutes for the image's SDK identity.
+Commit-suffixed development refs such as `develop-<commit>` and feature branches
+also use their exact embedded SDK identity and require a qualified catalog mapping.
+They never substitute the catalog build default. Bare unknown refs retain their
+existing policy.
+
+This resolution requires a rebuilt release-branch image containing the updated
+resolver. Publishing a catalog alone cannot fix older images, whose resolver
+accepts only numeric `SDK Release` values. Until that image is available, install
+`sima-cli neat install sdk@v3.0.0.2`. Existing containers must be recreated using
+the updated image to pick up the resolver change.
+
 In the Neat panel, an unknown release or development branch falls back to the
 `build_sdk_version` entry when no exact SDK release mapping exists. The default
 entry may be `qualified` or `candidate` and must match the current architecture and exact
