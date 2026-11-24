@@ -34,7 +34,7 @@ cd my-image
 | `overlay/` | ルートファイルシステムにコピーする設定などのファイル |
 | `hooks/` | サービス有効化など、パッケージインストール後の処理 |
 
-Palette SDK でアプリケーションをビルドし、モデルをコンパイルした後、ターゲットに必要なファイルをパッケージ化します。PIB はパッケージを組み立てるツールであり、アプリケーションソースはコンパイルしません。各コンポーネントの役割は [Palette SDK システムスタック](sdk-architecture.md)をご覧ください。ただし、カーネルは例外です。`pib sbp` が SiMa の公開ソースまたは独自のソースからカーネルをビルドし、カーネルパッケージとして `custom-debs/` に出力します。[カーネルのビルド](palette-image-builder-reference.md#building-the-kernel)を参照してください。
+Palette SDK でアプリケーションをビルドし、モデルをコンパイルした後、ターゲットに必要なファイルをパッケージ化します。PIB はパッケージを組み立てるツールであり、アプリケーションソースはコンパイルしません。各コンポーネントの役割は [Palette SDK システムスタック](sdk-architecture.md)をご覧ください。ただし、カーネルは例外です。`pib package` が SiMa の公開ソースまたは独自のソースからカーネルをビルドし、カーネルパッケージとして `custom-debs/` に出力します。[カーネルのビルド](palette-image-builder-reference.md#building-the-kernel)を参照してください。
 
 `image.yaml` には `.deb` ファイル名ではなく Debian パッケージ名を指定します。ファイルにはオーバーレイ、インストール後の変更にはフックを使います。パッケージ、カーネル、フックの詳細な規則は[カスタマイズのリファレンス](palette-image-builder-reference.md#customization)にあります。
 

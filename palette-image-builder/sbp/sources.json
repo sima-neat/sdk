@@ -1,9 +1,9 @@
 {
   "_comment": [
-    "Sources pib sbp builds by default. linux-modalix: SiMa.ai's public kernel repository and its",
-    "branch; each run looks the branch up and builds its tip of the moment (pib sbp prints the",
-    "commit), and a moved tip is rebuilt. Users build their own kernel with --kernel-url and",
-    "--kernel-ref, or PIB_SBP_KERNEL_SRC (pib sbp --help). lttng-modules-modalix: v2.14.7, the",
+    "Sources pib package builds by default. linux-modalix: SiMa.ai's public kernel repository and",
+    "its branch; each run looks the branch up and builds its tip of the moment (pib package prints",
+    "the commit), and a moved tip is rebuilt. Users build their own kernel with --kernel-url and",
+    "--kernel-ref, or PIB_KERNEL_SRC (pib package --help). lttng-modules-modalix: v2.14.7, the",
     "version of the release's lttng-modules-modalix 2.14-1. smifb-modalix is pinned in its config.",
     "Update with RELEASE and CODENAME (README.md, Updating platform inputs)."
   ],

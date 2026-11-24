@@ -796,28 +796,31 @@ ep = (ROOT / "entrypoint.sh").read_text()
 case = ep[ep.index('case "${1:-} ${2:-}" in'):ep.index("# --- arm64 emulation")]
 # Emulation setup has its own kernel-boundary tests; isolate dispatch here.
 case = case.replace("python3 -m pib.emulation", "true")
-case = case.replace("/usr/local/lib/pib/sbp-setup", "/nonexistent/sbp-setup")  # also in the pib-sbp image
+case = case.replace("/usr/local/lib/pib/sbp-setup", "/nonexistent/sbp-setup")  # the image has it: never run it here
 with tempfile.TemporaryDirectory() as t:
     (Path(t) / "pib").write_text('#!/bin/sh\necho "ran $*"\n'); (Path(t) / "pib").chmod(0o755)
     for argv, want in ((["pib", "sign", "x"], "ran sign x\n"), (["pib", "verify"], "ran verify\n"),
                        (["pib", "build", "--dev"], "setup\n"), (["pib", "build"], "setup\n"), (["bash"], "setup\n"), (["bash", "-c", "x"], "setup\n"),
                         (["pib", "builder"], "ran builder\n"),
-                        # pib sbp never gets the build set-up; without the pib-sbp image's own it runs as is
-                        (["pib", "sbp", "package", "-p", "linux"], "ran sbp package -p linux\n"),
-                        (["pib", "sbp"], "ran sbp\n"), (["pib", "sbp", "--help"], "ran sbp --help\n")):
+                        # pib package never gets the build set-up; without its own set-up it runs as is
+                        (["pib", "package", "-p", "linux"], "ran package -p linux\n"),
+                        (["pib", "package"], "ran package\n"), (["pib", "package", "--help"], "ran package --help\n")):
         r = subprocess.run(["bash", "-c", case + "echo setup", "ep", *argv], capture_output=True, text=True,
                            env={"PATH": f"{t}:{os.environ['PATH']}"})
         assert r.stdout == want, (argv, r.stdout, r.stderr)
-    # in the pib-sbp image: sbp's own set-up runs first, except for help, which needs none
+    # pib package's own set-up (sbp/setup.sh) runs first, also for --list; help and a bare
+    # "pib package", a usage error, need none
     setup = Path(t) / "sbp-setup"
     setup.write_text('#!/bin/sh\necho "sbp-setup $*"\n'); setup.chmod(0o755)
     sbp_case = ep[ep.index('case "${1:-} ${2:-}" in'):ep.index("# --- arm64 emulation")].replace(
         "python3 -m pib.emulation", "true").replace("/usr/local/lib/pib/sbp-setup", str(setup))
-    for argv, want in ((["pib", "sbp", "package", "-p", "linux"], "sbp-setup pib sbp package -p linux\n"),
-                       (["pib", "sbp", "list"], "sbp-setup pib sbp list\n"),
-                       (["pib", "sbp", "--help"], "ran sbp --help\n"), (["pib", "sbp"], "ran sbp\n"),
-                       (["pib", "sbp", "package", "--help"], "ran sbp package --help\n"),
-                       (["pib", "sbp", "package", "-p", "linux", "-h"], "ran sbp package -p linux -h\n")):
+    for argv, want in ((["pib", "package", "-p", "linux"], "sbp-setup pib package -p linux\n"),
+                       (["pib", "package", "--list"], "sbp-setup pib package --list\n"),
+                       (["pib", "package", "--list", "--debug"], "sbp-setup pib package --list --debug\n"),
+                       (["pib", "package", "--help"], "ran package --help\n"), (["pib", "package"], "ran package\n"),
+                       (["pib", "package", "-h"], "ran package -h\n"),
+                       (["pib", "package", "--list", "--help"], "ran package --list --help\n"),
+                       (["pib", "package", "-p", "linux", "-h"], "ran package -p linux -h\n")):
         r = subprocess.run(["bash", "-c", sbp_case + "echo setup", "ep", *argv], capture_output=True, text=True,
                            env={"PATH": f"{t}:{os.environ['PATH']}"})
         assert r.stdout == want, (argv, r.stdout, r.stderr)

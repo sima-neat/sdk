@@ -264,7 +264,7 @@ def cmd_keys_payload(a):
 
 
 def gen_fit_key(out, cn="Customer"):
-    """Write fit-signing.{key,crt}: the RSA-2048 key a kernel built by pib sbp signs its FIT
+    """Write fit-signing.{key,crt}: the RSA-2048 key a kernel built by pib package signs its FIT
     with (the kernel's FIT_SIGN_ALGO is sha256,rsa2048), and its certificate."""
     out, cn_subj = Path(out), subj(cn, "kernel FIT")
     out.mkdir(parents=True, exist_ok=True)
@@ -281,7 +281,7 @@ def cmd_keys_fit(a):
     gen_fit_key(a.out, a.cn)
     chown(a.out)
     print(f"pib: kernel FIT signing key written to {a.out}/fit-signing.key (keep it secret) "
-          "and .crt, for pib sbp")
+          "and .crt, for pib package")
 
 
 def read_aes_key(path):
@@ -1493,7 +1493,7 @@ def parser():
     s = keys.add_parser("payload", help="create the AES key for pib sign --encrypt")
     s.add_argument("--out", default="keys")
     s.set_defaults(fn=cmd_keys_payload)
-    s = keys.add_parser("fit", help="create the kernel FIT signing key for pib sbp")
+    s = keys.add_parser("fit", help="create the kernel FIT signing key for pib package")
     s.add_argument("--out", default="keys")
     s.add_argument("--cn", default="Customer")
     s.set_defaults(fn=cmd_keys_fit)
@@ -1508,9 +1508,9 @@ def parser():
 
     sub.add_parser("verify-debs", help="check custom-debs/ signatures").set_defaults(fn=cmd_verify_debs)
 
-    # pib sbp is routed in main(): its options are sbp's and pass through. Listed here for --help.
-    sub.add_parser("sbp", help="build SiMa.ai packages (the kernel) with sbp into custom-debs/ "
-                   "(pib-sbp image)", add_help=False).set_defaults(fn=lambda a: sbp_main([]))
+    # pib package is routed in main(), before argparse: sbp.py parses its options. Listed here for --help.
+    sub.add_parser("package", help="build SiMa.ai packages (the kernel) with sbp into custom-debs/; "
+                   "--list lists them", add_help=False).set_defaults(fn=lambda a: package_main([]))
 
     s = sub.add_parser("sign-debs", help="sign every custom-debs/*.deb (writes <deb>.sig)")
     s.add_argument("--key", default="keys/debs-signing.secret.asc")
@@ -1561,16 +1561,16 @@ def parser():
     return p
 
 
-def sbp_main(argv):
-    from pib import sbp  # only the pib-sbp image can run it; importing it costs nothing elsewhere
-    sbp.cmd_sbp(argv)
+def package_main(argv):
+    from pib import sbp  # here, not at the top: sbp.py imports this module
+    sbp.cmd_package(argv)
 
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     try:
-        if argv[:1] == ["sbp"]:  # before argparse, which would take sbp's options as its own
-            sbp_main(argv[1:])
+        if argv[:1] == ["package"]:  # before argparse, which would refuse its options (-p, --list, ...)
+            package_main(argv[1:])
             return
         a = parser().parse_args(argv)
         a.fn(a)

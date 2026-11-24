@@ -88,12 +88,10 @@ jobs:
             }
 
             function isBranchTag(tag, liveBranchSlugs) {
-              // PIB publishes its pib-sbp image next to each tag as <tag>-sbp (latest-sbp,
-              // v3.0.0-sbp, <sha>-x86_64-sbp, <branch>-sbp): keep it as long as <tag>.
-              // ci/image-config.py gives a branch named <x>-sbp no canonical alias.
-              const candidates = packageFamily === 'palette-image-builder' && tag.endsWith('-sbp')
-                ? [tag, tag.slice(0, -'-sbp'.length)] : [tag];
-              return !candidates.some((t) => isReleaseOrInfrastructureTag(t) || liveBranchSlugs.has(t));
+              if (isReleaseOrInfrastructureTag(tag)) {
+                return false;
+              }
+              return !liveBranchSlugs.has(tag);
             }
 
             function cacheBranchSlug(tag) {

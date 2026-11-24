@@ -25,17 +25,6 @@ def module(name, path):
 installer = module('install_pib', ROOT / 'tools/install_pib.py')
 builder = module('prepare_package', ROOT / 'tools/prepare_package.py')
 IMAGE = 'ghcr.io/sima-neat/palette-image-builder@sha256:' + 'a' * 64
-SBP_IMAGE = 'ghcr.io/sima-neat/palette-image-builder@sha256:' + 'b' * 64  # its pib-sbp variant
-
-
-def launcher_module(path):
-    """The installed launcher (a script without .py) as a module."""
-    from importlib.machinery import SourceFileLoader
-    loader = SourceFileLoader('installed_pib', str(path))
-    spec = importlib.util.spec_from_loader('installed_pib', loader)
-    loaded = importlib.util.module_from_spec(spec)
-    loader.exec_module(loaded)
-    return loaded
 
 
 class PackageTests(unittest.TestCase):
@@ -54,46 +43,6 @@ class PackageTests(unittest.TestCase):
             for p in platforms:
                 self.assertEqual(set(p['arch']), {'amd64', 'arm64'})
             self.assertNotEqual(metadata['name'], 'sdk')
-
-    def test_the_sbp_image_is_bound_but_not_downloaded(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / 'pib'
-            metadata = builder.prepare(out, IMAGE.replace('ghcr.io/', 'ghcr:'), 'develop', 'commit',
-                                       SBP_IMAGE.replace('ghcr.io/', 'ghcr:'))
-            options = f'--image {IMAGE} --sbp-image {SBP_IMAGE}'
-            self.assertEqual(metadata['installation']['script'],
-                             f'python3 ./install_pib.py {options} || python ./install_pib.py {options}')
-            self.assertEqual(metadata['resources'], ['install_pib.py', IMAGE.replace('ghcr.io/', 'ghcr:')],
-                             'sima-cli downloads only the PIB image; Docker pulls pib-sbp on first use')
-        with tempfile.TemporaryDirectory() as tmp, self.assertRaisesRegex(ValueError, 'sbp-image-resource'):
-            builder.prepare(Path(tmp) / 'pib', IMAGE.replace('ghcr.io/', 'ghcr:'), 'develop', 'commit', 'docker.io/x')
-
-    def test_installed_launcher_finds_its_sbp_image(self):
-        source = (ROOT / 'host/pib').read_text()
-        with tempfile.TemporaryDirectory() as tmp:
-            for sbp, want in ((SBP_IMAGE, SBP_IMAGE), (None, None)):
-                directory = Path(tmp) / str(bool(sbp))
-                with patch.object(installer.subprocess, 'check_output', side_effect=['linux\n', source]):
-                    path = installer.install_launcher(IMAGE, directory, docker='docker', windows=False, sbp_image=sbp)
-                pib = launcher_module(path)
-                self.assertEqual(pib.DEFAULT_IMAGE, IMAGE)
-                if want:
-                    self.assertEqual(pib.sbp_image({}), want)
-                else:  # an older package: the digest names no pib-sbp image
-                    with self.assertRaisesRegex(ValueError, 'set PIB_SBP_IMAGE'):
-                        pib.sbp_image({})
-                self.assertEqual(pib.sbp_image({'PIB_IMAGE': 'reg/x:7'}), 'reg/x:7-sbp', 'PIB_IMAGE wins')
-                self.assertEqual(pib.sbp_image({'PIB_SBP_IMAGE': 'reg/y:1', 'PIB_IMAGE': 'reg/x:7'}), 'reg/y:1')
-            # a launcher from before pib sbp has nowhere to bind it
-            old = source.replace('DEFAULT_SBP_IMAGE = ""\n', '')
-            with patch.object(installer.subprocess, 'check_output', side_effect=['linux\n', old]), \
-                    self.assertRaisesRegex(RuntimeError, 'without pib sbp support'):
-                installer.install_launcher(IMAGE, Path(tmp) / 'old', docker='docker', windows=False, sbp_image=SBP_IMAGE)
-        with patch.object(sys, 'argv', ['install_pib.py', '--image', IMAGE, '--sbp-image', SBP_IMAGE, '--no-path']), \
-                patch.object(installer, 'install_launcher', return_value=Path('pib')) as install, \
-                patch.object(installer.subprocess, 'run'), contextlib.redirect_stdout(io.StringIO()):
-            installer.main()
-        self.assertEqual(install.call_args.kwargs['sbp_image'], SBP_IMAGE)
 
     def test_subfolder_resolution_uses_sdk_latest_without_retargeting_it(self):
         from sima_cli.vulcan.artifacts import parse_install_target, resolve_install_metadata_url

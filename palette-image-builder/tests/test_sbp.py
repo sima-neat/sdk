@@ -1,9 +1,10 @@
-"""pib sbp: the launcher verb, the image layout and the build orchestration, with a fake sbp.
+"""pib package: the launcher verb, the image layout and the build orchestration, with a fake sbp.
 
 No network, no SiMa.ai sources: a stand-in sbp publishes small .debs into the layout reprepro
 gives sbp's local repo, keeping a kernel build counter the way the real kernel build does.
 """
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -74,7 +75,9 @@ SOURCES = {"release": "3.0.0", "codename": "agate", "packages": {
     "linux-modalix": {"config": "kernel/linux.yaml", "url": KERNEL_URL, "branch": "master"},
     "lttng-modules-modalix": {"config": "lttng-modules/lttng-modules.yaml", "branch": "stable-2.14",
                               "commit-id": "5f23d6ea07a1b965c9f805c1dd5aab0a213b455b"}}}
-LOCAL_URL = 'https://pib-sbp.invalid/PIB_SBP_KERNEL_SRC.git'  # sbp/setup.sh's PIB_SBP_KERNEL_SRC_URL
+LOCAL_URL = 'https://pib.invalid/PIB_KERNEL_SRC.git'  # sbp/setup.sh's PIB_KERNEL_SRC_URL
+# The variables the launcher passes pib package alone (host/pib package_arguments), by prefix
+PACKAGE_VARIABLES = ('PIB_PKGBUILD_SRC', 'PIB_PACKAGE_', 'PIB_KERNEL_', 'PIB_GIT_MIRRORS', 'PIB_CCACHE_SIZE')
 
 
 def script(path):
@@ -91,12 +94,12 @@ import hashlib, json, os, subprocess, sys, tempfile
 from pathlib import Path
 args = sys.argv[1:]
 log = {"args": args, "cwd": os.getcwd(), "BUILD": os.environ.get("BUILD"),
-       "jobs": os.environ.get("PYTHON_CPU_COUNT"), "src": os.environ.get("PIB_SBP_SRC"),
+       "jobs": os.environ.get("PYTHON_CPU_COUNT"), "src": os.environ.get("PIB_PKGBUILD_SRC"),
        "keydir": os.environ.get("FIT_SIGN_KEYDIR"), "keyname": os.environ.get("FIT_SIGN_KEYNAME"),
        "REPO": os.environ.get("REPO"),
        "git_map": [(os.environ.get(f"GIT_CONFIG_KEY_{i}"), os.environ.get(f"GIT_CONFIG_VALUE_{i}"))
                    for i in range(int(os.environ.get("GIT_CONFIG_COUNT") or 0))],
-       "pib_kernel_vars": sorted(k for k in os.environ if k.startswith("PIB_SBP_KERNEL_"))}
+       "pib_kernel_vars": sorted(k for k in os.environ if k.startswith("PIB_KERNEL_"))}
 with open(os.environ["FAKE_SBP_LOG"], "a") as f:
     f.write(json.dumps(log) + "\n")
 assert Path("configs/packages/packages.yaml").is_file(), "sbp runs from the tree root"
@@ -264,7 +267,7 @@ def deb(path, pkg, ver, owner=None):
 
 
 class Launcher(unittest.TestCase):
-    """host/pib sbp: unprivileged, its own image, a read-only workspace, the customer keys hidden."""
+    """host/pib package: unprivileged, a read-only workspace, the customer keys hidden."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -291,13 +294,13 @@ class Launcher(unittest.TestCase):
         return r
 
     def test_unprivileged_read_only_workspace_and_hidden_keys(self):
-        args = self.run_pib('sbp', 'package', '-p', 'linux').stdout.splitlines()
+        args = self.run_pib('package', '-p', 'linux').stdout.splitlines()
         uid = os.getuid()
-        self.assertEqual(args[-6:], ['reg/x:7-sbp', 'pib', 'sbp', 'package', '-p', 'linux'])
+        self.assertEqual(args[-5:], ['reg/x:7', 'pib', 'package', '-p', 'linux'], 'the image every pib command runs')
         self.assertNotIn('--privileged', args)
         self.assertNotIn('/dev:/dev', args)
-        self.assertIn(f'pib-sbp-{uid}:/var/tmp/pib-sbp', args)
-        self.assertEqual(args[args.index('--name') + 1], f'pib-sbp-{uid}')
+        self.assertIn(f'pib-package-{uid}:/var/tmp/pib-package', args)
+        self.assertEqual(args[args.index('--name') + 1], f'pib-package-{uid}')
         self.assertIn(f'{self.ws}:/workspace:ro', args)
         self.assertNotIn(f'{self.ws}:/workspace', args)
         self.assertIn(f'{self.ws}/custom-debs:/workspace/custom-debs', args)
@@ -307,67 +310,60 @@ class Launcher(unittest.TestCase):
         self.assertEqual(mounts, [f'{self.ws}/keys/fit-signing.key:/workspace/keys/fit-signing.key:ro',
                                   f'{self.ws}/keys/fit-signing.crt:/workspace/keys/fit-signing.crt:ro'])
         self.assertFalse(any('secret' in a for a in args))
-        # the other verbs keep the read-write workspace and know nothing of sbp
-        args = self.run_pib('verify', PIB_SBP_SRC=str(self.root)).stdout.splitlines()
+        # the other verbs keep the read-write workspace and know nothing of pib package's settings
+        args = self.run_pib('verify', PIB_PKGBUILD_SRC=str(self.root), PIB_PACKAGE_JOBS='3').stdout.splitlines()
         self.assertIn(f'{self.ws}:/workspace', args)
-        self.assertFalse(any('pib-sbp' in a or a.startswith(('PIB_SBP_', 'type=tmpfs')) for a in args), args)
+        self.assertFalse(any('pib-package' in a or a.startswith((*PACKAGE_VARIABLES, 'type=tmpfs'))
+                             for a in args), args)
 
     def test_outside_a_workspace_nothing_is_created(self):
         bare = self.root / 'bare'
         bare.mkdir()
-        args = self.run_pib('sbp', 'list', cwd=bare).stdout.splitlines()
+        args = self.run_pib('package', '--list', cwd=bare).stdout.splitlines()
         self.assertFalse((bare / 'custom-debs').exists())
         self.assertFalse(any('custom-debs' in a or a.startswith('type=tmpfs') for a in args), args)
 
-    def test_image_choice(self):
+    def test_the_image_every_pib_command_runs(self):
+        """pib package has no image of its own: PIB_IMAGE, else the launcher's DEFAULT_IMAGE, also
+        when that is a digest."""
         def image(r):  # the argument before the command ('pib ...')
             args = r.stdout.splitlines()
             return args[len(args) - 2 - args[::-1].index('pib')]
-        self.assertEqual(image(self.run_pib('sbp', 'list', PIB_IMAGE='reg:5000/x')), 'reg:5000/x:latest-sbp')
-        self.assertEqual(image(self.run_pib('sbp', 'list', PIB_SBP_IMAGE='other/y:1')), 'other/y:1')
-        # no PIB_IMAGE: the published pib-sbp image next to the launcher's default (CI's <tag>-sbp)
-        self.assertEqual(image(self.run_pib('sbp', 'list', PIB_IMAGE='')),
-                         'ghcr.io/sima-neat/palette-image-builder:latest-sbp')
-        r = self.run_pib('sbp', 'list', check=False, PIB_IMAGE='reg/x@sha256:' + 'a' * 64)
-        self.assertEqual((r.returncode, r.stdout), (1, ''), r)
-        self.assertIn('set PIB_SBP_IMAGE', r.stderr)
-        # an installed launcher: its DEFAULT_IMAGE is a digest, the installer binds pib-sbp's
-        for bound, want in (('""', None), ('"reg/x@sha256:' + 'b' * 64 + '"', 'reg/x@sha256:' + 'b' * 64)):
-            copy = self.root / 'installed-pib'
-            text = (ROOT / 'host/pib').read_text()
-            text = text.replace('DEFAULT_IMAGE = "ghcr.io/sima-neat/palette-image-builder:latest"',
-                                'DEFAULT_IMAGE = "reg/x@sha256:' + 'a' * 64 + '"').replace('DEFAULT_SBP_IMAGE = ""',
-                                                                                         'DEFAULT_SBP_IMAGE = ' + bound)
-            copy.write_text(text)
-            copy.chmod(0o755)
-            r = subprocess.run([str(copy), 'sbp', 'list'], cwd=self.ws, capture_output=True, text=True,
-                               env={**self.env, 'PIB_IMAGE': ''})
-            if want:
-                self.assertEqual(image(r), want, r.stderr)
-            else:
-                self.assertIn('names no pib-sbp image', r.stderr)
+        digest = 'reg/x@sha256:' + 'a' * 64
+        for env, want in (({}, 'reg/x:7'), ({'PIB_IMAGE': digest}, digest),
+                          ({'PIB_IMAGE': ''}, 'ghcr.io/sima-neat/palette-image-builder:latest')):
+            for argv in (('package', '--list'), ('package', '-p', 'linux'), ('verify',)):
+                self.assertEqual(image(self.run_pib(*argv, **env)), want, (argv, env))
+        # an installed launcher: the installer binds its DEFAULT_IMAGE to the published digest
+        copy = self.root / 'installed-pib'
+        copy.write_text((ROOT / 'host/pib').read_text().replace(
+            'DEFAULT_IMAGE = "ghcr.io/sima-neat/palette-image-builder:latest"', f'DEFAULT_IMAGE = "{digest}"'))
+        copy.chmod(0o755)
+        r = subprocess.run([str(copy), 'package', '--list'], cwd=self.ws, capture_output=True, text=True,
+                           env={**self.env, 'PIB_IMAGE': ''})
+        self.assertEqual(image(r), digest, r.stderr)
 
     def test_source_and_mirrors_are_read_only_and_partial(self):
         src = self.root / 'swsoc-elxr'
         for d in ('pkgbuild/sbp', 'configs/packages', 'keys/rot-key'):
             (src / d).mkdir(parents=True)
         (self.root / 'mirrors').mkdir()
-        args = self.run_pib('sbp', 'list', PIB_SBP_SRC=str(src), PIB_SBP_GIT_MIRRORS=str(self.root / 'mirrors'),
-                            PIB_SBP_JOBS='3', PIB_SBP_CCACHE_SIZE='2G', PIB_SBP_VOLUME='my-vol').stdout.splitlines()
-        self.assertIn('PIB_SBP_CCACHE_SIZE=2G', args)
-        self.assertEqual(args[args.index('--name') + 1], 'pib-sbp-my-vol', 'one run per volume, not per user')
+        args = self.run_pib('package', '--list', PIB_PKGBUILD_SRC=str(src), PIB_GIT_MIRRORS=str(self.root / 'mirrors'),
+                            PIB_PACKAGE_JOBS='3', PIB_CCACHE_SIZE='2G', PIB_PACKAGE_VOLUME='my-vol').stdout.splitlines()
+        self.assertIn('PIB_CCACHE_SIZE=2G', args)
+        self.assertEqual(args[args.index('--name') + 1], 'pib-package-my-vol', 'one run per volume, not per user')
         self.assertIn(f'{src}/pkgbuild:/src/pkgbuild:ro', args)
         self.assertIn(f'{src}/configs/packages:/src/configs/packages:ro', args)
         self.assertFalse(any(a.startswith(f'{src}:') or '/keys/rot-key' in a for a in args), 'not the checkout keys')
-        self.assertIn('PIB_SBP_SRC=/src', args)
+        self.assertIn('PIB_PKGBUILD_SRC=/src', args)
         self.assertIn(f'{self.root}/mirrors:/mirrors:ro', args)
-        self.assertIn('PIB_SBP_GIT_MIRRORS=/mirrors', args)
-        self.assertIn('PIB_SBP_JOBS=3', args)
-        self.assertIn('my-vol:/var/tmp/pib-sbp', args)
-        for env, msg in (({'PIB_SBP_SRC': 'missing'}, 'PIB_SBP_SRC: missing is not a directory'),
-                         ({'PIB_SBP_SRC': str(self.root / 'mirrors')}, 'has no pkgbuild/'),
-                         ({'PIB_SBP_VOLUME': '/abs/path'}, 'is not a Docker volume name')):
-            r = self.run_pib('sbp', 'list', check=False, **env)
+        self.assertIn('PIB_GIT_MIRRORS=/mirrors', args)
+        self.assertIn('PIB_PACKAGE_JOBS=3', args)
+        self.assertIn('my-vol:/var/tmp/pib-package', args)
+        for env, msg in (({'PIB_PKGBUILD_SRC': 'missing'}, 'PIB_PKGBUILD_SRC: missing is not a directory'),
+                         ({'PIB_PKGBUILD_SRC': str(self.root / 'mirrors')}, 'has no pkgbuild/'),
+                         ({'PIB_PACKAGE_VOLUME': '/abs/path'}, 'is not a Docker volume name')):
+            r = self.run_pib('package', '--list', check=False, **env)
             self.assertEqual((r.returncode, r.stdout), (1, ''), r)
             self.assertIn(msg, r.stderr)
 
@@ -377,22 +373,22 @@ class Launcher(unittest.TestCase):
         git('-C', str(repo), 'config', 'uploadpack.allowFilter', 'true')  # for the partial clone below
         (repo / 'f').write_text('changed, not committed')
         (repo / 'signing_key.pem').write_text('untracked: never mounted, not counted')
-        args = self.run_pib('sbp', 'package', '-p', 'linux', PIB_SBP_KERNEL_SRC=str(repo),
-                            PIB_SBP_KERNEL_REF='my-branch').stdout.splitlines()
+        args = self.run_pib('package', '-p', 'linux', PIB_KERNEL_SRC=str(repo),
+                            PIB_KERNEL_REF='my-branch').stdout.splitlines()
         self.assertIn(f'{repo}/.git:/kernel-src:ro', args, 'its git directory, not the working tree')
         self.assertFalse(any(a.startswith(f'{repo}:') for a in args))
-        self.assertIn('PIB_SBP_KERNEL_SRC=/kernel-src', args)
-        self.assertIn('PIB_SBP_KERNEL_REF=my-branch', args)
-        self.assertIn(f'PIB_SBP_KERNEL_SRC_HEAD={head}', args, 'counted on the host')
-        self.assertIn('PIB_SBP_KERNEL_SRC_CHANGES=1', args)
+        self.assertIn('PIB_KERNEL_SRC=/kernel-src', args)
+        self.assertIn('PIB_KERNEL_REF=my-branch', args)
+        self.assertIn(f'PIB_KERNEL_SRC_HEAD={head}', args, 'counted on the host')
+        self.assertIn('PIB_KERNEL_SRC_CHANGES=1', args)
         bare = self.root / 'bare.git'
         git('clone', '-q', '--bare', str(repo), str(bare))
-        args = self.run_pib('sbp', 'package', '-p', 'linux', PIB_SBP_KERNEL_SRC=str(bare)).stdout.splitlines()
+        args = self.run_pib('package', '-p', 'linux', PIB_KERNEL_SRC=str(bare)).stdout.splitlines()
         self.assertIn(f'{bare}:/kernel-src:ro', args)
-        self.assertFalse(any(a.startswith('PIB_SBP_KERNEL_SRC_') for a in args), 'a bare one has no changes')
-        args = self.run_pib('sbp', 'package', '-p', 'linux',
-                            PIB_SBP_KERNEL_URL='https://github.com/me/simaai-linux.git').stdout.splitlines()
-        self.assertIn('PIB_SBP_KERNEL_URL=https://github.com/me/simaai-linux.git', args)
+        self.assertFalse(any(a.startswith('PIB_KERNEL_SRC_') for a in args), 'a bare one has no changes')
+        args = self.run_pib('package', '-p', 'linux',
+                            PIB_KERNEL_URL='https://github.com/me/simaai-linux.git').stdout.splitlines()
+        self.assertIn('PIB_KERNEL_URL=https://github.com/me/simaai-linux.git', args)
         self.assertFalse(any('/kernel-src' in a for a in args))
         git('-C', str(repo), 'worktree', 'add', '-q', str(self.root / 'wt'))
         borrower = self.root / 'borrower'
@@ -413,73 +409,88 @@ class Launcher(unittest.TestCase):
                           (creds, 'holds credentials'),
                           (self.root / 'plain', 'is not a git repository'),
                           (self.root / 'missing', 'is not a directory')):
-            r = self.run_pib('sbp', 'package', '-p', 'linux', check=False, PIB_SBP_KERNEL_SRC=str(path))
+            r = self.run_pib('package', '-p', 'linux', check=False, PIB_KERNEL_SRC=str(path))
             self.assertEqual((r.returncode, r.stdout), (1, ''), r)
             self.assertIn(msg, r.stderr)
             self.assertNotIn('s3cr3t', r.stderr)
-        for env, msg in (({'PIB_SBP_KERNEL_URL': 'https://me:s3cr3t@github.com/me/x.git'}, 'PIB_SBP_KERNEL_URL must'),
-                         ({'PIB_SBP_KERNEL_URL': 'https://github.com/me/${oc.env:HOME}.git'}, 'PIB_SBP_KERNEL_URL must'),
-                         ({'PIB_SBP_KERNEL_REF': 'a b'}, 'PIB_SBP_KERNEL_REF must')):
-            r = self.run_pib('sbp', 'package', '-p', 'linux', check=False, **env)
+        for env, msg in (({'PIB_KERNEL_URL': 'https://me:s3cr3t@github.com/me/x.git'}, 'PIB_KERNEL_URL must'),
+                         ({'PIB_KERNEL_URL': 'https://github.com/me/${oc.env:HOME}.git'}, 'PIB_KERNEL_URL must'),
+                         ({'PIB_KERNEL_REF': 'a b'}, 'PIB_KERNEL_REF must')):
+            r = self.run_pib('package', '-p', 'linux', check=False, **env)
             self.assertEqual((r.returncode, r.stdout), (1, ''), r)
             self.assertIn(msg, r.stderr)
             self.assertNotIn('s3cr3t', r.stderr, 'the token is never echoed')
-        # PIB_CONFIGS mounts its parent directory: never for pib sbp, which must not see the keys
+        # PIB_CONFIGS mounts its parent directory: never for pib package, which must not see the keys
         (self.ws / 'configs').mkdir()
-        args = self.run_pib('sbp', 'package', '-p', 'linux', PIB_CONFIGS=str(self.ws / 'configs')).stdout.splitlines()
+        args = self.run_pib('package', '-p', 'linux', PIB_CONFIGS=str(self.ws / 'configs')).stdout.splitlines()
         self.assertFalse(any(':/pib-src' in a or a.startswith('PIB_CONFIGS=') for a in args), args)
         args = self.run_pib('init', 'x', PIB_CONFIGS=str(self.ws / 'configs')).stdout.splitlines()
         self.assertIn(f'{self.ws}:/pib-src:ro', args, 'other verbs keep it')
 
     def test_signing_material_never_reaches_sbp(self):
-        args = self.run_pib('sbp', 'list', SWU_SIGNING_KEY=str(self.ws / 'keys/swu-signing.key'),
+        args = self.run_pib('package', '--list', SWU_SIGNING_KEY=str(self.ws / 'keys/swu-signing.key'),
                             PIB_CREDENTIALS=str(self.ws / 'keys/ca.key'), SSH_AUTH_SOCK=str(self.root / 'agent')).stdout.splitlines()
         self.assertFalse(any(a.startswith(('SWU_', 'PIB_CREDENTIALS', 'SSH_AUTH_SOCK')) or ':/keys/' in a
                              for a in args), args)
 
 
 class Layout(unittest.TestCase):
-    """The image: PIB stays the default target; sbp's settings never become image ENV."""
+    """One image: PIB with pib package's tools and sbp; sbp's settings never become image ENV."""
 
     def test_dockerfile_stages(self):
         text = (ROOT / 'Dockerfile').read_text()
         stages = re.findall(r'^FROM\s+(\S+)(?:\s+AS\s+(\S+))?', text, re.M)
         self.assertEqual(stages[0][1], 'pib-deps')
-        self.assertEqual(stages[1:], [('pib-deps', 'pib-sbp-tools'), ('pib-deps', 'pib'),
-                                      ('pib-sbp-tools', 'pib-sbp'), ('pib', '')])
-        self.assertEqual(stages[-1], ('pib', ''), 'a plain build must still give PIB')
-        # The per-commit build identity comes last in both images, the same in both, so the
-        # dependency and toolchain layers before it are cached across commits.
+        self.assertEqual(stages[1:], [('pib-deps', 'pib-package-tools'), ('pib-package-tools', 'pib')])
+        self.assertEqual(stages[-1][1], 'pib', 'a plain build must give PIB, with the package tools')
+        # The per-commit build identity comes last, so the dependency and toolchain layers before
+        # it are cached across commits.
         body = dict(zip([s[1] for s in stages], re.split(r'^FROM\s+.*$', text, flags=re.M)[1:]))
         identity = re.compile(r'PIB_VERSION|PIB_GIT_SHA|PIB_DEFAULT_IMAGE')
-        for stage in ('pib-deps', 'pib-sbp-tools'):
+        for stage in ('pib-deps', 'pib-package-tools'):
             self.assertNotRegex(body[stage], identity, stage)
-        self.assertEqual(body['pib'].strip(), body['pib-sbp'].strip().replace(
-            '# The default target stays PIB itself.', '').strip())
+        self.assertRegex(body['pib'], identity)
+        # pib package's toolchain is installed before every per-commit input, so its large layer
+        # stays cached across commits and image updates do not download it again.
+        deps = body['pib-deps']
+        toolchain = deps.index('gcc-aarch64-linux-gnu')
+        for per_commit in ('COPY RELEASE', '--mount=type=bind,source=deps', '--mount=type=bind,source=pib'):
+            self.assertLess(toolchain, deps.index(per_commit), per_commit)
+        self.assertNotIn('apt-get', body['pib-package-tools'])
+        # Every PIB image runs pib package: no marker tells one image from another.
+        for path in (ROOT / 'Dockerfile', Path(sbp.__file__)):
+            self.assertNotIn('/etc/pib-sbp', path.read_text(), path)
         env = ' '.join(re.findall(r'^ENV\s+(.*(?:\\\n.*)*)', text, re.M))
         for name in ('BUILD', 'BUILD_TYPE', 'KEY_PATH', 'REPO', 'REPO_ROOT', 'REPO_PUSH', 'REPO_PULL', 'DAILY_MIRROR'):
             self.assertNotRegex(env, rf'(^|\s){name}=', f'{name} would leak into pib build')
         self.assertIn('!sbp/', (ROOT / '.dockerignore').read_text().splitlines())
 
     def test_sbp_comes_with_the_pinned_commit(self):
-        """pib-sbp fetches sbp and its package configs from the commit deps/artifacts.json pins, into
-        the tree pib sbp and the sbp wrapper look in; PIB's own image configs, which pib init copies
-        into workspaces, never hold configs/packages."""
+        """pib-package-tools fetches sbp and its package configs from the commit deps/artifacts.json
+        pins, into the tree pib package and the sbp wrapper look in, and checks them and the tools;
+        PIB's own image configs, which pib init copies into workspaces, never hold configs/packages."""
         text = (ROOT / 'Dockerfile').read_text()
         names = [m[1] for m in re.findall(r'^FROM\s+(\S+)(?:\s+AS\s+(\S+))?', text, re.M)]
         body = dict(zip(names, re.split(r'^FROM\s+.*$', text, flags=re.M)[1:]))
-        self.assertIn(f'python3 /tmp/deps/fetch-artifacts.py --sbp {sbp.BAKED_SRC}\n', body['pib-sbp-tools'])
-        check = body['pib-sbp-tools'].split(f'if [ -d {sbp.BAKED_SRC} ]; then', 1)
+        tools = body['pib-package-tools']
+        self.assertIn(f'python3 /tmp/deps/fetch-artifacts.py --sbp {sbp.BAKED_SRC}\n', tools)
+        # The entrypoint runs pib package's set-up only when it is there, so the image must have it
+        # where the entrypoint looks.
+        self.assertIn('COPY --chmod=755 sbp/setup.sh /usr/local/lib/pib/sbp-setup\n', tools)
+        self.assertIn('[ -x /usr/local/lib/pib/sbp-setup ]', (ROOT / 'entrypoint.sh').read_text())
+        self.assertIn('COPY --chmod=755 sbp/sbp /usr/local/bin/sbp\n', tools)
+        self.assertIn('command -v "$tool"', tools, 'the tools pib package builds with are checked')
+        check = tools.split(f'if [ -d {sbp.BAKED_SRC} ]; then', 1)
         self.assertEqual(len(check), 2, 'the fetched sbp is checked')
         self.assertIn('sbp --help', check[1], 'it must start')
         self.assertIn('pkgutil.walk_packages(sbp.__path__', check[1], 'and all of its modules must import')
         self.assertNotIn('--sbp', body['pib-deps'])
         self.assertIn('rm -rf /tmp/pib-artifacts /usr/share/pib/configs/packages', body['pib-deps'])
-        self.assertIn(f'src="${{PIB_SBP_SRC:-{sbp.BAKED_SRC}}}"', (ROOT / 'sbp/sbp').read_text())
+        self.assertIn(f'src="${{PIB_PKGBUILD_SRC:-{sbp.BAKED_SRC}}}"', (ROOT / 'sbp/sbp').read_text())
         fetcher = script(ROOT / 'deps/fetch-artifacts.py')
-        self.assertEqual(fetcher.SBP_FILES, sbp.SBP_FILES, 'what the fetch checks is what pib sbp needs')
+        self.assertEqual(fetcher.SBP_FILES, sbp.SBP_FILES, 'what the fetch checks is what pib package needs')
         self.assertIn(f'for part in {fetcher.SBP_PARTS!r}:', (ROOT / 'host/pib').read_text(),
-                      'PIB_SBP_SRC mounts the same two parts')
+                      'PIB_PKGBUILD_SRC mounts the same two parts')
         # run-unit-tests.sh copies the image's configs here: PIB's image has none to copy
         self.assertFalse((ROOT / 'configs/packages').exists())
 
@@ -489,11 +500,12 @@ class Layout(unittest.TestCase):
         sed = re.search(r's\|(ghcr\.io/[^|]+)\|\$\{PIB_DEFAULT_IMAGE\}\|g', (ROOT / 'Dockerfile').read_text())
         self.assertEqual(sed[1], 'ghcr.io/sima-neat/palette-image-builder:latest')
         self.assertEqual(text.count(sed[1]), 1)
-        self.assertNotIn('-sbp"', text)
 
     def test_setup_keeps_sbp_away_from_pib_builds_repo(self):
         setup = (ROOT / 'sbp/setup.sh').read_text()
-        self.assertIn('export REPO_ROOT=/var/tmp/pib-sbp/repo/', setup)
+        # sbp's work and repo go on the volume, which the launcher mounts here
+        self.assertRegex(setup, r'(?m)^export SBP_WORKSPACE=/var/tmp/pib-package$')
+        self.assertIn('export REPO_ROOT=/var/tmp/pib-package/repo/', setup)
         self.assertRegex(setup, r'(?m)^export REPO_PUSH=http://localhost\s')
         self.assertRegex(setup, r'(?m)^export BUILD_TYPE=custom\s')
         self.assertIn('rm -f /etc/nginx/sites-enabled/*', setup)
@@ -502,9 +514,9 @@ class Layout(unittest.TestCase):
         self.assertEqual(kernel, {'config': 'kernel/linux.yaml', 'url': 'https://github.com/SiMa-ai/simaai-linux.git',
                                   'branch': 'master'}, 'the public repository, its branch followed')
         self.assertRegex(pins['packages']['lttng-modules-modalix']['commit-id'], r'^[0-9a-f]{40}$')
-        self.assertIn(f'export PIB_SBP_KERNEL_SRC_URL={LOCAL_URL}\n', setup)
+        self.assertIn(f'export PIB_KERNEL_SRC_URL={LOCAL_URL}\n', setup)
         self.assertRegex(setup, r'(?m)^export GIT_TERMINAL_PROMPT=0$')
-        # the launcher checks PIB_SBP_KERNEL_URL and _REF as pib sbp does
+        # the launcher checks PIB_KERNEL_URL and _REF as pib package does
         launcher = (ROOT / 'host/pib').read_text()
         self.assertIn(f"HTTPS_URL = re.compile(r'{sbp.HTTPS_URL.pattern}')", launcher)
         self.assertEqual(pins['codename'], (ROOT / 'CODENAME').read_text().strip())
@@ -523,8 +535,8 @@ class GitMirrors(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             t = Path(t)
             env = {'PATH': os.environ['PATH'], 'HOME': str(t), 'GIT_CONFIG_GLOBAL': '/dev/null',
-                   'GIT_CONFIG_SYSTEM': str(t / 'gitconfig'), 'PIB_SBP_GIT_MIRRORS': str(t / 'mirrors'),
-                   'PIB_SBP_KERNEL_SRC': str(t / 'linux/.git'),  # the launcher mounts the git directory
+                   'GIT_CONFIG_SYSTEM': str(t / 'gitconfig'), 'PIB_GIT_MIRRORS': str(t / 'mirrors'),
+                   'PIB_KERNEL_SRC': str(t / 'linux/.git'),  # the launcher mounts the git directory
                    'GIT_ALLOW_PROTOCOL': 'file', 'GIT_TERMINAL_PROMPT': '0'}  # a broken map fails, offline
             git = lambda *a, **k: subprocess.run(['git', *a], env=env, check=True, capture_output=True, **k)  # noqa: E731
             git('init', '-q', '-b', 'master', str(t / 'work'))
@@ -542,17 +554,17 @@ class GitMirrors(unittest.TestCase):
                     for p in [top, *top.rglob('*')]:
                         os.chown(p, 1000, 1000)
             r = subprocess.run(['bash', '-c', 'set -euo pipefail\ndie() { echo "$*" >&2; exit 1; }\n' + block +
-                                '\necho "$PIB_SBP_KERNEL_SRC_URL"'], env=env, check=True, capture_output=True, text=True)
-            self.assertEqual(r.stdout.strip(), LOCAL_URL, 'pib sbp reads the placeholder from the environment')
+                                '\necho "$PIB_KERNEL_SRC_URL"'], env=env, check=True, capture_output=True, text=True)
+            self.assertEqual(r.stdout.strip(), LOCAL_URL, 'pib package reads the placeholder from the environment')
             for url in ('ssh://git@ssh.bitbucket.org/sima-ai/demo.git', 'git@bitbucket.org:sima-ai/demo.git'):
                 dest = t / ('clone-' + str(abs(hash(url))))
                 git('clone', '-q', '-b', 'master', url, str(dest))  # as sbp's Fetch runs it
                 self.assertEqual((dest / 'f').read_text(), 'x')
             git('clone', '-q', '-b', 'mine', LOCAL_URL, str(t / 'clone-kernel'))
             self.assertEqual((t / 'clone-kernel/f').read_text(), 'mine')
-            # pib sbp's own look at it: as root on a repository another user owns, in the container
+            # pib package's own look at it: as root on a repository another user owns, in the container
             with patch.dict(os.environ, {k: env[k] for k in ('GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM')}):
-                kernel = env['PIB_SBP_KERNEL_SRC']
+                kernel = env['PIB_KERNEL_SRC']
                 self.assertEqual(sbp.head_branch(kernel, 'K'), 'mine')
                 tip = sbp.resolve_in(kernel, 'K', 'mine', 'master')[1]
                 self.assertEqual(sbp.resolve_in(kernel, 'K', tip, 'master'), ('mine', tip))
@@ -573,44 +585,55 @@ class GitMirrors(unittest.TestCase):
 
 class Parsing(unittest.TestCase):
     def test_packages_map_to_components(self):
-        a = sbp.parse(['package', '-p', 'linux,smifb-modalix,lttng-modules'])
-        self.assertEqual(a.picked, ['linux', 'smifb', 'lttng'])
-        self.assertEqual(sbp.parse(['package', '-p', 'kernel,linux']).picked, ['linux'])
-        self.assertEqual(sbp.parse(['list', '-x']).rest, ['-x'])
+        a = sbp.parse(['-p', 'linux,smifb-modalix,lttng-modules'])
+        self.assertEqual((a.picked, a.list), (['linux', 'smifb', 'lttng'], False))
+        self.assertEqual(sbp.parse(['-p', 'kernel,linux']).picked, ['linux'])
+        a = sbp.parse(['--list', '--debug'])
+        self.assertEqual((a.list, a.debug), (True, True))
 
     def test_refusals(self):
-        for argv, msg in ((['package', '-p', 'linux+'], "'+'"),
-                          (['package', '-p', 'u-boot'], 'not \'u-boot\''),
-                          (['package', '-p', 'linux', '-g', 'frequent'], 'always builds with -g all'),
-                          (['package', '-p', 'linux', '--kernel-ref', 'a b'], 'is not a branch name'),
-                          (['package', '-p', 'linux', '--kernel-ref=-x'], 'is not a branch name'),
-                          (['package', '-p', 'smifb', '-t', 'build+'], '-t is for the kernel'),
-                          (['package', '-p', 'smifb', '--kernel-ref', 'x'], '--kernel-ref is for the kernel'),
-                          (['package', '-p', 'lttng', '--kernel-url', 'https://h/x.git'], '--kernel-url is for the kernel'),
-                          (['import'], "not 'import'")):
+        for argv, msg in ((['-p', 'linux+'], "'+'"),
+                          (['-p', 'u-boot'], 'not \'u-boot\''),
+                          (['-p', 'linux', '-g', 'frequent'], 'always builds with -g all'),
+                          (['-p', 'linux', '--kernel-ref', 'a b'], 'is not a branch name'),
+                          (['-p', 'linux', '--kernel-ref=-x'], 'is not a branch name'),
+                          (['-p', 'smifb', '-t', 'build+'], '-t is for the kernel'),
+                          (['-p', 'smifb', '--kernel-ref', 'x'], '--kernel-ref is for the kernel'),
+                          (['-p', 'lttng', '--kernel-url', 'https://h/x.git'], '--kernel-url is for the kernel'),
+                          # --list builds nothing: the build options do not apply
+                          (['--list', '-t', 'clean+'], '-t is for a build (-p), not --list'),
+                          (['--list', '--dry-run'], '--dry-run is for a build (-p), not --list'),
+                          (['--list', '--kernel-ref', 'x'], '--kernel-ref is for a build (-p), not --list')):
             with self.assertRaises(SystemExit) as e:
                 sbp.parse(argv)
             self.assertIn(msg, str(e.exception.code), argv)
+        # neither -p nor --list, or both: a usage error
+        for argv, msg in (([], 'one of the arguments -p/--packages --list is required'),
+                          (['list'], 'one of the arguments -p/--packages --list is required'),
+                          (['--list', '-p', 'linux'], 'not allowed with')):
+            with self.assertRaises(SystemExit) as e, patch('sys.stderr', new_callable=io.StringIO) as err:
+                sbp.parse(argv)
+            self.assertEqual(e.exception.code, 2, argv)
+            self.assertIn(msg, err.getvalue(), argv)
         for url in ('http://github.com/me/simaai-linux.git', 'git@github.com:me/simaai-linux.git',
                     'ssh://git@github.com/me/simaai-linux.git', 'https://me:token@github.com/me/simaai-linux.git',
                     'https://github.com', 'https://github.com/', 'https://github.com/me/x y.git',
                     '/home/me/simaai-linux', 'ssh://github.com/me/x.git', 'file:///home/me/linux',
                     'https://github.com/me/${oc.env:HOME}.git', 'https://github.com/me/x.git?token=t'):
             with self.assertRaises(SystemExit) as e:
-                sbp.parse(['package', '-p', 'linux', '--kernel-url', url])
+                sbp.parse(['-p', 'linux', '--kernel-url', url])
             self.assertIn('must be the https URL of a git repository', str(e.exception.code), url)
             self.assertNotIn('token', str(e.exception.code).replace('or token', ''), 'never echoed')
-        for argv in (['package', '--help'], ['package', '-p', 'linux', '-h']):  # the full text
+        for argv in (['--help'], ['-h'], ['-p', 'linux', '-h'], ['--list', '--help']):  # the full text
             with self.assertRaises(SystemExit) as e, patch('builtins.print') as out:
                 sbp.parse(argv)
-            self.assertEqual(e.exception.code, 0)
-            self.assertIn('PIB_SBP_KERNEL_SRC', out.call_args.args[0])
-        a = sbp.parse(['package', '-p', 'linux', '--kernel-url', 'https://github.com/me/simaai-linux.git',
+            self.assertEqual(e.exception.code, 0, argv)
+            self.assertIn('PIB_KERNEL_SRC', out.call_args.args[0])
+            self.assertNotRegex(out.call_args.args[0], r'pib[ -]sbp|PIB_SBP_|-sbp\b', 'no separate image any more')
+        self.assertRegex(cli.parser().format_help(), r'\bpackage\s+build\s+SiMa\.ai\s+packages', 'pib --help lists it')
+        a = sbp.parse(['-p', 'linux', '--kernel-url', 'https://github.com/me/simaai-linux.git',
                        '--kernel-ref', 'feature/isp-fix'])
         self.assertEqual((a.kernel_url, a.kernel_ref), ('https://github.com/me/simaai-linux.git', 'feature/isp-fix'))
-        with self.assertRaises(SystemExit) as e, patch('sys.stdout'):
-            sbp.parse(['--help'])
-        self.assertEqual(e.exception.code, 0)
 
 
 class Pieces(unittest.TestCase):
@@ -711,10 +734,10 @@ class Pieces(unittest.TestCase):
             """os.environ as in the container: setup.sh's git config for this mirrors directory."""
             conf = self.root / f'gitconfig-{abs(hash(str(directory)))}'
             env = {'PATH': os.environ['PATH'], 'HOME': str(self.root), 'GIT_CONFIG_GLOBAL': '/dev/null',
-                   'GIT_CONFIG_SYSTEM': str(conf), 'PIB_SBP_GIT_MIRRORS': str(directory)}
+                   'GIT_CONFIG_SYSTEM': str(conf), 'PIB_GIT_MIRRORS': str(directory)}
             subprocess.run(['bash', '-c', 'set -euo pipefail\ndie() { echo "$*" >&2; exit 1; }\n' + block],
                            env=env, check=True, capture_output=True)
-            return {k: env[k] for k in ('GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'PIB_SBP_GIT_MIRRORS')}
+            return {k: env[k] for k in ('GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'PIB_GIT_MIRRORS')}
 
         bb = 'ssh://git@ssh.bitbucket.org/sima-ai/simaai-linux.git'
         with patch.dict(os.environ, mapped(mirrors)):
@@ -726,7 +749,7 @@ class Pieces(unittest.TestCase):
         with patch.dict(os.environ, mapped(self.root / 'empty')):
             self.assertIn('no mirror simaai-linux.git', dies(sbp.check_mirror, bb))
         with patch.dict(os.environ, {'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_SYSTEM': '/dev/null'}):
-            os.environ.pop('PIB_SBP_GIT_MIRRORS', None)
+            os.environ.pop('PIB_GIT_MIRRORS', None)
             self.assertIn('is private', dies(sbp.check_mirror, bb))
             self.assertIn('with .git', dies(sbp.check_mirror, bb[:-4]))
             self.assertIsNone(sbp.check_mirror(KERNEL_URL))
@@ -815,17 +838,17 @@ class Pieces(unittest.TestCase):
         self.assertIn('could not reach', dies(sbp.remote_lacks, 'file://' + str(self.root / 'nothing'), 'master', head))
 
     def test_jobs(self):
-        with patch.dict(os.environ, {'PIB_SBP_JOBS': '3'}):
+        with patch.dict(os.environ, {'PIB_PACKAGE_JOBS': '3'}):
             self.assertEqual(sbp.jobs(), 3)
-        with patch.dict(os.environ, {'PIB_SBP_JOBS': 'x'}), self.assertRaises(SystemExit):
+        with patch.dict(os.environ, {'PIB_PACKAGE_JOBS': 'x'}), self.assertRaises(SystemExit):
             sbp.jobs()
         with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop('PIB_SBP_JOBS', None)
+            os.environ.pop('PIB_PACKAGE_JOBS', None)
             self.assertGreaterEqual(sbp.jobs(), 1)
 
 
 class Orchestration(unittest.TestCase):
-    """cmd_sbp end to end with the stand-in sbp."""
+    """cmd_package end to end with the stand-in sbp."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -837,7 +860,6 @@ class Orchestration(unittest.TestCase):
         (base / 'bin/sbp').chmod(0o755)
         (base / 'bin/reprepro').write_text(FAKE_REPREPRO)
         (base / 'bin/reprepro').chmod(0o755)
-        (base / 'marker').touch()
         (base / 'sources.json').write_text(json.dumps(SOURCES))
         (base / 'release').write_text('3.0.0\n')
         (base / 'codename').write_text('agate\n')
@@ -849,13 +871,12 @@ class Orchestration(unittest.TestCase):
         git('-C', str(self.kernel), 'checkout', '-q', 'master')
         self.gitconfig = base / 'gitconfig'
         url_map(self.gitconfig, KERNEL_URL, self.kernel)
-        self.env = {'PATH': f'{base}/bin:{os.environ["PATH"]}', 'PIB_SBP_SRC': str(self.src),
+        self.env = {'PATH': f'{base}/bin:{os.environ["PATH"]}', 'PIB_PKGBUILD_SRC': str(self.src),
                     'SBP_WORKSPACE': str(base / 'vol'), 'REPO_ROOT': str(base / 'vol/repo') + '/',
-                    'BUILD_TYPE': 'custom', 'PIB_SBP_JOBS': '2', 'FAKE_SBP_LOG': str(self.log),
+                    'BUILD_TYPE': 'custom', 'PIB_PACKAGE_JOBS': '2', 'FAKE_SBP_LOG': str(self.log),
                     'GIT_CONFIG_SYSTEM': str(self.gitconfig), 'GIT_CONFIG_GLOBAL': '/dev/null',
-                    'PIB_SBP_KERNEL_SRC_URL': LOCAL_URL}
+                    'PIB_KERNEL_SRC_URL': LOCAL_URL, 'PIB_PACKAGE_SETUP': '1'}
         self.patches = [patch.dict(os.environ, self.env),
-                        patch.object(sbp, 'MARKER', base / 'marker'),
                         patch.object(sbp, 'SOURCES', base / 'sources.json'),
                         patch.object(sbp, 'BAKED_SRC', base / 'baked'),  # the image's own: none
                         patch.object(sbp, 'ARM64_LOADER', shutil.which('true')),
@@ -865,8 +886,8 @@ class Orchestration(unittest.TestCase):
         for p in self.patches:
             p.start()
         # nothing from the developer's environment: sbp's settings come from setup.sh in the container
-        for name in ('PIB_SBP_GIT_MIRRORS', 'PIB_SBP_KERNEL_SRC', 'PIB_SBP_KERNEL_URL', 'PIB_SBP_KERNEL_REF',
-                     'PIB_SBP_KERNEL_SRC_HEAD', 'PIB_SBP_KERNEL_SRC_CHANGES', 'FAKE_NO_FIT', 'FAKE_UAPI',
+        for name in ('PIB_GIT_MIRRORS', 'PIB_KERNEL_SRC', 'PIB_KERNEL_URL', 'PIB_KERNEL_REF',
+                     'PIB_KERNEL_SRC_HEAD', 'PIB_KERNEL_SRC_CHANGES', 'FAKE_NO_FIT', 'FAKE_UAPI',
                      'FAKE_SBP_FAIL', 'FAKE_KV', 'REPO', 'REPO_PUSH', 'REPO_PULL', 'FIT_SIGN_KEYDIR',
                      'FIT_SIGN_KEYNAME', 'BUILD', 'DAILY_MIRROR', 'KEY_PATH', 'GIT_CONFIG_COUNT'):
             os.environ.pop(name, None)
@@ -878,20 +899,21 @@ class Orchestration(unittest.TestCase):
             p.stop()
         self.tmp.cleanup()
 
-    def pib_sbp(self, ws, *argv):
+    def pib_package(self, ws, *argv):
+        """pib package argv in ws: the sbp calls it made."""
         os.chdir(ws)
         before = self.log.read_text().splitlines() if self.log.exists() else []
         with patch('sys.stdout'):
-            cli.main(['sbp', *argv])
+            cli.main(['package', *argv])
         return [json.loads(ln) for ln in self.log.read_text().splitlines()[len(before):]]
 
     def printed(self, ws, *argv):
-        """What pib sbp prints, and the sbp calls it made."""
+        """What pib package prints, and the sbp calls it made."""
         out = []
         os.chdir(ws)
         before = self.log.read_text().splitlines() if self.log.exists() else []
         with patch('builtins.print', side_effect=lambda *a, **k: out.append(' '.join(map(str, a)))):
-            cli.main(['sbp', *argv])
+            cli.main(['package', *argv])
         calls = [json.loads(ln) for ln in self.log.read_text().splitlines()[len(before):]] if self.log.exists() else []
         return out, calls
 
@@ -902,12 +924,25 @@ class Orchestration(unittest.TestCase):
     def debs(ws):
         return sorted(p.name for p in (ws / 'custom-debs').glob('*.deb'))
 
+    def test_refuses_to_run_without_its_setup(self):
+        """Inside pib shell, or anywhere sbp/setup.sh did not run, sbp would use its own defaults and
+        publish into PIB's own local repo: pib package stops before it reads a workspace or sbp."""
+        ws = workspace(self.base)
+        os.chdir(ws)
+        with patch.dict(os.environ):
+            del os.environ['PIB_PACKAGE_SETUP']
+            for argv in (['-p', 'linux'], ['--list']):
+                with self.assertRaisesRegex(SystemExit, 'needs its set-up'):
+                    cli.main(['package', *argv])
+        self.assertFalse(self.log.exists(), 'sbp must not run')
+        self.assertIn('export PIB_PACKAGE_SETUP=1\n', (ROOT / 'sbp/setup.sh').read_text())
+
     def test_palette_kernel_then_modules_then_a_new_source(self):
         ws = workspace(self.base)
         deb(ws / 'custom-debs/linux-image-6.18.3-modalix_6.18.3-1_arm64.deb', 'linux-image-6.18.3-modalix', '6.18.3-1')
         (ws / 'custom-debs/linux-image-6.18.3-modalix_6.18.3-1_arm64.deb.sig').write_text('old')
         deb(ws / 'custom-debs/app_1_arm64.deb', 'app', '1')
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux')
+        calls = self.pib_package(ws, '-p', 'linux')
         self.assertEqual([c['args'] for c in calls], [
             ['package', '-p', 'linux-modalix', '-g', 'all'],
             ['package', '-p', 'smifb-modalix,lttng-modules-modalix', '-t', 'clean+', '-g', 'all']])
@@ -934,11 +969,11 @@ class Orchestration(unittest.TestCase):
         self.assertFalse((ws / 'custom-debs/linux-image-6.18.3-modalix_6.18.3-1_arm64.deb.sig').exists(), 'stale .sig')
         self.assertTrue((ws / 'keys/fit-signing.key').is_file())
         # nothing changed: the kernel run publishes nothing and the modules are current
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux')
+        calls = self.pib_package(ws, '-p', 'linux')
         self.assertEqual([c['args'] for c in calls], [['package', '-p', 'linux-modalix', '-g', 'all']])
         self.assertEqual(self.debs(ws), first)
         # another kernel source: rebuilt from scratch with a higher build number, modules follow
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux', '--kernel-ref', 'develop')
+        calls = self.pib_package(ws, '-p', 'linux', '--kernel-ref', 'develop')
         self.assertEqual(calls[0]['args'], ['package', '-p', 'linux-modalix', '-t', 'clean+', '-g', 'all'])
         self.assertEqual(calls[0]['BUILD'], '2')
         self.assertEqual(calls[1]['args'][2:4], ['smifb-modalix,lttng-modules-modalix', '-t'])
@@ -948,20 +983,20 @@ class Orchestration(unittest.TestCase):
         self.assertEqual([n for n in now if n.startswith('linux-image-')], ['linux-image-6.18.3-modalix_6.18.3-2_arm64.deb'])
         self.assertEqual(len([n for n in now if n.startswith('smifb-')]), 1)
         # back to master: from scratch again, and the number still goes up
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux')
+        calls = self.pib_package(ws, '-p', 'linux')
         self.assertEqual((calls[0]['args'][3:5], calls[0]['BUILD']), (['-t', 'clean+'], '3'))
 
     def test_a_branch_that_moved_is_rebuilt(self):
         ws = workspace(self.base)
         stamp = self.base / 'vol/stamps/linux-modalix'
-        out, calls = self.printed(ws, 'package', '-p', 'linux')
+        out, calls = self.printed(ws, '-p', 'linux')
         self.assertIn(f'pib: kernel: {KERNEL_URL} master @ {self.tips["master"]}', out)
         self.assertTrue(any('the whole repository this once' in o for o in out), out)
-        out, calls = self.printed(ws, 'package', '-p', 'linux')
+        out, calls = self.printed(ws, '-p', 'linux')
         self.assertEqual([c['args'] for c in calls], [['package', '-p', 'linux-modalix', '-g', 'all']], 'unmoved')
         self.assertTrue(any('fetching what is new' in o for o in out), 'the copy is kept: no new download')
         tip = add_commit(self.kernel, 'master', 'a new commit on master')
-        out, calls = self.printed(ws, 'package', '-p', 'linux')
+        out, calls = self.printed(ws, '-p', 'linux')
         self.assertIn(f'pib: kernel: {KERNEL_URL} master @ {tip}', out)
         self.assertEqual((calls[0]['args'][3:5], calls[0]['BUILD']), (['-t', 'clean+'], '2'), 'the new tip, from scratch')
         self.assertEqual(calls[1]['args'][2], 'smifb-modalix,lttng-modules-modalix', 'the modules follow')
@@ -969,19 +1004,19 @@ class Orchestration(unittest.TestCase):
         self.assertTrue(stamp.read_text().startswith(tip + ' '))
         # a dry run looks the new tip up too, and changes nothing: not the stamp, not custom-debs/
         newest = add_commit(self.kernel, 'master', 'one more')
-        out, calls = self.printed(ws, 'package', '-p', 'linux', '--dry-run')
+        out, calls = self.printed(ws, '-p', 'linux', '--dry-run')
         self.assertIn(f'pib: kernel: {KERNEL_URL} master @ {newest}', out)
         self.assertTrue(any('building it from scratch' in o for o in out), out)
         self.assertTrue(stamp.read_text().startswith(tip + ' '), 'a dry run stamps nothing')
         self.assertIn('linux-image-6.18.3-modalix_6.18.3-2_arm64.deb', self.debs(ws))
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux')
+        calls = self.pib_package(ws, '-p', 'linux')
         self.assertEqual((calls[0]['args'][3:5], calls[0]['BUILD']), (['-t', 'clean+'], '3'))
         self.assertIn('linux-image-6.18.3-modalix_6.18.3-3_arm64.deb', self.debs(ws))
         # the same commit through another branch is not a new source: the branch only carries the clone
         git('-C', str(self.kernel), 'branch', 'other', newest)
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux', '--kernel-ref', 'other')
+        calls = self.pib_package(ws, '-p', 'linux', '--kernel-ref', 'other')
         self.assertNotIn('-t', calls[0]['args'])
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux', '--kernel-ref', newest)
+        calls = self.pib_package(ws, '-p', 'linux', '--kernel-ref', newest)
         self.assertNotIn('-t', calls[0]['args'])
 
     def test_your_own_kernel_from_a_url_or_a_commit(self):
@@ -992,18 +1027,18 @@ class Orchestration(unittest.TestCase):
         git('-C', str(fork), 'checkout', '-q', 'master')       # its default branch
         url = 'https://github.com/me/simaai-linux.git'
         url_map(self.gitconfig, url, fork)
-        with patch.dict(os.environ, {'PIB_SBP_KERNEL_URL': url, 'PIB_SBP_KERNEL_REF': 'mine'}):
-            out, calls = self.printed(ws, 'package', '-p', 'linux')
+        with patch.dict(os.environ, {'PIB_KERNEL_URL': url, 'PIB_KERNEL_REF': 'mine'}):
+            out, calls = self.printed(ws, '-p', 'linux')
             self.assertIn(f'pib: kernel: {url} mine @ {mine}', out)
             self.assertIn(f'  url: {url}\n  branch: mine\n  commit-id: {mine}\n', self.kernel_yaml())
             self.assertEqual(calls[0]['git_map'], [[f'url.{sbp.kernel_repo(url)}.insteadOf', url]])
             # the flags win over the variables
-            out, calls = self.printed(ws, 'package', '-p', 'linux', '--kernel-url', KERNEL_URL,
+            out, calls = self.printed(ws, '-p', 'linux', '--kernel-url', KERNEL_URL,
                                       '--kernel-ref', 'develop')
             self.assertIn(f'pib: kernel: {KERNEL_URL} develop @ {self.tips["develop"]}', out)
             self.assertFalse(sbp.kernel_repo(url).exists(), "one repository's copy on the volume")
         # a commit by itself: the branch that holds it carries sbp's clone, as master does not
-        out, calls = self.printed(ws, 'package', '-p', 'linux', '--kernel-url', url, '--kernel-ref', mine)
+        out, calls = self.printed(ws, '-p', 'linux', '--kernel-url', url, '--kernel-ref', mine)
         self.assertIn(f'pib: kernel: {url} mine @ {mine}', out)
         # a commit the remote serves by id but holds on no branch or tag (a pull request's head):
         # sbp's clone would not have it, so it is refused before sbp runs
@@ -1011,22 +1046,22 @@ class Orchestration(unittest.TestCase):
                    '-m', 'pull request', f'{mine}^{{tree}}')
         git('-C', str(fork), 'update-ref', 'refs/pull/1/head', pull)
         before = self.log.read_text()
-        self.assertIn(f'{url} has no commit {pull}', dies(self.pib_sbp, ws, 'package', '-p', 'linux',
+        self.assertIn(f'{url} has no commit {pull}', dies(self.pib_package, ws, '-p', 'linux',
                                                           '--kernel-url', url, '--kernel-ref', pull))
         self.assertEqual(self.log.read_text(), before, 'sbp never ran')
         # a dry run fetches nothing: it asks the remote, and GitHub whether it has the commit
         with patch.object(sbp, 'remote_lacks', return_value=None) as asked:
-            out, calls = self.printed(ws, 'package', '-p', 'linux', '--kernel-url', url, '--kernel-ref', mine,
+            out, calls = self.printed(ws, '-p', 'linux', '--kernel-url', url, '--kernel-ref', mine,
                                       '--dry-run')
         self.assertIn(f'pib: kernel: {url} master @ {mine}', out)
         self.assertEqual(asked.call_args.args, (url, 'master', mine))
-        self.assertIn(f'{KERNEL_URL} has no branch nope', dies(self.pib_sbp, ws, 'package', '-p', 'linux',
+        self.assertIn(f'{KERNEL_URL} has no branch nope', dies(self.pib_package, ws, '-p', 'linux',
                                                                '--kernel-ref', 'nope'))
-        with patch.dict(os.environ, {'PIB_SBP_KERNEL_REF': 'a b'}):
-            self.assertIn('PIB_SBP_KERNEL_REF', dies(self.pib_sbp, ws, 'package', '-p', 'linux'))
-        with patch.dict(os.environ, {'PIB_SBP_KERNEL_URL': 'git@github.com:me/x.git'}):
-            self.assertIn('must be the https URL', dies(self.pib_sbp, ws, 'package', '-p', 'linux'))
-            calls = self.pib_sbp(ws, 'package', '-p', 'smifb')     # a module alone: the kernel is not asked
+        with patch.dict(os.environ, {'PIB_KERNEL_REF': 'a b'}):
+            self.assertIn('PIB_KERNEL_REF', dies(self.pib_package, ws, '-p', 'linux'))
+        with patch.dict(os.environ, {'PIB_KERNEL_URL': 'git@github.com:me/x.git'}):
+            self.assertIn('must be the https URL', dies(self.pib_package, ws, '-p', 'linux'))
+            calls = self.pib_package(ws, '-p', 'smifb')     # a module alone: the kernel is not asked
             self.assertEqual(calls[0]['args'][2], 'smifb-modalix')
 
     def test_your_own_kernel_from_a_repository_on_the_host(self):
@@ -1036,55 +1071,55 @@ class Orchestration(unittest.TestCase):
         git('-C', str(repo), 'branch', '-q', 'develop', 'origin/develop')
         mine = add_commit(repo, 'mine', 'my change')
         kernel = repo / '.git'                         # what the launcher mounts
-        url_map(self.gitconfig, LOCAL_URL, kernel)     # sbp/setup.sh's map, for PIB_SBP_KERNEL_SRC
-        with patch.dict(os.environ, {'PIB_SBP_KERNEL_SRC': str(kernel)}):
-            out, calls = self.printed(ws, 'package', '-p', 'linux')
-            self.assertIn(f'pib: kernel: PIB_SBP_KERNEL_SRC mine @ {mine}', out, 'its checked-out branch')
+        url_map(self.gitconfig, LOCAL_URL, kernel)     # sbp/setup.sh's map, for PIB_KERNEL_SRC
+        with patch.dict(os.environ, {'PIB_KERNEL_SRC': str(kernel)}):
+            out, calls = self.printed(ws, '-p', 'linux')
+            self.assertIn(f'pib: kernel: PIB_KERNEL_SRC mine @ {mine}', out, 'its checked-out branch')
             self.assertIn(f'  url: {LOCAL_URL}\n  branch: mine\n  commit-id: {mine}\n', self.kernel_yaml())
             self.assertEqual(calls[0]['git_map'], [], 'sbp/setup.sh maps it')
             self.assertFalse(any('uncommitted' in o for o in out))
             # the launcher counted uncommitted changes on the host
-            with patch.dict(os.environ, {'PIB_SBP_KERNEL_SRC_HEAD': mine, 'PIB_SBP_KERNEL_SRC_CHANGES': '2'}):
-                out, calls = self.printed(ws, 'package', '-p', 'linux')
+            with patch.dict(os.environ, {'PIB_KERNEL_SRC_HEAD': mine, 'PIB_KERNEL_SRC_CHANGES': '2'}):
+                out, calls = self.printed(ws, '-p', 'linux')
                 self.assertTrue(any('uncommitted changes to 2 tracked files' in o for o in out), out)
-                out, calls = self.printed(ws, 'package', '-p', 'linux', '--kernel-ref', 'develop')
+                out, calls = self.printed(ws, '-p', 'linux', '--kernel-ref', 'develop')
                 self.assertFalse(any('uncommitted' in o for o in out), 'not the commit those changes sit on')
             git('-C', str(repo), 'checkout', '-q', '--detach')
-            self.assertIn('detached', dies(self.pib_sbp, ws, 'package', '-p', 'linux'))
-            out, calls = self.printed(ws, 'package', '-p', 'linux', '--kernel-ref', mine)
-            self.assertIn(f'pib: kernel: PIB_SBP_KERNEL_SRC mine @ {mine}', out, 'the branch that holds it')
+            self.assertIn('detached', dies(self.pib_package, ws, '-p', 'linux'))
+            out, calls = self.printed(ws, '-p', 'linux', '--kernel-ref', mine)
+            self.assertIn(f'pib: kernel: PIB_KERNEL_SRC mine @ {mine}', out, 'the branch that holds it')
             tagged = git('-C', str(repo), '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit-tree',
                          '-m', 'on a tag only', f'{mine}^{{tree}}')
             git('-C', str(repo), 'tag', 'v1', tagged)
-            out, calls = self.printed(ws, 'package', '-p', 'linux', '--kernel-ref', tagged)
-            self.assertIn(f'pib: kernel: PIB_SBP_KERNEL_SRC master @ {tagged}', out, 'a clone takes the tags')
+            out, calls = self.printed(ws, '-p', 'linux', '--kernel-ref', tagged)
+            self.assertIn(f'pib: kernel: PIB_KERNEL_SRC master @ {tagged}', out, 'a clone takes the tags')
             orphan = git('-C', str(repo), '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit-tree',
                          '-m', 'on no branch', f'{mine}^{{tree}}')
-            self.assertIn('is on no branch or tag', dies(self.pib_sbp, ws, 'package', '-p', 'linux',
+            self.assertIn('is on no branch or tag', dies(self.pib_package, ws, '-p', 'linux',
                                                          '--kernel-ref', orphan))
-            self.assertIn('has no commit', dies(self.pib_sbp, ws, 'package', '-p', 'linux', '--kernel-ref', 'e' * 40))
-            self.assertIn('exclude each other', dies(self.pib_sbp, ws, 'package', '-p', 'linux',
+            self.assertIn('has no commit', dies(self.pib_package, ws, '-p', 'linux', '--kernel-ref', 'e' * 40))
+            self.assertIn('exclude each other', dies(self.pib_package, ws, '-p', 'linux',
                                                      '--kernel-url', 'https://github.com/me/x.git'))
-            with patch.dict(os.environ, {'PIB_SBP_KERNEL_URL': 'https://github.com/me/x.git'}):
-                self.assertIn('exclude each other', dies(self.pib_sbp, ws, 'package', '-p', 'linux'))
-            with patch.dict(os.environ, {'PIB_SBP_KERNEL_SRC_URL': ''}):
-                self.assertIn('did not map it', dies(self.pib_sbp, ws, 'package', '-p', 'linux'))
+            with patch.dict(os.environ, {'PIB_KERNEL_URL': 'https://github.com/me/x.git'}):
+                self.assertIn('exclude each other', dies(self.pib_package, ws, '-p', 'linux'))
+            with patch.dict(os.environ, {'PIB_KERNEL_SRC_URL': ''}):
+                self.assertIn('did not map it', dies(self.pib_package, ws, '-p', 'linux'))
             git('-C', str(repo), 'checkout', '-q', '-b', 'feat+x')
-            self.assertIn('is not a branch name or commit', dies(self.pib_sbp, ws, 'package', '-p', 'linux'))
+            self.assertIn('is not a branch name or commit', dies(self.pib_package, ws, '-p', 'linux'))
 
     def test_another_kernel_version_never_wedges_the_volume(self):
         """sbp's repo keeps every package name it is given: before a build from scratch the old
         kernels leave it, or a kernel of another version would stay next to the next one."""
         ws = workspace(self.base, 'minimal')
-        self.pib_sbp(ws, 'package', '-p', 'linux')                                        # 6.18.3-1
+        self.pib_package(ws, '-p', 'linux')                                        # 6.18.3-1
         with patch.dict(os.environ, {'FAKE_KV': '6.19.0'}):
-            msg = dies(self.pib_sbp, ws, 'package', '-p', 'linux', '--kernel-ref', 'develop')
+            msg = dies(self.pib_package, ws, '-p', 'linux', '--kernel-ref', 'develop')
         self.assertIn('would be left out of the image', msg, 'the image installs 6.18.3 kernels only')
         kernels = lambda: sorted((f['Package'], f['Version']) for f in sbp.packages_index()  # noqa: E731
                                  if sbp.kernel_set(f['Package'], 'modalix'))
         self.assertEqual(kernels(), [('linux-headers-6.19.0-modalix', '6.19.0-2'),
                                      ('linux-image-6.19.0-modalix', '6.19.0-2'), ('linux-libc-dev', '6.19.0-2')])
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux')               # back to SiMa.ai's: it works again
+        calls = self.pib_package(ws, '-p', 'linux')               # back to SiMa.ai's: it works again
         self.assertEqual((calls[0]['args'][3:5], calls[0]['BUILD']), (['-t', 'clean+'], '3'))
         self.assertEqual(kernels(), [('linux-headers-6.18.3-modalix', '6.18.3-3'),
                                      ('linux-image-6.18.3-modalix', '6.18.3-3'), ('linux-libc-dev', '6.18.3-3')],
@@ -1095,192 +1130,190 @@ class Orchestration(unittest.TestCase):
                                           {'Package': 'linux-image-6.19.0-modalix', 'Version': '6.19.0-2'}],
                        ws, 'modalix')
         self.assertIn('-t clean+', msg)
-        self.assertIn('PIB_SBP_VOLUME', msg)
+        self.assertIn('PIB_PACKAGE_VOLUME', msg)
 
     def test_a_kernel_without_a_fit_is_said_so(self):
         ws = workspace(self.base, 'minimal')
-        out, _ = self.printed(ws, 'package', '-p', 'linux')
+        out, _ = self.printed(ws, '-p', 'linux')
         self.assertFalse(any('FIT' in o for o in out), out)
         with patch.dict(os.environ, {'FAKE_NO_FIT': '1'}):
-            out, _ = self.printed(ws, 'package', '-p', 'linux', '-t', 'clean+')
+            out, _ = self.printed(ws, '-p', 'linux', '-t', 'clean+')
         self.assertTrue(any('WARNING: the kernel package has no FIT' in o for o in out), out)
 
     def test_minimal_kernel_only_and_opt_outs(self):
         ws = workspace(self.base, 'minimal')
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux')
+        calls = self.pib_package(ws, '-p', 'linux')
         self.assertEqual(len(calls), 1, 'no modules in minimal images')
         self.assertEqual([n.split('_')[0] for n in self.debs(ws)],
                          ['linux-headers-6.18.3-modalix', 'linux-image-6.18.3-modalix', 'linux-libc-dev'])
         # modules on their own, against the kernel already built
-        calls = self.pib_sbp(ws, 'package', '-p', 'lttng')
+        calls = self.pib_package(ws, '-p', 'lttng')
         self.assertEqual([c['args'] for c in calls], [['package', '-p', 'lttng-modules-modalix', '-t', 'clean+', '-g', 'all']])
 
     def test_palette_no_modules_dry_run_and_order(self):
         ws = workspace(self.base)
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux', '--no-modules', '--dry-run')
+        calls = self.pib_package(ws, '-p', 'linux', '--no-modules', '--dry-run')
         self.assertEqual([c['args'] for c in calls], [['package', '-p', 'linux-modalix', '-g', 'all', '--dry-run']])
         self.assertEqual(self.debs(ws), [])
         with self.assertRaises(SystemExit) as e:
-            self.pib_sbp(ws, 'package', '-p', 'smifb')
+            self.pib_package(ws, '-p', 'smifb')
         self.assertIn('build the kernel first', str(e.exception.code))
 
-    def test_needs_the_sbp_image_and_a_workspace(self):
-        ws = workspace(self.base)
-        with patch.object(sbp, 'MARKER', self.base / 'no-marker'), self.assertRaises(SystemExit) as e:
-            self.pib_sbp(ws, 'package', '-p', 'linux')
-        self.assertIn('runs in the pib-sbp image', str(e.exception.code))
+    def test_needs_a_workspace(self):
         (self.base / 'empty').mkdir()
         with self.assertRaises(SystemExit) as e:
-            self.pib_sbp(self.base / 'empty', 'package', '-p', 'linux')
+            self.pib_package(self.base / 'empty', '-p', 'linux')
         self.assertIn("run 'pib init' first", str(e.exception.code))
 
-    def test_the_images_own_sbp_unless_pib_sbp_src_names_another(self):
+    def test_the_images_own_sbp_unless_pib_packages_src_names_another(self):
         ws = workspace(self.base, 'minimal')
         not_yet = script(ROOT / 'ci/check-sbp-start.py').NOT_YET
-        del os.environ['PIB_SBP_SRC']
-        msg = dies(self.pib_sbp, ws, 'package', '-p', 'linux')    # neither: stops before sbp runs
+        del os.environ['PIB_PKGBUILD_SRC']
+        msg = dies(self.pib_package, ws, '-p', 'linux')    # neither: stops before sbp runs
         self.assertIn(not_yet, msg, 'what CI looks for in the start check')
-        self.assertIn('Set PIB_SBP_SRC', msg)
+        self.assertIn('Set PIB_PKGBUILD_SRC', msg)
         self.assertFalse(self.log.exists(), 'sbp never ran')
-        # the tree the pib-sbp image fetched from the pinned commit (deps/fetch-artifacts.py --sbp)
+        # the tree the image fetched from the pinned commit (deps/fetch-artifacts.py --sbp)
         shutil.copytree(self.src, self.base / 'baked')
         pin = 'https://github.com/SiMa-ai/swsoc-simaai-elxr-doc.git ' + 'c' * 40
         (self.base / 'baked/SOURCE').write_text(pin + '\n')
-        out, calls = self.printed(ws, 'package', '-p', 'linux', '--dry-run')
+        out, calls = self.printed(ws, '-p', 'linux', '--dry-run')
         self.assertIn("pib: sbp and its package configs: this image's, from " + pin.replace(' ', ' @ '), out)
         self.assertEqual({c['src'] for c in calls}, {str(self.base / 'baked')}, 'sbp runs from it too')
-        out, calls = self.printed(ws, 'list')
+        out, calls = self.printed(ws, '--list')
         self.assertIn("pib: sbp and its package configs: this image's, from " + pin.replace(' ', ' @ '), out,
                       'list names it too')
         self.assertEqual([c['src'] for c in calls], [str(self.base / 'baked')])
-        # PIB_SBP_SRC replaces it
-        os.environ['PIB_SBP_SRC'] = str(self.src)
-        label = f"pib: sbp and its package configs: PIB_SBP_SRC ({self.src}), not this image's own"
-        out, calls = self.printed(ws, 'package', '-p', 'linux', '--dry-run')
+        # PIB_PKGBUILD_SRC replaces it
+        os.environ['PIB_PKGBUILD_SRC'] = str(self.src)
+        label = f"pib: sbp and its package configs: PIB_PKGBUILD_SRC ({self.src}), not this image's own"
+        out, calls = self.printed(ws, '-p', 'linux', '--dry-run')
         self.assertIn(label, out)
         self.assertEqual({c['src'] for c in calls}, {str(self.src)})
-        out, calls = self.printed(ws, 'list')
+        out, calls = self.printed(ws, '--list')
         self.assertIn(label, out)
         self.assertEqual([c['src'] for c in calls], [str(self.src)])
         # and one without sbp stops, rather than being passed over for the image's
         (self.src / 'pkgbuild/sbp/cli.py').unlink()
-        msg = dies(self.pib_sbp, ws, 'package', '-p', 'linux')
-        self.assertIn(f'PIB_SBP_SRC: {self.src}/pkgbuild/sbp/cli.py not found', msg)
+        msg = dies(self.pib_package, ws, '-p', 'linux')
+        self.assertIn(f'PIB_PKGBUILD_SRC: {self.src}/pkgbuild/sbp/cli.py not found', msg)
         self.assertIn("or unset it to use this image's own (" + pin.replace(' ', ' @ ') + ")", msg)
         self.assertNotIn(not_yet, msg)
-        # without the image's own, PIB_SBP_SRC alone is named; a relative one is taken from here,
+        # without the image's own, PIB_PKGBUILD_SRC alone is named; a relative one is taken from here,
         # and sbp, which runs in the volume's tree, gets it absolute
         shutil.rmtree(self.base / 'baked')
         shutil.copytree(self.base / 'swsoc-elxr', self.base / 'other')
         (self.base / 'other/pkgbuild/sbp/cli.py').write_text('')
-        os.environ['PIB_SBP_SRC'] = os.path.relpath(self.base / 'other', ws)
+        os.environ['PIB_PKGBUILD_SRC'] = os.path.relpath(self.base / 'other', ws)
         other = Path(os.path.realpath(self.base)) / 'other'
-        out, calls = self.printed(ws, 'package', '-p', 'linux', '--dry-run')
-        self.assertIn(f"pib: sbp and its package configs: PIB_SBP_SRC ({other})", out)
+        out, calls = self.printed(ws, '-p', 'linux', '--dry-run')
+        self.assertIn(f"pib: sbp and its package configs: PIB_PKGBUILD_SRC ({other})", out)
         self.assertEqual({c['src'] for c in calls}, {str(other)})
 
     def test_a_changed_source_is_never_stamped_before_it_is_built(self):
         ws = workspace(self.base)
-        self.pib_sbp(ws, 'package', '-p', 'linux', '--no-modules')
+        self.pib_package(ws, '-p', 'linux', '--no-modules')
         # with a source change only a build from scratch is right: other -t values are refused
-        self.assertIn('does not apply', dies(self.pib_sbp, ws, 'package', '-p', 'linux', '--kernel-ref', 'develop',
+        self.assertIn('does not apply', dies(self.pib_package, ws, '-p', 'linux', '--kernel-ref', 'develop',
                                              '-t', 'build+', '--no-modules'))
         with patch.dict(os.environ, {'FAKE_SBP_FAIL': '1'}):
-            self.assertIn('sbp failed', dies(self.pib_sbp, ws, 'package', '-p', 'linux', '--kernel-ref', 'develop',
+            self.assertIn('sbp failed', dies(self.pib_package, ws, '-p', 'linux', '--kernel-ref', 'develop',
                                              '--no-modules'))
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux', '--kernel-ref', 'develop', '--no-modules')
+        calls = self.pib_package(ws, '-p', 'linux', '--kernel-ref', 'develop', '--no-modules')
         self.assertEqual(calls[0]['args'][3:5], ['-t', 'clean+'], 'the failed run left no stamp for develop')
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux', '--kernel-ref', 'develop', '--no-modules')
+        calls = self.pib_package(ws, '-p', 'linux', '--kernel-ref', 'develop', '--no-modules')
         self.assertNotIn('-t', calls[0]['args'], 'built: develop is stamped now')
 
     def test_a_new_fit_key_rebuilds_the_kernel(self):
         ws = workspace(self.base, 'minimal')
-        self.pib_sbp(ws, 'package', '-p', 'linux')
+        self.pib_package(ws, '-p', 'linux')
         for name in ('fit-signing.key', 'fit-signing.crt'):
             (ws / 'keys' / name).unlink()
         with patch('sys.stdout'):
             cli.gen_fit_key(ws / 'keys')
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux')
+        calls = self.pib_package(ws, '-p', 'linux')
         self.assertEqual((calls[0]['args'][3:5], calls[0]['BUILD']), (['-t', 'clean+'], '2'))
 
     def test_each_module_follows_its_own_kernel(self):
         ws = workspace(self.base)
-        self.pib_sbp(ws, 'package', '-p', 'linux')                                   # K1, modules on K1
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux', '--kernel-ref', 'develop', '--no-modules')  # K2
+        self.pib_package(ws, '-p', 'linux')                                   # K1, modules on K1
+        calls = self.pib_package(ws, '-p', 'linux', '--kernel-ref', 'develop', '--no-modules')  # K2
         self.assertEqual(len(calls), 1)
         self.assertFalse([n for n in self.debs(ws) if n.startswith(('smifb-', 'lttng-'))],
                          'module packages built for K1 must not stay next to K2')
-        calls = self.pib_sbp(ws, 'package', '-p', 'smifb')                          # asked for: rebuilt on K2
+        calls = self.pib_package(ws, '-p', 'smifb')                          # asked for: rebuilt on K2
         self.assertEqual([c['args'][2] for c in calls], ['smifb-modalix'])
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux', '--kernel-ref', 'develop')
+        calls = self.pib_package(ws, '-p', 'linux', '--kernel-ref', 'develop')
         self.assertEqual([c['args'][2] for c in calls], ['linux-modalix', 'lttng-modules-modalix'],
                          'smifb is current on K2, lttng still on K1')
         self.assertEqual(len([n for n in self.debs(ws) if n.startswith(('smifb-', 'lttng-'))]), 2)
 
     def test_a_changed_recipe_rebuilds(self):
         ws = workspace(self.base)
-        self.pib_sbp(ws, 'package', '-p', 'linux')
+        self.pib_package(ws, '-p', 'linux')
         patch_file = self.src / 'configs/packages/kernel/0001-HACK-do-not-put-commit-hash-in-version-string.patch'
         patch_file.write_text('a new patch\n')                            # the checkout moved on
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux')
+        calls = self.pib_package(ws, '-p', 'linux')
         self.assertEqual(calls[0]['args'][3:5], ['-t', 'clean+'], 'a new kernel recipe is a new kernel')
         self.assertEqual(calls[1]['args'][2], 'smifb-modalix,lttng-modules-modalix', 'and new headers')
         (self.src / 'configs/packages/smifb/smifb.yaml').write_text(SMIFB_YAML + '  # changed\n')
-        calls = self.pib_sbp(ws, 'package', '-p', 'linux')
+        calls = self.pib_package(ws, '-p', 'linux')
         self.assertEqual([c['args'][2] for c in calls], ['linux-modalix', 'smifb-modalix'], 'only smifb')
 
     def test_unchanged_packages_keep_their_signatures(self):
         ws = workspace(self.base, 'minimal')
-        self.pib_sbp(ws, 'package', '-p', 'linux')
+        self.pib_package(ws, '-p', 'linux')
         sigs = []
         for d in (ws / 'custom-debs').glob('*.deb'):
             Path(f'{d}.sig').write_text('signed')
             sigs.append(Path(f'{d}.sig'))
-        self.pib_sbp(ws, 'package', '-p', 'linux')                     # nothing new
+        self.pib_package(ws, '-p', 'linux')                     # nothing new
         self.assertTrue(all(s.read_text() == 'signed' for s in sigs), 'no re-sign needed')
 
     def test_modules_alone_need_no_fit_key_and_list_needs_no_workspace(self):
         ws = workspace(self.base, 'minimal')
-        self.pib_sbp(ws, 'package', '-p', 'linux')
+        self.pib_package(ws, '-p', 'linux')
         for name in ('fit-signing.key', 'fit-signing.crt'):
             (ws / 'keys' / name).unlink()
-        calls = self.pib_sbp(ws, 'package', '-p', 'smifb')
+        calls = self.pib_package(ws, '-p', 'smifb')
         self.assertEqual(calls[0]['args'][2], 'smifb-modalix')
         self.assertIsNone(calls[0]['keyname'])
-        self.assertIn('run pib keys fit', dies(self.pib_sbp, ws, 'package', '-p', 'linux'))
+        self.assertIn('run pib keys fit', dies(self.pib_package, ws, '-p', 'linux'))
         (self.base / 'elsewhere').mkdir()
-        calls = self.pib_sbp(self.base / 'elsewhere', 'list')
+        calls = self.pib_package(self.base / 'elsewhere', '--list')
         self.assertEqual(calls[0]['args'], ['list'])
+        calls = self.pib_package(self.base / 'elsewhere', '--list', '--debug')
+        self.assertEqual(calls[0]['args'], ['list', '--debug'], 'sbp list takes --debug too')
 
     def test_module_packages_built_for_this_kernel_stay(self):
         ws = workspace(self.base, 'minimal')
-        self.pib_sbp(ws, 'package', '-p', 'linux')
-        self.pib_sbp(ws, 'package', '-p', 'smifb')                  # built against this kernel
+        self.pib_package(ws, '-p', 'linux')
+        self.pib_package(ws, '-p', 'smifb')                  # built against this kernel
         smifb = [n for n in self.debs(ws) if n.startswith('smifb-')]
         self.assertEqual(len(smifb), 1)
-        self.pib_sbp(ws, 'package', '-p', 'linux')                  # nothing changed: it stays
+        self.pib_package(ws, '-p', 'linux')                  # nothing changed: it stays
         self.assertEqual([n for n in self.debs(ws) if n.startswith('smifb-')], smifb)
-        self.pib_sbp(ws, 'package', '-p', 'linux', '-t', 'clean+')  # a new kernel: it goes
+        self.pib_package(ws, '-p', 'linux', '-t', 'clean+')  # a new kernel: it goes
         self.assertEqual([n for n in self.debs(ws) if n.startswith('smifb-')], [])
 
     def test_refusals_before_any_build(self):
         ws = workspace(self.base, 'securepalette')
-        self.assertIn('securepalette', dies(self.pib_sbp, ws, 'package', '-p', 'linux'))
+        self.assertIn('securepalette', dies(self.pib_package, ws, '-p', 'linux'))
         ws2 = self.base / 'ws2'
         shutil.copytree(ws, ws2)
         (ws2 / 'image.yaml').write_text('base: palette\ntarget: modalix\nrelease: 3.0.0\nversion: 3.0.0.1\n')
         (self.base / 'sources.json').write_text(json.dumps({**SOURCES, 'release': '3.0.1'}))
-        self.assertIn('pins sources for 3.0.1', dies(self.pib_sbp, ws2, 'package', '-p', 'linux'))
+        self.assertIn('pins sources for 3.0.1', dies(self.pib_package, ws2, '-p', 'linux'))
         self.assertFalse(self.log.exists(), 'sbp never ran')
 
     def test_custom_debs_change_only_when_everything_checks_out(self):
         ws = workspace(self.base, 'minimal')
-        self.pib_sbp(ws, 'package', '-p', 'linux')
+        self.pib_package(ws, '-p', 'linux')
         before = self.debs(ws)
         (ws / 'custom-debs/zz-broken.deb').write_bytes(b'not a deb')
-        self.assertIn('dpkg-deb failed', dies(self.pib_sbp, ws, 'package', '-p', 'linux', '-t', 'clean+'))
+        self.assertIn('dpkg-deb failed', dies(self.pib_package, ws, '-p', 'linux', '-t', 'clean+'))
         self.assertEqual(self.debs(ws), sorted(before + ['zz-broken.deb']), 'the old kernel is still there')
-        self.assertFalse(list((ws / 'custom-debs').glob('.*.pib-sbp')), 'no temporary files left')
+        self.assertFalse(list((ws / 'custom-debs').glob('.*.pib-package')), 'no temporary files left')
 
     def test_uapi_report(self):
         ws = workspace(self.base, 'minimal')
@@ -1300,7 +1333,7 @@ class Orchestration(unittest.TestCase):
                     patch.object(cli, 'release_deb', return_value=theirs), \
                     patch('builtins.print', side_effect=lambda *a, **k: out.append(' '.join(map(str, a)))):
                 os.chdir(ws)
-                cli.main(['sbp', 'package', '-p', 'linux', '-t', 'clean+'])
+                cli.main(['package', '-p', 'linux', '-t', 'clean+'])
             self.assertTrue(any(want in o for o in out), out)
 
 

@@ -36,11 +36,10 @@ x86 イメージにはエミュレーターが含まれます。特権 PIB の�
 | `PIB_CONFIGS` | `pib init` | 上級者向け：同梱設定に代わる外部イメージ設定ディレクトリ。 |
 | `PIB_PCSCD_DIR` | 署名コマンド | pcscd ソケットのディレクトリ。既定 `/run/pcscd`。Linux コンテナからアクセス可能なソケットが必要。 |
 | `PIB_DEB_CACHE` | `pib build`, `pib shell` | Debian ダウンロードのホストキャッシュ。毎回、認証済みメタデータのハッシュとサイズで検証。 |
-| `PIB_SBP_KERNEL_URL`, `PIB_SBP_KERNEL_REF` | `pib sbp` | 実行のたびにビルドするカーネルリポジトリ（認証情報を含まない https URL）と、そのブランチまたはコミット。`--kernel-url` と `--kernel-ref` は、1 回の実行に限りこれらを上書きします。 |
-| `PIB_SBP_KERNEL_SRC` | `pib sbp` | 独自のカーネルを含むホスト上の Git リポジトリ（チェックアウトまたはベアリポジトリ）。読み取り専用でマウントされます。非公開リポジトリや、どこにもプッシュしていないコミットに使用します。 |
-| `PIB_SBP_SRC` | `pib sbp` | sbp（`pkgbuild/`）とそのパッケージ設定（`configs/packages/`）を含むチェックアウト。パッケージビルダーイメージ内のものの代わりに使用されます。イメージにこれらが含まれるまでは必須です。マウントされるのはこの 2 つのディレクトリだけで、読み取り専用です。 |
-| `PIB_SBP_IMAGE` | `pib sbp` | パッケージビルダーイメージを上書き。既定は、`PIB_IMAGE` とともに公開されたイメージ（同じタグに `-sbp` を付けたもの）、またはインストール時に紐付けられたイメージです。 |
-| `PIB_SBP_JOBS`, `PIB_SBP_CCACHE_SIZE`, `PIB_SBP_VOLUME` | `pib sbp` | 並列コンパイルのジョブ数。コンパイラーキャッシュのサイズ（既定 `5G`）。sbp の作業ツリー、パッケージリポジトリ、キャッシュ用の Docker ボリューム（既定 `pib-sbp-<uid>`）。 |
+| `PIB_KERNEL_URL`, `PIB_KERNEL_REF` | `pib package` | 実行のたびにビルドするカーネルリポジトリ（認証情報を含まない https URL）と、そのブランチまたはコミット。`--kernel-url` と `--kernel-ref` は、1 回の実行に限りこれらを上書きします。 |
+| `PIB_KERNEL_SRC` | `pib package` | 独自のカーネルを含むホスト上の Git リポジトリ（チェックアウトまたはベアリポジトリ）。読み取り専用でマウントされます。非公開リポジトリや、どこにもプッシュしていないコミットに使用します。 |
+| `PIB_PKGBUILD_SRC` | `pib package` | sbp（`pkgbuild/`）とそのパッケージ設定（`configs/packages/`）を含むチェックアウト。PIB イメージ内のものの代わりに使用されます。イメージにこれらが含まれるまでは必須です。マウントされるのはこの 2 つのディレクトリだけで、読み取り専用です。 |
+| `PIB_PACKAGE_JOBS`, `PIB_CCACHE_SIZE`, `PIB_PACKAGE_VOLUME` | `pib package` | 並列コンパイルのジョブ数。コンパイラーキャッシュのサイズ（既定 `5G`）。sbp の作業ツリー、パッケージリポジトリ、キャッシュ用の Docker ボリューム（既定 `pib-package-<uid>`）。 |
 
 ## コマンド
 
@@ -64,8 +63,8 @@ pib build --sign
 | `pib shell` | 現在のプロジェクトをマウントしたコンテナシェルを開く |
 | `pib keys init --cn NAME` | CA、SWU リーフ証明書、Debian 署名情報の生成 |
 | `pib keys renew --cn NAME` | 同じ CA でリーフ証明書を更新 |
-| `pib keys fit` | `pib sbp` がビルドするカーネル FIT イメージに署名する鍵ペアの生成 |
-| `pib sbp package -p linux` | カーネルと palette のカーネルモジュールパッケージをビルドし、`custom-debs/` に出力 |
+| `pib keys fit` | `pib package` がビルドするカーネル FIT イメージに署名する鍵ペアの生成 |
+| `pib package -p linux` | カーネルと palette のカーネルモジュールパッケージをビルドし、`custom-debs/` に出力 |
 | `pib sign-debs` / `pib verify-debs` | カスタム Debian パッケージの署名・確認 |
 | `pib build [--sign] [--supplier NAME]` | ビルド、および任意の署名・検証 |
 | `pib sign [FILE]` | バンドルに署名。既定は現在のプロジェクトバージョン |
@@ -73,7 +72,7 @@ pib build --sign
 | `pib diff --against MANIFEST` | 以前のビルドとのパッケージ差分 |
 | `pib clean [--yes]` | ビルドのループデバイスとボリュームグループの確認・削除 |
 
-すべてのコマンドはコンテナ内で実行されます。ホストランチャーは Docker、ワークスペースのマウント、明示的に指定した外部ファイルだけを扱います。`build`、`doctor`、`clean`、対話シェルは特権デバイスアクセスを使用します。署名、検証、鍵生成、プロジェクト作成には不要です。`pib sbp` は専用のイメージ内で特権なしで実行され、プロジェクトのうち `custom-debs/` 以外は読み取り専用で参照します。`keys/` のうち参照できるのはカーネル FIT 鍵ペアだけです。
+すべてのコマンドはコンテナ内で実行されます。ホストランチャーは Docker、ワークスペースのマウント、明示的に指定した外部ファイルだけを扱います。`build`、`doctor`、`clean`、対話シェルは特権デバイスアクセスを使用します。署名、検証、鍵生成、プロジェクト作成には不要です。`pib package` は特権なしで実行され、プロジェクトのうち `custom-debs/` 以外は読み取り専用で参照します。`keys/` のうち参照できるのはカーネル FIT 鍵ペアだけです。
 
 ## ビルド成果物
 
@@ -159,7 +158,7 @@ systemctl --root="$1" enable my-app.service
 
 カスタム Debian パッケージには、`image.yaml` の `debs.key` で受け入れられる分離署名が必要です。`pib sign-debs` は生成した Debian 署名鍵を使用します。既存の GPG 識別情報を使用する場合は、公開鍵を `keys/debs-signing.asc` にエクスポートし、外部でパッケージに署名してビルド前に `pib verify-debs` を実行します。
 
-カーネルは特別な扱いです。`configs/images/image-params.yaml` にあるリリースのカーネルパッケージ名を維持します。PIB はそのカーネルを自動選択し、インストール済みカーネルは 1 つである必要があります。`pib sbp` は、こうしたカーネルパッケージを SiMa のカーネルソースまたは独自のカーネルソースからビルドします。[カーネルのビルド](#building-the-kernel)を参照してください。ローカルの tRoot、ATF、U-Boot 置換パッケージは拒否されます。パッケージの U-Boot は `fip.bin` 内のものと一致する必要があります。
+カーネルは特別な扱いです。`configs/images/image-params.yaml` にあるリリースのカーネルパッケージ名を維持します。PIB はそのカーネルを自動選択し、インストール済みカーネルは 1 つである必要があります。`pib package` は、こうしたカーネルパッケージを SiMa のカーネルソースまたは独自のカーネルソースからビルドします。[カーネルのビルド](#building-the-kernel)を参照してください。ローカルの tRoot、ATF、U-Boot 置換パッケージは拒否されます。パッケージの U-Boot は `fip.bin` 内のものと一致する必要があります。
 
 `swu.description` と `swu.script` を指定すると、更新手順を置き換えられます。最初に `configs/images/files/` のリリース既定値をコピーしてください。バージョン・ハードウェア互換性のプレースホルダー、ハッシュ、必須のブート/SBOM メンバーを保持します。これらはインストール時にボードで動くため、復旧可能なボードで変更を試してください。
 
@@ -167,29 +166,29 @@ systemctl --root="$1" enable my-app.service
 
 ## カーネルをビルドする
 
-`pib sbp` は、SiMa のパッケージビルダーである sbp を使い、SiMa の公開カーネルソースまたは独自のカーネルソースから Modalix カーネルをビルドして、カーネルの Debian パッケージを `custom-debs/` に置きます。palette プロジェクトでは、palette イメージに含まれるカーネルモジュールパッケージである smifb と lttng-modules も、そのカーネル向けに再ビルドします。`pib sbp` は、ARM64 クロスツールチェーンを含む別のパッケージビルダーイメージで実行されます。このイメージは約 2.5 GB で、初回使用時に Docker がダウンロードします。
+`pib package` は、SiMa のパッケージビルダーである sbp を使い、SiMa の公開カーネルソースまたは独自のカーネルソースから Modalix カーネルをビルドして、カーネルの Debian パッケージを `custom-debs/` に置きます。palette プロジェクトでは、palette イメージに含まれるカーネルモジュールパッケージである smifb と lttng-modules も、そのカーネル向けに再ビルドします。PIB イメージには、これらのビルドで使用する ARM64 クロスツールチェーンが含まれています。そのため、イメージは約 0.6 GB 大きくなります。
 
 ```bash
 pib keys fit
-pib sbp package -p linux
+pib package -p linux
 pib sign-debs
 pib build --sign
 ```
 
 
-`pib keys fit` は `keys/fit-signing.key` と `keys/fit-signing.crt` を一度作成します。`pib sbp` はその鍵でカーネルの FIT イメージに署名します。次に、カーネルソースを選択します。
+`pib keys fit` は `keys/fit-signing.key` と `keys/fit-signing.crt` を一度作成します。`pib package` はその鍵でカーネルの FIT イメージに署名します。次に、カーネルソースを選択します。
 
 | カーネルソース | 選択方法 |
 |---|---|
 | SiMa の公開リポジトリの `master` ブランチ | 既定：`https://github.com/SiMa-ai/simaai-linux.git` |
-| 自分のフォーク、そのいずれかのブランチ、またはコミット | `--kernel-url https://github.com/<you>/simaai-linux.git --kernel-ref <branch>`、または `PIB_SBP_KERNEL_URL` と `PIB_SBP_KERNEL_REF` |
-| 自分のコンピューター上のリポジトリ | `PIB_SBP_KERNEL_SRC=<path>`：チェックアウト中のブランチ、または `PIB_SBP_KERNEL_REF` |
+| 自分のフォーク、そのいずれかのブランチ、またはコミット | `--kernel-url https://github.com/<you>/simaai-linux.git --kernel-ref <branch>`、または `PIB_KERNEL_URL` と `PIB_KERNEL_REF` |
+| 自分のコンピューター上のリポジトリ | `PIB_KERNEL_SRC=<path>`：チェックアウト中のブランチ、または `PIB_KERNEL_REF` |
 
-実行のたびにブランチを確認し、その最新コミットをビルドします。このコミットは `pib sbp` が表示します。ブランチが更新されていれば、カーネルを再ビルドします。ビルドされるのはコミット済みの変更だけで、未コミットの変更があれば `pib sbp` が警告します。ビルドコンテナには認証情報がありません。公開リポジトリはトークンを含まない https URL で指定し、非公開リポジトリは読み取り専用でマウントされる `PIB_SBP_KERNEL_SRC` で指定してください。あるリポジトリからの初回ビルドでは、そのリポジトリ全体をダウンロードします。
+実行のたびにブランチを確認し、その最新コミットをビルドします。このコミットは `pib package` が表示します。ブランチが更新されていれば、カーネルを再ビルドします。ビルドされるのはコミット済みの変更だけで、未コミットの変更があれば `pib package` が警告します。ビルドコンテナには認証情報がありません。公開リポジトリはトークンを含まない https URL で指定し、非公開リポジトリは読み取り専用でマウントされる `PIB_KERNEL_SRC` で指定してください。あるリポジトリからの初回ビルドでは、そのリポジトリ全体をダウンロードします。
 
-リリースのカーネルバージョン（6.18.3）、その `simaai_modalix_defconfig` 設定、および SiMa の FIT パッケージングを維持してください。イメージにはリリースのカーネルパッケージ名のパッケージだけがインストールされるため、別のバージョンは除外されます。FIT（`boot/fitImage`）を含まないカーネルパッケージは、プレーンなカーネルイメージとして署名なしで起動し、`pib sbp` はこれについて警告します。また、カーネルの SiMa 固有ヘッダーをリリースのヘッダーと比較し、異なる場合は警告します。カメラ ISP や MLA ランタイムなど、SiMa のビルド済みソフトウェアはリリースのヘッダーを使ってビルドされています。現在、`master` ブランチには SiMa の 2.1.3 カーネルがあります。このカーネルには FIT パッケージングがなく、現在のヘッダーもすべては含まれていないため、SiMa が現在のカーネルをこのブランチで公開するまでは両方の警告が表示されます。
+リリースのカーネルバージョン（6.18.3）、その `simaai_modalix_defconfig` 設定、および SiMa の FIT パッケージングを維持してください。イメージにはリリースのカーネルパッケージ名のパッケージだけがインストールされるため、別のバージョンは除外されます。FIT（`boot/fitImage`）を含まないカーネルパッケージは、プレーンなカーネルイメージとして署名なしで起動し、`pib package` はこれについて警告します。また、カーネルの SiMa 固有ヘッダーをリリースのヘッダーと比較し、異なる場合は警告します。カメラ ISP や MLA ランタイムなど、SiMa のビルド済みソフトウェアはリリースのヘッダーを使ってビルドされています。現在、`master` ブランチには SiMa の 2.1.3 カーネルがあります。このカーネルには FIT パッケージングがなく、現在のヘッダーもすべては含まれていないため、SiMa が現在のカーネルをこのブランチで公開するまでは両方の警告が表示されます。
 
-カーネルのビルドには約 30 分かかり、Docker ボリューム `pib-sbp-<uid>` 内で 6-8 GB を使用します。sbp 自体がパッケージビルダーイメージに含まれるまでは、`PIB_SBP_SRC` に sbp を含むチェックアウト（`pkgbuild/` と `configs/packages/`）を設定してください。
+カーネルのビルドには約 30 分かかり、Docker ボリューム `pib-package-<uid>` 内で 6-8 GB を使用します。sbp 自体が PIB イメージに含まれるまでは、`PIB_PKGBUILD_SRC` に sbp を含むチェックアウト（`pkgbuild/` と `configs/packages/`）を設定してください。
 
 ## 署名
 

@@ -25,7 +25,7 @@ def atomic_write(path, text, mode=0o755):
             temp.unlink(missing_ok=True)
 
 
-def install_launcher(image, directory, docker=None, windows=None, sbp_image=None):
+def install_launcher(image, directory, docker=None, windows=None):
     docker = docker or shutil.which('docker')
     if not docker:
         raise RuntimeError('Docker is required. Install/start Docker and retry.')
@@ -39,11 +39,6 @@ def install_launcher(image, directory, docker=None, windows=None, sbp_image=None
     payload, count = re.subn(r'^DEFAULT_IMAGE = .*$', 'DEFAULT_IMAGE = ' + json.dumps(image), payload, flags=re.MULTILINE)
     if count != 1:
         raise RuntimeError('The selected image has an unsupported PIB launcher format.')
-    if sbp_image:  # pib sbp's image, published with this one; pulled on first use, not now
-        payload, count = re.subn(r'^DEFAULT_SBP_IMAGE = .*$', 'DEFAULT_SBP_IMAGE = ' + json.dumps(sbp_image),
-                                 payload, flags=re.MULTILINE)
-        if count != 1:
-            raise RuntimeError('The selected image has a PIB launcher without pib sbp support.')
     directory = Path(directory)
     launcher = directory / 'pib'
     atomic_write(launcher, payload)
@@ -100,14 +95,13 @@ def add_to_path(directory):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', required=True)
-    parser.add_argument('--sbp-image', help="pib sbp's image (the pib-sbp variant of --image), pulled on first use")
     parser.add_argument('--bin-dir', type=Path)
     parser.add_argument('--no-path', action='store_true', help='do not update the user shell/Windows PATH')
     args = parser.parse_args()
     directory = args.bin_dir or (Path(os.environ.get('LOCALAPPDATA', str(Path.home() / 'AppData/Local'))) / 'SiMa/bin'
                                  if os.name == 'nt' else Path.home() / '.local/bin')
     try:
-        launcher = install_launcher(args.image, directory, sbp_image=args.sbp_image)
+        launcher = install_launcher(args.image, directory)
         changed = False if args.no_path else add_to_path(directory)
     except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
         sys.exit(f'PIB installation failed: {error}')

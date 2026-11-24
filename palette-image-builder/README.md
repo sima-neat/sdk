@@ -24,10 +24,10 @@ manual builds without build metadata report `unknown-nogit`.
 - `deps/`: hash-locked Python requirements and commit-pinned artifact URLs/checksums.
 - `ci/image-config.py`: SDK-style GHCR repository/tag selection.
 - `examples/custom-image/`: sample image spec, application package, overlay and hook.
-- `sbp/`: `pib sbp`, the opt-in package builder of the `pib-sbp` image (see below):
-  its run-time set-up, apt/reprepro/nginx templates and the default sources (the
-  kernel's repository and branch, the lttng-modules pin).
-- `ci/`: the GHCR tag scheme (`image-config.py`) and CI's `pib sbp` start check
+- `sbp/`: the image's files for `pib package`, the opt-in kernel build (see below):
+  its run-time set-up, the `sbp` wrapper, apt/reprepro/nginx templates and the
+  default sources (the kernel's repository and branch, the lttng-modules pin).
+- `ci/`: the GHCR tag scheme (`image-config.py`) and CI's `pib package` start check
   (`check-sbp-start.py`).
 - `tests/`: port regressions and full custom-SWU qualification.
 
@@ -76,9 +76,9 @@ signed SWU's rootfs to prove all customizations and the CA reached the payload.
 It does not contact a board. Private test keys and SWU binaries are not uploaded
 by CI; qualification logs, SBOM, checksums, and manifests are retained.
 
-## Building the kernel: `pib sbp` (pib-sbp image)
+## Building the kernel: `pib package`
 
-`pib sbp package -p linux` builds the Modalix kernel with sbp, SiMa.ai's package
+`pib package -p linux` builds the Modalix kernel with sbp, SiMa.ai's package
 builder, and puts its `.deb`s in the workspace's `custom-debs/`; `pib sign-debs`
 and `pib build` then make an image with that kernel. In palette workspaces it
 also rebuilds, whenever the kernel changes, the out-of-tree kernel-module
@@ -87,10 +87,11 @@ builds the kernel alone and removes module packages it built for an older kernel
 from `custom-debs/`, so the image falls back to SiMa.ai's. A kernel or module is
 rebuilt from scratch whenever its source, its sbp recipe (its directory under
 `configs/packages/`) or, for the kernel, the FIT key changes. A different sbp
-alone (a newer image, or `PIB_SBP_SRC`) rebuilds nothing: `-t clean+` rebuilds
-the kernel with it, and the module packages follow the new kernel.
+alone (a newer image, or `PIB_PKGBUILD_SRC`) rebuilds nothing: `-t clean+`
+rebuilds the kernel with it, and the module packages follow the new kernel.
 securepalette is refused: its images check the kernel FIT against SiMa.ai's
-U-Boot key. `pib sbp --help` lists the options.
+U-Boot key. `pib package --help` lists the options, and `pib package --list`
+sbp's packages and their build state.
 
 The kernel source is yours to choose; sbp builds it with SiMa.ai's recipe
 (`configs/packages/kernel/`: `simaai_modalix_defconfig`, the Debian packages and
@@ -98,20 +99,20 @@ the signed FIT):
 
 - By default, SiMa.ai's public repository and branch, `master` of
   `https://github.com/SiMa-ai/simaai-linux.git` (`sbp/sources.json`).
-- `--kernel-url` and `--kernel-ref` (or `PIB_SBP_KERNEL_URL` and
-  `PIB_SBP_KERNEL_REF`, for every run) name another repository, such as your fork,
-  and a branch or commit of it. The URL must be https, with no credentials: the
-  container has none.
-- `PIB_SBP_KERNEL_SRC` names a git repository on the host, a checkout or a bare
+- `--kernel-url` and `--kernel-ref` (or `PIB_KERNEL_URL` and `PIB_KERNEL_REF`,
+  for every run) name another repository, such as your fork, and a branch or
+  commit of it. The URL must be https, with no credentials: the container has
+  none.
+- `PIB_KERNEL_SRC` names a git repository on the host, a checkout or a bare
   one: a private fork, or commits not pushed anywhere. The launcher mounts only its
   git directory, read-only (never the working tree and its untracked files), so it
   must be a complete clone (not `--filter`, `--shared` or a worktree), and it refuses
-  one with credentials in its git config, which the build would see. pib sbp builds
-  the branch checked out there (or `PIB_SBP_KERNEL_REF`) at its latest commit,
-  never uncommitted changes; the launcher counts those on the host and pib sbp warns
-  when they sit on the commit it builds.
+  one with credentials in its git config, which the build would see. pib package
+  builds the branch checked out there (or `PIB_KERNEL_REF`) at its latest commit,
+  never uncommitted changes; the launcher counts those on the host and pib package
+  warns when they sit on the commit it builds.
 
-A branch is looked up on every run and built at its tip, whose commit pib sbp
+A branch is looked up on every run and built at its tip, whose commit pib package
 prints; when the branch moves, the next run rebuilds the kernel. A commit must be
 on a branch or tag of the repository (sbp clones those only), and is cloned with
 a branch that holds it; the same commit asked for through another branch is not
@@ -122,71 +123,74 @@ kernels leave sbp's local repo, so a kernel of another version cannot block the
 next run. Keep the
 release's kernel version (6.18.3), defconfig name and FIT packaging, or the image
 leaves the kernel out (its pins name `linux-image-6.18.3-modalix`) or boots it
-unsigned (pib sbp warns when the kernel package has no FIT). Each run that copies
+unsigned (pib package warns when the kernel package has no FIT). Each run that copies
 a kernel also compares its SiMa.ai uapi headers with the release's: SiMa.ai's
 prebuilt userspace (libcamera's ISP, simaai-mlart) is built against those. Today
 `master` on GitHub is SiMa.ai's release 2.1.3: a 6.18.3 kernel without the FIT step
 and without some of the uapi headers the 3.0 userspace uses, so both warnings
 appear until SiMa.ai publishes its 3.0 kernel there.
 
-The command runs in its own image, the Dockerfile's `pib-sbp` target, which adds
-the cross toolchain and build tools. CI publishes it next to every PIB image as
-`<tag>-sbp` (see CI and GHCR naming); the launcher appends `-sbp` to the tag of
-`PIB_IMAGE`, an installed launcher uses the digest its installer bound, and
-`PIB_SBP_IMAGE` names any other. For a local build, build both targets and set
-`PIB_IMAGE` to the PIB one, as below. It runs unprivileged and builds code fetched from the
-network as root inside its container, so the launcher shows it the workspace
-read-only except `custom-debs/`, and of `keys/` only the kernel FIT key pair
+The command runs in the same image as every other pib command (`PIB_IMAGE`, else
+the launcher's default), which carries the cross toolchain and build tools: on amd64
+the image grows from 1.94 GB to 2.5 GB in Docker (140 MB more to download). The
+Dockerfile installs them in `pib-deps` before any per-commit input (`RELEASE`, `deps/`,
+`pib/`, ...), so their layer stays cached across commits, and an image update
+downloads it again only when that package list or the base image changes;
+`pib-package-tools` then adds sbp itself and its set-up. pib package runs
+unprivileged and only after that set-up (it refuses to run inside `pib shell`), and
+it builds code fetched from the network as root inside its container, so the
+launcher shows it the workspace read-only except `custom-debs/`, and of `keys/`
+only the kernel FIT key pair
 (`keys/fit-signing.{key,crt}`, made once by `pib keys fit`). sbp's work tree,
-local repo and ccache live in the Docker volume `pib-sbp-<uid>` (`PIB_SBP_VOLUME`).
+local repo and ccache live in the Docker volume `pib-package-<uid>`
+(`PIB_PACKAGE_VOLUME`).
 
 sbp and its package configs (`pkgbuild/` and `configs/packages/`) come from the
 same swsoc-simaai-elxr-doc commit as the image configs (`deps/artifacts.json`).
-When that commit carries both, the `pib-sbp` image fetches them into
-`/usr/share/pib/sbp-src` and `pib sbp` uses them, printing the commit; a commit
-that carries only one of the two fails the `pib-sbp` image build. The PIB image
-never carries them: its configs leave `configs/packages/` out, so `pib init`
-copies none from them (configs given with `--configs`, `PIB_CONFIGS` or a
-`./configs` are copied whole). `PIB_SBP_SRC` names a checkout of
-swsoc-simaai-elxr-doc or SiMa.ai's swsoc-elxr to use instead of the image's
-while it is set, for example to try a newer sbp without rebuilding the image;
-only those two directories are mounted, read-only. Unset it once the image
-carries sbp, or it keeps replacing the image's. The pinned commit carries
-neither yet, so for now `pib sbp` stops and asks for `PIB_SBP_SRC`.
+When that commit carries both, the image build fetches them into
+`/usr/share/pib/sbp-src` and `pib package` uses them, printing the commit; a commit
+that carries only one of the two fails the image build. The image configs leave
+`configs/packages/` out, so `pib init` copies none of sbp's package configs into a
+workspace (configs given with `--configs`, `PIB_CONFIGS` or a `./configs` are
+copied whole). `PIB_PKGBUILD_SRC` names a checkout of swsoc-simaai-elxr-doc or
+SiMa.ai's swsoc-elxr to use instead of the image's while it is set, for example
+to try a newer sbp without rebuilding the image; only those two directories are
+mounted, read-only. Unset it once the image carries sbp, or it keeps replacing the
+image's. The pinned commit carries neither yet, so for now `pib package` stops and
+asks for `PIB_PKGBUILD_SRC`.
 
-pib sbp takes the kernel's repository from `sbp/sources.json`, `--kernel-url` or
-`PIB_SBP_KERNEL_SRC`, never from the URL in the sbp tree's own kernel config
-(the image's or `PIB_SBP_SRC`'s).
-`PIB_SBP_GIT_MIRRORS` serves SiMa.ai's private Bitbucket repositories, for a
+pib package takes the kernel's repository from `sbp/sources.json`, `--kernel-url`
+or `PIB_KERNEL_SRC`, never from the URL in the sbp tree's own kernel config
+(the image's or `PIB_PKGBUILD_SRC`'s).
+`PIB_GIT_MIRRORS` serves SiMa.ai's private Bitbucket repositories, for a
 kernel named with `--kernel-url https://bitbucket.org/sima-ai/<name>.git`: a
 directory of bare mirrors (`<name>.git`) made on the host, mounted read-only, into
 which every Bitbucket URL is rewritten, so no credential enters the container.
-GitHub URLs are never rewritten. `pib sbp` checks a source before sbp clones
+GitHub URLs are never rewritten. `pib package` checks a source before sbp clones
 anything: a branch and its tip are read from the mirror, so refresh it first
 (`git -C <mirror> remote update`); a commit must be in it.
 
 ```bash
 docker build -t palette-image-builder:local palette-image-builder
-docker build --target pib-sbp -t palette-image-builder:local-sbp palette-image-builder
-export PIB_IMAGE=palette-image-builder:local          # pib sbp uses ...:local-sbp
-export PIB_SBP_SRC=~/swsoc-simaai-elxr-doc            # while the image has no sbp: a checkout with it
+export PIB_IMAGE=palette-image-builder:local
+export PIB_PKGBUILD_SRC=~/swsoc-simaai-elxr-doc  # while the image has no sbp: a checkout with it
 pib init --flavor palette my-image && cd my-image && pib keys init && pib keys fit
 pib doctor                    # on amd64, once per host boot: arm64 tools for the module builds
-pib sbp package -p linux      # SiMa.ai's kernel: master of github.com/SiMa-ai/simaai-linux
+pib package -p linux          # SiMa.ai's kernel: master of github.com/SiMa-ai/simaai-linux
 pib sign-debs && pib build --sign
 
 # your kernel instead: a fork and branch, or a repository on the host
-pib sbp package -p linux --kernel-url https://github.com/<you>/simaai-linux.git --kernel-ref my-branch
-PIB_SBP_KERNEL_SRC=~/simaai-linux pib sbp package -p linux    # its checked-out branch
+pib package -p linux --kernel-url https://github.com/<you>/simaai-linux.git --kernel-ref my-branch
+PIB_KERNEL_SRC=~/simaai-linux pib package -p linux    # its checked-out branch
 ```
 
 The kernel package is `linux-image-6.18.3-modalix` with the version
 `6.18.3-<n>`, `n` counting the kernel builds in this volume; PIB's image pins
 make it win over SiMa.ai's 6.18.3-2796. A kernel build takes about half an hour
-on 3-4 jobs and 6-8 GB on the volume (`PIB_SBP_JOBS` sets the jobs; by default
-fewer when memory is short; `PIB_SBP_CCACHE_SIZE`, default 5G, bounds ccache). CI builds
-and publishes the `pib-sbp` image but does not build a kernel with it yet: that needs
-sbp and its configs in the image (see above).
+on 3-4 jobs and 6-8 GB on the volume (`PIB_PACKAGE_JOBS` sets the jobs; by default
+fewer when memory is short; `PIB_CCACHE_SIZE`, default 5G, bounds ccache). CI
+starts `pib package` but does not build a kernel yet: that needs sbp and its
+configs in the image (see above).
 
 ## CI and GHCR naming
 
@@ -194,7 +198,10 @@ The SDK Docker workflow calls `.github/workflows/palette-image-builder.yml` for
 every source commit, in parallel with the SDK build. PIB builds natively on the
 Vulcan Ubuntu 24.04 `amd64` and `arm64` runner pools used by the SDK. Each
 architecture must pass the regression
-suite and full custom minimal-SWU smoke test before its image is pushed. Pull
+suite and full custom minimal-SWU smoke test before its image is pushed. Its build
+must also start `pib package --list` through the launcher; that runs the container
+set-up (`sbp/setup.sh`) but builds no kernel, as sbp does not ship in the image yet
+(`ci/check-sbp-start.py`). Pull
 requests from forks run the same qualification without logging in or publishing;
 same-repository PRs use their push-run results and skip duplicate builds. A merge job
 combines the tested immutable digests and promotes them only after both jobs pass.
@@ -210,23 +217,7 @@ Publication follows the main SDK scheme:
 | `v3.0.0.2` | `ghcr.io/sima-neat/palette-image-builder` | `v3.0.0.2`, `v3.0-latest` |
 
 All non-PR builds also produce commit SHA, `staged-<SHA>`, `<SHA>-x86_64`, and
-`<SHA>-aarch64` tags.
-
-Each architecture also builds the `pib-sbp` target, the image `pib sbp` runs in,
-from the same build arguments; the Dockerfile applies the per-commit build identity
-last in both images, so the toolchain layers stay cached across commits. CI runs
-the regression suite in it and starts `pib sbp list` through the launcher, which
-runs the container set-up (`sbp/setup.sh`) and the image check, but builds no
-kernel: sbp does not ship in the image yet (`ci/check-sbp-start.py`). It is
-published in the same package next to every tag above, as `<tag>-sbp`
-(`latest-sbp`, `develop-sbp`, `v3.0.0.2-sbp`, `<SHA>-sbp`, `<SHA>-x86_64-sbp`,
-...), the name the launcher derives from `PIB_IMAGE`; a branch whose name ends in
-`-sbp` gets no canonical alias, which would be another branch's `-sbp` tag. Both
-images are staged before either is promoted. The installer binds the multi-platform
-`pib-sbp` digest into the launcher it installs, as `pib sbp`'s default image,
-without downloading it: Docker pulls it, about 2.5 GB, on the first `pib sbp`,
-outside sima-cli, so a package that is not public needs `docker login ghcr.io`
-first. Release tags accept `vX.Y.Z` or `vX.Y.Z.N`; release publication
+`<SHA>-aarch64` tags. Release tags accept `vX.Y.Z` or `vX.Y.Z.N`; release publication
 does not advance the main branch's `latest`. Branch names use the SDK's lowercase
 sanitization rules. The launcher extracted from an image embeds its build commit tag, rather than following `latest` on each invocation. Commit tags follow the SDK
 convention and can be replaced by a rerun; use `PIB_IMAGE=repository@sha256:...`
@@ -240,17 +231,18 @@ only after PIB publication and install verification succeed, keeping the subfold
 available at the selected SDK commit. The package references the qualified multi-platform
 index by digest, so Docker selects the native image. Host installer tests run on
 Linux, macOS and Windows; post-publication jobs install the exact subfolder package
-on native Linux x86 and ARM. The bare `sdk/pib` command becomes available when this
+on native Linux x86 and ARM and start `pib package --list` with the installed
+launcher. The bare `sdk/pib` command becomes available when this
 workflow publishes from main; feature branches use `sdk/pib@<branch>`. GHCR packages must be made customer-readable by repository
 maintainers before advertising them publicly. The package cleanup workflow
 (`.github/workflows/cleanup-packages.yml`) covers PIB too: once a branch is
 deleted, it removes the branch's package and the canonical versions tagged only
-with that branch's aliases. A `<tag>-sbp` image is kept as long as its `<tag>`.
+with that branch's aliases.
 
 ## Updating platform inputs
 
 Update `RELEASE`, `CODENAME`, the Pasha artifact URL/hash in `deps/artifacts.json`,
-the upstream board-input commit and the `pib sbp` sources in `sbp/sources.json` (the kernel's branch, the lttng-modules pin) together. The upstream commit also gives the `pib-sbp` image its sbp and package configs, when it carries `pkgbuild/` and `configs/packages/`: `deps/fetch-artifacts.py --sbp` fetches those two (`SBP_PARTS`) for that image only, so they are not in `upstream.paths`, the board inputs both images take. When the new commit is the first to carry them, also update the text that says the image has no sbp yet: this README (Building the kernel, CI and GHCR naming), `UPSTREAM`, and `docs/palette-image-builder-reference.md` with its four translations and `website/translations/source-hashes.json`. Update the pinned eLxr OCI index and elxr-config
+the upstream board-input commit and the `pib package` sources in `sbp/sources.json` (the kernel's branch, the lttng-modules pin) together. The upstream commit also gives the image its sbp and package configs, when it carries `pkgbuild/` and `configs/packages/`: `deps/fetch-artifacts.py --sbp` fetches those two (`SBP_PARTS`) into `/usr/share/pib/sbp-src` for `pib package`, so they are not in `upstream.paths`, the board inputs. When the new commit is the first to carry them, also update the text that says the image has no sbp yet: this README (Building the kernel, CI and GHCR naming), `UPSTREAM`, and `docs/palette-image-builder-reference.md` with its four translations and `website/translations/source-hashes.json`. Update the pinned eLxr OCI index and elxr-config
 artifact as needed. Keep standard Python versions and wheel hashes in
 `deps/debsbom-requirements.txt`; record source commits in `UPSTREAM`. Update the `upstream` commit in the same
 lock for board templates, the public APT key, nginx configuration and helper

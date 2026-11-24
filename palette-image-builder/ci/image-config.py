@@ -21,21 +21,12 @@ def configuration(owner, ref, sha, event='push', head_ref=''):
         tags = [f'{canonical}:{release[1]}', f'{canonical}:v{release[2]}.{release[3]}-latest']
         cache = f'release-{release[2]}.{release[3]}'
     else:
-        tags = [f'{repository}:latest']
-        # canonical:<x>-sbp is branch x's pib-sbp alias: a branch named <x>-sbp gets no
-        # canonical alias (it keeps its own repository's tags and the commit tags).
-        if not branch.endswith('-sbp'):
-            tags.append(f'{canonical}:{branch}')
+        tags = [f'{repository}:latest', f'{canonical}:{branch}']
         cache = branch
     version = release[1] if release else f"{branch_name.replace('/', '_')}-{sha[:7]}"
-    tags = list(dict.fromkeys(tags))
-    # The pib-sbp image (pib sbp, the Dockerfile's pib-sbp target) sits next to each PIB tag as
-    # <tag>-sbp: the launcher derives it from PIB_IMAGE that way.
     return dict(repository=repository, canonical=canonical, commit=sha, version=version,
                 staged=f'{repository}:staged-{sha}', cache_scope=cache,
-                promotion_tags='\n'.join(tags), publish=str(event != 'pull_request').lower(),
-                sbp_staged=f'{repository}:staged-{sha}-sbp',
-                sbp_promotion_tags='\n'.join(f'{tag}-sbp' for tag in tags))
+                promotion_tags='\n'.join(dict.fromkeys(tags)), publish=str(event != 'pull_request').lower())
 
 
 if __name__ == '__main__':

@@ -19,16 +19,6 @@ async function run({dryRun = false, foreign = false, unknown = false, requested 
     {id: 4, metadata: {container: {tags: ['codex-live']}}},
     {id: 5, metadata: {container: {tags: [sha, `${sha}-aarch64`, `staged-${sha}`]}}},
   ];
-  // The canonical PIB package also holds the pib-sbp image next to each tag, as <tag>-sbp.
-  const sbpVersions = [
-    {id: 6, metadata: {container: {tags: [`${sha}-sbp`, `staged-${sha}-sbp`, 'latest-sbp']}}},
-    {id: 7, metadata: {container: {tags: ['main-sbp']}}},
-    {id: 8, metadata: {container: {tags: [`${sha}-aarch64-sbp`]}}},
-    {id: 9, metadata: {container: {tags: ['v3.0.0-sbp', 'v3.0-latest-sbp']}}},
-    {id: 10, metadata: {container: {tags: ['develop-sbp']}}},
-    {id: 11, metadata: {container: {tags: ['codex-live-sbp']}}},
-    {id: 12, metadata: {container: {tags: ['codex-lost-sbp']}}},
-  ];
   const github = {
     async request(route, args) {
       if (route.startsWith('DELETE')) { deleted.push(args); return {}; }
@@ -39,7 +29,6 @@ async function run({dryRun = false, foreign = false, unknown = false, requested 
     async paginate(route, args) {
       if (route.endsWith('/branches')) return branches || [{name: 'main'}, {name: 'develop'}, {name: 'codex/Live'}];
       if (args.package_name.endsWith('-codex-lost')) return [{metadata: {container: {tags: [sha]}}}];
-      if (args.package_name === 'palette-image-builder') return [...versions, ...sbpVersions];
       return versions;
     },
   };
@@ -53,7 +42,6 @@ test('cleans both deleted branch packages and canonical branch-only versions', a
   assert.deepEqual(deleted.map(d => [d.package_name, d.package_version_id]), [
     ['sdk-codex-lost', undefined], ['sdk', 1],
     ['palette-image-builder-codex-lost', undefined], ['palette-image-builder', 1],
-    ['palette-image-builder', 12],
   ]);
 });
 test('dry run never mutates packages', async () => assert.deepEqual(await run({dryRun: true}), []));

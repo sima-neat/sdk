@@ -11,20 +11,10 @@ from sima_cli.install.package_builder import build_metadata, write_metadata
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def ghcr_image(what, resource):
-    if not re.fullmatch(r'ghcr:[A-Za-z0-9_./:@-]+', resource):
-        raise ValueError(f'{what} must be a ghcr: reference')
-    return 'ghcr.io/' + resource.removeprefix('ghcr:').removeprefix('ghcr.io/')
-
-
-def prepare(output, image_resource, version, release, sbp_image_resource=None):
-    """sbp_image_resource, the pib-sbp image published with image_resource, is bound into the
-    launcher (pib sbp's default image) but is not a resource: sima-cli would download it with
-    every install, and only kernel builds use it; Docker pulls it on the first pib sbp."""
-    image = ghcr_image('image-resource', image_resource)
-    options = f'--image {image}'
-    if sbp_image_resource:
-        options += f' --sbp-image {ghcr_image("sbp-image-resource", sbp_image_resource)}'
+def prepare(output, image_resource, version, release):
+    if not re.fullmatch(r'ghcr:[A-Za-z0-9_./:@-]+', image_resource):
+        raise ValueError('image-resource must be a ghcr: reference')
+    image = 'ghcr.io/' + image_resource.removeprefix('ghcr:').removeprefix('ghcr.io/')
     output = Path(output)
     if output.exists() and any(output.iterdir()):
         raise ValueError('output directory must be empty')
@@ -32,8 +22,8 @@ def prepare(output, image_resource, version, release, sbp_image_resource=None):
     shutil.copyfile(ROOT / 'tools/install_pib.py', output / 'install_pib.py')
     metadata = build_metadata(output, name='pib', version=version,
         description='SiMa.ai Palette Image Builder',
-        install_script=(f'python3 ./install_pib.py {options} || '
-                        f'python ./install_pib.py {options}'),
+        install_script=(f'python3 ./install_pib.py --image {image} || '
+                        f'python ./install_pib.py --image {image}'),
         host_platforms=['linux,mac,windows'], host_arches=['amd64,arm64'])
     metadata['resources'].append(image_resource)
     metadata['release'] = release
@@ -50,8 +40,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output-dir', required=True, type=Path)
     parser.add_argument('--image-resource', required=True)
-    parser.add_argument('--sbp-image-resource', help='the pib-sbp image published with --image-resource')
     parser.add_argument('--version', required=True)
     parser.add_argument('--release', required=True)
     args = parser.parse_args()
-    prepare(args.output_dir, args.image_resource, args.version, args.release, args.sbp_image_resource)
+    prepare(args.output_dir, args.image_resource, args.version, args.release)

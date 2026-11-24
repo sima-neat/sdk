@@ -11,8 +11,9 @@ import subprocess
 import tempfile
 import urllib.request
 
-# pib sbp's tree, sbp (pkgbuild/) and its package configs (configs/packages/), and the files pib sbp
-# looks for in it (pib/pib/sbp.py, SBP_FILES); the launcher mounts the same two from PIB_SBP_SRC.
+# The sbp tree pib package builds with, sbp (pkgbuild/) and its package configs (configs/packages/),
+# and the files pib package looks for in it (pib/pib/sbp.py, SBP_FILES); the launcher mounts the
+# same two from PIB_PKGBUILD_SRC.
 SBP_PARTS = ('pkgbuild', 'configs/packages')
 SBP_FILES = ('pkgbuild/sbp/cli.py', 'configs/packages/packages.yaml')
 
@@ -78,17 +79,18 @@ def fetch_source(source, destination):
 
 
 def fetch_sbp(source, destination):
-    """pib sbp's tree at the same pinned commit, into destination, with a SOURCE file naming the
+    """The sbp tree at the same pinned commit, into destination, with a SOURCE file naming the
     repository and commit, when that commit carries both parts. For a commit that carries
-    neither, nothing is made and pib sbp needs PIB_SBP_SRC; one part alone is an error. Returns
-    whether the tree was fetched."""
+    neither, nothing is made and pib package needs PIB_PKGBUILD_SRC; one part alone is an error.
+    Returns whether the tree was fetched."""
     repository, commit = pinned(source)
     destination = Path(destination)
     with tempfile.TemporaryDirectory() as staging:
         tree = Path(staging) / 'upstream'
         checkout(repository, commit, SBP_PARTS, tree)
         if not any((tree / part).exists() for part in SBP_PARTS):
-            print(f'Upstream {commit} carries no sbp (pkgbuild/, configs/packages/): pib sbp needs PIB_SBP_SRC')
+            print(f'Upstream {commit} carries no sbp (pkgbuild/, configs/packages/): '
+                  'pib package needs PIB_PKGBUILD_SRC')
             return False
         missing = [f for f in SBP_FILES if not (tree / f).is_file()]
         if missing:
@@ -109,8 +111,9 @@ if __name__ == '__main__':
     parser.add_argument('--release')
     parser.add_argument('--codename')
     parser.add_argument('--sbp', metavar='DIR',
-                        help="only pib sbp's tree (pkgbuild/, configs/packages/) of the pinned upstream "
-                             'commit, into DIR, when that commit carries it; takes no other option')
+                        help='only the sbp tree pib package builds with (pkgbuild/, configs/packages/) of '
+                             'the pinned upstream commit, into DIR, when that commit carries it; takes no '
+                             'other option')
     args = parser.parse_args()
     manifest = Path(__file__).with_name('artifacts.json')
     source = json.loads(manifest.read_text())['upstream']

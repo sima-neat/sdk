@@ -34,7 +34,7 @@ cd my-image
 | `overlay/` | 複製到根檔案系統的設定與其他檔案 |
 | `hooks/` | 套件安裝後的變更，例如啟用服務 |
 
-使用 Palette SDK 建置應用程式並編譯模型，再將目標所需檔案打包。PIB 負責組合套件，不編譯應用程式原始碼。各元件的角色請參閱 [Palette SDK 系統堆疊](sdk-architecture.md)。核心是例外：`pib sbp` 會從 SiMa 的公開原始碼或您自己的原始碼，將核心建置成 `custom-debs/` 中的核心套件，請參閱[建置核心](palette-image-builder-reference.md#building-the-kernel)。
+使用 Palette SDK 建置應用程式並編譯模型，再將目標所需檔案打包。PIB 負責組合套件，不編譯應用程式原始碼。各元件的角色請參閱 [Palette SDK 系統堆疊](sdk-architecture.md)。核心是例外：`pib package` 會從 SiMa 的公開原始碼或您自己的原始碼，將核心建置成 `custom-debs/` 中的核心套件，請參閱[建置核心](palette-image-builder-reference.md#building-the-kernel)。
 
 `image.yaml` 應列出 Debian 套件名稱，而非 `.deb` 檔名。檔案使用覆蓋目錄，安裝後變更使用掛鉤。套件、核心與掛鉤的詳細規則請參閱[自訂設定參考](palette-image-builder-reference.md#customization)。
 

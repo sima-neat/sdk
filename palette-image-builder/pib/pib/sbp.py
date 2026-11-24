@@ -1,11 +1,11 @@
-"""pib sbp: build SiMa.ai packages with sbp (SiMa Build Package) into this workspace's custom-debs/.
+"""pib package: build SiMa.ai packages with sbp (SiMa Build Package) into this workspace's custom-debs/.
 
-Runs in the pib-sbp image, as root like every pib command, after sbp/setup.sh has prepared sbp's
-local repo, apt sources and git's URL maps (and exported sbp's settings for this process only).
+Runs as root like every pib command, after sbp/setup.sh (the entrypoint runs it first) has prepared
+sbp's local repo, apt sources and git's URL maps (and exported sbp's settings for this process only).
 The launcher gives it the workspace read-only except custom-debs/, and of keys/ only the kernel
 FIT key pair. For now it builds the kernel and the kernel-module packages palette images carry.
 The kernel source is the user's to choose: SiMa.ai's public repository by default, a fork
-(PIB_SBP_KERNEL_URL) or a repository on the host (PIB_SBP_KERNEL_SRC).
+(PIB_KERNEL_URL) or a repository on the host (PIB_KERNEL_SRC).
 """
 import argparse
 import fnmatch
@@ -24,7 +24,6 @@ import yaml
 
 from pib import cli
 
-MARKER = Path("/etc/pib-sbp")                     # made by the pib-sbp image only
 SOURCES = Path("/usr/share/pib/sbp/sources.json")  # default sources (sbp/sources.json)
 # sbp and its package configs from the swsoc-simaai-elxr-doc commit deps/artifacts.json pins, when it
 # carries them (deps/fetch-artifacts.py --sbp, with the files below and a SOURCE line naming it)
@@ -41,24 +40,25 @@ HTTPS_URL = re.compile(r"https://[A-Za-z0-9.-]+(?::[0-9]+)?/[A-Za-z0-9._~%+/-]+"
 # Forms OmegaConf (sbp's config loader) reads as floats, which PyYAML reads as strings: 1e5, 1.5e3
 OMEGACONF_FLOAT = re.compile(r"[-+]?[0-9]+(?:_[0-9]+)*(?:\.[0-9_]*)?[eE][-+]?[0-9]+")
 BRANCH_LINE = re.compile(r"^ +branch: .*\n", re.M)  # in a pinned config: only carries sbp's clone
-# -p entries pib sbp accepts -> component. sbp matches -p as a substring of package names, so
-# pib sbp passes sbp the full config name instead of the user's text.
+# -p entries pib package accepts -> component. sbp matches -p as a substring of package names, so
+# pib package passes sbp the full config name instead of the user's text.
 ALIASES = {"linux": "linux", "kernel": "linux", "smifb": "smifb", "lttng": "lttng",
            "lttng-modules": "lttng"}
 MODULES = ("smifb", "lttng")  # out-of-tree kernel modules: built against the kernel's headers
 WITH_MODULES = ("palette",)   # flavors whose images carry them (simaai-palette-<target>)
 USAGE = """\
-usage: pib sbp package -p PACKAGES [-t TASKS] [--dry-run] [--debug] [--no-ccache]
-                       [--kernel-url URL] [--kernel-ref REF] [--no-modules]
-       pib sbp list
+usage: pib package -p PACKAGES [-t TASKS] [--dry-run] [--debug] [--no-ccache]
+                   [--kernel-url URL] [--kernel-ref REF] [--no-modules]
+       pib package --list [--debug]
 
-Build SiMa.ai packages with sbp and put the .debs in custom-debs/; then run pib sign-debs and
-pib build. Runs in the pib-sbp image (the Dockerfile's pib-sbp target). The kernel FIT is
-signed with keys/fit-signing.key: make it once with pib keys fit.
+Build SiMa.ai packages with sbp, SiMa.ai's package builder, and put the .debs in custom-debs/;
+then run pib sign-debs and pib build. The kernel FIT is signed with keys/fit-signing.key: make
+it once with pib keys fit.
 
 PACKAGES   comma-separated: linux (the kernel), smifb, lttng (kernel-module packages, built
            against that kernel; palette workspaces get them with linux, always rebuilt
            when the kernel changes)
+--list     list the packages sbp's package configs define and their build state; builds nothing
 -t TASKS   sbp tasks for the kernel, e.g. clean+ (default: what has not run yet)
 --kernel-url URL
            https URL of the kernel's git repository, e.g. your fork of SiMa.ai's (default:
@@ -66,54 +66,50 @@ PACKAGES   comma-separated: linux (the kernel), smifb, lttng (kernel-module pack
            copy of it: the first build downloads all of it, later ones only what is new
 --kernel-ref REF
            branch or full commit of the kernel to build (default: master, or the branch
-           checked out in PIB_SBP_KERNEL_SRC). A branch is built at its tip of the moment:
+           checked out in PIB_KERNEL_SRC). A branch is built at its tip of the moment:
            each run looks the tip up again, and a branch that moved is rebuilt. A commit
            must be on a branch or tag of the repository
 --no-modules
-           build the kernel alone; module packages pib sbp built for an older kernel
+           build the kernel alone; module packages pib package built for an older kernel
            leave custom-debs/, so the image falls back to SiMa.ai's
 
 Environment (set on the host; the launcher passes them):
-  PIB_SBP_SRC          a checkout of swsoc-simaai-elxr-doc or swsoc-elxr with pkgbuild/ (sbp)
+  PIB_PKGBUILD_SRC     a checkout of swsoc-simaai-elxr-doc or swsoc-elxr with pkgbuild/ (sbp)
                        and configs/packages/, used instead of the image's own while it is set;
                        needed while the image carries none
-  PIB_SBP_KERNEL_SRC   your kernel: a git repository on the host (a checkout or a bare one),
+  PIB_KERNEL_SRC       your kernel: a git repository on the host (a checkout or a bare one),
                        for a private repository or commits not pushed anywhere (the container
                        gets no credentials). Only its git directory is mounted, read-only; it
                        must be a complete clone (not --filter, --shared or a worktree) without
                        credentials in its git config. A commit of it is built, never uncommitted
                        changes
-  PIB_SBP_KERNEL_URL   --kernel-url for every run (not with PIB_SBP_KERNEL_SRC)
-  PIB_SBP_KERNEL_REF   --kernel-ref for every run
-  PIB_SBP_GIT_MIRRORS  directory of bare git mirrors (<name>.git), read-only; each stands in for
+  PIB_KERNEL_URL       --kernel-url for every run (not with PIB_KERNEL_SRC)
+  PIB_KERNEL_REF       --kernel-ref for every run
+  PIB_GIT_MIRRORS      directory of bare git mirrors (<name>.git), read-only; each stands in for
                        SiMa.ai's private repository of that name on Bitbucket (the container
                        gets no credentials). GitHub repositories are always fetched from GitHub
-  PIB_SBP_JOBS         parallel jobs (default: CPUs, fewer when memory is short)
-  PIB_SBP_CCACHE_SIZE  ccache size on the volume (default 5G)
-  PIB_SBP_VOLUME       Docker volume for sbp's work tree, local repo and ccache"""
+  PIB_PACKAGE_JOBS     parallel jobs (default: CPUs, fewer when memory is short)
+  PIB_CCACHE_SIZE      ccache size on the volume (default 5G)
+  PIB_PACKAGE_VOLUME   Docker volume for sbp's work tree, local repo and ccache (default
+                       pib-package-<uid>)"""
 
 
 def work():
-    return Path(os.environ.get("SBP_WORKSPACE", "/var/tmp/pib-sbp"))
+    return Path(os.environ.get("SBP_WORKSPACE", "/var/tmp/pib-package"))
 
 
 def repo_dir():
-    return Path(os.environ.get("REPO_ROOT", "/var/tmp/pib-sbp/repo/")) / os.environ.get("BUILD_TYPE", "custom")
+    return Path(os.environ.get("REPO_ROOT", "/var/tmp/pib-package/repo/")) / os.environ.get("BUILD_TYPE", "custom")
 
 
 def parse(argv):
-    if not argv or argv[0] in ("-h", "--help", "help"):
+    if any(x in ("-h", "--help") for x in argv):  # the full text, not argparse's option list
         print(USAGE)
         raise SystemExit(0)
-    if argv[0] == "list":
-        return argparse.Namespace(cmd="list", rest=argv[1:])
-    if argv[0] != "package":
-        cli.die(f"pib sbp runs 'package' and 'list', not {argv[0]!r} (see pib sbp --help)")
-    if any(x in ("-h", "--help") for x in argv[1:]):  # the full text, not argparse's option list
-        print(USAGE)
-        raise SystemExit(0)
-    p = argparse.ArgumentParser(prog="pib sbp package", usage=USAGE.split("\n\n")[0][7:])
-    p.add_argument("-p", "--packages", required=True)
+    p = argparse.ArgumentParser(prog="pib package", usage=USAGE.split("\n\n")[0][7:], add_help=False)
+    mode = p.add_mutually_exclusive_group(required=True)  # neither -p nor --list: a usage error
+    mode.add_argument("-p", "--packages")
+    mode.add_argument("--list", action="store_true")
     p.add_argument("-t", "--tasks")
     p.add_argument("-g", "--group")
     p.add_argument("--dry-run", action="store_true")
@@ -122,10 +118,16 @@ def parse(argv):
     p.add_argument("--kernel-ref")
     p.add_argument("--kernel-url")
     p.add_argument("--no-modules", action="store_true")
-    a = p.parse_args(argv[1:])
-    a.cmd = "package"
+    a = p.parse_args(argv)
+    if a.list:  # builds nothing: of the options only --debug, which sbp list takes too, applies
+        for flag, value in (("-t", a.tasks), ("-g", a.group), ("--dry-run", a.dry_run),
+                            ("--no-ccache", a.no_ccache), ("--kernel-url", a.kernel_url),
+                            ("--kernel-ref", a.kernel_ref), ("--no-modules", a.no_modules)):
+            if value not in (None, False):
+                cli.die(f"{flag} is for a build (-p), not --list")
+        return a
     if a.group not in (None, "all"):
-        cli.die("pib sbp always builds with -g all: other groups make sbp import SiMa.ai's prebuilt "
+        cli.die("pib package always builds with -g all: other groups make sbp import SiMa.ai's prebuilt "
                 "packages from a mirror instead of building them")
     picked = []
     for entry in a.packages.split(","):
@@ -135,7 +137,7 @@ def parse(argv):
                     "name the packages instead")
         name = ALIASES.get(re.sub(r"-modalix$", "", entry))
         if not name:
-            cli.die(f"pib sbp builds linux, smifb and lttng for now, not {entry!r}")
+            cli.die(f"pib package builds linux, smifb and lttng for now, not {entry!r}")
         if name not in picked:
             picked.append(name)
     a.picked = picked
@@ -165,7 +167,7 @@ def check_url(what, url):
     if not HTTPS_URL.fullmatch(url):
         cli.die(f"{what} {shown(url)!r} must be the https URL of a git repository, with no user or "
                 "token in it: the container fetches it without credentials. For a private "
-                "repository, clone it on the host and set PIB_SBP_KERNEL_SRC to the clone")
+                "repository, clone it on the host and set PIB_KERNEL_SRC to the clone")
 
 
 def baked():
@@ -178,21 +180,21 @@ def baked():
 
 
 def source_tree():
-    """The tree with sbp and configs/packages, and what to call it: the checkout PIB_SBP_SRC names
-    when it is set, else this image's own (BAKED_SRC), which the pib-sbp image carries when the
+    """The tree with sbp and configs/packages, and what to call it: the checkout PIB_PKGBUILD_SRC
+    names when it is set, else this image's own (BAKED_SRC), which the image carries when the
     swsoc-simaai-elxr-doc commit it was built from has them."""
-    named, own = os.environ.get("PIB_SBP_SRC"), baked()
+    named, own = os.environ.get("PIB_PKGBUILD_SRC"), baked()
     if named:
         named = os.path.abspath(named)  # sbp itself runs in the volume's tree, not here
         missing = [f for f in SBP_FILES if not (Path(named) / f).is_file()]
         if missing:
-            cli.die(f"PIB_SBP_SRC: {named}/{missing[0]} not found: PIB_SBP_SRC must be a checkout of "
-                    "swsoc-simaai-elxr-doc or swsoc-elxr that carries sbp and its package configs"
+            cli.die(f"PIB_PKGBUILD_SRC: {named}/{missing[0]} not found: PIB_PKGBUILD_SRC must be a checkout "
+                    "of swsoc-simaai-elxr-doc or swsoc-elxr that carries sbp and its package configs"
                     + (f", or unset it to use this image's own ({own})" if own else ""))
-        return Path(named), f"PIB_SBP_SRC ({named})" + (", not this image's own" if own else "")
+        return Path(named), f"PIB_PKGBUILD_SRC ({named})" + (", not this image's own" if own else "")
     if not own:
         cli.die("this image does not carry sbp yet: the swsoc-simaai-elxr-doc commit it was built from "
-                "has no pkgbuild/ and configs/packages/. Set PIB_SBP_SRC to a checkout with both "
+                "has no pkgbuild/ and configs/packages/. Set PIB_PKGBUILD_SRC to a checkout with both "
                 "(swsoc-simaai-elxr-doc or swsoc-elxr)")
     return BAKED_SRC, f"this image's, from {own}"
 
@@ -247,7 +249,7 @@ def set_source(path, name, target, branch, commit, url=None):
 
 def prepare_tree(src, target):
     """A writable copy of configs/packages on the volume, with the sources of sbp/sources.json
-    pinned (for the kernel its repository and branch: pib sbp package then pins the commit it
+    pinned (for the kernel its repository and branch: pib package then pins the commit it
     builds, resolve_kernel); sbp runs from it (its paths are relative to the tree root) and uses
     the tool in src."""
     sources = json.loads(SOURCES.read_text())
@@ -284,7 +286,7 @@ def git_url(url):
 
 def ask_git(url, *argv):
     """git ls-remote argv, about url: (exit code, output), 2 being git's "no such ref". Dies when
-    url cannot be asked. git applies sbp/setup.sh's URL maps (mirrors, PIB_SBP_KERNEL_SRC)."""
+    url cannot be asked. git applies sbp/setup.sh's URL maps (mirrors, PIB_KERNEL_SRC)."""
     try:
         r = subprocess.run(["git", "ls-remote", *argv], capture_output=True, text=True,
                            env=git_env(), timeout=120)
@@ -335,22 +337,22 @@ def remote_lacks(url, branch, commit):
 
 def check_mirror(url):
     """SiMa.ai's Bitbucket repositories are private and the container has no credentials: they
-    are served by a mirror on the host (PIB_SBP_GIT_MIRRORS), into which sbp/setup.sh rewrites
+    are served by a mirror on the host (PIB_GIT_MIRRORS), into which sbp/setup.sh rewrites
     their URLs, or not at all. Checked before anything asks Bitbucket. Returns the mirror, or None
     for any other URL (GitHub URLs are never rewritten)."""
     if not BITBUCKET.search(url):
         return None
     name = re.split(r"[/:]", url.rstrip("/"))[-1]
     if not name.endswith(".git"):
-        cli.die(f"{url}: pib sbp finds the mirror of a SiMa.ai repository by its <name>.git; "
+        cli.die(f"{url}: pib package finds the mirror of a SiMa.ai repository by its <name>.git; "
                 "write the url with .git")
-    mirrors = os.environ.get("PIB_SBP_GIT_MIRRORS")
+    mirrors = os.environ.get("PIB_GIT_MIRRORS")
     fetched = git_url(url)
     if not mirrors or Path(fetched).parent != Path(mirrors):
-        cli.die(f"{url} is private: set PIB_SBP_GIT_MIRRORS to a directory holding {name}, made on "
+        cli.die(f"{url} is private: set PIB_GIT_MIRRORS to a directory holding {name}, made on "
                 f"the host with: git clone --mirror {url} <mirrors>/{name}")
     if not Path(fetched).is_dir():  # rewritten into the mirrors directory, which lacks it
-        cli.die(f"no mirror {name} in PIB_SBP_GIT_MIRRORS; make one on the host: "
+        cli.die(f"no mirror {name} in PIB_GIT_MIRRORS; make one on the host: "
                 f"git clone --mirror {url} <mirrors>/{name}")
     return fetched
 
@@ -369,7 +371,7 @@ def head_branch(repo, what):
 
 
 def resolve_in(repo, what, ref, preferred, hint=""):
-    """(branch, commit) of ref in a repository on this machine (PIB_SBP_KERNEL_SRC, a mirror, or
+    """(branch, commit) of ref in a repository on this machine (PIB_KERNEL_SRC, a mirror, or
     the volume's copy of a remote repository), whose branches and tags are what sbp's clone of it
     holds. A branch resolves to its tip. A commit must be on a branch or tag (sbp's clone holds
     those only); sbp clones a branch and then checks the commit out, so it goes with preferred
@@ -443,36 +445,36 @@ def git_map(env, url, path):
 def kernel_choice(a, pin, config):
     """The kernel source asked for: (URL for sbp's config, branch or commit or None, the repository
     on the host or None). SiMa.ai's repository by default (sbp/sources.json, else the config's own
-    URL); --kernel-url or PIB_SBP_KERNEL_URL name another, PIB_SBP_KERNEL_SRC one on the host (the
+    URL); --kernel-url or PIB_KERNEL_URL name another, PIB_KERNEL_SRC one on the host (the
     launcher mounts its git directory read-only and sbp/setup.sh maps the URL
-    PIB_SBP_KERNEL_SRC_URL to it), and --kernel-ref or PIB_SBP_KERNEL_REF a branch or commit.
+    PIB_KERNEL_SRC_URL to it), and --kernel-ref or PIB_KERNEL_REF a branch or commit.
     The flags win over the variables."""
     url, ref = a.kernel_url, a.kernel_ref
-    if url is None and os.environ.get("PIB_SBP_KERNEL_URL"):
-        url = os.environ["PIB_SBP_KERNEL_URL"]
-        check_url("PIB_SBP_KERNEL_URL", url)
-    if ref is None and os.environ.get("PIB_SBP_KERNEL_REF"):
-        ref = os.environ["PIB_SBP_KERNEL_REF"]
-        check_ref("PIB_SBP_KERNEL_REF", ref)
-    local = os.environ.get("PIB_SBP_KERNEL_SRC")
+    if url is None and os.environ.get("PIB_KERNEL_URL"):
+        url = os.environ["PIB_KERNEL_URL"]
+        check_url("PIB_KERNEL_URL", url)
+    if ref is None and os.environ.get("PIB_KERNEL_REF"):
+        ref = os.environ["PIB_KERNEL_REF"]
+        check_ref("PIB_KERNEL_REF", ref)
+    local = os.environ.get("PIB_KERNEL_SRC")
     if not local:
         return url or pin.get("url") or str((cli.read_yaml(config).get("options") or {}).get("url", "")), ref, None
     if url:
-        cli.die("PIB_SBP_KERNEL_SRC and a kernel URL (--kernel-url, PIB_SBP_KERNEL_URL) exclude each "
+        cli.die("PIB_KERNEL_SRC and a kernel URL (--kernel-url, PIB_KERNEL_URL) exclude each "
                 "other: unset one")
-    mapped = os.environ.get("PIB_SBP_KERNEL_SRC_URL")
+    mapped = os.environ.get("PIB_KERNEL_SRC_URL")
     if not mapped:
-        cli.die("PIB_SBP_KERNEL_SRC is set, but sbp/setup.sh did not map it (PIB_SBP_KERNEL_SRC_URL)")
+        cli.die("PIB_KERNEL_SRC is set, but sbp/setup.sh did not map it (PIB_KERNEL_SRC_URL)")
     return mapped, ref, local
 
 
 def uncommitted_word(commit):
-    """Uncommitted changes in the checkout at PIB_SBP_KERNEL_SRC are not built: a word when they sit
+    """Uncommitted changes in the checkout at PIB_KERNEL_SRC are not built: a word when they sit
     on the commit being built, where they are easy to take for part of it. The launcher counted
-    them on the host, with git running as the user (PIB_SBP_KERNEL_SRC_HEAD and _CHANGES)."""
-    changes = os.environ.get("PIB_SBP_KERNEL_SRC_CHANGES", "0")
-    if os.environ.get("PIB_SBP_KERNEL_SRC_HEAD") == commit and changes not in ("", "0"):
-        print(f"pib: WARNING: PIB_SBP_KERNEL_SRC has uncommitted changes to {changes} tracked files: "
+    them on the host, with git running as the user (PIB_KERNEL_SRC_HEAD and _CHANGES)."""
+    changes = os.environ.get("PIB_KERNEL_SRC_CHANGES", "0")
+    if os.environ.get("PIB_KERNEL_SRC_HEAD") == commit and changes not in ("", "0"):
+        print(f"pib: WARNING: PIB_KERNEL_SRC has uncommitted changes to {changes} tracked files: "
               f"they are not built, only commit {commit[:12]}; commit them to build them", flush=True)
 
 
@@ -481,20 +483,20 @@ def resolve_kernel(a, tree, sources, names, target):
     (branch, commit, how messages name the source, (url, path sbp must clone it from) or None). A
     branch is looked up now and built at its tip, so a branch that moved since the last build is
     a new source (built from scratch, build_kernel). Each source is resolved in a repository on
-    this machine: PIB_SBP_KERNEL_SRC, SiMa.ai's Bitbucket mirror, or the volume's copy of a remote
+    this machine: PIB_KERNEL_SRC, SiMa.ai's Bitbucket mirror, or the volume's copy of a remote
     repository; a dry run asks the remote instead of fetching it."""
     pin = sources["packages"][names["linux"]]
     config = tree / "configs/packages" / pin["config"]
     url, ref, local = kernel_choice(a, pin, config)
     clone_from = None
     if local:
-        what = "PIB_SBP_KERNEL_SRC"
+        what = "PIB_KERNEL_SRC"
         head = head_branch(local, what)
         if ref is None:
             if head is None:
-                cli.die("PIB_SBP_KERNEL_SRC has no branch checked out (its HEAD is detached): check "
-                        "one out, or name a branch or commit with --kernel-ref or PIB_SBP_KERNEL_REF")
-            check_ref("the branch checked out in PIB_SBP_KERNEL_SRC", head)
+                cli.die("PIB_KERNEL_SRC has no branch checked out (its HEAD is detached): check "
+                        "one out, or name a branch or commit with --kernel-ref or PIB_KERNEL_REF")
+            check_ref("the branch checked out in PIB_KERNEL_SRC", head)
             ref = head
         branch, commit = resolve_in(local, what, ref, head or pin["branch"])
         uncommitted_word(commit)
@@ -533,7 +535,7 @@ def ask_remote(url, ref, fallback):
         lacks = remote_lacks(url, branch, ref)
         if lacks:
             cli.die(f"{url} has no {lacks}: name a branch, or a commit it has; a commit that only "
-                    "a copy of your own holds is built from that copy (PIB_SBP_KERNEL_SRC)")
+                    "a copy of your own holds is built from that copy (PIB_KERNEL_SRC)")
     return branch, ref
 
 
@@ -558,11 +560,11 @@ def fit_key(ws):
 
 
 def jobs():
-    """PIB_SBP_JOBS, else the CPUs, fewer when memory is short (sbp runs make -j<CPUs>)."""
-    want = os.environ.get("PIB_SBP_JOBS")
+    """PIB_PACKAGE_JOBS, else the CPUs, fewer when memory is short (sbp runs make -j<CPUs>)."""
+    want = os.environ.get("PIB_PACKAGE_JOBS")
     if want:
         if not want.isdigit() or int(want) < 1:
-            cli.die(f"PIB_SBP_JOBS must be a positive number, not {want!r}")
+            cli.die(f"PIB_PACKAGE_JOBS must be a positive number, not {want!r}")
         return int(want)
     cpus = os.cpu_count() or 1
     try:
@@ -644,7 +646,7 @@ def run_sbp(tree, env, args):
     r = subprocess.run(["sbp", *args], cwd=tree, env=env)
     if r.returncode:
         cli.die(f"sbp failed (exit {r.returncode}); task logs: {work()}/packages/<package>/tmp/log "
-                f"on the pib-sbp volume")
+                f"on the pib-package volume")
 
 
 def built_kernel(index, ws, target):
@@ -653,8 +655,8 @@ def built_kernel(index, ws, target):
     if len(images) != 1:
         cli.die(f"sbp's repo holds {len(images)} kernel packages, not 1 "
                 f"({', '.join(sorted(f['Package'] + ' ' + f['Version'] for f in images))}): rebuild the "
-                "kernel from scratch (pib sbp package -p linux -t clean+), or start a new volume "
-                "(set PIB_SBP_VOLUME to a new name, or docker volume rm the old one)")
+                "kernel from scratch (pib package -p linux -t clean+), or start a new volume "
+                "(set PIB_PACKAGE_VOLUME to a new name, or docker volume rm the old one)")
     glob = kernel_glob(ws, target)
     if not fnmatch.fnmatchcase(images[0]["Package"], glob):
         cli.die(f"the kernel package is {images[0]['Package']}, but the image installs {glob}: "
@@ -717,7 +719,7 @@ def copy_debs(ws, entries, drop=()):
     tmp = []
     try:
         for src in new:  # next to their final names: each rename below replaces atomically
-            t = debs / f".{src.name}.pib-sbp"
+            t = debs / f".{src.name}.pib-package"
             shutil.copyfile(src, t)
             tmp.append(t)
         out = []
@@ -865,28 +867,28 @@ def build_modules(a, tree, env, flags, index, modules, names, kernel, explicit, 
             write_stamp(names[m], current[m] or "")
 
 
-def cmd_sbp(argv):
+def cmd_package(argv):
     a = parse(argv)
-    if not MARKER.exists():
-        cli.die("this PIB image has no package builder: pib sbp runs in the pib-sbp image "
-                "(set PIB_IMAGE to the PIB image whose <tag>-sbp variant you built, or PIB_SBP_IMAGE)")
+    if os.environ.get("PIB_PACKAGE_SETUP") != "1":  # exported by sbp/setup.sh
+        cli.die("pib package needs its set-up (sbp/setup.sh), which the image runs when the pib "
+                "launcher starts pib package: run it on the host, not inside pib shell")
     ws = Path.cwd()
-    if a.cmd == "list" and not (ws / "image.yaml").is_file():
+    if a.list and not (ws / "image.yaml").is_file():
         cfg = {"target": "modalix", "base": None}  # listing needs no workspace
     else:
         cfg = cli.load_config(ws)
     target = cfg["target"]
-    if a.cmd == "package" and cfg["base"] == "securepalette":
+    if not a.list and cfg["base"] == "securepalette":
         cli.die("securepalette images check the kernel FIT against SiMa.ai's U-Boot key, which a "
                 "kernel built here is not signed with; use minimal or palette")
     src, src_name = source_tree()
     tree, sources = prepare_tree(src, target)
     # sbp gets the environment without pib's own kernel settings: they are in the kernel's config.
-    env = {k: v for k, v in os.environ.items() if not k.startswith("PIB_SBP_KERNEL_")}
-    env["PIB_SBP_SRC"] = str(src)
-    if a.cmd == "list":
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PIB_KERNEL_")}
+    env["PIB_PKGBUILD_SRC"] = str(src)  # for the sbp wrapper (sbp/sbp)
+    if a.list:
         print(f"pib: sbp and its package configs: {src_name}")
-        run_sbp(tree, env, ["list", *a.rest])
+        run_sbp(tree, env, ["list", *(["--debug"] if a.debug else [])])
         return
     names = config_names(target)
     picked = list(a.picked)
@@ -906,7 +908,7 @@ def cmd_sbp(argv):
             git_map(env, *clone_from)
         env.update(fit_key(ws))  # only the kernel signs anything
     env["PYTHON_CPU_COUNT"] = str(jobs())  # sbp's -j and git --jobs come from os.cpu_count()
-    print(f"pib: {env['PYTHON_CPU_COUNT']} parallel jobs (PIB_SBP_JOBS)")
+    print(f"pib: {env['PYTHON_CPU_COUNT']} parallel jobs (PIB_PACKAGE_JOBS)")
     if modules:
         check_arm64()
     flags = ["-g", "all", *(["--dry-run"] if a.dry_run else []), *(["--debug"] if a.debug else []),
@@ -922,7 +924,7 @@ def cmd_sbp(argv):
         if any(is_kernel(f["Package"], target) for f in index):
             kernel = built_kernel(index, ws, target)
         if modules and not kernel:
-            cli.die("build the kernel first: pib sbp package -p linux")
+            cli.die("build the kernel first: pib package -p linux")
     if modules:
         build_modules(a, tree, env, flags, index, modules, names, kernel, explicit="linux" not in picked,
                       configs=CONFIGS)
@@ -936,7 +938,7 @@ def cmd_sbp(argv):
     if missing or ("linux" in picked and not kernel):
         cli.die(f"sbp's repo lacks {', '.join(names[m] for m in missing) or 'the kernel'} after the build")
     # A module package not built against this kernel must not stay next to it: dropped, so the
-    # image takes SiMa.ai's (--no-modules) or the user rebuilds it (pib sbp package -p <module>).
+    # image takes SiMa.ai's (--no-modules) or the user rebuilds it (pib package -p <module>).
     drop = []
     if "linux" in picked:
         for m in MODULES:

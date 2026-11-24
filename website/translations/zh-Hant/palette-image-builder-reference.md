@@ -36,11 +36,10 @@ x86 映像已內附模擬器。特權 PIB 啟動時，只在缺少可用 ARM64 �
 | `PIB_CONFIGS` | `pib init` | 進階：使用外部映像設定目錄取代內附設定。 |
 | `PIB_PCSCD_DIR` | 簽署命令 | 覆寫 pcscd 通訊端目錄，預設 `/run/pcscd`。Linux 容器必須能存取通訊端。 |
 | `PIB_DEB_CACHE` | `pib build`, `pib shell` | 已驗證 Debian 下載檔的主機快取。每次建置都依已認證中繼資料檢查雜湊與大小。 |
-| `PIB_SBP_KERNEL_URL`, `PIB_SBP_KERNEL_REF` | `pib sbp` | 每次執行時要建置的核心儲存庫（不含認證資訊的 https URL）與分支或提交。`--kernel-url` 與 `--kernel-ref` 可針對單次執行覆寫這兩個變數。 |
-| `PIB_SBP_KERNEL_SRC` | `pib sbp` | 主機上存放您核心的 Git 儲存庫，可為簽出目錄或 bare 儲存庫；以唯讀方式掛載。適用於私人儲存庫，或尚未推送到任何地方的提交。 |
-| `PIB_SBP_SRC` | `pib sbp` | 包含 sbp（`pkgbuild/`）及其套件設定（`configs/packages/`）的簽出目錄，用來取代套件建置器映像內附的版本；在映像內含這些內容之前為必要設定。只會以唯讀方式掛載這兩個目錄。 |
-| `PIB_SBP_IMAGE` | `pib sbp` | 覆寫套件建置器映像。預設為與 `PIB_IMAGE` 一同發佈的映像（相同標籤加上 `-sbp`），或安裝時繫結的映像。 |
-| `PIB_SBP_JOBS`, `PIB_SBP_CCACHE_SIZE`, `PIB_SBP_VOLUME` | `pib sbp` | 平行編譯工作數；編譯器快取大小（預設 `5G`）；存放 sbp 工作目錄、套件庫與快取的 Docker 磁碟區（預設 `pib-sbp-<uid>`）。 |
+| `PIB_KERNEL_URL`, `PIB_KERNEL_REF` | `pib package` | 每次執行時要建置的核心儲存庫（不含認證資訊的 https URL）與分支或提交。`--kernel-url` 與 `--kernel-ref` 可針對單次執行覆寫這兩個變數。 |
+| `PIB_KERNEL_SRC` | `pib package` | 主機上存放您核心的 Git 儲存庫，可為簽出目錄或 bare 儲存庫；以唯讀方式掛載。適用於私人儲存庫，或尚未推送到任何地方的提交。 |
+| `PIB_PKGBUILD_SRC` | `pib package` | 包含 sbp（`pkgbuild/`）及其套件設定（`configs/packages/`）的簽出目錄，用來取代 PIB 映像內附的版本；在映像內含這些內容之前為必要設定。只會以唯讀方式掛載這兩個目錄。 |
+| `PIB_PACKAGE_JOBS`, `PIB_CCACHE_SIZE`, `PIB_PACKAGE_VOLUME` | `pib package` | 平行編譯工作數；編譯器快取大小（預設 `5G`）；存放 sbp 工作目錄、套件庫與快取的 Docker 磁碟區（預設 `pib-package-<uid>`）。 |
 
 ## 命令
 
@@ -64,8 +63,8 @@ pib build --sign
 | `pib shell` | 開啟已掛載目前專案的容器殼層 |
 | `pib keys init --cn NAME` | 產生 CA、SWU 終端憑證與 Debian 簽署身分 |
 | `pib keys renew --cn NAME` | 使用同一 CA 更新終端憑證 |
-| `pib keys fit` | 產生金鑰組，用於簽署 `pib sbp` 建置的核心 FIT 映像 |
-| `pib sbp package -p linux` | 建置核心及 palette 的核心模組套件，輸出至 `custom-debs/` |
+| `pib keys fit` | 產生金鑰組，用於簽署 `pib package` 建置的核心 FIT 映像 |
+| `pib package -p linux` | 建置核心及 palette 的核心模組套件，輸出至 `custom-debs/` |
 | `pib sign-debs` / `pib verify-debs` | 簽署／檢查自訂 Debian 套件 |
 | `pib build [--sign] [--supplier NAME]` | 建置，並可選擇簽署與驗證 |
 | `pib sign [FILE]` | 簽署套件；預設使用目前專案版本 |
@@ -73,7 +72,7 @@ pib build --sign
 | `pib diff --against MANIFEST` | 顯示與先前建置的套件差異 |
 | `pib clean [--yes]` | 檢查／移除殘留建置迴路裝置與磁碟區群組 |
 
-所有命令均在容器內執行。主機啟動器僅處理 Docker、工作區掛載與明確指定的外部檔案。`build`、`doctor`、`clean` 與互動殼層使用特權裝置存取；簽署、驗證、金鑰產生與專案建立不需要。`pib sbp` 在專屬映像中以非特權方式執行，看到的專案內容除 `custom-debs/` 外皆為唯讀；在 `keys/` 中，它只看得到核心 FIT 金鑰組。
+所有命令均在容器內執行。主機啟動器僅處理 Docker、工作區掛載與明確指定的外部檔案。`build`、`doctor`、`clean` 與互動殼層使用特權裝置存取；簽署、驗證、金鑰產生與專案建立不需要。`pib package` 以非特權方式執行，看到的專案內容除 `custom-debs/` 外皆為唯讀；在 `keys/` 中，它只看得到核心 FIT 金鑰組。
 
 ## 建置產物
 
@@ -159,7 +158,7 @@ systemctl --root="$1" enable my-app.service
 
 自訂 Debian 套件需要可由 `image.yaml` 的 `debs.key` 接受的分離式簽章。`pib sign-debs` 使用產生的 Debian 簽署金鑰。若使用既有 GPG 身分，將公開金鑰匯出到 `keys/debs-signing.asc`，於外部簽署套件，並在建置前執行 `pib verify-debs`。
 
-核心套件另有規則：保留 `configs/images/image-params.yaml` 中的版本核心套件名稱。PIB 會自動選取，且只能安裝一個核心。`pib sbp` 會從 SiMa 的核心原始碼或您自己的原始碼建置這類套件，請參閱[建置核心](#building-the-kernel)。本機替換的 tRoot、ATF、U-Boot 套件會被拒絕。套件的 U-Boot 必須與 `fip.bin` 中的內容相符。
+核心套件另有規則：保留 `configs/images/image-params.yaml` 中的版本核心套件名稱。PIB 會自動選取，且只能安裝一個核心。`pib package` 會從 SiMa 的核心原始碼或您自己的原始碼建置這類套件，請參閱[建置核心](#building-the-kernel)。本機替換的 tRoot、ATF、U-Boot 套件會被拒絕。套件的 U-Boot 必須與 `fip.bin` 中的內容相符。
 
 自訂 `swu.description` 與 `swu.script` 可取代更新指示。請先複製 `configs/images/files/` 的版本預設值，保留版本／硬體相容性預留位置、雜湊與必要開機／SBOM 成員。這些指令碼在安裝時於開發板執行，請在可復原的板子測試變更。
 
@@ -167,29 +166,29 @@ systemctl --root="$1" enable my-app.service
 
 ## 建置核心
 
-`pib sbp` 使用 SiMa 的套件建置器 sbp，從 SiMa 公開的核心原始碼或您自己的原始碼建置 Modalix 核心，並將核心的 Debian 套件放入 `custom-debs/`。對於 palette 專案，它也會針對該核心重新建置 palette 映像所含的核心模組套件 smifb 與 lttng-modules。它在含有 ARM64 交叉工具鏈的獨立套件建置器映像中執行；Docker 會在首次使用時下載此映像（約 2.5 GB）。
+`pib package` 使用 SiMa 的套件建置器 sbp，從 SiMa 公開的核心原始碼或您自己的原始碼建置 Modalix 核心，並將核心的 Debian 套件放入 `custom-debs/`。對於 palette 專案，它也會針對該核心重新建置 palette 映像所含的核心模組套件 smifb 與 lttng-modules。PIB 映像內含這些建置所用的 ARM64 交叉工具鏈，使映像大小增加約 0.6 GB。
 
 ```bash
 pib keys fit
-pib sbp package -p linux
+pib package -p linux
 pib sign-debs
 pib build --sign
 ```
 
 
-`pib keys fit` 會建立 `keys/fit-signing.key` 與 `keys/fit-signing.crt`，只需執行一次；`pib sbp` 會以該金鑰簽署核心的 FIT 映像。接著選擇原始碼來源：
+`pib keys fit` 會建立 `keys/fit-signing.key` 與 `keys/fit-signing.crt`，只需執行一次；`pib package` 會以該金鑰簽署核心的 FIT 映像。接著選擇原始碼來源：
 
 | 核心原始碼 | 選取方式 |
 |---|---|
 | SiMa 的公開儲存庫，`master` 分支 | 預設：`https://github.com/SiMa-ai/simaai-linux.git` |
-| 您的 fork、其中一個分支或某個提交 | `--kernel-url https://github.com/<you>/simaai-linux.git --kernel-ref <branch>`，或 `PIB_SBP_KERNEL_URL` 與 `PIB_SBP_KERNEL_REF` |
-| 您電腦上的儲存庫 | `PIB_SBP_KERNEL_SRC=<path>`：其目前簽出的分支，或 `PIB_SBP_KERNEL_REF` |
+| 您的 fork、其中一個分支或某個提交 | `--kernel-url https://github.com/<you>/simaai-linux.git --kernel-ref <branch>`，或 `PIB_KERNEL_URL` 與 `PIB_KERNEL_REF` |
+| 您電腦上的儲存庫 | `PIB_KERNEL_SRC=<path>`：其目前簽出的分支，或 `PIB_KERNEL_REF` |
 
-每次執行都會查詢該分支並建置其最新提交，`pib sbp` 會顯示該提交；分支有變動時，核心會重新建置。只會建置已提交的變更，`pib sbp` 會對未提交的變更發出警告。建置容器不含任何認證資訊：公開儲存庫請以不含權杖的 https URL 指定，私人儲存庫則以 `PIB_SBP_KERNEL_SRC` 指定，該儲存庫會以唯讀方式掛載。首次從某個儲存庫建置時，會下載整個儲存庫。
+每次執行都會查詢該分支並建置其最新提交，`pib package` 會顯示該提交；分支有變動時，核心會重新建置。只會建置已提交的變更，`pib package` 會對未提交的變更發出警告。建置容器不含任何認證資訊：公開儲存庫請以不含權杖的 https URL 指定，私人儲存庫則以 `PIB_KERNEL_SRC` 指定，該儲存庫會以唯讀方式掛載。首次從某個儲存庫建置時，會下載整個儲存庫。
 
-請保留平台版本的核心版本（6.18.3）、其 `simaai_modalix_defconfig` 設定，以及 SiMa 的 FIT 封裝。映像只會安裝平台版本的核心套件名稱，因此其他版本的核心不會納入。不含 FIT（`boot/fitImage`）的核心套件會以未簽署的一般核心映像開機，`pib sbp` 會對此發出警告。它也會將核心的 SiMa 專用標頭檔與平台版本的標頭檔比較，並在兩者不同時發出警告；SiMa 預先建置的軟體（例如相機 ISP 與 MLA 執行階段）皆依據平台版本的標頭檔建置。`master` 分支目前存放 SiMa 的 2.1.3 核心，既沒有 FIT 封裝，也缺少部分目前的標頭檔，因此在 SiMa 於該分支發佈目前的核心之前，這兩項警告都會出現。
+請保留平台版本的核心版本（6.18.3）、其 `simaai_modalix_defconfig` 設定，以及 SiMa 的 FIT 封裝。映像只會安裝平台版本的核心套件名稱，因此其他版本的核心不會納入。不含 FIT（`boot/fitImage`）的核心套件會以未簽署的一般核心映像開機，`pib package` 會對此發出警告。它也會將核心的 SiMa 專用標頭檔與平台版本的標頭檔比較，並在兩者不同時發出警告；SiMa 預先建置的軟體（例如相機 ISP 與 MLA 執行階段）皆依據平台版本的標頭檔建置。`master` 分支目前存放 SiMa 的 2.1.3 核心，既沒有 FIT 封裝，也缺少部分目前的標頭檔，因此在 SiMa 於該分支發佈目前的核心之前，這兩項警告都會出現。
 
-核心建置約需半小時，並在 Docker 磁碟區 `pib-sbp-<uid>` 中佔用 6-8 GB。在 sbp 本身納入套件建置器映像之前，請將 `PIB_SBP_SRC` 設為包含 sbp 的簽出目錄（`pkgbuild/` 與 `configs/packages/`）。
+核心建置約需半小時，並在 Docker 磁碟區 `pib-package-<uid>` 中佔用 6-8 GB。在 sbp 本身納入 PIB 映像之前，請將 `PIB_PKGBUILD_SRC` 設為包含 sbp 的簽出目錄（`pkgbuild/` 與 `configs/packages/`）。
 
 ## 簽署
 

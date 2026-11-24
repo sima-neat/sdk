@@ -5,4 +5,4 @@ Components: non-free
 SignWith: default
 Origin: PIB local build
 Label: PIB local build
-Description: Packages built with pib sbp, not SiMa.ai releases
+Description: Packages built with pib package, not SiMa.ai releases

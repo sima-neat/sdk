@@ -34,7 +34,7 @@ cd my-image
 | `overlay/` | 루트 파일 시스템에 복사할 설정 및 파일 |
 | `hooks/` | 서비스 활성화 등 패키지 설치 후 변경 |
 
-Palette SDK로 애플리케이션을 빌드하고 모델을 컴파일한 다음 대상에 필요한 파일을 패키징하세요. PIB는 패키지를 조합하며 애플리케이션 소스를 컴파일하지 않습니다. 구성 요소의 역할은 [Palette SDK 시스템 스택](sdk-architecture.md)을 참조하세요. 커널은 예외입니다. `pib sbp`가 SiMa의 공개 소스나 사용자의 소스로 커널을 빌드해 `custom-debs/`에 커널 패키지로 만듭니다. [커널 빌드](palette-image-builder-reference.md#building-the-kernel)를 참조하세요.
+Palette SDK로 애플리케이션을 빌드하고 모델을 컴파일한 다음 대상에 필요한 파일을 패키징하세요. PIB는 패키지를 조합하며 애플리케이션 소스를 컴파일하지 않습니다. 구성 요소의 역할은 [Palette SDK 시스템 스택](sdk-architecture.md)을 참조하세요. 커널은 예외입니다. `pib package`가 SiMa의 공개 소스나 사용자의 소스로 커널을 빌드해 `custom-debs/`에 커널 패키지로 만듭니다. [커널 빌드](palette-image-builder-reference.md#building-the-kernel)를 참조하세요.
 
 `image.yaml`에는 `.deb` 파일명 대신 Debian 패키지 이름을 나열합니다. 파일은 오버레이에, 설치 후 변경은 훅에 지정하세요. 패키지, 커널, 훅 규칙은 [사용자 지정 참조](palette-image-builder-reference.md#customization)에 있습니다.
 
