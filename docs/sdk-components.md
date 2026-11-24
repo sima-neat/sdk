@@ -15,7 +15,7 @@ component IDs, versions, URLs and SHA-256 values. SDK identity comes from
 image builds additionally require the selected build cohort to be qualified and
 to explicitly list that tag as a supported SDK release.
 
-For release-branch images such as `release-3.0`, the resolver uses the exact
+For release-branch images such as `release-3.0-<commit>`, the resolver uses the exact
 numeric SDK identity from `SDK Version` in `/etc/sdk-release` (written from
 `deps/manifest.json` at image build time). Its major/minor version must match the
 branch line, and the complete version must appear in the catalog's `sdk_releases`.
@@ -24,7 +24,10 @@ For example, `release-3.0` with SDK identity `3.0.0.2` selects the same cohort a
 It preserves candidate/revocation, architecture and exact engine-pair checks.
 Missing, mismatched or unmapped identities fail setup; neither `Platform Version`
 nor the catalog's `build_sdk_version` substitutes for the image's SDK identity.
-Other branch names retain their existing policy.
+Commit-suffixed development refs such as `develop-<commit>` and feature branches
+also use their exact embedded SDK identity and require a qualified catalog mapping.
+They never substitute the catalog build default. Bare unknown refs retain their
+existing policy.
 
 This resolution requires a rebuilt release-branch image containing the updated
 resolver. Publishing a catalog alone cannot fix older images, whose resolver

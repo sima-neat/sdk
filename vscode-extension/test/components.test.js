@@ -41,10 +41,10 @@ test('matching is exact for SDK release, engine pair and architecture', () => {
 });
 test('release branches use only an exact image SDK identity from the same release line', () => {
   const catalog = qualified();
-  for (const arch of ['amd64', 'arm64']) {
-    const selected = resolveCatalog(catalog, {...options, arch, release: 'release-3.0', imageSdkVersion: '3.0.0.2'});
+  for (const arch of ['amd64', 'arm64']) for (const release of ['release-3.0', 'release-3.0-fa97d55']) {
+    const selected = resolveCatalog(catalog, {...options, arch, release, imageSdkVersion: '3.0.0.2'});
     assert.equal(selected.sdkVersion, '3.0.0');
-    assert.equal(selected.sdkRelease, 'release-3.0');
+    assert.equal(selected.sdkRelease, release);
     assert.equal(selected.sdkFallback, false);
     assert.deepEqual(selected.components, catalog.sdks['3.0.0'].components);
   }
@@ -65,6 +65,23 @@ test('release branches use only an exact image SDK identity from the same releas
   assert.equal(next.sdkVersion, '3.0.1');
   assert.equal(next.sdkFallback, false);
   assert.equal(next.components.codex.version, '1.2.3');
+});
+test('commit-suffixed development images require an exact qualified SDK mapping', () => {
+  const catalog = qualified();
+  for (const release of ['develop-decea99', 'main-decea99', 'codex_sdk-branch-components-decea99']) {
+    const branch = {...options, release, imageSdkVersion: '3.0.0.2'};
+    assert.equal(resolveCatalog(catalog, branch).sdkFallback, false);
+    for (const imageSdkVersion of [undefined, '3.0.1', '3.0.0.2-extra'])
+      assert.throws(() => resolveCatalog(catalog, {...branch, imageSdkVersion}), /No compatible/);
+    assert.throws(() => resolveCatalog(candidate(), branch), /candidate/);
+    for (const change of [{arch: 'riscv64'}, {vscode: '1.140.0'}])
+      assert.throws(() => resolveCatalog(catalog, {...branch, ...change}), /not been qualified/);
+    const revoked = qualified();
+    revoked.sdks['3.0.0'].status = 'revoked';
+    assert.throws(() => resolveCatalog(revoked, branch), /revoked/);
+  }
+  for (const release of ['release-3.1-decea99', 'release-3.0-extra', 'develop-nothex', 'v3.0.0.3-decea99'])
+    assert.throws(() => resolveCatalog(catalog, {...options, release, imageSdkVersion: '3.0.0.2'}), /No compatible/);
 });
 test('release-branch identity preserves candidate, revocation, architecture and engine restrictions', () => {
   const branch = {...options, release: 'release-3.0', imageSdkVersion: '3.0.0.2'};

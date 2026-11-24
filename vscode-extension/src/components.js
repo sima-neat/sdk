@@ -55,11 +55,14 @@ function validateCatalog(value) {
 }
 function resolveCatalog(catalog, { release, imageSdkVersion, arch, codeServer, vscode, testVersion, allowCandidate = false, allowSdkFallback = false }) {
   validateCatalog(catalog);
-  const releaseLine = /^release-(\d+\.\d+)$/.exec(release || '')?.[1];
-  // Release-branch images record their exact SDK identity separately from the
-  // Git ref. Never substitute the platform version or the catalog build default.
-  const branchVersion = releaseLine && typeof imageSdkVersion === 'string' &&
-    VERSION.test(imageSdkVersion) && imageSdkVersion.startsWith(releaseLine + '.')
+  const releaseLine = /^release-(\d+\.\d+)(?:-[a-f0-9]{7,40})?$/.exec(release || '')?.[1];
+  const developmentRef = /^(?!release-|v?\d+\.\d+\.\d+)[A-Za-z0-9_][A-Za-z0-9_.-]*-[a-f0-9]{7,40}$/.test(release || '');
+  // Branch images record their exact SDK identity separately from the Git ref.
+  // Commit-suffixed development refs use that explicit mapping too. Release
+  // branches additionally require the same major/minor line; neither uses the
+  // platform version or the catalog build default.
+  const branchVersion = (releaseLine || developmentRef) && typeof imageSdkVersion === 'string' &&
+    VERSION.test(imageSdkVersion) && (!releaseLine || imageSdkVersion.startsWith(releaseLine + '.'))
     ? imageSdkVersion : undefined;
   const normalized = /^v?(\d+\.\d+\.\d+(?:\.\d+)?)$/.exec(release || '')?.[1] || branchVersion;
   // Explicit test selections and known SDK policies always take precedence.
