@@ -178,9 +178,26 @@ cat > "${tmpdir}/bin/gpg" <<'SH'
 #!/usr/bin/env bash
 cat
 SH
-chmod +x "${tmpdir}/bin/wget" "${tmpdir}/bin/gpg"
-sed "s|/etc/apt|${apt_root}|g" "${apt_config_script}" > "${tmpdir}/configure-apt-repos.sh"
-for channel in release pre-release daily; do
+# The snapshot archive redirects a dated directory to the snapshot current then.
+# The newest debian-security snapshot is listed before its files are served, as
+# the real archive does, so the snapshot before it must be the one recorded.
+cat > "${tmpdir}/bin/curl" <<SH
+#!/usr/bin/env bash
+echo call >> "${tmpdir}/curl-calls"
+case "\${@: -1}" in
+  */20261117T151500Z/dists/*) exit 22 ;;
+  */dists/*) ;;
+  */archive/debian/*) printf 'https://snapshot.debian.org/archive/debian/20261117T143434Z/' ;;
+  */20261117T151459Z/) printf 'https://snapshot.debian.org/archive/debian-security/20261117T150737Z/' ;;
+  *) printf 'https://snapshot.debian.org/archive/debian-security/20261117T151500Z/' ;;
+esac
+SH
+chmod +x "${tmpdir}/bin/wget" "${tmpdir}/bin/gpg" "${tmpdir}/bin/curl"
+sed -e "s|/etc/apt|${apt_root}|g" \
+    -e "s|/usr/local/share/sima-sdk/debian-snapshot|${tmpdir}/debian-snapshot|g" \
+    "${apt_config_script}" > "${tmpdir}/configure-apt-repos.sh"
+debian_options='arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg check-valid-until=no'
+for channel in release pre-release daily release; do
   PATH="${tmpdir}/bin:${PATH}" SDK_APT_CHANNEL="${channel}" bash "${tmpdir}/configure-apt-repos.sh" 3.0.0 "${patterns_file}"
   grep -Fq 'trixie main' "${apt_root}/sources.list.d/debian-target.list" || fail "${channel} 3.0 did not select Trixie"
   grep -Fq ' agate non-free' "${apt_root}/sources.list.d/elxr.list" || fail "${channel} 3.0 did not select Agate"
@@ -190,6 +207,16 @@ for channel in release pre-release daily; do
     if grep -Fq trusted=yes "${apt_root}/sources.list.d/elxr.list"; then
       fail "official source bypasses signature verification"
     fi
+    # A release sysroot is frozen, so its Debian sources are frozen with it. The
+    # second release pass reuses the recorded snapshots and resolves nothing.
+    [[ "$(wc -l < "${tmpdir}/curl-calls")" == 7 ]] || fail "release 3.0 resolved the Debian snapshots again"
+    diff -u - "${apt_root}/sources.list.d/debian-target.list" <<EOF || fail "release 3.0 does not read the recorded Debian snapshots"
+deb [${debian_options}] https://snapshot.debian.org/archive/debian/20261117T143434Z trixie main
+deb [${debian_options}] https://snapshot.debian.org/archive/debian/20261117T143434Z trixie-updates main
+deb [${debian_options}] https://snapshot.debian.org/archive/debian-security/20261117T150737Z trixie-security main
+EOF
+  elif grep -Fq snapshot.debian.org "${apt_root}/sources.list.d/debian-target.list"; then
+    fail "${channel} 3.0 does not follow the live Debian archive"
   fi
   if grep -Rq bookworm "${apt_root}"; then
     fail "${channel} 3.0 configured a Bookworm source"
