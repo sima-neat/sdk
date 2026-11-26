@@ -256,9 +256,8 @@ FIT (`boot/fitImage`) boots unsigned, as a plain kernel image, and `pib package`
 warns about it. It also compares the kernel's SiMa-specific headers with the
 release's, which SiMa's prebuilt software, such as the camera ISP and the MLA
 runtime, is built against, and warns when they differ. The `master` branch
-currently holds SiMa's 2.1.3 kernel, which has neither the FIT packaging nor all
-of the current headers, so both warnings appear until SiMa publishes the current
-kernel there.
+currently holds SiMa's 3.0 kernel, which has the FIT packaging and the release's
+headers, so neither warning appears.
 
 A kernel build takes about half an hour and 6-8 GB in the Docker volume
 `pib-package-<uid>`. Until sbp itself is included in the PIB image, set

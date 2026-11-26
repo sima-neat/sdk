@@ -126,9 +126,8 @@ leaves the kernel out (its pins name `linux-image-6.18.3-modalix`) or boots it
 unsigned (pib package warns when the kernel package has no FIT). Each run that copies
 a kernel also compares its SiMa.ai uapi headers with the release's: SiMa.ai's
 prebuilt userspace (libcamera's ISP, simaai-mlart) is built against those. Today
-`master` on GitHub is SiMa.ai's release 2.1.3: a 6.18.3 kernel without the FIT step
-and without some of the uapi headers the 3.0 userspace uses, so both warnings
-appear until SiMa.ai publishes its 3.0 kernel there.
+`master` on GitHub is SiMa.ai's release 3.0: a 6.18.3 kernel with the FIT step and
+the release's uapi headers, so neither warning appears.
 
 The command runs in the same image as every other pib command (`PIB_IMAGE`, else
 the launcher's default), which carries the cross toolchain and build tools: on amd64
