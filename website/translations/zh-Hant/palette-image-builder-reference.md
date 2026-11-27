@@ -38,7 +38,7 @@ x86 映像已內附模擬器。特權 PIB 啟動時，只在缺少可用 ARM64 �
 | `PIB_DEB_CACHE` | `pib build`, `pib shell` | 已驗證 Debian 下載檔的主機快取。每次建置都依已認證中繼資料檢查雜湊與大小。 |
 | `PIB_KERNEL_URL`, `PIB_KERNEL_REF` | `pib package` | 每次執行時要建置的核心儲存庫（不含認證資訊的 https URL）與分支或提交。`--kernel-url` 與 `--kernel-ref` 可針對單次執行覆寫這兩個變數。 |
 | `PIB_KERNEL_SRC` | `pib package` | 主機上存放您核心的 Git 儲存庫，可為簽出目錄或 bare 儲存庫；以唯讀方式掛載。適用於私人儲存庫，或尚未推送到任何地方的提交。 |
-| `PIB_PKGBUILD_SRC` | `pib package` | 包含 sbp（`pkgbuild/`）及其套件設定（`configs/packages/`）的簽出目錄，用來取代 PIB 映像內附的版本；在映像內含這些內容之前為必要設定。只會以唯讀方式掛載這兩個目錄。 |
+| `PIB_PKGBUILD_SRC` | `pib package` | 包含 sbp（`pkgbuild/`）及其套件設定（`configs/packages/`）的簽出目錄，用來取代 PIB 映像內附的版本。只會以唯讀方式掛載這兩個目錄。 |
 | `PIB_PACKAGE_JOBS`, `PIB_CCACHE_SIZE`, `PIB_PACKAGE_VOLUME` | `pib package` | 平行編譯工作數；編譯器快取大小（預設 `5G`）；存放 sbp 工作目錄、套件庫與快取的 Docker 磁碟區（預設 `pib-package-<uid>`）。 |
 
 ## 命令
@@ -188,7 +188,7 @@ pib build --sign
 
 請保留平台版本的核心版本（6.18.3）、其 `simaai_modalix_defconfig` 設定，以及 SiMa 的 FIT 封裝。映像只會安裝平台版本的核心套件名稱，因此其他版本的核心不會納入。不含 FIT（`boot/fitImage`）的核心套件會以未簽署的一般核心映像開機，`pib package` 會對此發出警告。它也會將核心的 SiMa 專用標頭檔與平台版本的標頭檔比較，並在兩者不同時發出警告；SiMa 預先建置的軟體（例如相機 ISP 與 MLA 執行階段）皆依據平台版本的標頭檔建置。`master` 分支目前存放 SiMa 的 3.0 核心，具備 FIT 封裝與平台版本的標頭檔，因此這兩項警告都不會出現。
 
-核心建置約需半小時，並在 Docker 磁碟區 `pib-package-<uid>` 中佔用 6-8 GB。在 sbp 本身納入 PIB 映像之前，請將 `PIB_PKGBUILD_SRC` 設為包含 sbp 的簽出目錄（`pkgbuild/` 與 `configs/packages/`）。
+核心建置約需半小時，並在 Docker 磁碟區 `pib-package-<uid>` 中佔用 6-8 GB。PIB 映像已內含 sbp 及其套件設定；若要使用其他簽出目錄（`pkgbuild/` 與 `configs/packages/`）建置，請設定 `PIB_PKGBUILD_SRC`。
 
 ## 簽署
 

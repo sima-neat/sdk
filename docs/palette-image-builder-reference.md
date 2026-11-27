@@ -55,7 +55,7 @@ Set these optional variables in the host shell that runs `pib`. File paths must 
 | `PIB_DEB_CACHE` | `pib build`, `pib shell` | Host directory for verified Debian package downloads. Package hashes and sizes are checked against authenticated repository metadata on every build. |
 | `PIB_KERNEL_URL`, `PIB_KERNEL_REF` | `pib package` | Kernel repository (an https URL without credentials) and branch or commit to build on every run. `--kernel-url` and `--kernel-ref` override them for one run. |
 | `PIB_KERNEL_SRC` | `pib package` | Git repository on the host, a checkout or a bare repository, holding your kernel; mounted read-only. Use it for a private repository or commits not pushed anywhere. |
-| `PIB_PKGBUILD_SRC` | `pib package` | Checkout holding sbp (`pkgbuild/`) and its package configurations (`configs/packages/`), used instead of the ones in the PIB image; required until the image includes them. Only those two directories are mounted, read-only. |
+| `PIB_PKGBUILD_SRC` | `pib package` | Checkout holding sbp (`pkgbuild/`) and its package configurations (`configs/packages/`), used instead of the ones in the PIB image. Only those two directories are mounted, read-only. |
 | `PIB_PACKAGE_JOBS`, `PIB_CCACHE_SIZE`, `PIB_PACKAGE_VOLUME` | `pib package` | Parallel compile jobs; compiler cache size (default `5G`); Docker volume for sbp's work tree, package repository and cache (default `pib-package-<uid>`). |
 
 ## Commands
@@ -260,9 +260,9 @@ currently holds SiMa's 3.0 kernel, which has the FIT packaging and the release's
 headers, so neither warning appears.
 
 A kernel build takes about half an hour and 6-8 GB in the Docker volume
-`pib-package-<uid>`. Until sbp itself is included in the PIB image, set
-`PIB_PKGBUILD_SRC` to a checkout that contains it (`pkgbuild/` and
-`configs/packages/`).
+`pib-package-<uid>`. The PIB image includes sbp and its package configurations;
+to build with another checkout of them (`pkgbuild/` and `configs/packages/`),
+set `PIB_PKGBUILD_SRC`.
 
 ## Signing
 

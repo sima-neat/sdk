@@ -37,9 +37,10 @@ at `3b3ee82d4a88fe6ad67834de83fe3db6ea9539e4`. `UPSTREAM` records provenance.
 Test workspaces, credentials, private keys, wheels, and binary archives are not
 committed. Standard Python dependencies are downloaded from PyPI with exact wheel
 hashes. SiMa Pasha and elxr-config are downloaded from the original public source
-repository at the commit above and checked against recorded SHA256 values. The
-eLxr base is selected by its pinned multi-platform OCI index. Do not update these
-dependencies from a floating branch.
+repository at the commit `deps/artifacts.json` pins
+(`2be7d8300a21a18bfa0e7c06ebdfb3cf0df7b422`) and checked against recorded SHA256
+values. The eLxr base is selected by its pinned multi-platform OCI index. Do not
+update these dependencies from a floating branch.
 
 ## Build and test locally
 
@@ -154,9 +155,10 @@ workspace (configs given with `--configs`, `PIB_CONFIGS` or a `./configs` are
 copied whole). `PIB_PKGBUILD_SRC` names a checkout of swsoc-simaai-elxr-doc or
 SiMa.ai's swsoc-elxr to use instead of the image's while it is set, for example
 to try a newer sbp without rebuilding the image; only those two directories are
-mounted, read-only. Unset it once the image carries sbp, or it keeps replacing the
-image's. The pinned commit carries neither yet, so for now `pib package` stops and
-asks for `PIB_PKGBUILD_SRC`.
+mounted, read-only. Unset it when you are done, or it keeps replacing the image's.
+The pinned commit carries both; an image built from a commit that carries neither
+(such as 3b3ee82, the pin before) makes `pib package` stop and ask for
+`PIB_PKGBUILD_SRC`.
 
 pib package takes the kernel's repository from `sbp/sources.json`, `--kernel-url`
 or `PIB_KERNEL_SRC`, never from the URL in the sbp tree's own kernel config
@@ -172,7 +174,7 @@ anything: a branch and its tip are read from the mirror, so refresh it first
 ```bash
 docker build -t palette-image-builder:local palette-image-builder
 export PIB_IMAGE=palette-image-builder:local
-export PIB_PKGBUILD_SRC=~/swsoc-simaai-elxr-doc  # while the image has no sbp: a checkout with it
+# export PIB_PKGBUILD_SRC=~/swsoc-simaai-elxr-doc  # optional: another sbp or recipe than the image's
 pib init --flavor palette my-image && cd my-image && pib keys init && pib keys fit
 pib doctor                    # on amd64, once per host boot: arm64 tools for the module builds
 pib package -p linux          # SiMa.ai's kernel: master of github.com/SiMa-ai/simaai-linux
@@ -188,8 +190,7 @@ The kernel package is `linux-image-6.18.3-modalix` with the version
 make it win over SiMa.ai's 6.18.3-2796. A kernel build takes about half an hour
 on 3-4 jobs and 6-8 GB on the volume (`PIB_PACKAGE_JOBS` sets the jobs; by default
 fewer when memory is short; `PIB_CCACHE_SIZE`, default 5G, bounds ccache). CI
-starts `pib package` but does not build a kernel yet: that needs sbp and its
-configs in the image (see above).
+starts `pib package` and lists the image's sbp packages, but builds no kernel.
 
 ## CI and GHCR naming
 
@@ -199,8 +200,8 @@ Vulcan Ubuntu 24.04 `amd64` and `arm64` runner pools used by the SDK. Each
 architecture must pass the regression
 suite and full custom minimal-SWU smoke test before its image is pushed. Its build
 must also start `pib package --list` through the launcher; that runs the container
-set-up (`sbp/setup.sh`) but builds no kernel, as sbp does not ship in the image yet
-(`ci/check-sbp-start.py`). Pull
+set-up (`sbp/setup.sh`) and must list the packages with the image's own sbp, from
+the pinned commit, but builds no kernel (`ci/check-sbp-start.py`). Pull
 requests from forks run the same qualification without logging in or publishing;
 same-repository PRs use their push-run results and skip duplicate builds. A merge job
 combines the tested immutable digests and promotes them only after both jobs pass.
@@ -241,7 +242,7 @@ with that branch's aliases.
 ## Updating platform inputs
 
 Update `RELEASE`, `CODENAME`, the Pasha artifact URL/hash in `deps/artifacts.json`,
-the upstream board-input commit and the `pib package` sources in `sbp/sources.json` (the kernel's branch, the lttng-modules pin) together. The upstream commit also gives the image its sbp and package configs, when it carries `pkgbuild/` and `configs/packages/`: `deps/fetch-artifacts.py --sbp` fetches those two (`SBP_PARTS`) into `/usr/share/pib/sbp-src` for `pib package`, so they are not in `upstream.paths`, the board inputs. When the new commit is the first to carry them, also update the text that says the image has no sbp yet: this README (Building the kernel, CI and GHCR naming), `UPSTREAM`, and `docs/palette-image-builder-reference.md` with its four translations and `website/translations/source-hashes.json`. Update the pinned eLxr OCI index and elxr-config
+the upstream board-input commit and the `pib package` sources in `sbp/sources.json` (the kernel's branch, the lttng-modules pin) together. The upstream commit also gives the image its sbp and package configs, when it carries `pkgbuild/` and `configs/packages/`: `deps/fetch-artifacts.py --sbp` fetches those two (`SBP_PARTS`) into `/usr/share/pib/sbp-src` for `pib package`, so they are not in `upstream.paths`, the board inputs. The commit must carry both: `ci/check-sbp-start.py` fails CI for an image without them, or with an sbp from another commit. Update the pinned eLxr OCI index and elxr-config
 artifact as needed. Keep standard Python versions and wheel hashes in
 `deps/debsbom-requirements.txt`; record source commits in `UPSTREAM`. Update the `upstream` commit in the same
 lock for board templates, the public APT key, nginx configuration and helper

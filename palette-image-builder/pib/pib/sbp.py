@@ -76,7 +76,7 @@ PACKAGES   comma-separated: linux (the kernel), smifb, lttng (kernel-module pack
 Environment (set on the host; the launcher passes them):
   PIB_PKGBUILD_SRC     a checkout of swsoc-simaai-elxr-doc or swsoc-elxr with pkgbuild/ (sbp)
                        and configs/packages/, used instead of the image's own while it is set;
-                       needed while the image carries none
+                       needed only with an image that carries none
   PIB_KERNEL_SRC       your kernel: a git repository on the host (a checkout or a bare one),
                        for a private repository or commits not pushed anywhere (the container
                        gets no credentials). Only its git directory is mounted, read-only; it

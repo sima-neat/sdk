@@ -38,7 +38,7 @@ x86 이미지에는 에뮬레이터가 포함됩니다. 특권 PIB 시작 시 �
 | `PIB_DEB_CACHE` | `pib build`, `pib shell` | 검증된 Debian 다운로드의 호스트 캐시. 매 빌드마다 인증된 메타데이터의 해시와 크기를 검사합니다. |
 | `PIB_KERNEL_URL`, `PIB_KERNEL_REF` | `pib package` | 실행할 때마다 빌드할 커널 저장소(인증 정보가 없는 https URL)와 브랜치 또는 커밋. `--kernel-url`과 `--kernel-ref`는 한 번의 실행에 한해 이 값을 재정의합니다. |
 | `PIB_KERNEL_SRC` | `pib package` | 사용자 커널이 담긴 호스트의 Git 저장소(체크아웃 또는 bare 저장소). 읽기 전용으로 마운트됩니다. 비공개 저장소나 어디에도 푸시하지 않은 커밋에 사용하세요. |
-| `PIB_PKGBUILD_SRC` | `pib package` | sbp(`pkgbuild/`)와 sbp의 패키지 설정(`configs/packages/`)이 들어 있는 체크아웃. PIB 이미지에 포함된 것 대신 사용됩니다. 이미지에 이 둘이 포함될 때까지 필요합니다. 이 두 디렉터리만 읽기 전용으로 마운트됩니다. |
+| `PIB_PKGBUILD_SRC` | `pib package` | sbp(`pkgbuild/`)와 sbp의 패키지 설정(`configs/packages/`)이 들어 있는 체크아웃. PIB 이미지에 포함된 것 대신 사용됩니다. 이 두 디렉터리만 읽기 전용으로 마운트됩니다. |
 | `PIB_PACKAGE_JOBS`, `PIB_CCACHE_SIZE`, `PIB_PACKAGE_VOLUME` | `pib package` | 병렬 컴파일 작업 수. 컴파일러 캐시 크기(기본값 `5G`). sbp의 작업 트리, 패키지 저장소, 캐시를 위한 Docker 볼륨(기본값 `pib-package-<uid>`). |
 
 ## 명령
@@ -187,7 +187,7 @@ pib build --sign
 
 릴리스 커널의 버전(6.18.3)과 `simaai_modalix_defconfig` 설정, 그리고 SiMa의 FIT 패키징을 유지하세요. 이미지는 릴리스의 커널 패키지 이름만 설치하므로 다른 버전은 제외됩니다. FIT 이미지(`boot/fitImage`)가 없는 커널 패키지는 서명되지 않은 일반 커널 이미지로 부팅되며, `pib package`가 이에 대해 경고합니다. 또한 커널의 SiMa 고유 헤더를 릴리스의 헤더와 비교하고, 서로 다르면 경고합니다. 카메라 ISP와 MLA 런타임 같은 SiMa의 사전 빌드된 소프트웨어는 릴리스의 헤더를 기준으로 빌드됩니다. 현재 `master` 브랜치에는 SiMa의 3.0 커널이 있습니다. 이 커널에는 FIT 패키징과 릴리스의 헤더가 있으므로 두 경고 모두 나타나지 않습니다.
 
-커널 빌드에는 약 30분이 걸리며 Docker 볼륨 `pib-package-<uid>`에 6-8 GB가 필요합니다. sbp 자체가 PIB 이미지에 포함될 때까지는 sbp가 들어 있는 체크아웃(`pkgbuild/`와 `configs/packages/`)을 `PIB_PKGBUILD_SRC`로 지정하세요.
+커널 빌드에는 약 30분이 걸리며 Docker 볼륨 `pib-package-<uid>`에 6-8 GB가 필요합니다. PIB 이미지에는 sbp와 sbp의 패키지 설정이 포함되어 있습니다. 다른 체크아웃(`pkgbuild/`와 `configs/packages/`)으로 빌드하려면 `PIB_PKGBUILD_SRC`를 지정하세요.
 
 ## 서명
 

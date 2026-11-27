@@ -1337,5 +1337,35 @@ class Orchestration(unittest.TestCase):
             self.assertTrue(any(want in o for o in out), out)
 
 
+class StartCheck(unittest.TestCase):
+    """ci/check-sbp-start.py passes CI only when pib package --list ran the image's own sbp, from the
+    commit deps/artifacts.json pins: not an image without sbp, nor a listing from PIB_PKGBUILD_SRC."""
+
+    def check(self, code, stdout, stderr=''):
+        start = script(ROOT / 'ci/check-sbp-start.py')
+        launcher = [sys.executable, '-c', 'import sys; sys.stdout.write(sys.argv[1]); '
+                    'sys.stderr.write(sys.argv[2]); sys.exit(int(sys.argv[3]))', stdout, stderr, str(code)]
+        with patch('sys.stdout', new_callable=io.StringIO), patch('sys.stderr', new_callable=io.StringIO) as err:
+            return start.check(launcher), err.getvalue()
+
+    def test_only_the_images_own_sbp_from_the_pinned_commit_passes(self):
+        pin = json.loads((ROOT / 'deps/artifacts.json').read_text())['upstream']
+        own = f"pib: sbp and its package configs: this image's, from {pin['repository']} @ {pin['commit']}"
+        start = script(ROOT / 'ci/check-sbp-start.py')
+        self.assertEqual(start.OWN, own, 'the line sbp.cmd_package prints for the SOURCE fetch-artifacts writes')
+        self.assertEqual(self.check(0, own + '\npib: sbp list\n')[0], 0)
+        rc, err = self.check(0, own.replace(pin['commit'], 'c' * 40) + '\n')
+        self.assertEqual(rc, 1)
+        self.assertIn("not with the image's own sbp", err)
+        rc, err = self.check(0, 'pib: sbp and its package configs: PIB_PKGBUILD_SRC (/src)\n')
+        self.assertEqual(rc, 1, 'a checkout named by PIB_PKGBUILD_SRC does not prove the image')
+        rc, err = self.check(1, '', f'pib: {start.NOT_YET}: the swsoc-simaai-elxr-doc commit ...\n')
+        self.assertEqual(rc, 1)
+        self.assertIn('the image carries no sbp', err)
+        rc, err = self.check(2, '', 'usage: pib ...\n')
+        self.assertEqual(rc, 1)
+        self.assertIn('did not start (exit 2)', err)
+
+
 if __name__ == '__main__':
     unittest.main()

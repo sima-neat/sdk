@@ -2,8 +2,10 @@ Palette Image Builder sources and dependency provenance
 
 PIB CLI source and fetched SiMa Modalix board inputs:
   https://github.com/SiMa-ai/swsoc-simaai-elxr-doc
-  Commit: 3b3ee82d4a88fe6ad67834de83fe3db6ea9539e4
+  Commit: 2be7d8300a21a18bfa0e7c06ebdfb3cf0df7b422
   Platform release 3.0.0, suite agate.
+  The CLI source was imported at 3b3ee82d4a88fe6ad67834de83fe3db6ea9539e4; 2be7d83 changes
+  none of it and adds sbp (pkgbuild/) and its package configs (configs/packages/).
 
 Container base:
   elxrlinux/elxr:bianca-26.04.02, selected by multi-platform index
@@ -20,7 +22,7 @@ Build dependencies (downloaded during container build; binaries are not committe
   same full upstream commit. They are not copied into the SDK Git tree.
   The image also sparse-fetches sbp (pkgbuild/) and its package configs
   (configs/packages/) at that commit for pib package, when the commit carries
-  them (3b3ee82 does not); the board configs leave configs/packages/ out.
+  them (2be7d83 does); the board configs leave configs/packages/ out.
   The public APT key also has an independently checked fingerprint.
   Rucksack and external system tools come from signed APT repositories.
 

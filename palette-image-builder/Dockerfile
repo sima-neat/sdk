@@ -208,9 +208,9 @@ FROM pib-deps AS pib-package-tools
 # sbp itself (pkgbuild/) and its package configs (configs/packages/) come from the
 # swsoc-simaai-elxr-doc commit deps/artifacts.json pins, the one the image configs come from, into
 # /usr/share/pib/sbp-src, when that commit carries them. pib package uses them unless
-# PIB_PKGBUILD_SRC names a checkout to use instead, which it needs while the pinned commit carries
-# none. The check below starts sbp and imports all of its modules: sbp loads its build modules only
-# when a build asks.
+# PIB_PKGBUILD_SRC names a checkout to use instead (an image built from a commit without them
+# needs one). The check below starts sbp and imports all of its modules: sbp loads its build
+# modules only when a build asks.
 RUN --mount=type=bind,source=deps,target=/tmp/deps \
     python3 /tmp/deps/fetch-artifacts.py --sbp /usr/share/pib/sbp-src
 COPY --chmod=644 sbp/distributions.in sbp/nginx.conf.in sbp/90-pib-sbp.pref sbp/sources.json \

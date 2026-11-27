@@ -89,9 +89,8 @@ jobs:
           trap 'docker volume rm -f "$PIB_PACKAGE_VOLUME" > /dev/null 2>&1 || true' EXIT
           mkdir -p "$RUNNER_TEMP/pib-package-start" && cd "$RUNNER_TEMP/pib-package-start"
           # "pib package --list" (not --help, which skips it) runs sbp/setup.sh first: sbp's local
-          # repo, nginx, apt pins and apt-get update against SiMa.ai's release repo. pib then looks
-          # for sbp: a listing once the image carries sbp; until then, a message printed only after
-          # the set-up passed.
+          # repo, nginx, apt pins and apt-get update against SiMa.ai's release repo. pib then lists
+          # sbp's packages, which must come from the image's own sbp at the pinned commit.
           python3 "$GITHUB_WORKSPACE/palette-image-builder/ci/check-sbp-start.py" \
             python3 "$GITHUB_WORKSPACE/palette-image-builder/host/pib"
       # Missing-handler registration is covered by test_emulation.py above.

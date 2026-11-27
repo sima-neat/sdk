@@ -38,7 +38,7 @@ x86 イメージにはエミュレーターが含まれます。特権 PIB の�
 | `PIB_DEB_CACHE` | `pib build`, `pib shell` | Debian ダウンロードのホストキャッシュ。毎回、認証済みメタデータのハッシュとサイズで検証。 |
 | `PIB_KERNEL_URL`, `PIB_KERNEL_REF` | `pib package` | 実行のたびにビルドするカーネルリポジトリ（認証情報を含まない https URL）と、そのブランチまたはコミット。`--kernel-url` と `--kernel-ref` は、1 回の実行に限りこれらを上書きします。 |
 | `PIB_KERNEL_SRC` | `pib package` | 独自のカーネルを含むホスト上の Git リポジトリ（チェックアウトまたはベアリポジトリ）。読み取り専用でマウントされます。非公開リポジトリや、どこにもプッシュしていないコミットに使用します。 |
-| `PIB_PKGBUILD_SRC` | `pib package` | sbp（`pkgbuild/`）とそのパッケージ設定（`configs/packages/`）を含むチェックアウト。PIB イメージ内のものの代わりに使用されます。イメージにこれらが含まれるまでは必須です。マウントされるのはこの 2 つのディレクトリだけで、読み取り専用です。 |
+| `PIB_PKGBUILD_SRC` | `pib package` | sbp（`pkgbuild/`）とそのパッケージ設定（`configs/packages/`）を含むチェックアウト。PIB イメージ内のものの代わりに使用されます。マウントされるのはこの 2 つのディレクトリだけで、読み取り専用です。 |
 | `PIB_PACKAGE_JOBS`, `PIB_CCACHE_SIZE`, `PIB_PACKAGE_VOLUME` | `pib package` | 並列コンパイルのジョブ数。コンパイラーキャッシュのサイズ（既定 `5G`）。sbp の作業ツリー、パッケージリポジトリ、キャッシュ用の Docker ボリューム（既定 `pib-package-<uid>`）。 |
 
 ## コマンド
@@ -188,7 +188,7 @@ pib build --sign
 
 リリースのカーネルバージョン（6.18.3）、その `simaai_modalix_defconfig` 設定、および SiMa の FIT パッケージングを維持してください。イメージにはリリースのカーネルパッケージ名のパッケージだけがインストールされるため、別のバージョンは除外されます。FIT（`boot/fitImage`）を含まないカーネルパッケージは、プレーンなカーネルイメージとして署名なしで起動し、`pib package` はこれについて警告します。また、カーネルの SiMa 固有ヘッダーをリリースのヘッダーと比較し、異なる場合は警告します。カメラ ISP や MLA ランタイムなど、SiMa のビルド済みソフトウェアはリリースのヘッダーを使ってビルドされています。現在、`master` ブランチには SiMa の 3.0 カーネルがあります。このカーネルには FIT パッケージングとリリースのヘッダーが含まれているため、どちらの警告も表示されません。
 
-カーネルのビルドには約 30 分かかり、Docker ボリューム `pib-package-<uid>` 内で 6-8 GB を使用します。sbp 自体が PIB イメージに含まれるまでは、`PIB_PKGBUILD_SRC` に sbp を含むチェックアウト（`pkgbuild/` と `configs/packages/`）を設定してください。
+カーネルのビルドには約 30 分かかり、Docker ボリューム `pib-package-<uid>` 内で 6-8 GB を使用します。PIB イメージには sbp とそのパッケージ設定が含まれています。別のチェックアウト（`pkgbuild/` と `configs/packages/`）でビルドするには、`PIB_PKGBUILD_SRC` を設定してください。
 
 ## 署名
 
